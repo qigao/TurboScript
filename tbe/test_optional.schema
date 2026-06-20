@@ -1,0 +1,8 @@
+schema TestOptional [id(1), version(1), byte_order(little)];
+
+message User {
+    required uint32 id;
+    optional uint32 age default 18;
+    required string username;
+    optional string email;
+}

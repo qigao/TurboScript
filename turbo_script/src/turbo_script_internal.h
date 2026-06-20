@@ -1,0 +1,103 @@
+/**
+ * @file turbo_script_internal.h
+ * @brief Internal TurboScript definitions
+ */
+
+#ifndef TURBO_SCRIPT_INTERNAL_H
+#define TURBO_SCRIPT_INTERNAL_H
+
+#include "exprtk_module.h"
+#include "turbo_buffer.h"
+#include <mir.h>
+#include "ts_plugin_loader.h"
+#include "turbo_script.h"
+
+typedef struct imported_module_s {
+  char *name;
+  exprtk_node_t *expr;
+  exprtk_value_t exports;
+  int has_exports;
+  int isolated;
+  struct imported_module_s *next;
+} imported_module_t;
+
+#define TS_MAX_PLUGINS 16
+#define TS_JIT_CACHE_SIZE 128  // 从 64 扩展到 128，提升缓存命中率
+
+/**
+ * @brief JIT 统计数据结构
+ */
+typedef struct {
+  uint64_t compile_count;         // 编译次数
+  uint64_t exec_count;            // 执行次数
+  uint64_t cache_hit_count;       // 缓存命中次数
+  uint64_t cache_miss_count;      // 缓存未命中次数
+  uint64_t total_compile_time_us; // 总编译时间（微秒）
+  uint64_t total_exec_time_us;    // 总执行时间（微秒）
+  uint64_t var_sync_count;        // 变量同步次数
+} ts_jit_stats_t;
+
+struct turbo_script_ctx_s {
+  exprtk_env_t env;
+  exprtk_node_t *expr;
+  char *expr_source;
+  imported_module_t *imports;
+  mem_pool_t scratch_arena;
+  char *current_script_dir;
+  const char *current_import_name;
+  exprtk_value_t current_import_exports;
+  int current_import_has_exports;
+  exprtk_env_t *current_import_env;
+  char error_msg[256];
+  turbo_script_error_code_t error_code;
+
+  /* Plugin handles */
+  ts_plugin_handle_t *plugins[TS_MAX_PLUGINS];
+  char *loaded_names[TS_MAX_PLUGINS];
+  size_t plugin_count;
+
+  /* MIR JIT compiler context */
+  MIR_context_t mir_ctx;
+  void *mir_last_fn;      /* Phase 15: cached JIT function pointer */
+  int mir_gen_initialized; /* Phase 15: gen_init called once */
+  MIR_context_t mir_interp_ctx;
+  MIR_item_t mir_interp_last_func;
+  int mir_interp_externals_loaded;
+
+  /* Phase 18: compile cache — skip parse/compile for repeated scripts */
+  struct {
+    uint64_t hash;
+    void *fn_ptr;
+    uint32_t access_count;  // LRU 访问计数
+  } jit_cache[TS_JIT_CACHE_SIZE];
+
+  /* JIT 统计信息 */
+  ts_jit_stats_t jit_stats;
+  int jit_stats_enabled;  // 是否启用统计
+};
+
+struct turbo_script_compiled_s {
+  char *source;
+};
+
+exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script);
+
+/* Built-in module accessors */
+void turbo_script_register_modules(void);
+void turbo_script_register_mir(struct turbo_script_ctx_s *ctx);
+exprtk_value_t turbo_script_mir_eval_node(const exprtk_node_t *node, exprtk_env_t *env);
+int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_env,
+                                      exprtk_env_t *caller_env, exprtk_value_t *out);
+
+/* Internal JIT API - for testing and advanced use */
+CXX_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);
+CXX_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx);
+CXX_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script);
+CXX_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx);
+CXX_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out);
+CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script);
+
+/* Internal REPL helper */
+int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script);
+
+#endif /* TURBO_SCRIPT_INTERNAL_H */

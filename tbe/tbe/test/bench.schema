@@ -1,0 +1,16 @@
+schema BenchData [id(1), version(1), byte_order(little)];
+
+enum Side <uint8> { Buy = 1; Sell = 2; }
+
+composite Header {
+    uint32 seq;
+    uint64 ts;
+}
+
+message MarketData {
+    Header header;
+    uint64 order_id;
+    Side side;
+    uint32 price;
+    uint32 quantity;
+}

@@ -1,0 +1,46 @@
+{
+  "name": "vcpkg-turbonet",
+  "version-semver": "0.1.0",
+  "dependencies": [
+    {
+      "name": "xxhash",
+      "version>=": "0.8.3"
+    },
+    {
+      "name": "c-ares",
+      "version>=": "1.34.1"
+    },
+    {
+      "name": "openssl",
+      "version>=": "3.2.0"
+    },
+    {
+      "name": "aklomp-base64",
+      "version>=": "0.5.2"
+    },
+    {
+      "name": "stb"
+    },
+    {
+      "name": "stc",
+      "version>=": "5.0"
+    },
+    {
+      "name": "pkgconf"
+    },
+    {
+      "name": "zstd"
+    },
+    {
+      "name": "simde"
+    },
+    {
+      "name": "utf8h"
+    },
+    {
+      "name": "sqlite3",
+      "version>=": "3.49.0"
+    }
+  ],
+  "builtin-baseline": "b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01"
+}

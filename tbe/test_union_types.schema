@@ -1,0 +1,14 @@
+schema UnionTest [id(10), version(1), byte_order(little)];
+
+message Success {
+    required uint32 code;
+}
+
+message Error {
+    required uint32 code;
+}
+
+union Result {
+    Success success;
+    Error error;
+}

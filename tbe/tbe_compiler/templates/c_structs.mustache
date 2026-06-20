@@ -1,0 +1,1584 @@
+#ifndef SCHEMA_GENERATED_H
+#define SCHEMA_GENERATED_H
+
+#include <stdbool.h>
+#include <stddef.h>
+#include <stdint.h>
+#include <string.h>
+
+#include "tbe_wire.h"
+
+/* Schema {{schema.schema_name}} {{schema.schema_attributes_rendered}} */
+enum { {{schema.schema_name}}_WIRE_BIG_ENDIAN = {{schema.schema_wire_big_endian_value}} };
+{{#schema.has_schema_version}}
+#define {{schema.schema_name}}_SCHEMA_VERSION {{schema.schema_version}}
+{{/schema.has_schema_version}}
+
+/* ========================================================================= */
+/* Enums                                                                     */
+/* ========================================================================= */
+
+{{#enums}}
+{{^is_flags}}
+/**
+ * @brief Enum {{enum_name}}
+ * Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
+ */
+typedef enum {
+{{#items}}
+    {{enum_name}}_{{name}} = {{value}}{{^last}},{{/last}}
+{{/items}}
+} {{enum_name}}_t;
+
+/**
+ * @brief Convert {{enum_name}} to string
+ */
+static inline const char* {{enum_name}}_to_string({{enum_name}}_t value) {
+    switch (value) {
+{{#items}}
+        case {{enum_name}}_{{name}}: return "{{name}}";
+{{/items}}
+        default: return NULL;
+    }
+}
+
+/**
+ * @brief Convert string to {{enum_name}}
+ */
+static inline bool {{enum_name}}_from_string(const char* str, {{enum_name}}_t* out) {
+    if (!str || !out) return false;
+    
+{{#items}}
+    if (strcmp(str, "{{name}}") == 0) { *out = {{enum_name}}_{{name}}; return true; }
+{{/items}}
+    return false;
+}
+
+/**
+ * @brief Check if {{enum_name}} value is valid
+ */
+static inline bool {{enum_name}}_is_valid({{enum_name}}_t value) {
+    switch (value) {
+{{#items}}
+        case {{enum_name}}_{{name}}:
+{{/items}}
+            return true;
+        default:
+            return false;
+    }
+}
+
+/**
+ * @brief Get number of {{enum_name}} values
+ */
+static inline size_t {{enum_name}}_count(void) {
+    return {{items_count}};
+}
+
+/**
+ * @brief Get minimum {{enum_name}} value
+ */
+static inline {{enum_name}}_t {{enum_name}}_min(void) {
+    return {{min_value}};
+}
+
+/**
+ * @brief Get maximum {{enum_name}} value  
+ */
+static inline {{enum_name}}_t {{enum_name}}_max(void) {
+    return {{max_value}};
+}
+
+{{/is_flags}}
+{{#is_flags}}
+/**
+ * @brief Flags {{enum_name}}
+ * Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
+ */
+typedef {{#underlying_type}}{{underlying_type}}{{/underlying_type}}{{^underlying_type}}uint32_t{{/underlying_type}} {{enum_name}}_t;
+
+enum {
+{{#items}}
+    {{enum_name}}_{{name}} = {{value}}{{^last}},{{/last}}
+{{/items}}
+};
+
+/**
+ * @brief Check if flag is set
+ */
+static inline bool {{enum_name}}_has({{enum_name}}_t flags, {{enum_name}}_t flag) {
+    return (flags & flag) != 0;
+}
+
+/**
+ * @brief Set flag
+ */
+static inline {{enum_name}}_t {{enum_name}}_set({{enum_name}}_t flags, {{enum_name}}_t flag) {
+    return flags | flag;
+}
+
+/**
+ * @brief Clear flag
+ */
+static inline {{enum_name}}_t {{enum_name}}_clear({{enum_name}}_t flags, {{enum_name}}_t flag) {
+    return flags & ~flag;
+}
+
+/**
+ * @brief Toggle flag
+ */
+static inline {{enum_name}}_t {{enum_name}}_toggle({{enum_name}}_t flags, {{enum_name}}_t flag) {
+    return flags ^ flag;
+}
+
+{{/is_flags}}
+{{/enums}}
+{{#composites}}{{#has_fixed_block_size}}
+typedef struct {{name}}_view_s {{name}}_view_t;
+typedef struct {{name}}_builder_s {{name}}_builder_t;
+static inline bool {{name}}_view_bind({{name}}_view_t *view, const void *data, size_t size);
+static inline bool {{name}}_builder_bind({{name}}_builder_t *view, void *data, size_t size);
+{{/has_fixed_block_size}}{{/composites}}
+{{#groups}}{{#has_fixed_block_size}}
+typedef struct {{name}}_view_s {{name}}_view_t;
+typedef struct {{name}}_builder_s {{name}}_builder_t;
+static inline bool {{name}}_view_bind({{name}}_view_t *view, const void *data, size_t size);
+static inline bool {{name}}_builder_bind({{name}}_builder_t *view, void *data, size_t size);
+{{/has_fixed_block_size}}{{/groups}}
+{{#groups}}{{#supports_group_cursor}}
+typedef struct {{name}}_cursor_s {{name}}_cursor_t;
+static inline bool {{name}}_cursor_bind({{name}}_cursor_t *cursor, const void *data, size_t size);
+static inline const uint8_t *{{name}}_cursor_end(const {{name}}_cursor_t *cursor);
+{{/supports_group_cursor}}{{/groups}}
+
+/* ========================================================================= */
+/* Records                                                                   */
+/* ========================================================================= */
+
+{{#composites}}
+/**
+ * @brief {{decl_kind}} {{name}}
+ * Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
+ */
+typedef struct {{name}}_s {
+{{#fields}}
+    /* size: {{field_size_bytes}}{{^field_size_bytes}}{{size_bytes}}{{/field_size_bytes}} {{#is_unsigned}}unsigned{{/is_unsigned}}{{#is_float}}float{{/is_float}} */
+    {{#is_group_field}}
+    list<{{group_type}}> {{name}};
+    {{/is_group_field}}
+    {{^is_group_field}}
+    {{#is_bytes}}
+    {{#is_fixed_size}}uint8_t {{name}}[{{size_bytes}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}bytes {{name}};{{/is_fixed_size}}
+    {{/is_bytes}}
+    {{#is_collection}}
+    {{#is_fixed_size}}{{inner_type}} {{name}}[{{length_field}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}list<{{inner_type}}> {{name}};{{/is_fixed_size}}
+    {{/is_collection}}
+    {{^is_bytes}}{{^is_collection}}
+    {{#is_enum_ref}}
+    {{enum_c_type}} {{name}};
+    {{/is_enum_ref}}
+    {{#is_composite_ref}}
+    {{type}}_t {{name}};
+    {{/is_composite_ref}}
+    {{^is_enum_ref}}{{^is_composite_ref}}{{^is_var_data}}
+    {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} {{name}};
+    {{/is_var_data}}{{/is_composite_ref}}{{/is_enum_ref}}
+    {{/is_collection}}{{/is_bytes}}
+    {{/is_group_field}}
+{{/fields}}
+} {{name}}_t;
+
+{{#has_fixed_block_size}}
+enum { {{name}}_BLOCK_LENGTH = {{fixed_block_size}} };
+{{#fields}}{{#has_offset}}
+enum { {{owner_name}}_{{name}}_OFFSET = {{offset}} };
+{{/has_offset}}{{/fields}}
+
+typedef struct {{name}}_view_s {
+    const uint8_t *data;
+    size_t size;
+} {{name}}_view_t;
+
+static inline bool {{name}}_view_bind({{name}}_view_t *view, const void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (const uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+typedef struct {{name}}_builder_s {
+    uint8_t *data;
+    size_t size;
+} {{name}}_builder_t;
+
+static inline bool {{name}}_builder_bind({{name}}_builder_t *view, void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+{{#fields}}{{#is_group_field}}{{#group_cursor_accessible}}
+static inline bool {{owner_name}}_{{name}}_cursor(const {{owner_name}}_view_t *view,
+                                                  {{group_type}}_cursor_t *cursor) {
+{{#is_first_group_field}}
+    size_t group_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !cursor || view->size < group_offset) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, view->data + group_offset, view->size - group_offset);
+{{/is_first_group_field}}
+{{^is_first_group_field}}
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *group_data;
+    size_t group_offset;
+
+    if (!view || !cursor) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(view, &previous)) {
+        return false;
+    }
+
+    group_data = {{previous_group_type}}_cursor_end(&previous);
+    group_offset = (size_t)(group_data - view->data);
+    if (group_offset > view->size) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, group_data, view->size - group_offset);
+{{/is_first_group_field}}
+}
+
+static inline bool {{owner_name}}_{{name}}_builder_begin({{owner_name}}_builder_t *view,
+                                                         uint16_t num_in_group,
+                                                         {{group_type}}_builder_cursor_t *cursor) {
+{{#is_first_group_field}}
+    size_t group_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !cursor || view->size < group_offset) {
+        return false;
+    }
+
+    return {{group_type}}_builder_cursor_bind(cursor, view->data + group_offset, view->size - group_offset, num_in_group);
+{{/is_first_group_field}}
+{{^is_first_group_field}}
+    {{owner_name}}_view_t read_view;
+    read_view.data = view->data;
+    read_view.size = view->size;
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *group_data;
+    size_t group_offset;
+
+    if (!view || !cursor) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(&read_view, &previous)) {
+        return false;
+    }
+
+    group_data = {{previous_group_type}}_cursor_end(&previous);
+    group_offset = (size_t)(group_data - view->data);
+    if (group_offset > view->size) {
+        return false;
+    }
+
+    return {{group_type}}_builder_cursor_bind(cursor, (void*)group_data, view->size - group_offset, num_in_group);
+{{/is_first_group_field}}
+}
+
+{{/group_cursor_accessible}}{{/is_group_field}}{{/fields}}
+{{#fields}}{{#has_offset}}
+{{#is_enum_ref}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{enum_c_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{enum_wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, ({{enum_host_type}})value);
+    return true;
+}
+
+static inline {{enum_c_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return ({{enum_c_type}})tbe_wire_read_{{enum_wire_reader}}(view->data + {{offset}},
+                                                               {{wire_endian_const}});
+}
+
+{{/is_enum_ref}}
+{{#is_numeric}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{host_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, value);
+    return true;
+}
+
+static inline {{host_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return tbe_wire_read_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}});
+}
+
+{{/is_numeric}}
+{{#is_bytes}}{{#is_fixed_size}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                               const void *data,
+                                               size_t size) {
+    if (!view || !view->data || !data || size != {{size_bytes}} ||
+        view->size < {{offset}} + {{size_bytes}}) {
+        return false;
+    }
+
+    memcpy(view->data + {{offset}}, data, {{size_bytes}});
+    return true;
+}
+
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_bytes}}
+{{#is_collection}}{{#is_fixed_size}}
+{{#collection_element_is_primitive}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_host_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        value);
+    return true;
+}
+
+{{/collection_element_is_primitive}}
+{{#collection_element_is_enum}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_enum_c_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        ({{collection_element_host_type}})value);
+    return true;
+}
+
+{{/collection_element_is_enum}}
+{{#collection_element_is_composite}}
+static inline bool {{owner_name}}_{{name}}_builder_at({{owner_name}}_builder_t *view,
+                                                      size_t index,
+                                                      {{inner_type}}_builder_t *value) {
+    size_t element_offset;
+
+    if (!view || !value || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    element_offset = {{offset}} + ((size_t)index * {{element_size_bytes}});
+    return {{inner_type}}_builder_bind(value, view->data + element_offset, view->size - element_offset);
+}
+
+{{/collection_element_is_composite}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_collection}}
+{{#is_composite_ref}}
+static inline bool {{owner_name}}_{{name}}_builder({{owner_name}}_builder_t *view,
+                                                   {{type}}_builder_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_builder_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+static inline bool {{owner_name}}_{{name}}(const {{owner_name}}_view_t *view,
+                                           {{type}}_view_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_view_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+{{/is_composite_ref}}
+{{#is_user_defined}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_user_defined}}
+{{/has_offset}}{{/fields}}
+{{/has_fixed_block_size}}
+{{/composites}}
+{{#groups}}
+/**
+ * @brief {{decl_kind}} {{name}}
+ * Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
+ */
+typedef struct {{name}}_s {
+{{#fields}}
+    /* size: {{field_size_bytes}}{{^field_size_bytes}}{{size_bytes}}{{/field_size_bytes}} {{#is_unsigned}}unsigned{{/is_unsigned}}{{#is_float}}float{{/is_float}} */
+    {{#is_group_field}}
+    list<{{group_type}}> {{name}};
+    {{/is_group_field}}
+    {{^is_group_field}}
+    {{#is_bytes}}
+    {{#is_fixed_size}}uint8_t {{name}}[{{size_bytes}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}bytes {{name}};{{/is_fixed_size}}
+    {{/is_bytes}}
+    {{#is_collection}}
+    {{#is_fixed_size}}{{inner_type}} {{name}}[{{length_field}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}list<{{inner_type}}> {{name}};{{/is_fixed_size}}
+    {{/is_collection}}
+    {{^is_bytes}}{{^is_collection}}
+    {{#is_enum_ref}}
+    {{enum_c_type}} {{name}};
+    {{/is_enum_ref}}
+    {{#is_composite_ref}}
+    {{type}}_t {{name}};
+    {{/is_composite_ref}}
+    {{^is_enum_ref}}{{^is_composite_ref}}{{^is_var_data}}
+    {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} {{name}};
+    {{/is_var_data}}{{/is_composite_ref}}{{/is_enum_ref}}
+    {{/is_collection}}{{/is_bytes}}
+    {{/is_group_field}}
+{{/fields}}
+} {{name}}_t;
+
+{{#has_fixed_block_size}}
+enum { {{name}}_BLOCK_LENGTH = {{fixed_block_size}} };
+{{#fields}}{{#has_offset}}
+enum { {{owner_name}}_{{name}}_OFFSET = {{offset}} };
+{{/has_offset}}{{/fields}}
+
+typedef struct {{name}}_view_s {
+    const uint8_t *data;
+    size_t size;
+} {{name}}_view_t;
+
+static inline bool {{name}}_view_bind({{name}}_view_t *view, const void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (const uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+typedef struct {{name}}_builder_s {
+    uint8_t *data;
+    size_t size;
+} {{name}}_builder_t;
+
+static inline bool {{name}}_builder_bind({{name}}_builder_t *view, void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+{{#supports_group_cursor}}
+enum { {{name}}_DIMENSIONS_SIZE = {{group_dimension_size}} };
+
+typedef struct {{name}}_cursor_s {
+    const uint8_t *data;
+    size_t size;
+    uint16_t block_length;
+    uint16_t num_in_group;
+    uint16_t current_index;
+} {{name}}_cursor_t;
+
+static inline bool {{name}}_cursor_bind({{name}}_cursor_t *cursor, const void *data, size_t size) {
+    size_t entries_size;
+
+    if (!cursor || !data || size < {{group_dimension_size}}) {
+        return false;
+    }
+
+    cursor->data = (const uint8_t *)data;
+    cursor->size = size;
+    cursor->block_length = tbe_wire_read_u16(cursor->data, {{wire_endian_const}});
+    cursor->num_in_group = tbe_wire_read_u16(cursor->data + 2, {{wire_endian_const}});
+    cursor->current_index = 0;
+    entries_size = (size_t)cursor->block_length * (size_t)cursor->num_in_group;
+
+    if (cursor->block_length < {{name}}_BLOCK_LENGTH) {
+        return false;
+    }
+
+    if (size < {{group_dimension_size}} + entries_size) {
+        return false;
+    }
+
+    return true;
+}
+
+static inline bool {{name}}_cursor_next({{name}}_cursor_t *cursor, {{name}}_view_t *view) {
+    if (!cursor || !view || cursor->current_index >= cursor->num_in_group) {
+        return false;
+    }
+
+    size_t entry_offset = {{group_dimension_size}} + ((size_t)cursor->block_length * cursor->current_index);
+    if (!{{name}}_view_bind(view, cursor->data + entry_offset, cursor->size - entry_offset)) {
+        return false;
+    }
+
+    cursor->current_index++;
+    return true;
+}
+
+static inline size_t {{name}}_cursor_count(const {{name}}_cursor_t *cursor) {
+    return cursor ? (size_t)cursor->num_in_group : 0;
+}
+
+static inline const uint8_t *{{name}}_cursor_end(const {{name}}_cursor_t *cursor) {
+    if (!cursor) {
+        return NULL;
+    }
+
+    return cursor->data + {{group_dimension_size}} +
+           ((size_t)cursor->block_length * (size_t)cursor->num_in_group);
+}
+
+static inline bool {{name}}_cursor_get(const {{name}}_cursor_t *cursor,
+                                       size_t index,
+                                       {{name}}_view_t *view) {
+    size_t entry_offset;
+
+    if (!cursor || !view || index >= (size_t)cursor->num_in_group) {
+        return false;
+    }
+
+    entry_offset = {{group_dimension_size}} + ((size_t)cursor->block_length * index);
+    return {{name}}_view_bind(view, cursor->data + entry_offset, cursor->size - entry_offset);
+}
+
+typedef struct {{name}}_builder_cursor_s {
+    uint8_t *data;
+    size_t size;
+    uint16_t block_length;
+    uint16_t num_in_group;
+    uint16_t current_index;
+} {{name}}_builder_cursor_t;
+
+static inline bool {{name}}_builder_cursor_bind({{name}}_builder_cursor_t *cursor, void *data, size_t size, uint16_t num_in_group) {
+    if (!cursor || !data || size < {{group_dimension_size}}) {
+        return false;
+    }
+
+    cursor->data = (uint8_t *)data;
+    cursor->size = size;
+    cursor->block_length = {{name}}_BLOCK_LENGTH;
+    cursor->num_in_group = num_in_group;
+    cursor->current_index = 0;
+
+    tbe_wire_write_u16(cursor->data, {{wire_endian_const}}, cursor->block_length);
+    tbe_wire_write_u16(cursor->data + 2, {{wire_endian_const}}, cursor->num_in_group);
+
+    size_t entries_size = (size_t)cursor->block_length * (size_t)cursor->num_in_group;
+    if (size < {{group_dimension_size}} + entries_size) {
+        return false;
+    }
+
+    return true;
+}
+
+static inline bool {{name}}_builder_cursor_next({{name}}_builder_cursor_t *cursor, {{name}}_builder_t *builder) {
+    if (!cursor || !builder || cursor->current_index >= cursor->num_in_group) {
+        return false;
+    }
+
+    size_t entry_offset = {{group_dimension_size}} + ((size_t)cursor->block_length * cursor->current_index);
+    if (!{{name}}_builder_bind(builder, cursor->data + entry_offset, cursor->size - entry_offset)) {
+        return false;
+    }
+
+    cursor->current_index++;
+    return true;
+}
+
+static inline uint8_t *{{name}}_builder_cursor_end(const {{name}}_builder_cursor_t *cursor) {
+    if (!cursor) {
+        return NULL;
+    }
+
+    return cursor->data + {{group_dimension_size}} +
+           ((size_t)cursor->block_length * (size_t)cursor->num_in_group);
+}
+
+{{/supports_group_cursor}}
+{{#fields}}{{#is_group_field}}{{#group_cursor_accessible}}
+static inline bool {{owner_name}}_{{name}}_cursor(const {{owner_name}}_view_t *view,
+                                                  {{group_type}}_cursor_t *cursor) {
+{{#is_first_group_field}}
+    size_t group_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !cursor || view->size < group_offset) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, view->data + group_offset, view->size - group_offset);
+{{/is_first_group_field}}
+{{^is_first_group_field}}
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *group_data;
+    size_t group_offset;
+
+    if (!view || !cursor) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(view, &previous)) {
+        return false;
+    }
+
+    group_data = {{previous_group_type}}_cursor_end(&previous);
+    group_offset = (size_t)(group_data - view->data);
+    if (group_offset > view->size) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, group_data, view->size - group_offset);
+{{/is_first_group_field}}
+}
+
+{{/group_cursor_accessible}}{{/is_group_field}}{{/fields}}
+{{#fields}}{{#is_var_data}}{{#var_data_accessor_accessible}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                               const void *data,
+                                               size_t size) {
+{{#var_data_from_block_length}}
+    size_t payload_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !view->data || view->size < payload_offset) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_block_length}}
+{{#var_data_from_previous_group}}
+    {{owner_name}}_view_t read_view;
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !view->data) {
+        return false;
+    }
+
+    read_view.data = view->data;
+    read_view.size = view->size;
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(&read_view, &previous)) {
+        return false;
+    }
+
+    payload_data = {{previous_group_type}}_cursor_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_previous_group}}
+{{#var_data_from_previous_var_data}}
+    {{owner_name}}_view_t read_view;
+    tbe_var_data_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !view->data) {
+        return false;
+    }
+
+    read_view.data = view->data;
+    read_view.size = view->size;
+    if (!{{owner_name}}_{{previous_var_data_field_name}}(&read_view, &previous)) {
+        return false;
+    }
+
+    payload_data = tbe_wire_var_data_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_previous_var_data}}
+}
+
+static inline bool {{owner_name}}_{{name}}(const {{owner_name}}_view_t *view,
+                                           tbe_var_data_t *value) {
+{{#var_data_from_block_length}}
+    size_t payload_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !value || view->size < payload_offset) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(view->data + payload_offset,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_block_length}}
+{{#var_data_from_previous_group}}
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !value) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(view, &previous)) {
+        return false;
+    }
+
+    payload_data = {{previous_group_type}}_cursor_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(payload_data,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_previous_group}}
+{{#var_data_from_previous_var_data}}
+    tbe_var_data_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !value) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_var_data_field_name}}(view, &previous)) {
+        return false;
+    }
+
+    payload_data = tbe_wire_var_data_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(payload_data,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_previous_var_data}}
+}
+
+{{/var_data_accessor_accessible}}{{/is_var_data}}{{/fields}}
+{{#fields}}{{#has_offset}}
+{{#is_enum_ref}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{enum_c_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{enum_wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, ({{enum_host_type}})value);
+    return true;
+}
+
+static inline {{enum_c_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return ({{enum_c_type}})tbe_wire_read_{{enum_wire_reader}}(view->data + {{offset}},
+                                                               {{wire_endian_const}});
+}
+
+{{/is_enum_ref}}
+{{#is_numeric}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{host_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, value);
+    return true;
+}
+
+static inline {{host_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return tbe_wire_read_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}});
+}
+
+{{/is_numeric}}
+{{#is_bytes}}{{#is_fixed_size}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                               const void *data,
+                                               size_t size) {
+    if (!view || !view->data || !data || size != {{size_bytes}} ||
+        view->size < {{offset}} + {{size_bytes}}) {
+        return false;
+    }
+
+    memcpy(view->data + {{offset}}, data, {{size_bytes}});
+    return true;
+}
+
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_bytes}}
+{{#is_collection}}{{#is_fixed_size}}
+{{#collection_element_is_primitive}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_host_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        value);
+    return true;
+}
+
+{{/collection_element_is_primitive}}
+{{#collection_element_is_enum}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_enum_c_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        ({{collection_element_host_type}})value);
+    return true;
+}
+
+{{/collection_element_is_enum}}
+{{#collection_element_is_composite}}
+static inline bool {{owner_name}}_{{name}}_builder_at({{owner_name}}_builder_t *view,
+                                                      size_t index,
+                                                      {{inner_type}}_builder_t *value) {
+    size_t element_offset;
+
+    if (!view || !value || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    element_offset = {{offset}} + ((size_t)index * {{element_size_bytes}});
+    return {{inner_type}}_builder_bind(value, view->data + element_offset, view->size - element_offset);
+}
+
+{{/collection_element_is_composite}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_collection}}
+{{#is_composite_ref}}
+static inline bool {{owner_name}}_{{name}}_builder({{owner_name}}_builder_t *view,
+                                                   {{type}}_builder_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_builder_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+static inline bool {{owner_name}}_{{name}}(const {{owner_name}}_view_t *view,
+                                           {{type}}_view_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_view_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+{{/is_composite_ref}}
+{{#is_user_defined}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_user_defined}}
+{{/has_offset}}{{/fields}}
+{{/has_fixed_block_size}}
+{{/groups}}
+{{#messages}}
+/**
+ * @brief {{decl_kind}} {{name}}
+ * Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
+ */
+{{#has_optional_fields}}
+#define {{name}}_OPTIONAL_FIELD_COUNT {{optional_field_count}}
+#define {{name}}_PRESENCE_BITMAP_SIZE {{presence_bitmap_bytes}}
+
+typedef enum {
+{{#optional_fields}}
+    {{owner_name}}_OPTIONAL_{{name}} = {{optional_bit_index}}{{^last}},{{/last}}
+{{/optional_fields}}
+} {{name}}_optional_field_t;
+
+{{/has_optional_fields}}
+typedef struct {{name}}_s {
+{{#fields}}
+    /* size: {{field_size_bytes}}{{^field_size_bytes}}{{size_bytes}}{{/field_size_bytes}} {{#is_unsigned}}unsigned{{/is_unsigned}}{{#is_float}}float{{/is_float}} */
+    {{#is_group_field}}
+    list<{{group_type}}> {{name}};
+    {{/is_group_field}}
+    {{^is_group_field}}
+    {{#is_bytes}}
+    {{#is_fixed_size}}uint8_t {{name}}[{{size_bytes}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}bytes {{name}};{{/is_fixed_size}}
+    {{/is_bytes}}
+    {{#is_collection}}
+    {{#is_fixed_size}}{{inner_type}} {{name}}[{{length_field}}];{{/is_fixed_size}}
+    {{^is_fixed_size}}list<{{inner_type}}> {{name}};{{/is_fixed_size}}
+    {{/is_collection}}
+    {{^is_bytes}}{{^is_collection}}
+    {{#is_enum_ref}}
+    {{enum_c_type}} {{name}};
+    {{/is_enum_ref}}
+    {{#is_composite_ref}}
+    {{type}}_t {{name}};
+    {{/is_composite_ref}}
+    {{^is_enum_ref}}{{^is_composite_ref}}{{^is_var_data}}
+    {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} {{name}};
+    {{/is_var_data}}{{/is_composite_ref}}{{/is_enum_ref}}
+    {{/is_collection}}{{/is_bytes}}
+    {{/is_group_field}}
+{{/fields}}
+} {{name}}_t;
+
+typedef struct {{name}}_view_s {
+    const uint8_t *data;
+    size_t size;
+} {{name}}_view_t;
+
+typedef struct {{name}}_builder_s {
+    uint8_t *data;
+    size_t size;
+} {{name}}_builder_t;
+
+{{#has_optional_fields}}
+/* ========================================================================= */
+/* Default Values for {{name}}                                              */
+/* ========================================================================= */
+
+{{#default_value_fields}}
+{{#has_default}}
+{{#is_numeric}}
+#define {{owner_name}}_{{name}}_DEFAULT {{default_value}}
+{{/is_numeric}}
+{{#is_string}}
+#define {{owner_name}}_{{name}}_DEFAULT "{{default_value}}"
+{{/is_string}}
+{{#is_boolean}}
+#define {{owner_name}}_{{name}}_DEFAULT {{default_value}}
+{{/is_boolean}}
+{{#is_enum_ref}}
+#define {{owner_name}}_{{name}}_DEFAULT {{enum_name}}_{{default_value}}
+{{/is_enum_ref}}
+{{/has_default}}
+{{/default_value_fields}}
+
+/* ========================================================================= */
+/* Optional Field Support for {{name}}                                      */
+/* ========================================================================= */
+
+/**
+ * @brief Check if optional field is present
+ */
+static inline bool {{name}}_has_optional_field(const {{name}}_view_t *view, 
+                                               {{name}}_optional_field_t field) {
+    if (!view || !view->data || field >= {{name}}_OPTIONAL_FIELD_COUNT) {
+        return false;
+    }
+    
+    const uint8_t *bitmap = view->data;  // 位图在消息开头
+    uint8_t byte_index = field / 8;
+    uint8_t bit_index = field % 8;
+    return (bitmap[byte_index] & (1 << bit_index)) != 0;
+}
+
+/**
+ * @brief Set optional field presence in builder
+ */
+static inline void {{name}}_set_optional_field({{name}}_builder_t *builder,
+                                              {{name}}_optional_field_t field) {
+    if (!builder || field >= {{name}}_OPTIONAL_FIELD_COUNT) {
+        return;
+    }
+    
+    uint8_t byte_index = field / 8;
+    uint8_t bit_index = field % 8;
+    builder->data[byte_index] |= (1 << bit_index);
+}
+
+/**
+ * @brief Clear optional field presence in builder
+ */
+static inline void {{name}}_clear_optional_field({{name}}_builder_t *builder,
+                                                {{name}}_optional_field_t field) {
+    if (!builder || field >= {{name}}_OPTIONAL_FIELD_COUNT) {
+        return;
+    }
+    
+    uint8_t byte_index = field / 8;
+    uint8_t bit_index = field % 8;
+    builder->data[byte_index] &= ~(1 << bit_index);
+}
+
+{{/has_optional_fields}}
+
+{{#has_fixed_block_size}}
+{{#has_optional_fields}}
+enum { {{name}}_BITMAP_SIZE = {{presence_bitmap_bytes}} };
+enum { {{name}}_BLOCK_LENGTH = {{fixed_block_size}} };
+{{#fields}}{{#has_offset}}
+enum { {{owner_name}}_{{name}}_OFFSET = {{offset}} };
+{{/has_offset}}{{/fields}}
+{{/has_optional_fields}}
+{{^has_optional_fields}}
+enum { {{name}}_BLOCK_LENGTH = {{fixed_block_size}} };
+{{#fields}}{{#has_offset}}
+enum { {{owner_name}}_{{name}}_OFFSET = {{offset}} };
+{{/has_offset}}{{/fields}}
+{{/has_optional_fields}}
+
+static inline bool {{name}}_view_bind({{name}}_view_t *view, const void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (const uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+static inline bool {{name}}_builder_bind({{name}}_builder_t *view, void *data, size_t size) {
+    if (!view || !data || size < {{fixed_block_size}}) {
+        return false;
+    }
+
+    view->data = (uint8_t *)data;
+    view->size = size;
+    return true;
+}
+
+{{#fields}}{{#is_group_field}}{{#group_cursor_accessible}}
+static inline bool {{owner_name}}_{{name}}_cursor(const {{owner_name}}_view_t *view,
+                                                  {{group_type}}_cursor_t *cursor) {
+{{#is_first_group_field}}
+    size_t group_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !cursor || view->size < group_offset) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, view->data + group_offset, view->size - group_offset);
+{{/is_first_group_field}}
+{{^is_first_group_field}}
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *group_data;
+    size_t group_offset;
+
+    if (!view || !cursor) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(view, &previous)) {
+        return false;
+    }
+
+    group_data = {{previous_group_type}}_cursor_end(&previous);
+    group_offset = (size_t)(group_data - view->data);
+    if (group_offset > view->size) {
+        return false;
+    }
+
+    return {{group_type}}_cursor_bind(cursor, group_data, view->size - group_offset);
+{{/is_first_group_field}}
+}
+
+static inline bool {{owner_name}}_{{name}}_builder_begin({{owner_name}}_builder_t *view,
+                                                         uint16_t num_in_group,
+                                                         {{group_type}}_builder_cursor_t *cursor) {
+{{#is_first_group_field}}
+    size_t group_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !cursor || view->size < group_offset) {
+        return false;
+    }
+
+    return {{group_type}}_builder_cursor_bind(cursor, view->data + group_offset, view->size - group_offset, num_in_group);
+{{/is_first_group_field}}
+{{^is_first_group_field}}
+    {{owner_name}}_view_t read_view;
+    read_view.data = view->data;
+    read_view.size = view->size;
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *group_data;
+    size_t group_offset;
+
+    if (!view || !cursor) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(&read_view, &previous)) {
+        return false;
+    }
+
+    group_data = {{previous_group_type}}_cursor_end(&previous);
+    group_offset = (size_t)(group_data - view->data);
+    if (group_offset > view->size) {
+        return false;
+    }
+
+    return {{group_type}}_builder_cursor_bind(cursor, (void*)group_data, view->size - group_offset, num_in_group);
+{{/is_first_group_field}}
+}
+
+{{/group_cursor_accessible}}{{/is_group_field}}{{/fields}}
+{{#fields}}{{#is_var_data}}{{#var_data_accessor_accessible}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                               const void *data,
+                                               size_t size) {
+{{#var_data_from_block_length}}
+    size_t payload_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !view->data || view->size < payload_offset) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_block_length}}
+{{#var_data_from_previous_group}}
+    {{owner_name}}_view_t read_view;
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !view->data) {
+        return false;
+    }
+
+    read_view.data = view->data;
+    read_view.size = view->size;
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(&read_view, &previous)) {
+        return false;
+    }
+
+    payload_data = {{previous_group_type}}_cursor_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_previous_group}}
+{{#var_data_from_previous_var_data}}
+    {{owner_name}}_view_t read_view;
+    tbe_var_data_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !view->data) {
+        return false;
+    }
+
+    read_view.data = view->data;
+    read_view.size = view->size;
+    if (!{{owner_name}}_{{previous_var_data_field_name}}(&read_view, &previous)) {
+        return false;
+    }
+
+    payload_data = tbe_wire_var_data_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_write_var_data(view->data + payload_offset,
+                                   view->size - payload_offset,
+                                   {{wire_endian_const}},
+                                   data,
+                                   size);
+{{/var_data_from_previous_var_data}}
+}
+
+static inline bool {{owner_name}}_{{name}}(const {{owner_name}}_view_t *view,
+                                           tbe_var_data_t *value) {
+{{#var_data_from_block_length}}
+    size_t payload_offset = {{owner_name}}_BLOCK_LENGTH;
+
+    if (!view || !value || view->size < payload_offset) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(view->data + payload_offset,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_block_length}}
+{{#var_data_from_previous_group}}
+    {{previous_group_type}}_cursor_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !value) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_group_field_name}}_cursor(view, &previous)) {
+        return false;
+    }
+
+    payload_data = {{previous_group_type}}_cursor_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(payload_data,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_previous_group}}
+{{#var_data_from_previous_var_data}}
+    tbe_var_data_t previous;
+    const uint8_t *payload_data;
+    size_t payload_offset;
+
+    if (!view || !value) {
+        return false;
+    }
+
+    if (!{{owner_name}}_{{previous_var_data_field_name}}(view, &previous)) {
+        return false;
+    }
+
+    payload_data = tbe_wire_var_data_end(&previous);
+    payload_offset = (size_t)(payload_data - view->data);
+    if (payload_offset > view->size) {
+        return false;
+    }
+
+    return tbe_wire_read_var_data(payload_data,
+                                  view->size - payload_offset,
+                                  {{wire_endian_const}},
+                                  value);
+{{/var_data_from_previous_var_data}}
+}
+
+{{/var_data_accessor_accessible}}{{/is_var_data}}{{/fields}}
+{{#fields}}{{#has_offset}}
+{{#is_enum_ref}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{enum_c_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{enum_wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, ({{enum_host_type}})value);
+    return true;
+}
+
+static inline {{enum_c_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return ({{enum_c_type}})tbe_wire_read_{{enum_wire_reader}}(view->data + {{offset}},
+                                                               {{wire_endian_const}});
+}
+
+{{/is_enum_ref}}
+{{#is_numeric}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                                {{host_type}} value) {
+    if (!view || !view->data || view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}}, value);
+    return true;
+}
+
+static inline {{host_type}} {{owner_name}}_{{name}}_get(const {{owner_name}}_view_t *view) {
+    return tbe_wire_read_{{wire_reader}}(view->data + {{offset}}, {{wire_endian_const}});
+}
+
+{{/is_numeric}}
+{{#is_bytes}}{{#is_fixed_size}}
+static inline bool {{owner_name}}_{{name}}_set({{owner_name}}_builder_t *view,
+                                               const void *data,
+                                               size_t size) {
+    if (!view || !view->data || !data || size != {{size_bytes}} ||
+        view->size < {{offset}} + {{size_bytes}}) {
+        return false;
+    }
+
+    memcpy(view->data + {{offset}}, data, {{size_bytes}});
+    return true;
+}
+
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_bytes}}
+{{#is_collection}}{{#is_fixed_size}}
+{{#collection_element_is_primitive}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_host_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        value);
+    return true;
+}
+
+{{/collection_element_is_primitive}}
+{{#collection_element_is_enum}}
+static inline bool {{owner_name}}_{{name}}_set_at({{owner_name}}_builder_t *view,
+                                                  size_t index,
+                                                  {{collection_element_enum_c_type}} value) {
+    if (!view || !view->data || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    tbe_wire_write_{{collection_element_wire_reader}}(
+        view->data + {{offset}} + ((size_t)index * {{element_size_bytes}}),
+        {{wire_endian_const}},
+        ({{collection_element_host_type}})value);
+    return true;
+}
+
+{{/collection_element_is_enum}}
+{{#collection_element_is_composite}}
+static inline bool {{owner_name}}_{{name}}_builder_at({{owner_name}}_builder_t *view,
+                                                      size_t index,
+                                                      {{inner_type}}_builder_t *value) {
+    size_t element_offset;
+
+    if (!view || !value || index >= {{length_field}} ||
+        view->size < {{offset}} + {{field_size_bytes}}) {
+        return false;
+    }
+
+    element_offset = {{offset}} + ((size_t)index * {{element_size_bytes}});
+    return {{inner_type}}_builder_bind(value, view->data + element_offset, view->size - element_offset);
+}
+
+{{/collection_element_is_composite}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_fixed_size}}{{/is_collection}}
+{{#is_composite_ref}}
+static inline bool {{owner_name}}_{{name}}_builder({{owner_name}}_builder_t *view,
+                                                   {{type}}_builder_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_builder_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+static inline bool {{owner_name}}_{{name}}(const {{owner_name}}_view_t *view,
+                                           {{type}}_view_t *value) {
+    if (!view || !value || view->size < {{offset}}) {
+        return false;
+    }
+
+    return {{type}}_view_bind(value, view->data + {{offset}}, view->size - {{offset}});
+}
+
+{{/is_composite_ref}}
+{{#is_user_defined}}
+static inline const uint8_t *{{owner_name}}_{{name}}_ptr(const {{owner_name}}_view_t *view) {
+    return view->data + {{offset}};
+}
+
+{{/is_user_defined}}
+{{/has_offset}}{{/fields}}
+{{/has_fixed_block_size}}
+
+{{#has_optional_fields}}
+/* ========================================================================= */
+/* Optional Field Accessors for {{name}}                                   */
+/* ========================================================================= */
+
+{{#optional_fields}}
+/**
+ * @brief Check if {{name}} field is present
+ */
+static inline bool {{owner_name}}_has_{{name}}(const {{owner_name}}_view_t *view) {
+    return {{owner_name}}_has_optional_field(view, {{owner_name}}_OPTIONAL_{{name}});
+}
+
+{{/optional_fields}}
+
+{{#default_value_fields}}
+{{#is_optional}}
+{{#is_numeric}}
+/**
+ * @brief Get {{name}} with default value if not present
+ */
+static inline {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} {{owner_name}}_{{name}}_get_or(const {{owner_name}}_view_t *view, {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} default_value) {
+    if ({{owner_name}}_has_{{name}}(view)) {
+        return {{owner_name}}_{{name}}_get(view);
+    }
+    return default_value;
+}
+
+/**
+ * @brief Get {{name}} with built-in default value if not present
+ */
+static inline {{#host_type}}{{host_type}}{{/host_type}}{{^host_type}}{{type}}_t{{/host_type}} {{owner_name}}_{{name}}_get_default(const {{owner_name}}_view_t *view) {
+    return {{owner_name}}_{{name}}_get_or(view, {{owner_name}}_{{name}}_DEFAULT);
+}
+
+{{/is_numeric}}
+{{#is_string}}
+/**
+ * @brief Get {{name}} with default value if not present
+ */
+static inline bool {{owner_name}}_{{name}}_get_or(const {{owner_name}}_view_t *view, const char *default_str, tbe_var_data_t *out) {
+    if ({{owner_name}}_has_{{name}}(view)) {
+        return {{owner_name}}_{{name}}(view, out);
+    }
+    // Return default string
+    out->data = (const uint8_t *)default_str;
+    out->size = strlen(default_str);
+    return true;
+}
+
+/**
+ * @brief Get {{name}} with built-in default value if not present
+ */
+static inline bool {{owner_name}}_{{name}}_get_default(const {{owner_name}}_view_t *view, tbe_var_data_t *out) {
+    return {{owner_name}}_{{name}}_get_or(view, {{owner_name}}_{{name}}_DEFAULT, out);
+}
+
+{{/is_string}}
+{{/is_optional}}
+{{/default_value_fields}}
+
+{{/has_optional_fields}}
+{{/messages}}
+
+/* ========================================================================= */
+/* Union Types                                                               */
+/* ========================================================================= */
+
+{{#unions}}
+/**
+ * @brief Tagged union {{name}}
+ *
+ * Wire layout: [tag:1][variant_data:N]
+ * The tag byte identifies which variant is active.
+ */
+typedef enum {
+{{#fields}}
+    {{owner_name}}_tag_{{name}} = {{field_index}},
+{{/fields}}
+    {{name}}_tag_COUNT
+} {{name}}_tag_t;
+
+/**
+ * @brief Get the active tag from a {{name}} buffer
+ */
+static inline {{name}}_tag_t {{name}}_get_tag(const uint8_t *buf, size_t size) {
+    if (!buf || size < 1) return {{name}}_tag_COUNT;
+    return ({{name}}_tag_t)buf[0];
+}
+
+/**
+ * @brief Set the tag in a mutable {{name}} buffer
+ */
+static inline void {{name}}_set_tag(uint8_t *buf, size_t size, {{name}}_tag_t tag) {
+    if (buf && size >= 1) buf[0] = (uint8_t)tag;
+}
+
+/**
+ * @brief Get a const pointer to the variant payload (bytes after the tag)
+ */
+static inline const uint8_t *{{name}}_payload(const uint8_t *buf, size_t size, size_t *payload_size) {
+    if (!buf || size < 1) return NULL;
+    if (payload_size) *payload_size = size - 1;
+    return buf + 1;
+}
+
+/**
+ * @brief Get a mutable pointer to the variant payload
+ */
+static inline uint8_t *{{name}}_payload_mut(uint8_t *buf, size_t size, size_t *payload_size) {
+    if (!buf || size < 1) return NULL;
+    if (payload_size) *payload_size = size - 1;
+    return buf + 1;
+}
+
+{{/unions}}
+
+#endif /* SCHEMA_GENERATED_H */

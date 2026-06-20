@@ -1,0 +1,106 @@
+// TBE Enhanced Features Demo Schema
+// 展示可选字段、默认值、枚举增强、版本控制等新功能
+
+schema UserService [id(1), version(100), byte_order(little)];
+
+// 1. 枚举类型 - 支持字符串转换
+enum UserRole <uint8> {
+    Guest = 0;
+    User = 1;
+    Moderator = 2;
+    Admin = 3;
+}
+
+enum AccountStatus <uint8> {
+    Inactive = 0;
+    Active = 1;
+    Suspended = 2;
+    Deleted = 3;
+}
+
+// 2. 标志位类型
+flags Permissions <uint32> {
+    Read = 1;
+    Write = 2;
+    Execute = 4;
+    Delete = 8;
+}
+
+// 3. 复合类型
+composite Timestamp {
+    uint64 seconds;
+    uint32 nanos;
+}
+
+composite Address {
+    uint32 street_len;
+    uint32 city_len;
+}
+
+// 4. 带可选字段和默认值的消息
+[id(100), version(1)]
+message UserProfile {
+    // 必需字段
+    required uint32 user_id;
+    required string username;
+    required Timestamp created_at;
+    
+    // 可选字段（无默认值）
+    optional string email;
+    optional string phone;
+    
+    // 可选字段（有默认值）
+    optional UserRole role default User;
+    optional uint32 age default 18;
+    optional AccountStatus status default Active;
+    
+    // 带默认值的必需字段
+    required uint32 max_sessions default 3;
+    required uint32 timeout_seconds default 3600;
+}
+
+// 5. 带可选组字段的消息
+[id(101), version(1)]
+message UserSettings {
+    required uint32 user_id;
+    
+    // 可选的复杂字段
+    optional Address address;
+    optional Permissions permissions default Read;
+    
+    // 可选的字符串（有默认值）
+    optional string theme default "light";
+    optional string language default "en";
+}
+
+// 6. 用于数据流的高性能消息（所有必需字段，无可选）
+[id(200), version(1)]
+message MarketTick {
+    uint64 timestamp;
+    uint32 symbol_id;
+    double price;
+    uint64 volume;
+}
+
+// 7. 带多个可选字段的配置消息
+[id(300), version(1)]
+message ServerConfig {
+    // 网络设置
+    required string host default "0.0.0.0";
+    required uint32 port default 8080;
+    
+    // 可选的SSL设置
+    optional uint32 ssl_port;
+    optional string cert_path;
+    optional string key_path;
+    
+    // 可选的性能调优
+    optional uint32 worker_threads default 4;
+    optional uint32 connection_pool_size default 100;
+    optional uint32 request_timeout_ms default 30000;
+    
+    // 可选的功能开关
+    optional uint8 enable_compression default true;
+    optional uint8 enable_cache default true;
+    optional uint8 enable_metrics default false;
+}
