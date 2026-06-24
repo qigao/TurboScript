@@ -920,6 +920,32 @@ spec("turbo_script_mir") {
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
+
+    it("should match interpreter for JSON and CSV parser bindings") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "schema = \"message Trade { double price; uint32 qty; string symbol; }\";"
+          "one = \"{\\\"symbol\\\":\\\"AAPL\\\",\\\"price\\\":10.5,\\\"qty\\\":2}\";"
+          "many = \"[{\\\"symbol\\\":\\\"AAPL\\\",\\\"price\\\":10.5,\\\"qty\\\":2},"
+          "{\\\"symbol\\\":\\\"MSFT\\\",\\\"price\\\":20,\\\"qty\\\":3}]\";"
+          "csv_text = \"symbol,price,qty\\nAAPL,10.5,2\\nMSFT,20,3\";"
+          "trade = json.bind(schema, one, \"Trade\");"
+          "rows = json.bind_all(schema, many, \"Trade\");"
+          "csv_row = csv.bind(schema, csv_text, 1, \"Trade\");"
+          "native = json.parse(one);"
+          "encoded = json.stringify(native);"
+          "result = trade.price * trade.qty + rows[1].price * rows[1].qty + csv_row.qty;"
+          "encoded_len = encoded.length();";
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 84.0, EPS);
+      check_double_eq(ts_get_num(ctx_jit, "encoded_len"), ts_get_num(ctx_interp, "encoded_len"), EPS);
+      check(ts_get_num(ctx_jit, "encoded_len") > 0.0);
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
   }
 
   /* ===== Phase 5: Unsupported-node rejection tests ===== */

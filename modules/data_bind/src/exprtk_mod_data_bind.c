@@ -9,9 +9,8 @@
  *   data_bind.close(handle)               -> number (0)
  *   data_bind.error(handle)               -> string (last error)
  *
- * `bytes` is a TurboScript vector (double[]) that carries raw byte values
- * in range [0, 255].  The plugin converts it to a uint8_t[] buffer before
- * passing to the JIT-compiled parser.
+ * `bytes` is a TurboScript string carrying raw bytes.  The plugin passes
+ * the string buffer directly to the JIT-compiled parser.
  *
  * The DataBindValueApi callbacks build a native exprtk_value_t tree
  * (maps, lists, numbers, strings) directly into the env arena so that
@@ -322,19 +321,17 @@ static exprtk_value_t fn_db_create(size_t argc, exprtk_value_t *args, void *ud_)
 }
 
 /**
- * data_bind.parse(handle, type_name, bytes_vec) -> map | 0
+ * data_bind.parse(handle, type_name, bytes) -> map | 0
  *
- * bytes_vec is a TurboScript vector where each element encodes one byte
- * (values 0-255).  The function converts it to uint8_t[] on the scratch
- * pool and passes it to the JIT-compiled parser.
+ * bytes is a TurboScript string whose data is the raw binary payload.
  */
 static exprtk_value_t fn_db_parse(size_t argc, exprtk_value_t *args, void *ud_) {
     db_ud_t *ud = (db_ud_t *)ud_;
     if (argc != 3
      || args[0].type != EXPRTK_VAL_NUMBER
      || args[1].type != EXPRTK_VAL_STRING
-     || args[2].type != EXPRTK_VAL_VECTOR) {
-        DB_ERROR(ud, "data_bind.parse: expected (number, string, vector)");
+     || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.parse: expected (number, string, string)");
         return DB_ZERO;
     }
 
@@ -350,13 +347,8 @@ static exprtk_value_t fn_db_parse(size_t argc, exprtk_value_t *args, void *ud_) 
                                     args[1].data.string.len);
     if (!type_name) { DB_ERROR(ud, "data_bind.parse: OOM"); return DB_ZERO; }
 
-    /* Convert double[] vector to uint8_t[] byte buffer */
-    const exprtk_vector_t *vec = &args[2].data.vector;
-    size_t buf_len = vec->size;
-    uint8_t *buf = (uint8_t *)mem_alloc(ud->scratch, buf_len + 1);
-    if (!buf) { DB_ERROR(ud, "data_bind.parse: OOM"); return DB_ZERO; }
-    for (size_t i = 0; i < buf_len; i++)
-        buf[i] = (uint8_t)(unsigned int)vec->data[i];
+    const uint8_t *buf = (const uint8_t *)args[2].data.string.data;
+    size_t buf_len = args[2].data.string.len;
 
     /* Install build context so the ValueApi callbacks can reach the env */
     db_build_ctx_t bctx = { .env = ud->env, .scratch = ud->scratch };

@@ -9,12 +9,12 @@ Loads a TBE schema file and compiles it into MIR JIT-executable parsing function
 * **Arguments**: `schema_path` (string)
 * **Returns**: `handle` (number >= 0 on success, or `-1` on failure)
 
-### `data_bind.parse(handle, type_name, bytes_vec)`
-Parses a binary payload (given as a numeric byte vector) into a dynamic nested map/list tree representation in the environment.
+### `data_bind.parse(handle, type_name, bytes)`
+Parses a binary payload (given as a raw byte string) into a dynamic nested map/list tree representation in the environment.
 * **Arguments**:
   * `handle` (number) - The schema codec handle returned by `create`.
   * `type_name` (string) - The message type to parse from the schema.
-  * `bytes_vec` (vector/double[]) - The raw binary buffer carrying byte values (0-255).
+  * `bytes` (string) - The raw binary buffer. The string contents are passed directly to the JIT parser.
 * **Returns**: `map` (object map on success, or `0` on failure)
 
 ### `data_bind.close(handle)`
@@ -41,17 +41,9 @@ if (handle < 0) {
     exit(1);
 }
 
-// 2. Prepare byte array (vector) for the payload
-// Example layout: count (32-bit LE) followed by key-value pairs
-var payload = [
-    2, 0, 0, 0,    // count = 2
-    1, 0, 0, 0,    // key length = 1
-    120,           // 'x'
-    30, 0, 0, 0,   // value = 30
-    1, 0, 0, 0,    // key length = 1
-    121,           // 'y'
-    40, 0, 0, 0    // value = 40
-];
+// 2. Prepare raw bytes for the payload.
+// Example layout: count (32-bit LE) followed by key-value pairs.
+var payload = hex_decode("0200000001000000781e000000010000007928000000");
 
 // 3. Parse bytes to structured map object
 var msg = data_bind.parse(handle, "Attrs", payload);

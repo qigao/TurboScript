@@ -14,6 +14,11 @@ void *parser_ctx_create(void) {
     /* Initialize all document handles to NULL */
     for (int i = 0; i < PARSER_MAX_DOCS; i++) {
         ctx->csv_docs[i] = NULL;
+        ctx->csv_header_names[i] = NULL;
+        ctx->csv_header_counts[i] = 0;
+    }
+    for (int i = 0; i < PARSER_MAX_JSON_DOCS; i++) {
+        ctx->json_docs[i] = NULL;
     }
     for (int i = 0; i < PARSER_MAX_SCHEMAS; i++) {
         ctx->schemas[i] = NULL;
@@ -33,6 +38,19 @@ void parser_ctx_destroy(void *p) {
             void *doc = ctx->csv_docs[i];
             turbo_free_csv(&doc);
             ctx->csv_docs[i] = NULL;
+        }
+        for (size_t j = 0; j < ctx->csv_header_counts[i]; j++) {
+            free(ctx->csv_header_names[i][j]);
+        }
+        free(ctx->csv_header_names[i]);
+        ctx->csv_header_names[i] = NULL;
+        ctx->csv_header_counts[i] = 0;
+    }
+    for (int i = 0; i < PARSER_MAX_JSON_DOCS; i++) {
+        if (ctx->json_docs[i]) {
+            void *doc = ctx->json_docs[i];
+            turbo_free_json(&doc);
+            ctx->json_docs[i] = NULL;
         }
     }
     for (int i = 0; i < PARSER_MAX_SCHEMAS; i++) {

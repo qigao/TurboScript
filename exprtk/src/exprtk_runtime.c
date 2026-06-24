@@ -2366,9 +2366,73 @@ static int eval_callable_value(exprtk_value_t callee, const char *name, size_t a
     return 0;
 }
 
+extern exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const char *method,
+                                                size_t argc, exprtk_value_t *args,
+                                                exprtk_env_t *env, mem_pool_t *arena);
+
+static exprtk_value_t rt_stream_make(exprtk_value_t source) {
+    exprtk_value_t stream = exprtk_val_map();
+    exprtk_map_set(&stream, "__ts_stream_kind",
+                   exprtk_val_str(tstr_v_from_cstr("TurboScript.Stream.v1")));
+    exprtk_map_set(&stream, "source", source);
+    return stream;
+}
+
+static int rt_stream_is_value(exprtk_value_t stream) {
+    exprtk_value_t kind;
+    const char *marker = "TurboScript.Stream.v1";
+    size_t marker_len = strlen(marker);
+
+    if (stream.type != EXPRTK_VAL_MAP || !exprtk_map_has(&stream, "__ts_stream_kind") ||
+        !exprtk_map_has(&stream, "source")) {
+        return 0;
+    }
+    kind = exprtk_map_get(&stream, "__ts_stream_kind");
+    return kind.type == EXPRTK_VAL_STRING &&
+           kind.data.string.len == marker_len &&
+           memcmp(kind.data.string.data, marker, marker_len) == 0;
+}
+
+static exprtk_value_t rt_stream_map_entries(exprtk_value_t source) {
+    exprtk_value_t values = exprtk_val_list_empty();
+    exprtk_map_iter_t it;
+    exprtk_value_t value;
+
+    if (source.type != EXPRTK_VAL_MAP) return values;
+    it = exprtk_map_iter_begin(&source);
+    while (exprtk_map_iter_next(&it, NULL, &value)) {
+        exprtk_list_push(&values, value);
+    }
+    return values;
+}
+
+static exprtk_value_t rt_stream_string_lines(exprtk_value_t text, mem_pool_t *arena) {
+    exprtk_value_t lines = exprtk_val_list_empty();
+    size_t start = 0;
+
+    if (text.type != EXPRTK_VAL_STRING || !arena) return lines;
+    for (size_t i = 0; i <= text.data.string.len; ++i) {
+        if (i == text.data.string.len || text.data.string.data[i] == '\n') {
+            size_t end = i;
+            char *buf;
+            if (end > start && text.data.string.data[end - 1] == '\r') end--;
+            buf = (char *)mem_alloc(arena, end - start + 1);
+            if (!buf) return lines;
+            memcpy(buf, text.data.string.data + start, end - start);
+            buf[end - start] = '\0';
+            exprtk_list_push(&lines, exprtk_val_str(tstr_v_from_buf(buf, end - start)));
+            start = i + 1;
+        }
+    }
+    return lines;
+}
+
 exprtk_value_t eval_list_method(mc_ctx_t *mc) {
     const char *m = mc->method;
     exprtk_env_t *env = mc->env;
+
+    if (strcmp(m, "stream") == 0)
+        return rt_stream_make(mc->obj);
 
     if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
         return exprtk_val_num((double)mc->obj.data.list.count);
@@ -2426,6 +2490,12 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
 
 exprtk_value_t eval_map_method(mc_ctx_t *mc) {
     const char *m = mc->method;
+
+    if (rt_stream_is_value(mc->obj))
+        return exprtk_stream_member_call(mc->obj, m, mc->argc, mc->args, mc->env, mc->arena);
+
+    if (strcmp(m, "stream") == 0)
+        return rt_stream_make(rt_stream_map_entries(mc->obj));
 
     if (exprtk_map_has(&mc->obj, m)) {
         exprtk_value_t callee = exprtk_map_get(&mc->obj, m);
@@ -2500,6 +2570,9 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
     if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
         return exprtk_val_num((double)mc->obj.data.string.len);
 
+    if (strcmp(m, "stream") == 0)
+        return rt_stream_make(rt_stream_string_lines(mc->obj, mc->arena));
+
     /* Dispatch to registry: string methods expect (this, ...args) */
     size_t call_argc = mc->argc + 1;
     exprtk_value_t *call_args = mc_prepare_call_args(mc, stack_args, 8);
@@ -2570,6 +2643,9 @@ exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
 
     if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
         return exprtk_val_num((double)mc->obj.data.vector.size);
+
+    if (strcmp(m, "stream") == 0)
+        return rt_stream_make(mc->obj);
 
     if (strcmp(m, "push") == 0 && mc->argc > 0 &&
         (mc->args[0].type == EXPRTK_VAL_NUMBER || mc->args[0].type == EXPRTK_VAL_INTEGER)) {

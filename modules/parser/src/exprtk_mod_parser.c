@@ -25,6 +25,16 @@
         }                                                                 \
     } while (0)
 
+typedef struct parser_csv_headers_s {
+    char **names;
+    size_t count;
+    size_t cap;
+} parser_csv_headers_t;
+
+static void parser_csv_headers_free(parser_csv_headers_t *headers);
+static int parser_csv_parse_header_names(exprtk_value_t csv_arg, parser_csv_headers_t *headers);
+static int parser_arg_int(exprtk_value_t value, int *out);
+
 /* Helper: convert string view to C string using scratch arena */
 static inline char *parser_arena_cstr(mem_pool_t *arena, tstr_v sv) {
     char *buf = (char *)mem_alloc(arena, sv.len + 1);
@@ -36,10 +46,18 @@ static inline char *parser_arena_cstr(mem_pool_t *arena, tstr_v sv) {
 }
 
 /* Helper: allocate document handle */
-static int parser_alloc_csv_handle(parser_ctx_t *ctx, turbo_csv_doc_t *doc) {
+static int parser_alloc_csv_handle(parser_ctx_t *ctx, turbo_csv_doc_t *doc,
+                                   parser_csv_headers_t *headers) {
     for (int i = 0; i < PARSER_MAX_DOCS; i++) {
         if (!ctx->csv_docs[i]) {
             ctx->csv_docs[i] = doc;
+            if (headers) {
+                ctx->csv_header_names[i] = headers->names;
+                ctx->csv_header_counts[i] = headers->count;
+                headers->names = NULL;
+                headers->count = 0;
+                headers->cap = 0;
+            }
             return i;
         }
     }
@@ -54,6 +72,50 @@ static void parser_free_csv_handle(parser_ctx_t *ctx, int handle) {
         void *doc = ctx->csv_docs[handle];
         turbo_free_csv(&doc);
         ctx->csv_docs[handle] = NULL;
+    }
+    for (size_t i = 0; i < ctx->csv_header_counts[handle]; i++)
+        free(ctx->csv_header_names[handle][i]);
+    free(ctx->csv_header_names[handle]);
+    ctx->csv_header_names[handle] = NULL;
+    ctx->csv_header_counts[handle] = 0;
+}
+
+static turbo_csv_doc_t *parser_get_csv_handle(parser_ctx_t *ctx, int handle) {
+    if (!ctx || handle < 0 || handle >= PARSER_MAX_DOCS) return NULL;
+    return ctx->csv_docs[handle];
+}
+
+static parser_csv_headers_t parser_get_csv_headers(parser_ctx_t *ctx, int handle) {
+    parser_csv_headers_t headers = {0};
+    if (!ctx || handle < 0 || handle >= PARSER_MAX_DOCS) return headers;
+    headers.names = ctx->csv_header_names[handle];
+    headers.count = ctx->csv_header_counts[handle];
+    headers.cap = ctx->csv_header_counts[handle];
+    return headers;
+}
+
+static int parser_alloc_json_handle(parser_ctx_t *ctx, json_value_t *doc) {
+    if (!ctx || !doc) return -1;
+    for (int i = 0; i < PARSER_MAX_JSON_DOCS; i++) {
+        if (!ctx->json_docs[i]) {
+            ctx->json_docs[i] = doc;
+            return i;
+        }
+    }
+    return -1;
+}
+
+static json_value_t *parser_get_json_handle(parser_ctx_t *ctx, int handle) {
+    if (!ctx || handle < 0 || handle >= PARSER_MAX_JSON_DOCS) return NULL;
+    return ctx->json_docs[handle];
+}
+
+static void parser_free_json_handle(parser_ctx_t *ctx, int handle) {
+    if (!ctx || handle < 0 || handle >= PARSER_MAX_JSON_DOCS) return;
+    if (ctx->json_docs[handle]) {
+        void *doc = ctx->json_docs[handle];
+        turbo_free_json(&doc);
+        ctx->json_docs[handle] = NULL;
     }
 }
 
@@ -91,6 +153,7 @@ static void parser_free_schema_handle(parser_ctx_t *ctx, int handle) {
  */
 static exprtk_value_t fn_csv_parse(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
+    parser_csv_headers_t headers = {0};
     
     if (argc < 1 || args[0].type != EXPRTK_VAL_STRING) {
         return PARSER_ZERO;
@@ -108,10 +171,12 @@ static exprtk_value_t fn_csv_parse(size_t argc, exprtk_value_t *args, void *user
         return PARSER_ZERO;
     }
     
-    int handle = parser_alloc_csv_handle(ud->ctx, doc);
+    if (has_header) (void)parser_csv_parse_header_names(args[0], &headers);
+    int handle = parser_alloc_csv_handle(ud->ctx, doc, &headers);
     if (handle < 0) {
         void *ptr = doc;
         turbo_free_csv(&ptr);
+        parser_csv_headers_free(&headers);
         return PARSER_ZERO;
     }
     
@@ -124,6 +189,7 @@ static exprtk_value_t fn_csv_parse(size_t argc, exprtk_value_t *args, void *user
  */
 static exprtk_value_t fn_csv_parse_file(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
+    parser_csv_headers_t headers = {0};
     
     if (argc < 1 || args[0].type != EXPRTK_VAL_STRING) {
         return PARSER_ZERO;
@@ -169,16 +235,22 @@ static exprtk_value_t fn_csv_parse_file(size_t argc, exprtk_value_t *args, void 
     turbo_csv_doc_t *doc = NULL;
     
     int rc = turbo_parse_csv_opts((const uint8_t *)data, nread, &opts, &doc);
+    if (rc == 0 && doc && has_header) {
+        exprtk_value_t csv_text = exprtk_val_str(tstr_v_from_buf((char *)data, nread));
+        (void)parser_csv_parse_header_names(csv_text, &headers);
+    }
     free(data);
     
     if (rc != 0 || !doc) {
+        parser_csv_headers_free(&headers);
         return PARSER_ZERO;
     }
     
-    int handle = parser_alloc_csv_handle(ud->ctx, doc);
+    int handle = parser_alloc_csv_handle(ud->ctx, doc, &headers);
     if (handle < 0) {
         void *ptr = doc;
         turbo_free_csv(&ptr);
+        parser_csv_headers_free(&headers);
         return PARSER_ZERO;
     }
     
@@ -617,6 +689,51 @@ static int parser_buf_append_char(parser_filter_buf_t *buf, char ch) {
     return parser_buf_append_len(buf, &ch, 1);
 }
 
+static int parser_csv_append_cell(parser_filter_buf_t *buf, const char *text) {
+    const char *p;
+    int quote = 0;
+
+    if (!buf) return 0;
+    if (!text) text = "";
+    for (p = text; *p; ++p) {
+        if (*p == ',' || *p == '"' || *p == '\n' || *p == '\r') {
+            quote = 1;
+            break;
+        }
+    }
+    if (!quote) return parser_buf_append(buf, text);
+    if (!parser_buf_append_char(buf, '"')) return 0;
+    for (p = text; *p; ++p) {
+        if (*p == '"' && !parser_buf_append_char(buf, '"')) return 0;
+        if (!parser_buf_append_char(buf, *p)) return 0;
+    }
+    return parser_buf_append_char(buf, '"');
+}
+
+static int parser_csv_append_doc_row(parser_filter_buf_t *buf, turbo_csv_doc_t *doc,
+                                     size_t row, size_t cols) {
+    if (!buf || !doc) return 0;
+    for (size_t col = 0; col < cols; ++col) {
+        const char *cell;
+        if (col > 0 && !parser_buf_append_char(buf, ',')) return 0;
+        cell = turbo_csv_get(doc, row, col);
+        if (!parser_csv_append_cell(buf, cell ? cell : "")) return 0;
+    }
+    return 1;
+}
+
+static int parser_csv_append_header_row(parser_filter_buf_t *buf,
+                                        const parser_csv_headers_t *headers,
+                                        size_t cols) {
+    if (!buf || !headers || headers->count == 0) return 0;
+    for (size_t col = 0; col < cols; ++col) {
+        const char *cell = col < headers->count ? headers->names[col] : "";
+        if (col > 0 && !parser_buf_append_char(buf, ',')) return 0;
+        if (!parser_csv_append_cell(buf, cell ? cell : "")) return 0;
+    }
+    return 1;
+}
+
 static int parser_buf_append_fmt(parser_filter_buf_t *buf, const char *fmt, ...) {
     va_list ap;
     va_list ap2;
@@ -651,12 +768,6 @@ static exprtk_value_t parser_buf_to_string(parser_filter_buf_t *buf, exprtk_env_
     memcpy(copy, buf->data, buf->len + 1);
     return exprtk_val_str(tstr_v_from_buf(copy, buf->len));
 }
-
-typedef struct {
-    char **names;
-    size_t count;
-    size_t cap;
-} parser_csv_headers_t;
 
 typedef struct {
     size_t *values;
@@ -997,6 +1108,53 @@ static exprtk_value_t fn_csv_filter_inline(size_t argc, exprtk_value_t *args, vo
     }
 
     free(out.data);
+    parser_free_csv_doc(doc);
+    return result;
+}
+
+static exprtk_value_t fn_csv_filter_table_inline(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    parser_csv_headers_t headers = {0};
+    parser_filter_buf_t out = {0};
+    exprtk_value_t result = exprtk_val_str(tstr_v_from_buf("", 0));
+    turbo_csv_doc_t *doc;
+    char *expr;
+    size_t rows;
+    size_t cols;
+    int wrote_row = 0;
+
+    if (!ud || !ud->env || argc < 2) return result;
+
+    doc = parser_parse_csv_string(args[0]);
+    expr = parser_filter_expr_cstr(ud, args[1]);
+    if (!doc || !expr || !parser_csv_parse_header_names(args[0], &headers)) {
+        parser_free_csv_doc(doc);
+        parser_csv_headers_free(&headers);
+        return result;
+    }
+
+    rows = turbo_csv_row_count(doc);
+    cols = turbo_csv_column_count(doc);
+    if (cols > 0 && parser_csv_append_header_row(&out, &headers, cols)) {
+        wrote_row = 1;
+        for (size_t row = 0; row < rows; ++row) {
+            if (!parser_csv_filter_row_matches(doc, row, expr)) continue;
+            if (wrote_row && !parser_buf_append_char(&out, '\n')) break;
+            if (!parser_csv_append_doc_row(&out, doc, row, cols)) break;
+            wrote_row = 1;
+        }
+    }
+
+    if (out.data) {
+        char *buf = (char *)mem_alloc(&ud->env->arena, out.len + 1);
+        if (buf) {
+            memcpy(buf, out.data, out.len + 1);
+            result = exprtk_val_str(tstr_v_from_buf(buf, out.len));
+        }
+    }
+
+    free(out.data);
+    parser_csv_headers_free(&headers);
     parser_free_csv_doc(doc);
     return result;
 }
@@ -1980,11 +2138,6 @@ static exprtk_value_t parser_bind_csv_row(Node *schema_root, Node *record, turbo
     return parser_null();
 }
 
-static int parser_bind_args_valid(size_t argc, exprtk_value_t *args, size_t type_index) {
-    return argc > type_index && args[0].type == EXPRTK_VAL_STRING &&
-           args[1].type == EXPRTK_VAL_STRING && args[type_index].type == EXPRTK_VAL_STRING;
-}
-
 static int parser_arg_int(exprtk_value_t value, int *out) {
     if (!out) return 0;
     if (value.type == EXPRTK_VAL_INTEGER) {
@@ -1998,90 +2151,58 @@ static int parser_arg_int(exprtk_value_t value, int *out) {
     return 0;
 }
 
-static exprtk_value_t parser_json_bind_with_schema(parser_ud_t *ud, Node *schema_root,
-                                                   exprtk_value_t json_arg,
-                                                   exprtk_value_t type_arg) {
-    json_value_t *json = NULL;
-    void *json_ptr = NULL;
+static exprtk_value_t parser_json_bind_doc_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                       json_value_t *json,
+                                                       exprtk_value_t type_arg) {
     exprtk_value_t result = parser_null();
     char *type_name;
 
-    if (!ud || !ud->env || !schema_root || json_arg.type != EXPRTK_VAL_STRING ||
-        type_arg.type != EXPRTK_VAL_STRING) {
+    if (!ud || !ud->env || !schema_root || !json || type_arg.type != EXPRTK_VAL_STRING)
         return result;
-    }
-
     type_name = parser_arena_cstr(ud->scratch, type_arg.data.string);
-    if (!type_name) return result;
-    if (!parser_type_supported(schema_root, type_name))
-        return result;
-
-    if (turbo_parse_json((const uint8_t *)json_arg.data.string.data,
-                         json_arg.data.string.len, &json) != 0 || !json) {
-        return result;
-    }
-    result = parser_bind_json_typed_value(schema_root, type_name, json, ud->env);
-
-    json_ptr = json;
-    turbo_free_json(&json_ptr);
-    return result;
+    if (!type_name || !parser_type_supported(schema_root, type_name)) return result;
+    return parser_bind_json_typed_value(schema_root, type_name, json, ud->env);
 }
 
-static exprtk_value_t parser_json_bind_all_with_schema(parser_ud_t *ud, Node *schema_root,
-                                                       exprtk_value_t json_arg,
-                                                       exprtk_value_t type_arg) {
-    json_value_t *json = NULL;
-    void *json_ptr = NULL;
+static exprtk_value_t parser_json_bind_all_doc_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                           json_value_t *json,
+                                                           exprtk_value_t type_arg) {
     exprtk_value_t result = exprtk_val_list_empty();
     char *type_name;
 
-    if (!ud || !ud->env || !schema_root || json_arg.type != EXPRTK_VAL_STRING ||
-        type_arg.type != EXPRTK_VAL_STRING) {
+    if (!ud || !ud->env || !schema_root || !json || type_arg.type != EXPRTK_VAL_STRING)
         return result;
-    }
-
     type_name = parser_arena_cstr(ud->scratch, type_arg.data.string);
-    if (!type_name) return result;
-    if (!parser_type_supported(schema_root, type_name))
-        return result;
-
-    if (turbo_parse_json((const uint8_t *)json_arg.data.string.data,
-                         json_arg.data.string.len, &json) != 0 || !json) {
-        return result;
-    }
+    if (!type_name || !parser_type_supported(schema_root, type_name)) return result;
 
     if (turbo_json_type(json) == TURBO_JSON_ARRAY) {
         size_t count = turbo_json_array_size(json);
         for (size_t i = 0; i < count; ++i) {
-            json_value_t *item = turbo_json_array_get(json, i);
-            exprtk_value_t bound = parser_bind_json_typed_value(schema_root, type_name, item, ud->env);
+            exprtk_value_t bound =
+                parser_bind_json_typed_value(schema_root, type_name, turbo_json_array_get(json, i),
+                                             ud->env);
             if (bound.type != EXPRTK_VAL_NULL) exprtk_list_push(&result, bound);
         }
     } else {
         exprtk_value_t bound = parser_bind_json_typed_value(schema_root, type_name, json, ud->env);
         if (bound.type != EXPRTK_VAL_NULL) exprtk_list_push(&result, bound);
     }
-
-    json_ptr = json;
-    turbo_free_json(&json_ptr);
     return result;
 }
 
-static exprtk_value_t parser_csv_bind_with_schema(parser_ud_t *ud, Node *schema_root,
-                                                  exprtk_value_t csv_arg, exprtk_value_t row_arg,
-                                                  exprtk_value_t type_arg) {
+static exprtk_value_t parser_csv_bind_doc_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                      turbo_csv_doc_t *doc,
+                                                      const parser_csv_headers_t *headers,
+                                                      exprtk_value_t row_arg,
+                                                      exprtk_value_t type_arg) {
     Node *record;
     Node *union_node;
     parser_bind_kind_t scalar_kind;
-    turbo_csv_doc_t *doc = NULL;
-    parser_csv_headers_t headers;
     exprtk_value_t result = parser_null();
     char *type_name;
     int row;
 
-    memset(&headers, 0, sizeof(headers));
-
-    if (!ud || !ud->env || !schema_root || csv_arg.type != EXPRTK_VAL_STRING ||
+    if (!ud || !ud->env || !schema_root || !doc || !headers ||
         type_arg.type != EXPRTK_VAL_STRING || !parser_arg_int(row_arg, &row) || row < 0) {
         return result;
     }
@@ -2093,37 +2214,29 @@ static exprtk_value_t parser_csv_bind_with_schema(parser_ud_t *ud, Node *schema_
     scalar_kind = parser_type_kind(schema_root, type_name);
     if (!record && !union_node && scalar_kind == PARSER_BIND_UNSUPPORTED) return result;
 
-    doc = parser_parse_csv_string(csv_arg);
-    if (!doc) return result;
-    (void)parser_csv_parse_header_names(csv_arg, &headers);
     if (record) {
-        result = parser_bind_csv_row(schema_root, record, doc, (size_t)row, ud->env, &headers);
+        result = parser_bind_csv_row(schema_root, record, doc, (size_t)row, ud->env, headers);
     } else if (union_node) {
         (void)parser_bind_csv_union_at_path(schema_root, union_node, doc, (size_t)row,
-                                            ud->env, &headers, "", &result);
+                                            ud->env, headers, "", &result);
     } else {
         (void)parser_bind_csv_scalar_value(schema_root, doc, (size_t)row, type_name,
                                            scalar_kind, ud->env, &result);
     }
-    parser_csv_headers_free(&headers);
-    parser_free_csv_doc(doc);
     return result;
 }
 
-static exprtk_value_t parser_csv_bind_all_with_schema(parser_ud_t *ud, Node *schema_root,
-                                                      exprtk_value_t csv_arg,
-                                                      exprtk_value_t type_arg) {
+static exprtk_value_t parser_csv_bind_all_doc_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                          turbo_csv_doc_t *doc,
+                                                          const parser_csv_headers_t *headers,
+                                                          exprtk_value_t type_arg) {
     Node *record;
     Node *union_node;
     parser_bind_kind_t scalar_kind;
-    turbo_csv_doc_t *doc = NULL;
-    parser_csv_headers_t headers;
     exprtk_value_t result = exprtk_val_list_empty();
     char *type_name;
 
-    memset(&headers, 0, sizeof(headers));
-
-    if (!ud || !ud->env || !schema_root || csv_arg.type != EXPRTK_VAL_STRING ||
+    if (!ud || !ud->env || !schema_root || !doc || !headers ||
         type_arg.type != EXPRTK_VAL_STRING) {
         return result;
     }
@@ -2135,18 +2248,15 @@ static exprtk_value_t parser_csv_bind_all_with_schema(parser_ud_t *ud, Node *sch
     scalar_kind = parser_type_kind(schema_root, type_name);
     if (!record && !union_node && scalar_kind == PARSER_BIND_UNSUPPORTED) return result;
 
-    doc = parser_parse_csv_string(csv_arg);
-    if (!doc) return result;
-    (void)parser_csv_parse_header_names(csv_arg, &headers);
     for (size_t i = 0; i < turbo_csv_row_count(doc); ++i) {
         if (record) {
-            exprtk_value_t item = parser_bind_csv_row(schema_root, record, doc, i, ud->env, &headers);
+            exprtk_value_t item = parser_bind_csv_row(schema_root, record, doc, i, ud->env, headers);
             if (item.type != EXPRTK_VAL_NULL) exprtk_list_push(&result, item);
         } else {
             exprtk_value_t item = parser_null();
             if (union_node) {
                 if (parser_bind_csv_union_at_path(schema_root, union_node, doc, i, ud->env,
-                                                  &headers, "", &item))
+                                                  headers, "", &item))
                     exprtk_list_push(&result, item);
             } else if (parser_bind_csv_scalar_value(schema_root, doc, i, type_name,
                                                     scalar_kind, ud->env, &item)) {
@@ -2154,8 +2264,91 @@ static exprtk_value_t parser_csv_bind_all_with_schema(parser_ud_t *ud, Node *sch
             }
         }
     }
+    return result;
+}
+
+static exprtk_value_t parser_json_bind_text_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                        exprtk_value_t json_arg,
+                                                        exprtk_value_t type_arg) {
+    json_value_t *json = NULL;
+    exprtk_value_t result = parser_null();
+    void *ptr;
+
+    if (!ud || !schema_root || json_arg.type != EXPRTK_VAL_STRING) return result;
+    if (turbo_parse_json((const uint8_t *)json_arg.data.string.data,
+                         json_arg.data.string.len, &json) != 0 || !json) {
+        return result;
+    }
+    result = parser_json_bind_doc_with_schema(ud, schema_root, json, type_arg);
+    ptr = json;
+    turbo_free_json(&ptr);
+    return result;
+}
+
+static exprtk_value_t parser_json_bind_all_text_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                            exprtk_value_t json_arg,
+                                                            exprtk_value_t type_arg) {
+    json_value_t *json = NULL;
+    exprtk_value_t result = exprtk_val_list_empty();
+    void *ptr;
+
+    if (!ud || !schema_root || json_arg.type != EXPRTK_VAL_STRING) return result;
+    if (turbo_parse_json((const uint8_t *)json_arg.data.string.data,
+                         json_arg.data.string.len, &json) != 0 || !json) {
+        return result;
+    }
+    result = parser_json_bind_all_doc_with_schema(ud, schema_root, json, type_arg);
+    ptr = json;
+    turbo_free_json(&ptr);
+    return result;
+}
+
+static exprtk_value_t parser_csv_bind_text_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                       exprtk_value_t csv_arg,
+                                                       exprtk_value_t row_arg,
+                                                       exprtk_value_t type_arg) {
+    turbo_csv_doc_t *doc = NULL;
+    parser_csv_headers_t headers = {0};
+    turbo_csv_options_t opts = {true, ',', '"', true};
+    exprtk_value_t result = parser_null();
+    void *ptr;
+
+    if (!ud || !schema_root || csv_arg.type != EXPRTK_VAL_STRING) return result;
+    if (turbo_parse_csv_opts((const uint8_t *)csv_arg.data.string.data,
+                             csv_arg.data.string.len, &opts, &doc) != 0 || !doc) {
+        return result;
+    }
+    if (parser_csv_parse_header_names(csv_arg, &headers)) {
+        result = parser_csv_bind_doc_with_schema(ud, schema_root, doc, &headers,
+                                                 row_arg, type_arg);
+    }
     parser_csv_headers_free(&headers);
-    parser_free_csv_doc(doc);
+    ptr = doc;
+    turbo_free_csv(&ptr);
+    return result;
+}
+
+static exprtk_value_t parser_csv_bind_all_text_with_schema(parser_ud_t *ud, Node *schema_root,
+                                                           exprtk_value_t csv_arg,
+                                                           exprtk_value_t type_arg) {
+    turbo_csv_doc_t *doc = NULL;
+    parser_csv_headers_t headers = {0};
+    turbo_csv_options_t opts = {true, ',', '"', true};
+    exprtk_value_t result = exprtk_val_list_empty();
+    void *ptr;
+
+    if (!ud || !schema_root || csv_arg.type != EXPRTK_VAL_STRING) return result;
+    if (turbo_parse_csv_opts((const uint8_t *)csv_arg.data.string.data,
+                             csv_arg.data.string.len, &opts, &doc) != 0 || !doc) {
+        return result;
+    }
+    if (parser_csv_parse_header_names(csv_arg, &headers)) {
+        result = parser_csv_bind_all_doc_with_schema(ud, schema_root, doc, &headers,
+                                                     type_arg);
+    }
+    parser_csv_headers_free(&headers);
+    ptr = doc;
+    turbo_free_csv(&ptr);
     return result;
 }
 
@@ -5009,54 +5202,45 @@ static exprtk_value_t fn_schema_layout(size_t argc, exprtk_value_t *args, void *
  * ========================================================================= */
 
 /**
- * parser.json_query(json: string, key: string) -> string
- * 查询JSON对象字段
+ * parser.json_query(json: string, jsonpath: string) -> any
+ * Query JSON with TurboNet JSONPath. Multiple matches are returned as a list.
  */
 static exprtk_value_t fn_json_query(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
+    turbo_json_path_result_t *matches = NULL;
+    exprtk_value_t result = parser_null();
     
-    if (argc < 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
-        return PARSER_ZERO;
+    if (!ud || !ud->env || argc < 2 ||
+        args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
+        return result;
     }
     
     tstr_v json_sv = args[0].data.string;
-    char *key = parser_arena_cstr(ud->scratch, args[1].data.string);
-    if (!key) return PARSER_ZERO;
+    char *jsonpath = parser_arena_cstr(ud->scratch, args[1].data.string);
+    if (!jsonpath) return result;
     
     json_value_t *root = NULL;
     int rc = turbo_parse_json((const uint8_t *)json_sv.data, json_sv.len, &root);
     
     if (rc != 0 || !root) {
-        return PARSER_ZERO;
+        return result;
     }
-    
-    json_value_t *val = turbo_json_object_get(root, key);
-    exprtk_value_t result = PARSER_ZERO;
-    
-    if (val) {
-        switch (turbo_json_type(val)) {
-            case TURBO_JSON_STRING: {
-                const char *s = turbo_json_string(val);
-                if (s) {
-                    size_t len = strlen(s);
-                    char *buf = (char *)mem_alloc(ud->scratch, len + 1);
-                    if (buf) {
-                        memcpy(buf, s, len);
-                        buf[len] = '\0';
-                        result = exprtk_val_str(tstr_v_from_buf(buf, len));
-                    }
-                }
-                break;
+
+    matches = turbo_json_path_query(root, jsonpath);
+    if (matches) {
+        size_t count = turbo_json_path_result_size(matches);
+        if (count == 1) {
+            result = parser_json_value_to_expr(ud->env, turbo_json_path_result_get(matches, 0));
+        } else if (count > 1) {
+            exprtk_value_t list = exprtk_val_list_empty();
+            for (size_t i = 0; i < count; ++i) {
+                exprtk_list_push(&list,
+                                 parser_json_value_to_expr(
+                                     ud->env, turbo_json_path_result_get(matches, i)));
             }
-            case TURBO_JSON_NUMBER:
-                result = exprtk_val_num(turbo_json_number(val));
-                break;
-            case TURBO_JSON_BOOL:
-                result = exprtk_val_num(turbo_json_bool(val) ? 1.0 : 0.0);
-                break;
-            default:
-                break;
+            result = list;
         }
+        turbo_json_path_result_free(matches);
     }
     
     void *ptr = root;
@@ -5066,22 +5250,24 @@ static exprtk_value_t fn_json_query(size_t argc, exprtk_value_t *args, void *use
 }
 
 /**
- * parser.json_query_num(json: string, key: string, [default: number]) -> number
- * 查询JSON数值字段
+ * parser.json_query_num(json: string, jsonpath: string, [default: number]) -> number
+ * Query the first JSONPath match as a number.
  */
 static exprtk_value_t fn_json_query_num(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
+    turbo_json_path_result_t *matches = NULL;
     
-    if (argc < 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
+    if (!ud || argc < 2 || args[0].type != EXPRTK_VAL_STRING ||
+        args[1].type != EXPRTK_VAL_STRING) {
         return PARSER_ZERO;
     }
     
     tstr_v json_sv = args[0].data.string;
-    char *key = parser_arena_cstr(ud->scratch, args[1].data.string);
-    if (!key) return PARSER_ZERO;
+    char *jsonpath = parser_arena_cstr(ud->scratch, args[1].data.string);
+    if (!jsonpath) return PARSER_ZERO;
     
-    double default_val = (argc >= 3 && args[2].type == EXPRTK_VAL_NUMBER) 
-                         ? args[2].data.number : 0.0;
+    double default_val = 0.0;
+    if (argc >= 3) parser_value_as_number(args[2], &default_val);
     
     json_value_t *root = NULL;
     int rc = turbo_parse_json((const uint8_t *)json_sv.data, json_sv.len, &root);
@@ -5090,7 +5276,10 @@ static exprtk_value_t fn_json_query_num(size_t argc, exprtk_value_t *args, void 
         return exprtk_val_num(default_val);
     }
     
-    json_value_t *val = turbo_json_object_get(root, key);
+    matches = turbo_json_path_query(root, jsonpath);
+    json_value_t *val = matches && turbo_json_path_result_size(matches) > 0
+                            ? turbo_json_path_result_get(matches, 0)
+                            : NULL;
     double result_val = default_val;
     
     if (val) {
@@ -5105,6 +5294,8 @@ static exprtk_value_t fn_json_query_num(size_t argc, exprtk_value_t *args, void 
                 break;
         }
     }
+
+    if (matches) turbo_json_path_result_free(matches);
     
     void *ptr = root;
     turbo_free_json(&ptr);
@@ -5163,22 +5354,53 @@ static exprtk_value_t fn_json_to_vec(size_t argc, exprtk_value_t *args, void *us
 
 /**
  * json.parse(json: string) -> map|list|string|number|null
- * Parse JSON into native TurboScript container values.
+ * Parse JSON and return native TurboScript values.
  */
 static exprtk_value_t fn_json_parse(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     json_value_t *root = NULL;
+    exprtk_value_t result;
     void *ptr;
-    exprtk_value_t result = parser_null();
 
-    if (!ud || !ud->env || argc < 1 || args[0].type != EXPRTK_VAL_STRING) return result;
+    if (!ud || !ud->env || argc != 1 || args[0].type != EXPRTK_VAL_STRING)
+        return parser_null();
     if (turbo_parse_json((const uint8_t *)args[0].data.string.data,
-                         args[0].data.string.len, &root) == 0 && root) {
-        result = parser_json_value_to_expr(ud->env, root);
+                         args[0].data.string.len, &root) != 0 || !root) {
+        return parser_null();
     }
+    result = parser_json_value_to_expr(ud->env, root);
     ptr = root;
-    if (ptr) turbo_free_json(&ptr);
+    turbo_free_json(&ptr);
     return result;
+}
+
+/**
+ * json.value(handle: int) -> map|list|string|number|null
+ * Convert a parsed JSON document handle into native TurboScript values.
+ */
+static exprtk_value_t fn_json_value(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    int handle;
+    json_value_t *root;
+
+    if (!ud || !ud->env || !ud->ctx || argc != 1 || !parser_arg_int(args[0], &handle))
+        return parser_null();
+    root = parser_get_json_handle(ud->ctx, handle);
+    if (!root) return parser_null();
+    return parser_json_value_to_expr(ud->env, root);
+}
+
+/**
+ * json.close(handle: int) -> number
+ */
+static exprtk_value_t fn_json_close(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    int handle;
+
+    if (!ud || !ud->ctx || argc != 1 || !parser_arg_int(args[0], &handle))
+        return PARSER_ZERO;
+    parser_free_json_handle(ud->ctx, handle);
+    return PARSER_ZERO;
 }
 
 /**
@@ -5195,6 +5417,133 @@ static exprtk_value_t fn_json_stringify(size_t argc, exprtk_value_t *args, void 
         result = parser_buf_to_string(&out, ud->env);
     free(out.data);
     return result;
+}
+
+/* =========================================================================
+ * XML Functions
+ * ========================================================================= */
+
+static exprtk_value_t parser_xml_node_to_map(parser_ud_t *ud,
+                                             const turbo_xml_xpath_node_t *node) {
+    exprtk_value_t item = exprtk_val_map();
+    const char *type;
+    const char *name;
+    const char *text;
+    char *xml;
+
+    if (!ud || !ud->env || !node) return item;
+
+    type = turbo_xml_xpath_node_type_name(node);
+    name = turbo_xml_xpath_node_name(node);
+    text = turbo_xml_xpath_node_text(node);
+    exprtk_map_set(&item, "type", parser_string_value(ud->env, type ? type : ""));
+    exprtk_map_set(&item, "name", parser_string_value(ud->env, name ? name : ""));
+    exprtk_map_set(&item, "text", parser_string_value(ud->env, text ? text : ""));
+
+    xml = turbo_xml_xpath_node_xml_dup(node);
+    exprtk_map_set(&item, "xml", parser_string_value(ud->env, xml ? xml : ""));
+    turbo_xml_string_free(xml);
+    return item;
+}
+
+/**
+ * xml.query(xml: string, xpath: string) -> list<map>
+ * Query XML nodes with XPath 1.0 and return native maps.
+ */
+static exprtk_value_t fn_xml_query(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    exprtk_value_t result = exprtk_val_list_empty();
+    turbo_xml_doc_t *doc = NULL;
+    turbo_xml_list_t nodes;
+    char *xpath;
+
+    if (!ud || !ud->env || argc != 2 ||
+        args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
+        return result;
+    }
+
+    xpath = parser_arena_cstr(ud->scratch, args[1].data.string);
+    if (!xpath) return result;
+
+    if (turbo_parse_xml((const uint8_t *)args[0].data.string.data,
+                        args[0].data.string.len, &doc) != 0 || !doc) {
+        return result;
+    }
+
+    turbo_xml_xpath_query(doc, xpath, &nodes);
+    turbo_xml_for(node, &nodes) {
+        exprtk_list_push(&result,
+                         parser_xml_node_to_map(ud, (const turbo_xml_xpath_node_t *)node));
+    }
+    turbo_xml_list_free(&nodes);
+    {
+        void *ptr = doc;
+        turbo_free_xml(&ptr);
+    }
+    return result;
+}
+
+/**
+ * xml.text(xml: string, xpath: string) -> string
+ * Return textual value of the first XPath match.
+ */
+static exprtk_value_t fn_xml_text(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    turbo_xml_doc_t *doc = NULL;
+    exprtk_value_t result = exprtk_val_str(tstr_v_from_buf("", 0));
+    char *xpath;
+    const char *text;
+
+    if (!ud || !ud->env || argc != 2 ||
+        args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
+        return result;
+    }
+
+    xpath = parser_arena_cstr(ud->scratch, args[1].data.string);
+    if (!xpath) return result;
+
+    if (turbo_parse_xml((const uint8_t *)args[0].data.string.data,
+                        args[0].data.string.len, &doc) != 0 || !doc) {
+        return result;
+    }
+
+    text = turbo_xml_xpath_text(doc, xpath);
+    result = parser_string_value(ud->env, text ? text : "");
+    {
+        void *ptr = doc;
+        turbo_free_xml(&ptr);
+    }
+    return result;
+}
+
+/**
+ * xml.count(xml: string, xpath: string) -> number
+ */
+static exprtk_value_t fn_xml_count(size_t argc, exprtk_value_t *args, void *user_data) {
+    parser_ud_t *ud = (parser_ud_t *)user_data;
+    turbo_xml_doc_t *doc = NULL;
+    char *xpath;
+    size_t count;
+
+    if (!ud || argc != 2 ||
+        args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING) {
+        return PARSER_ZERO;
+    }
+
+    xpath = parser_arena_cstr(ud->scratch, args[1].data.string);
+    if (!xpath) return PARSER_ZERO;
+
+    if (turbo_parse_xml((const uint8_t *)args[0].data.string.data,
+                        args[0].data.string.len, &doc) != 0 || !doc) {
+        return PARSER_ZERO;
+    }
+
+    count = turbo_xml_xpath_count(doc, xpath);
+    {
+        void *ptr = doc;
+        turbo_free_xml(&ptr);
+    }
+    return exprtk_val_num((double)count);
 }
 
 static exprtk_value_t parser_datetime_to_map(exprtk_env_t *env, const turbo_datetime_t *dt) {
@@ -5314,18 +5663,18 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
 
 /**
  * json.bind(schema: string, json: string, type: string) -> map
- * Bind a JSON object to a TBE message/composite shape.
+ * Bind a JSON document string to a TBE schema string.
  */
 static exprtk_value_t fn_json_bind(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     Node *schema_root = NULL;
     exprtk_value_t result = parser_null();
 
-    if (!ud || !ud->env || !parser_bind_args_valid(argc, args, 2)) return result;
-
+    if (!ud || argc != 3 || args[0].type != EXPRTK_VAL_STRING)
+        return parser_null();
     schema_root = parser_parse_schema_value(args[0]);
-    if (!schema_root) return result;
-    result = parser_json_bind_with_schema(ud, schema_root, args[1], args[2]);
+    if (!schema_root) return parser_null();
+    result = parser_json_bind_text_with_schema(ud, schema_root, args[1], args[2]);
     node_free(schema_root);
     return result;
 }
@@ -5335,40 +5684,42 @@ static exprtk_value_t fn_json_bind(size_t argc, exprtk_value_t *args, void *user
  */
 static exprtk_value_t fn_json_bind_schema(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
-    int handle;
+    int schema_handle;
 
-    if (!ud || argc != 3 || !parser_arg_int(args[0], &handle))
+    if (!ud || argc != 3 || !parser_arg_int(args[0], &schema_handle))
         return parser_null();
-    return parser_json_bind_with_schema(ud, parser_get_schema_handle(ud->ctx, handle), args[1], args[2]);
+    return parser_json_bind_text_with_schema(
+        ud, parser_get_schema_handle(ud->ctx, schema_handle), args[1], args[2]);
 }
 
 /**
- * json.bind_all(schema: string, json_array: string, type: string) -> list<map>
+ * json.bind_all(schema: string, json: string, type: string) -> list<map>
  */
 static exprtk_value_t fn_json_bind_all(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     Node *schema_root = NULL;
     exprtk_value_t result = exprtk_val_list_empty();
 
-    if (!ud || !ud->env || !parser_bind_args_valid(argc, args, 2)) return result;
-
+    if (!ud || argc != 3 || args[0].type != EXPRTK_VAL_STRING)
+        return exprtk_val_list_empty();
     schema_root = parser_parse_schema_value(args[0]);
-    if (!schema_root) return result;
-    result = parser_json_bind_all_with_schema(ud, schema_root, args[1], args[2]);
+    if (!schema_root) return exprtk_val_list_empty();
+    result = parser_json_bind_all_text_with_schema(ud, schema_root, args[1], args[2]);
     node_free(schema_root);
     return result;
 }
 
 /**
- * json.bind_all_schema(schema_handle: number, json_array: string, type: string) -> list<map>
+ * json.bind_all_schema(schema_handle: number, json: string, type: string) -> list<map>
  */
 static exprtk_value_t fn_json_bind_all_schema(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
-    int handle;
+    int schema_handle;
 
-    if (!ud || argc != 3 || !parser_arg_int(args[0], &handle))
+    if (!ud || argc != 3 || !parser_arg_int(args[0], &schema_handle))
         return exprtk_val_list_empty();
-    return parser_json_bind_all_with_schema(ud, parser_get_schema_handle(ud->ctx, handle), args[1], args[2]);
+    return parser_json_bind_all_text_with_schema(
+        ud, parser_get_schema_handle(ud->ctx, schema_handle), args[1], args[2]);
 }
 
 /**
@@ -5485,11 +5836,11 @@ static exprtk_value_t fn_csv_bind(size_t argc, exprtk_value_t *args, void *user_
     Node *schema_root = NULL;
     exprtk_value_t result = parser_null();
 
-    if (!ud || !ud->env || !parser_bind_args_valid(argc, args, 3)) return result;
-
+    if (!ud || argc != 4 || args[0].type != EXPRTK_VAL_STRING)
+        return parser_null();
     schema_root = parser_parse_schema_value(args[0]);
-    if (!schema_root) return result;
-    result = parser_csv_bind_with_schema(ud, schema_root, args[1], args[2], args[3]);
+    if (!schema_root) return parser_null();
+    result = parser_csv_bind_text_with_schema(ud, schema_root, args[1], args[2], args[3]);
     node_free(schema_root);
     return result;
 }
@@ -5499,12 +5850,12 @@ static exprtk_value_t fn_csv_bind(size_t argc, exprtk_value_t *args, void *user_
  */
 static exprtk_value_t fn_csv_bind_schema(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
-    int handle;
+    int schema_handle;
 
-    if (!ud || argc != 4 || !parser_arg_int(args[0], &handle))
+    if (!ud || argc != 4 || !parser_arg_int(args[0], &schema_handle))
         return parser_null();
-    return parser_csv_bind_with_schema(ud, parser_get_schema_handle(ud->ctx, handle),
-                                       args[1], args[2], args[3]);
+    return parser_csv_bind_text_with_schema(
+        ud, parser_get_schema_handle(ud->ctx, schema_handle), args[1], args[2], args[3]);
 }
 
 /**
@@ -5515,11 +5866,11 @@ static exprtk_value_t fn_csv_bind_all(size_t argc, exprtk_value_t *args, void *u
     Node *schema_root = NULL;
     exprtk_value_t result = exprtk_val_list_empty();
 
-    if (!ud || !ud->env || !parser_bind_args_valid(argc, args, 2)) return result;
-
+    if (!ud || argc != 3 || args[0].type != EXPRTK_VAL_STRING)
+        return exprtk_val_list_empty();
     schema_root = parser_parse_schema_value(args[0]);
-    if (!schema_root) return result;
-    result = parser_csv_bind_all_with_schema(ud, schema_root, args[1], args[2]);
+    if (!schema_root) return exprtk_val_list_empty();
+    result = parser_csv_bind_all_text_with_schema(ud, schema_root, args[1], args[2]);
     node_free(schema_root);
     return result;
 }
@@ -5529,12 +5880,12 @@ static exprtk_value_t fn_csv_bind_all(size_t argc, exprtk_value_t *args, void *u
  */
 static exprtk_value_t fn_csv_bind_all_schema(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
-    int handle;
+    int schema_handle;
 
-    if (!ud || argc != 3 || !parser_arg_int(args[0], &handle))
+    if (!ud || argc != 3 || !parser_arg_int(args[0], &schema_handle))
         return exprtk_val_list_empty();
-    return parser_csv_bind_all_with_schema(ud, parser_get_schema_handle(ud->ctx, handle),
-                                           args[1], args[2]);
+    return parser_csv_bind_all_text_with_schema(
+        ud, parser_get_schema_handle(ud->ctx, schema_handle), args[1], args[2]);
 }
 
 /**
@@ -5691,6 +6042,7 @@ void parser_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "csv.col", fn_csv_col_inline, ud);
     exprtk_env_register_func(env, "csv.filter_count", fn_csv_filter_count_inline, ud);
     exprtk_env_register_func(env, "csv.filter", fn_csv_filter_inline, ud);
+    exprtk_env_register_func(env, "csv.filter_table", fn_csv_filter_table_inline, ud);
     exprtk_env_register_func(env, "csv.write", fn_csv_write_inline, ud);
     exprtk_env_register_func(env, "csv.bind", fn_csv_bind, ud);
     exprtk_env_register_func(env, "csv.bind_all", fn_csv_bind_all, ud);
@@ -5709,11 +6061,15 @@ void parser_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "parser.json_to_vec", fn_json_to_vec, ud);
     exprtk_env_register_func(env, "parser.json_parse", fn_json_parse, ud);
     exprtk_env_register_func(env, "parser.json_stringify", fn_json_stringify, ud);
+    exprtk_env_register_func(env, "parser.json_value", fn_json_value, ud);
+    exprtk_env_register_func(env, "parser.json_close", fn_json_close, ud);
     exprtk_env_register_func(env, "json.query", fn_json_query, ud);
     exprtk_env_register_func(env, "json.query_num", fn_json_query_num, ud);
     exprtk_env_register_func(env, "json.to_vec", fn_json_to_vec, ud);
     exprtk_env_register_func(env, "json.parse", fn_json_parse, ud);
     exprtk_env_register_func(env, "json.stringify", fn_json_stringify, ud);
+    exprtk_env_register_func(env, "json.value", fn_json_value, ud);
+    exprtk_env_register_func(env, "json.close", fn_json_close, ud);
     exprtk_env_register_func(env, "json.bind", fn_json_bind, ud);
     exprtk_env_register_func(env, "json.bind_all", fn_json_bind_all, ud);
     exprtk_env_register_func(env, "json.bind_schema", fn_json_bind_schema, ud);
@@ -5724,6 +6080,14 @@ void parser_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "json.validate_schema", fn_json_validate_schema, ud);
     exprtk_env_register_func(env, "json.validate_ex", fn_json_validate_ex, ud);
     exprtk_env_register_func(env, "json.validate_ex_schema", fn_json_validate_ex_schema, ud);
+
+    /* Register XML functions */
+    exprtk_env_register_func(env, "parser.xml_query", fn_xml_query, ud);
+    exprtk_env_register_func(env, "parser.xml_text", fn_xml_text, ud);
+    exprtk_env_register_func(env, "parser.xml_count", fn_xml_count, ud);
+    exprtk_env_register_func(env, "xml.query", fn_xml_query, ud);
+    exprtk_env_register_func(env, "xml.text", fn_xml_text, ud);
+    exprtk_env_register_func(env, "xml.count", fn_xml_count, ud);
 
     /* Register datetime parser functions */
     exprtk_env_register_func(env, "parser.datetime_parse", fn_datetime_parse, ud);

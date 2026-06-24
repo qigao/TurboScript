@@ -1684,6 +1684,7 @@ static void ts_emit_sync_var_to_env(ts_mir_compiler_t *c, const char *name) {
   if (!c || !name) return;
 
   for (int i = 0; i < c->var_count; i++) {
+    if (c->vars[i]->dynamic_value) continue;
     if (!c->vars[i]->dirty || strcmp(c->vars[i]->name, name) != 0) continue;
 
     MIR_append_insn(c->ctx, c->func,
@@ -1700,6 +1701,7 @@ static void ts_emit_sync_var_to_env(ts_mir_compiler_t *c, const char *name) {
 static void ts_emit_sync_to_env(ts_mir_compiler_t *c) {
   // 增量同步：只同步脏变量
   for (int i = 0; i < c->var_count; i++) {
+    if (c->vars[i]->dynamic_value) continue;
     if (!c->vars[i]->dirty) continue;  // 跳过未修改的变量
 
     MIR_append_insn(c->ctx, c->func,
@@ -1714,6 +1716,7 @@ static void ts_emit_sync_to_env(ts_mir_compiler_t *c) {
 
 static void ts_emit_reload_from_env(ts_mir_compiler_t *c) {
   for (int i = 0; i < c->var_count; i++) {
+    if (c->vars[i]->dynamic_value) continue;
     MIR_append_insn(c->ctx, c->func,
                     MIR_new_call_insn(
                         c->ctx, 5, MIR_new_ref_op(c->ctx, c->ext.load_var_proto),
@@ -3094,6 +3097,29 @@ static int ts_is_non_numeric_node(exprtk_node_t *node) {
 
 static int ts_expr_contains_value_call(ts_mir_compiler_t *c, exprtk_node_t *node);
 
+static int ts_member_call_is_stream_chain(exprtk_node_t *node) {
+  if (!node || node->type != EXPRTK_NODE_MEMBER_CALL) return 0;
+  if (node->data.member_call.method &&
+      strcmp(node->data.member_call.method, "stream") == 0) {
+    return 1;
+  }
+  if (node->data.member_call.object &&
+      node->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
+      node->data.member_call.object->data.variable.name &&
+      strcmp(node->data.member_call.object->data.variable.name, "stream") == 0 &&
+      node->data.member_call.method &&
+      (strcmp(node->data.member_call.method, "of") == 0 ||
+       strcmp(node->data.member_call.method, "file") == 0 ||
+       strcmp(node->data.member_call.method, "lines") == 0 ||
+       strcmp(node->data.member_call.method, "text") == 0 ||
+       strcmp(node->data.member_call.method, "json") == 0 ||
+       strcmp(node->data.member_call.method, "xml") == 0 ||
+       strcmp(node->data.member_call.method, "csv") == 0)) {
+    return 1;
+  }
+  return ts_member_call_is_stream_chain(node->data.member_call.object);
+}
+
 static int ts_call_has_spread_args(size_t argc, exprtk_node_t **args) {
   if (!args) return 0;
   for (size_t i = 0; i < argc; ++i) {
@@ -3128,6 +3154,12 @@ static int ts_call_name_needs_value_eval(const char *name) {
          ts_name_starts_with(name, "matrix.") ||
          ts_name_starts_with(name, "linalg.") ||
          ts_name_starts_with(name, "table.") ||
+         ts_name_starts_with(name, "json.") ||
+         ts_name_starts_with(name, "xml.") ||
+         ts_name_starts_with(name, "csv.") ||
+         ts_name_starts_with(name, "parser.json_") ||
+         ts_name_starts_with(name, "parser.xml_") ||
+         ts_name_starts_with(name, "parser.csv_") ||
          ts_name_starts_with(name, "vec.") ||
          ts_name_starts_with(name, "vector_") ||
          ts_name_starts_with(name, "str_") ||
@@ -3212,6 +3244,7 @@ static int ts_expr_contains_value_call(ts_mir_compiler_t *c, exprtk_node_t *node
                                             node->data.function.args);
 
   case EXPRTK_NODE_MEMBER_CALL:
+    if (ts_member_call_is_stream_chain(node)) return 1;
     if (node->data.member_call.object &&
         node->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
         ts_mir_var_is_dynamic(c, node->data.member_call.object->data.variable.name)) {
@@ -3722,6 +3755,10 @@ static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   }
   if (rhs && rhs->type == EXPRTK_NODE_MEMBER_CALL && rhs->data.member_call.object &&
       rhs->data.member_call.method) {
+    if (ts_member_call_is_stream_chain(rhs)) {
+      ts_mir_clear_var_class(c, node->data.assignment.name);
+      return ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+    }
     if (rhs->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
         ts_mir_var_is_dynamic(c, rhs->data.member_call.object->data.variable.name)) {
       ts_mir_clear_var_class(c, node->data.assignment.name);
@@ -3739,7 +3776,7 @@ static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
       char full_name[256];
       snprintf(full_name, sizeof(full_name), "%s.%s",
                rhs->data.member_call.object->data.variable.name, rhs->data.member_call.method);
-      if (ts_resolves_runtime_func(c, full_name)) {
+      if (ts_resolves_runtime_func(c, full_name) || ts_call_name_needs_value_eval(full_name)) {
         char *full_name_copy = strdup(full_name);
         if (!full_name_copy) {
           ts_mir_fail(c, "JIT compile error: out of memory duplicating function name '%s'",
@@ -4983,7 +5020,8 @@ double ts_mir_map_value_assign(void *ctx_ptr, const char *target_name, void *nod
 
     if (!key) continue;
     if (!value_node || !ts_mir_runtime_value_arg(value_node, &ctx->env, &value)) {
-      ts_mir_value_arg_error(&ctx->env, value_node);
+      if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+        ts_mir_value_arg_error(&ctx->env, value_node);
       ts_mir_promote_env_error(ctx);
       exprtk_map_free(&map);
       return 0.0;
@@ -5016,7 +5054,8 @@ double ts_mir_template_assign(void *ctx_ptr, const char *target_name, void *node
     return 0.0;
 
   if (!ts_mir_runtime_value_arg(node, &ctx->env, &val)) {
-    ts_mir_value_arg_error(&ctx->env, node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -5099,7 +5138,15 @@ static int ts_mir_value_array_grow(exprtk_value_t **vals, size_t *cap, size_t ne
 
 static void ts_mir_value_arg_error(exprtk_env_t *env, exprtk_node_t *node) {
   if (!env) return;
+  if (env->error_msg[0] != '\0') return;
   env->aborted = 1;
+  if (node && node->type == EXPRTK_NODE_MEMBER_CALL) {
+    snprintf(env->error_msg, sizeof(env->error_msg),
+             "MIR runtime error: unsupported runtime member call '%s' on node type %d",
+             node->data.member_call.method ? node->data.member_call.method : "<null>",
+             node->data.member_call.object ? (int)node->data.member_call.object->type : -1);
+    return;
+  }
   snprintf(env->error_msg, sizeof(env->error_msg),
            "MIR runtime error: unsupported runtime value node type %d",
            node ? (int)node->type : -1);
@@ -5165,8 +5212,12 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     }
   }
 
-  if (!ts_mir_runtime_value_arg(node->data.binary.left, env, &lhs) ||
-      !ts_mir_runtime_value_arg(node->data.binary.right, env, &rhs)) {
+  if (!ts_mir_runtime_value_arg(node->data.binary.left, env, &lhs)) {
+    ts_mir_value_arg_error(env, node->data.binary.left);
+    return 0;
+  }
+  if (!ts_mir_runtime_value_arg(node->data.binary.right, env, &rhs)) {
+    ts_mir_value_arg_error(env, node->data.binary.right);
     return 0;
   }
 
@@ -5259,6 +5310,12 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     *out = exprtk_val_num(fabs(l) > 1e-9 || fabs(r) > 1e-9 ? 1.0 : 0.0);
     return 1;
   default:
+    if (env) {
+      env->aborted = 1;
+      snprintf(env->error_msg, sizeof(env->error_msg),
+               "MIR runtime error: unsupported runtime binary op %d with value types %d and %d",
+               node->data.binary.op, lhs.type, rhs.type);
+    }
     return 0;
   }
 }
@@ -6486,8 +6543,12 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
                                            node->data.member_access.object, env);
       return !env->aborted;
     }
-    *out = throw_error(env, node, "Member access '%s' is invalid for %s", member,
-                       type_name(object.type));
+    *out = throw_error(env, node,
+                       "Member access '%s' is invalid for %s (receiver node type %d)", member,
+                       type_name(object.type),
+                       node->data.member_access.object
+                           ? (int)node->data.member_access.object->type
+                           : -1);
     return 1;
   }
 
@@ -6531,7 +6592,7 @@ static exprtk_value_t *ts_mir_runtime_call_value_args(exprtk_node_t *call_node, 
     if (arg->type == EXPRTK_NODE_SPREAD) {
       exprtk_value_t spread;
       if (!ts_mir_runtime_value_arg(arg->data.spread.child, env, &spread)) {
-        ts_mir_value_arg_error(env, arg);
+        if (!env->aborted && env->error_msg[0] == '\0') ts_mir_value_arg_error(env, arg);
         free(vals);
         return NULL;
       }
@@ -6566,7 +6627,7 @@ static exprtk_value_t *ts_mir_runtime_call_value_args(exprtk_node_t *call_node, 
       return NULL;
     }
     if (!ts_mir_runtime_value_arg(arg, env, &vals[actual])) {
-      ts_mir_value_arg_error(env, arg);
+      if (!env->aborted && env->error_msg[0] == '\0') ts_mir_value_arg_error(env, arg);
       free(vals);
       return NULL;
     }
@@ -6614,7 +6675,8 @@ double ts_mir_value_expr_assign(void *ctx_ptr, const char *target_name, void *no
 
   if (!ctx || !target_name || !node) return 0.0;
   if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
-    ts_mir_value_arg_error(&ctx->env, node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -6632,7 +6694,8 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
 
   if (!ctx || !node) return 0.0;
   if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
-    ts_mir_value_arg_error(&ctx->env, node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -6647,7 +6710,8 @@ exprtk_value_t turbo_script_mir_eval_node(const exprtk_node_t *node, exprtk_env_
 
   if (!node || !env) return result;
   if (!ts_mir_runtime_value_arg((exprtk_node_t *)node, env, &result)) {
-    ts_mir_value_arg_error(env, (exprtk_node_t *)node);
+    if (!env->aborted && env->error_msg[0] == '\0')
+      ts_mir_value_arg_error(env, (exprtk_node_t *)node);
   }
   return result;
 }
@@ -6659,7 +6723,8 @@ int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_e
   (void)caller_env;
   if (!func || !local_env || !out) return 1;
   if (!ts_mir_runtime_value_arg(func->data.script.body, local_env, &result)) {
-    ts_mir_value_arg_error(local_env, func->data.script.body);
+    if (!local_env->aborted && local_env->error_msg[0] == '\0')
+      ts_mir_value_arg_error(local_env, func->data.script.body);
     result = exprtk_val_num(0.0);
   }
   *out = result;
@@ -6708,7 +6773,8 @@ double ts_mir_await_value(void *ctx_ptr, void *arg_node_ptr) {
 
   if (!ctx || !arg_node) return 0.0;
   if (!ts_mir_eval_await_arg(arg_node, &ctx->env, &value)) {
-    ts_mir_value_arg_error(&ctx->env, arg_node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, arg_node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -6726,7 +6792,8 @@ double ts_mir_await_assign(void *ctx_ptr, const char *target_name, void *arg_nod
 
   if (!ctx || !target_name || !arg_node) return 0.0;
   if (!ts_mir_eval_await_arg(arg_node, &ctx->env, &value)) {
-    ts_mir_value_arg_error(&ctx->env, arg_node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, arg_node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -6766,7 +6833,8 @@ double ts_mir_try_catch_assign(void *ctx_ptr, const char *target_name, void *nod
   if (!ctx || !target_name || !node || node->type != EXPRTK_NODE_TRY_CATCH) return 0.0;
 
   if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
-    ts_mir_value_arg_error(&ctx->env, node);
+    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+      ts_mir_value_arg_error(&ctx->env, node);
     ts_mir_promote_env_error(ctx);
     return 0.0;
   }
@@ -7722,13 +7790,16 @@ static MIR_reg_t ts_compile_expr(ts_mir_compiler_t *c, exprtk_node_t *node) {
   case EXPRTK_NODE_MEMBER_CALL: {
     if (!node->data.member_call.object || !node->data.member_call.method)
       return ts_emit_unsupported_node(c, node);
+    if (ts_member_call_is_stream_chain(node)) {
+      return ts_emit_runtime_value_node(c, node);
+    }
     if (node->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
         node->data.member_call.object->data.variable.name) {
       char full_name[256];
       snprintf(full_name, sizeof(full_name), "%s.%s",
                node->data.member_call.object->data.variable.name,
                node->data.member_call.method);
-      if (ts_resolves_runtime_func(c, full_name)) {
+      if (ts_resolves_runtime_func(c, full_name) || ts_call_name_needs_value_eval(full_name)) {
         return ts_emit_runtime_value_node(c, node);
       }
     }
@@ -8131,6 +8202,7 @@ static void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
       /* Store all variables back to env before returning (skip in compiled functions) */
       if (c->ctx_reg) {
         for (int i = 0; i < c->var_count; i++) {
+          if (c->vars[i]->dynamic_value) continue;
           if (!c->vars[i]->dirty) continue;
           MIR_append_insn(
               c->ctx, c->func,
@@ -8936,6 +9008,7 @@ static void ts_emit_var_prologue(ts_mir_compiler_t *c) {
   /* Prepend load_var calls at the beginning of the function (after func entry).
    * Insert in reverse order so they end up in the correct order. */
   for (int i = c->var_count - 1; i >= 0; i--) {
+    if (c->vars[i]->dynamic_value) continue;
     MIR_prepend_insn(c->ctx, c->func,
                      MIR_new_call_insn(
                          c->ctx, 5, MIR_new_ref_op(c->ctx, c->ext.load_var_proto),
@@ -8950,6 +9023,7 @@ static void ts_emit_var_epilogue(ts_mir_compiler_t *c) {
   /* Only numeric MIR writes are dirty. Helper-evaluated values may be strings,
    * maps, class values, or instances already stored in env. */
   for (int i = 0; i < c->var_count; i++) {
+    if (c->vars[i]->dynamic_value) continue;
     if (!c->vars[i]->dirty) continue;
     MIR_append_insn(c->ctx, c->func,
                     MIR_new_call_insn(c->ctx, 5, MIR_new_ref_op(c->ctx, c->ext.store_var_proto),

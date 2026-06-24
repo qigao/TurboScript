@@ -4,6 +4,9 @@
 
 - `csv.filter(data, expr)`
 - `csv.filter_count(data, expr)`
+- `csv.filter_table(data, expr)`
+- `stream.csv(path).filterExpr(expr)`
+- `stream.csv(path).where(expr)`
 - `turbo_dsv_filter_compile(filter, expr)`
 
 ## 1. 列命名规则

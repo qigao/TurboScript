@@ -10,6 +10,30 @@ target_include_directories(tbe_compiler
                            PRIVATE ${PROJECT_SOURCE_DIR}/shared/utils/include)
 set_target_properties(tbe_compiler PROPERTIES FOLDER tbe/tbe_compiler)
 
+function(tbe_copy_turbonet_runtime_deps target_name)
+  if(WIN32)
+    set(runtime_deps
+        $<TARGET_FILE:TurboNet::Parser>
+        $<TARGET_FILE:TurboNet::Mustache>
+        $<TARGET_FILE:TurboNet::Utils>)
+    if(TARGET aklomp::base64)
+      list(APPEND runtime_deps $<TARGET_FILE:aklomp::base64>)
+    endif()
+
+    add_custom_command(
+      TARGET ${target_name}
+      POST_BUILD
+      COMMAND
+        ${CMAKE_COMMAND} -E copy_if_different
+        ${runtime_deps}
+        $<TARGET_FILE_DIR:${target_name}>
+      COMMENT "Copying TurboNet runtime DLLs for ${target_name}"
+      VERBATIM)
+  endif()
+endfunction()
+
+tbe_copy_turbonet_runtime_deps(tbe_compiler)
+
 # =============================================================================
 # Copy templates next to executable for easy access
 # =============================================================================
@@ -50,3 +74,4 @@ target_compile_definitions(
     C_STRUCT_TEMPLATE_FILE="${CMAKE_CURRENT_SOURCE_DIR}/templates/c_structs.mustache"
 )
 set_target_properties(test_tbe_compiler PROPERTIES FOLDER tbe/tbe_compiler)
+tbe_copy_turbonet_runtime_deps(test_tbe_compiler)

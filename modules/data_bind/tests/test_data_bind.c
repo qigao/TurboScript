@@ -50,6 +50,12 @@ static exprtk_value_t make_str(test_env_t *t, const char *s) {
   return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
 }
 
+static exprtk_value_t make_bytes(test_env_t *t, const uint8_t *data, size_t len) {
+  char *buf = mem_alloc(&t->env.arena, len);
+  if (len > 0) memcpy(buf, data, len);
+  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
+}
+
 static void write_schema(const char *path, const char *content) {
   FILE *f = fopen(path, "w");
   if (f) {
@@ -135,15 +141,10 @@ spec("data_bind_module") {
       buf[17] = 'y';
       write_u32_le(buf, 18, 40);    /* value = 40 (little endian) */
 
-      double d_buf[22];
-      for (int i = 0; i < 22; i++) d_buf[i] = (double)buf[i];
-
-      exprtk_value_t bytes_vec = exprtk_val_vec(d_buf, 22);
-
       exprtk_value_t parse_args[3] = {
         handle,
         make_str(&t, "Attrs"),
-        bytes_vec
+        make_bytes(&t, buf, sizeof(buf))
       };
 
       exprtk_value_t res_map = call_fn(&t, "data_bind.parse", 3, parse_args);

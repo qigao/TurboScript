@@ -1126,6 +1126,35 @@ var prev = lag([10, 20, 30], 1, -1); // [-1, 10, 20]
 - This first cut is intentionally `vector`-only. Generic `list` and `map` pipeline semantics are not defined yet.
 - Because `map` is also the record-literal keyword, the parser has a dedicated function-call path for `map(...)` and `.map(...)`.
 
+### 3.2 Java Stream-Style Chains
+
+Containers and file sources can also use dot-chain stream calls:
+
+```javascript
+var total = stream.csv("trades.csv")
+    .filterExpr("price > 100")
+    .map(r => to_num(r.price) * to_num(r.qty))
+    .reduce(0, (acc, v) => acc + v);
+
+var qty = stream.json("orders.json", "$.orders[*]")
+    .filter(r => r.price > 5)
+    .map(r => r.qty)
+    .reduce(0, (acc, v) => acc + v);
+
+var xml_total = stream.xml("orders.xml", "//price")
+    .filter(n => to_num(n.text) > 5)
+    .map(n => to_num(n.text))
+    .reduce(0, (acc, v) => acc + v);
+```
+
+- `stream.of(x)`, `list.stream()`, `vector.stream()`, `map.stream()`, and `string.stream()` create stream values.
+- File helpers are `stream.lines(path)`, `stream.csv(path[, has_header])`, `stream.json(path[, jsonpath])`, and `stream.xml(path, xpath)`.
+- Chain methods include `filter(fn)`, `filterExpr(expr)`, `where(expr)`, `map(fn)`, `reduce(init, fn)`, `collect()`, `toList()`, `toVector()`, `count()`, and `forEach(fn)`.
+- `filterExpr` / `where` use the CSV filter expression syntax and are intended for `stream.csv(...)`.
+- `stream.json` uses JSONPath when its second argument is provided, for example `$.orders[*]` or `$.orders[@.price > 5]`.
+- `stream.xml` uses XPath 1.0 and yields node maps with `type`, `name`, `text`, and `xml` fields.
+- Current file streams are eagerly materialized into runtime values; they are not incremental backpressure streams yet.
+
 ### 4. Handle Errors Explicitly
 
 ```javascript

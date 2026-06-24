@@ -985,6 +985,35 @@ var result = data
 var result = sum(map(filter(data, x > 0), x => x * 2));
 ```
 
+### 3.1 Java Stream 风格链式调用
+
+容器和文件源也可以使用点号链式 stream API：
+
+```javascript
+var total = stream.csv("trades.csv")
+    .filterExpr("price > 100")
+    .map(r => to_num(r.price) * to_num(r.qty))
+    .reduce(0, (acc, v) => acc + v);
+
+var qty = stream.json("orders.json", "$.orders[*]")
+    .filter(r => r.price > 5)
+    .map(r => r.qty)
+    .reduce(0, (acc, v) => acc + v);
+
+var xml_total = stream.xml("orders.xml", "//price")
+    .filter(n => to_num(n.text) > 5)
+    .map(n => to_num(n.text))
+    .reduce(0, (acc, v) => acc + v);
+```
+
+- `stream.of(x)`、`list.stream()`、`vector.stream()`、`map.stream()` 和 `string.stream()` 创建 stream 值。
+- 文件入口包括 `stream.lines(path)`、`stream.csv(path[, has_header])`、`stream.json(path[, jsonpath])` 和 `stream.xml(path, xpath)`。
+- 链式方法包括 `filter(fn)`、`filterExpr(expr)`、`where(expr)`、`map(fn)`、`reduce(init, fn)`、`collect()`、`toList()`、`toVector()`、`count()` 和 `forEach(fn)`。
+- `filterExpr` / `where` 使用 CSV filter expression 语法，主要用于 `stream.csv(...)`。
+- `stream.json` 在提供第二个参数时使用 JSONPath，例如 `$.orders[*]` 或 `$.orders[@.price > 5]`。
+- `stream.xml` 使用 XPath 1.0，产出包含 `type`、`name`、`text`、`xml` 字段的节点 map。
+- 当前文件 stream 会先物化为运行时值；还不是真正的增量 backpressure stream。
+
 ### 4. 显式处理错误
 
 ```javascript

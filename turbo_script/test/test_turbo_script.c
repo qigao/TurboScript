@@ -161,13 +161,42 @@ spec("turbo_script") {
 
       const char *script = " js = "
                            "\"{\\\"user\\\": \\\"bob\\\", \\\"score\\\": 42}\";"
-                           "res = json.query(js, \"score\");"
-                           "name = json.query(js, \"user\");";
+                           "res = json.query(js, \"$.score\");"
+                           "name = json.query(js, \"$.user\");";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      // res should be something, name should be bob
-      // Note: json_query current impl returns string "42" for score probably,
-      // unless we improved it.
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("JSON query Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "res"), 42.0, 0.001);
+      check_str_eq(ts_get_str(ctx, "name"), "bob");
+
+      turbo_script_free(ctx);
+    }
+
+    it("should support json query paths") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+
+      const char *script =
+          "js = \"{\\\"user\\\":{\\\"name\\\":\\\"bob\\\"},"
+          "\\\"orders\\\":[{\\\"price\\\":10,\\\"qty\\\":2},{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":3}],"
+          "\\\"matrix\\\":[[10,11],[20,21]]}\";"
+          "name = json.query(js, \"$.user.name\");"
+          "qty = json.query_num(js, \"$.orders[1].qty\", -1);"
+          "cell = json.query(js, \"$.matrix[1][0]\");"
+          "filtered = json.query(js, \"$.orders[@.price > 5].qty\");"
+          "filtered_count = filtered.length();"
+          "filtered_total = filtered[0] + filtered[1];"
+          "missing = json.query_num(js, \"$.orders[3].qty\", 99);";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("JSON query path Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_str_eq(ts_get_str(ctx, "name"), "bob");
+      check_float_eq(ts_get_num(ctx, "qty"), 5.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "cell"), 20.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "filtered_count"), 2.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "filtered_total"), 5.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "missing"), 99.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -220,6 +249,36 @@ spec("turbo_script") {
       if (res != 0) printf("JSON invalid parse Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should query XML through XPath into native containers") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var doc = \"<orders><order id=\\\"a\\\"><price>10</price><qty>2</qty></order>"
+          "<order id=\\\"b\\\"><price>3</price><qty>5</qty></order></orders>\";"
+          "var prices = xml.query(doc, \"//price\");"
+          "var attrs = xml.query(doc, \"//@id\");"
+          "var n = xml.count(doc, \"//order\");"
+          "var first_text = xml.text(doc, \"//price\");"
+          "var first_name = prices[0].name;"
+          "var first_type = prices[0].type;"
+          "var second_attr = attrs[1].text;"
+          "var score = n + prices.length() + attrs.length() + first_text.length() + "
+          "(second_attr == \"b\");";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("XML XPath Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 9.0, 0.001);
+      check_str_eq(ts_get_str(ctx, "first_text"), "10");
+      check_str_eq(ts_get_str(ctx, "first_name"), "price");
+      check_str_eq(ts_get_str(ctx, "first_type"), "element");
+      check_str_eq(ts_get_str(ctx, "second_attr"), "b");
 
       turbo_script_free(ctx);
     }
@@ -3613,7 +3672,7 @@ spec("turbo_script") {
 
       const char *script = ""
                            "js = \"{\\\"name\\\": \\\"alice\\\", \\\"score\\\": 99}\"; "
-                           "val = json.query(js, \"score\");";
+                           "val = json.query(js, \"$.score\");";
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("JSON dot Error: %s\n", turbo_script_get_error(ctx));
@@ -4551,6 +4610,320 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "db"), 7.0, 0.001);
       check_float_eq(ts_get_num(ctx, "la"), -1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "lb"), 10.0, 0.001);
+      turbo_script_free(ctx);
+    }
+
+    it("should support Java-style streams over containers") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "var rows = list(map{price:10, qty:2}, map{price:3, qty:5}, map{price:8, qty:1}); "
+          "var total = rows.stream()"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price * r.qty)"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var nums = [1, 2, 3, 4].stream().filter(x => x > 2).map(x => x * 10).toList(); "
+          "var entries = map{a:1, b:2, c:3}.stream().filter(v => v > 1).collect(); "
+          "var line_count = \"a\\nb\\n\".stream().count(); "
+          "var plain = map{__ts_stream:1, source:list(1,2)}; "
+          "var marker_len = plain.length(); "
+          "var score = total + nums.length() + nums[0] + entries.length() + line_count + marker_len;";
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Java-style container stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 67.0, 0.001);
+      turbo_script_free(ctx);
+    }
+
+    it("should support Java-style streams through MIR JIT") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "var rows = list(map{price:10, qty:2}, map{price:3, qty:5}, map{price:8, qty:1}); "
+          "var total = rows.stream()"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price * r.qty)"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var count = [1, 2, 3, 4].stream().filter(x => x > 2).count(); "
+          "var score = total + count;";
+      int res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style JIT stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 30.0, 0.001);
+      turbo_script_free(ctx);
+    }
+
+    it("should support text streams through MIR JIT") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "var line_total = stream.text(\" a \\nbb\\n\\nccc\")"
+          "  .lines()"
+          "  .map(line => line.trim())"
+          "  .filter(line => line.length() > 0)"
+          "  .map(line => line.length())"
+          "  .reduce(0, (acc, n) => acc + n); "
+          "var token_total = stream.text(\"AAPL,MSFT,TSLA\")"
+          "  .split(\",\")"
+          "  .map(sym => sym.length())"
+          "  .reduce(0, (acc, n) => acc + n); "
+          "var score = line_total + token_total;";
+      int res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style text stream JIT Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "line_total"), 6.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "token_total"), 12.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 18.0, 0.001);
+      turbo_script_free(ctx);
+    }
+
+    it("should support file source streams through MIR JIT") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *line_text = " a \nbb\n\nccc";
+      const char *token_text = "AAPL,MSFT,TSLA";
+      const char *json_text =
+          "{\"orders\":[{\"price\":10,\"qty\":2},{\"price\":3,\"qty\":5},{\"price\":8,\"qty\":1}]}";
+      const char *csv_text = "price,qty\n10,2\n3,5\n8,1\n";
+      const char *csv_no_header_text = "10,2\n3,5\n8,1\n";
+      const char *xml_text =
+          "<orders><order id=\"a\"><price>10</price></order>"
+          "<order id=\"b\"><price>3</price></order>"
+          "<order id=\"c\"><price>8</price></order></orders>";
+      char line_path[96];
+      char token_path[96];
+      char json_path[96];
+      char csv_path[96];
+      char csv_no_header_path[96];
+      char xml_path[96];
+      char script[4096];
+      turbo_fs_buf_t buf;
+      int res;
+
+      ts_test_make_name(line_path, sizeof(line_path), "_test_stream_file_lines", ".txt");
+      ts_test_make_name(token_path, sizeof(token_path), "_test_stream_file_tokens", ".txt");
+      ts_test_make_name(json_path, sizeof(json_path), "_test_stream_file_json", ".json");
+      ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_file_csv", ".csv");
+      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path),
+                        "_test_stream_file_csv_no_header", ".csv");
+      ts_test_make_name(xml_path, sizeof(xml_path), "_test_stream_file_xml", ".xml");
+
+      buf = turbo_fs_buf_init((char *)line_text, strlen(line_text));
+      check_int_eq(turbo_fs_write_file(line_path, &buf), 0);
+      buf = turbo_fs_buf_init((char *)token_text, strlen(token_text));
+      check_int_eq(turbo_fs_write_file(token_path, &buf), 0);
+      buf = turbo_fs_buf_init((char *)json_text, strlen(json_text));
+      check_int_eq(turbo_fs_write_file(json_path, &buf), 0);
+      buf = turbo_fs_buf_init((char *)csv_text, strlen(csv_text));
+      check_int_eq(turbo_fs_write_file(csv_path, &buf), 0);
+      buf = turbo_fs_buf_init((char *)csv_no_header_text, strlen(csv_no_header_text));
+      check_int_eq(turbo_fs_write_file(csv_no_header_path, &buf), 0);
+      buf = turbo_fs_buf_init((char *)xml_text, strlen(xml_text));
+      check_int_eq(turbo_fs_write_file(xml_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+          "var line_total = stream.file(\"%s\")"
+          "  .lines()"
+          "  .map(line => line.trim())"
+          "  .filter(line => line.length() > 0)"
+          "  .map(line => line.length())"
+          "  .reduce(0, (acc, n) => acc + n); "
+          "var token_total = stream.file(\"%s\")"
+          "  .text()"
+          "  .split(\",\")"
+          "  .map(sym => sym.length())"
+          "  .reduce(0, (acc, n) => acc + n); "
+          "var json_total = stream.file(\"%s\")"
+          "  .json(\"$.orders[@.price > 5]\")"
+          "  .map(r => r.price * r.qty)"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_total = stream.file(\"%s\")"
+          "  .csv()"
+          "  .filter(r => to_num(r.price) > 5)"
+          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_no_header_total = stream.file(\"%s\")"
+          "  .csv(0)"
+          "  .filter(r => to_num(r.c0) > 5)"
+          "  .map(r => to_num(r.c0) * to_num(r.c1))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var xml_total = stream.file(\"%s\")"
+          "  .xml(\"//price\")"
+          "  .filter(n => to_num(n.text) > 5)"
+          "  .map(n => to_num(n.text))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var attr_count = stream.file(\"%s\").xml(\"//@id\").count(); "
+          "var score = line_total + token_total + json_total + csv_total + "
+          "csv_no_header_total + xml_total + attr_count;",
+          line_path, token_path, json_path, csv_path, csv_no_header_path, xml_path, xml_path);
+
+      res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style file source stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "line_total"), 6.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "token_total"), 12.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "xml_total"), 18.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 123.0, 0.001);
+      turbo_fs_unlink(line_path);
+      turbo_fs_unlink(token_path);
+      turbo_fs_unlink(json_path);
+      turbo_fs_unlink(csv_path);
+      turbo_fs_unlink(csv_no_header_path);
+      turbo_fs_unlink(xml_path);
+      turbo_script_free(ctx);
+    }
+
+    it("should support XML file streams through MIR JIT") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *xml =
+          "<orders><order id=\"a\"><price>10</price></order>"
+          "<order id=\"b\"><price>3</price></order>"
+          "<order id=\"c\"><price>8</price></order></orders>";
+      char xml_path[96];
+      char script[1024];
+      turbo_fs_buf_t buf;
+      int res;
+
+      ts_test_make_name(xml_path, sizeof(xml_path), "_test_stream_xml_jit", ".xml");
+      buf = turbo_fs_buf_init((char *)xml, strlen(xml));
+      check_int_eq(turbo_fs_write_file(xml_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+          "var total = stream.xml(\"%s\", \"//price\")"
+          "  .filter(n => to_num(n.text) > 5)"
+          "  .map(n => to_num(n.text))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var attr_count = stream.xml(\"%s\", \"//@id\").count(); "
+          "var score = total + attr_count;",
+          xml_path, xml_path);
+
+      res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style XML JIT stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "total"), 18.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 21.0, 0.001);
+      turbo_fs_unlink(xml_path);
+      turbo_script_free(ctx);
+    }
+
+    it("should support Java-style streams from json and csv files") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      char json_path[96];
+      char csv_path[96];
+      char csv_no_header_path[96];
+      char script[3072];
+      int res;
+      ts_test_make_name(json_path, sizeof(json_path), "_test_stream_json", ".json");
+      ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_csv", ".csv");
+      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path), "_test_stream_csv_no_header", ".csv");
+      snprintf(script, sizeof(script),
+          "write_file(\"%s\", \"[{\\\"price\\\":10,\\\"qty\\\":2},{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]\"); "
+          "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
+          "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
+          "var json_total = stream.json(\"%s\")"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price * r.qty)"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_total = stream.csv(\"%s\")"
+          "  .filter(r => to_num(r.price) > 5)"
+          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_no_header_total = stream.csv(\"%s\", 0)"
+          "  .filter(r => to_num(r.c0) > 5)"
+          "  .map(r => to_num(r.c0) * to_num(r.c1))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var line_count = stream.lines(\"%s\").filter(line => line.length() > 0).count(); "
+          "var score = json_total + csv_total + csv_no_header_total + line_count;",
+          json_path, csv_path, csv_no_header_path, json_path, csv_path,
+          csv_no_header_path, csv_path);
+      res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style file stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "line_count"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 88.0, 0.001);
+      turbo_fs_unlink(json_path);
+      turbo_fs_unlink(csv_path);
+      turbo_fs_unlink(csv_no_header_path);
+      turbo_script_free(ctx);
+    }
+
+    it("should support expression filters and json path stream sources") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      char json_path[96];
+      char csv_path[96];
+      char csv_no_header_path[96];
+      char script[4096];
+      int res;
+      ts_test_make_name(json_path, sizeof(json_path), "_test_stream_path_json", ".json");
+      ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_expr_csv", ".csv");
+      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path),
+                        "_test_stream_expr_csv_no_header", ".csv");
+      snprintf(script, sizeof(script),
+          "write_file(\"%s\", \"{\\\"orders\\\":[{\\\"price\\\":10,\\\"qty\\\":2},"
+          "{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]}\"); "
+          "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
+          "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
+          "var json_total = stream.json(\"%s\", \"$.orders[@.price > 5]\")"
+          "  .map(r => r.price * r.qty)"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_total = stream.csv(\"%s\")"
+          "  .filterExpr(\"price > 5\")"
+          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_alias_total = stream.csv(\"%s\")"
+          "  .where(\"price > 5\")"
+          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var csv_no_header_total = stream.csv(\"%s\", 0)"
+          "  .filterExpr(\"c0 > 5\")"
+          "  .map(r => to_num(r.c0) * to_num(r.c1))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var score = json_total + csv_total + csv_alias_total + csv_no_header_total;",
+          json_path, csv_path, csv_no_header_path, json_path, csv_path, csv_path,
+          csv_no_header_path);
+      res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("Java-style stream expression filter Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_alias_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 112.0, 0.001);
+      turbo_fs_unlink(json_path);
+      turbo_fs_unlink(csv_path);
+      turbo_fs_unlink(csv_no_header_path);
+      turbo_script_free(ctx);
+    }
+
+    it("should support Java-style streams from XML files") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      char xml_path[96];
+      char script[2048];
+      int res;
+
+      ts_test_make_name(xml_path, sizeof(xml_path), "_test_stream_xml", ".xml");
+      snprintf(script, sizeof(script),
+          "write_file(\"%s\", \"<orders><order id=\\\"a\\\"><price>10</price></order>"
+          "<order id=\\\"b\\\"><price>3</price></order>"
+          "<order id=\\\"c\\\"><price>8</price></order></orders>\"); "
+          "var total = stream.xml(\"%s\", \"//price\")"
+          "  .filter(n => to_num(n.text) > 5)"
+          "  .map(n => to_num(n.text))"
+          "  .reduce(0, (acc, v) => acc + v); "
+          "var names = stream.xml(\"%s\", \"//@id\").map(n => n.text).toList(); "
+          "var score = total + names.length() + (names[1] == \"b\");",
+          xml_path, xml_path, xml_path);
+
+      res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Java-style XML stream Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "total"), 18.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 22.0, 0.001);
+      turbo_fs_unlink(xml_path);
       turbo_script_free(ctx);
     }
   }

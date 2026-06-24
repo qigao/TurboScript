@@ -235,9 +235,17 @@ var ok = s instanceof Shape;
 ```javascript
 import("parser");
 
-var rows = csv.bind_all(schema_text, csv_text, "Order");
-var row = json.bind(schema_text, json_text, "Order");
+var schema_id = schema.parse(schema_text);
+var csv_id = parser.csv_parse(csv_text);
+var json_id = json.parse(json_text);
+
+var rows = csv.bind_all(schema_id, csv_id, "Order");
+var row = json.bind(schema_id, json_id, "Order");
 var ok = json.validate(schema_text, json_text, "Order");
+
+parser.csv_close(csv_id);
+json.close(json_id);
+schema.close(schema_id);
 ```
 
 当前 parser 模块已完成 JSON/CSV schema binding 主线：
