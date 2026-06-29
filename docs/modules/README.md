@@ -79,6 +79,9 @@ See [parser README](../../modules/parser/README.md) for CSV parsing, JSON queryi
 ### RulesForge Module
 See [rules_forge README](../../modules/rules_forge/README.md) for RulesForge knowledge-base/session handles, schema-bound JSON/CSV/XML fact insertion through DataBind, query access, tracing, and TurboScript RHS plugin loading.
 
+### SQLite / RAG Module
+See [sqlite README](../../modules/sqlite/README.md) for SQLite SQL helpers, FTS5 probing, embedding BLOB storage, cosine search, and the `sqlite.rag_*` local RAG helpers.
+
 ### Technical Analysis
 See [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) for TA indicators.
 

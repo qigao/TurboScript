@@ -32,7 +32,7 @@ typedef struct {
 static void test_env_init(test_env_t *t) {
   memset(t, 0, sizeof(*t));
   exprtk_env_init(&t->env);
-  mem_init(&t->scratch, 4096);
+  mem_init(&t->scratch, 65536);
   t->sqlite_plugin = ts_plugin_load(SQLITE_PLUGIN_DLL);
   if (t->sqlite_plugin)
     ts_plugin_init(t->sqlite_plugin, &t->env, &t->scratch);
@@ -66,6 +66,12 @@ static exprtk_value_t make_str(test_env_t *t, const char *s) {
 
 static exprtk_value_t make_num(double v) {
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = v};
+}
+
+static exprtk_value_t make_vec(test_env_t *t, const double *values, size_t n) {
+  double *data = mem_alloc(&t->env.arena, n * sizeof(double));
+  if (n > 0) memcpy(data, values, n * sizeof(double));
+  return exprtk_val_vec(data, n);
 }
 
 spec("sqlite_module") {
@@ -269,6 +275,122 @@ spec("sqlite_module") {
       exprtk_value_t close_args[1] = {db};
       call_fn(&t, "sqlite.close", 1, close_args);
 
+      test_env_free(&t);
+    }
+  }
+
+  describe("sqlite RAG helpers") {
+    it("should convert vectors to embedding blobs and compute cosine") {
+      test_env_t t;
+      double a_data[3] = {1.0, 0.0, 0.0};
+      double b_data[3] = {1.0, 0.0, 0.0};
+      test_env_init(&t);
+      check_not_null(t.sqlite_plugin);
+
+      exprtk_value_t a = make_vec(&t, a_data, 3);
+      exprtk_value_t b = make_vec(&t, b_data, 3);
+      exprtk_value_t args[1] = {a};
+      exprtk_value_t blob = call_fn(&t, "sqlite.vec_blob", 1, args);
+      check_int_eq(blob.type, EXPRTK_VAL_BYTES);
+      check_int_eq(blob.data.bytes.len, 3 * sizeof(double));
+
+      args[0] = blob;
+      exprtk_value_t roundtrip = call_fn(&t, "sqlite.vec_from_blob", 1, args);
+      check_int_eq(roundtrip.type, EXPRTK_VAL_VECTOR);
+      check_int_eq(roundtrip.data.vector.size, 3);
+      check_float_eq(roundtrip.data.vector.data[0], 1.0, 0.001);
+
+      exprtk_value_t cos_args[2] = {a, b};
+      exprtk_value_t cos = call_fn(&t, "sqlite.vec_cosine", 2, cos_args);
+      check_float_eq(cos.data.number, 1.0, 0.001);
+
+      test_env_free(&t);
+    }
+
+    it("should store and search embedding vectors") {
+      test_env_t t;
+      double a_data[3] = {1.0, 0.0, 0.0};
+      double b_data[3] = {0.0, 1.0, 0.0};
+      double q_data[3] = {0.9, 0.1, 0.0};
+      test_env_init(&t);
+      check_not_null(t.sqlite_plugin);
+
+      exprtk_value_t open_args[1] = {make_str(&t, ":memory:")};
+      exprtk_value_t db = call_fn(&t, "sqlite.open", 1, open_args);
+
+      exprtk_value_t init_args[2] = {db, make_str(&t, "embeddings")};
+      exprtk_value_t ok = call_fn(&t, "sqlite.embedding_init", 2, init_args);
+      check_float_eq(ok.data.number, 1.0, 0.001);
+
+      exprtk_value_t put_args[4] = {db, make_str(&t, "embeddings"), make_num(1), make_vec(&t, a_data, 3)};
+      ok = call_fn(&t, "sqlite.embedding_put", 4, put_args);
+      check_float_eq(ok.data.number, 1.0, 0.001);
+      put_args[2] = make_num(2);
+      put_args[3] = make_vec(&t, b_data, 3);
+      ok = call_fn(&t, "sqlite.embedding_put", 4, put_args);
+      check_float_eq(ok.data.number, 1.0, 0.001);
+
+      exprtk_value_t search_args[4] = {db, make_str(&t, "embeddings"), make_vec(&t, q_data, 3), make_num(2)};
+      exprtk_value_t result = call_fn(&t, "sqlite.embedding_search", 4, search_args);
+      check_int_eq(result.type, EXPRTK_VAL_LIST);
+      check_int_eq(result.data.list.count, 2);
+      exprtk_value_t first = exprtk_list_get(&result, 0);
+      check_int_eq(first.type, EXPRTK_VAL_OBJECT);
+      check_float_eq((double)exprtk_map_get(&first, "id").data.integer, 1.0, 0.001);
+
+      exprtk_value_t close_args[1] = {db};
+      call_fn(&t, "sqlite.close", 1, close_args);
+      test_env_free(&t);
+    }
+
+    it("should expose FTS5 availability and RAG helpers") {
+      test_env_t t;
+      double a_data[3] = {1.0, 0.0, 0.0};
+      double b_data[3] = {0.0, 1.0, 0.0};
+      double q_data[3] = {0.95, 0.05, 0.0};
+      test_env_init(&t);
+      check_not_null(t.sqlite_plugin);
+
+      exprtk_value_t available = call_fn(&t, "sqlite.fts5_available", 0, NULL);
+      check_int_eq(available.type, EXPRTK_VAL_NUMBER);
+
+      exprtk_value_t open_args[1] = {make_str(&t, ":memory:")};
+      exprtk_value_t db = call_fn(&t, "sqlite.open", 1, open_args);
+      exprtk_value_t init_args[1] = {db};
+      exprtk_value_t init = call_fn(&t, "sqlite.rag_init", 1, init_args);
+
+      if (available.data.number < 0.5) {
+        check_float_eq(init.data.number, 0.0, 0.001);
+      } else {
+        check_float_eq(init.data.number, 1.0, 0.001);
+        exprtk_value_t add_args[5] = {
+          db, make_num(1), make_str(&t, "doc1"),
+          make_str(&t, "sqlite fts search for retrieval augmented generation"),
+          make_vec(&t, a_data, 3)
+        };
+        exprtk_value_t ok = call_fn(&t, "sqlite.rag_add", 5, add_args);
+        check_float_eq(ok.data.number, 1.0, 0.001);
+        add_args[1] = make_num(2);
+        add_args[2] = make_str(&t, "doc2");
+        add_args[3] = make_str(&t, "unrelated finance time series note");
+        add_args[4] = make_vec(&t, b_data, 3);
+        ok = call_fn(&t, "sqlite.rag_add", 5, add_args);
+        check_float_eq(ok.data.number, 1.0, 0.001);
+
+        exprtk_value_t search_args[6] = {
+          db, make_str(&t, "sqlite retrieval"),
+          make_vec(&t, q_data, 3), make_num(2), make_num(1), make_num(1)
+        };
+        exprtk_value_t result = call_fn(&t, "sqlite.rag_search", 6, search_args);
+        check_int_eq(result.type, EXPRTK_VAL_LIST);
+        check(result.data.list.count >= 1);
+        exprtk_value_t first = exprtk_list_get(&result, 0);
+        check_int_eq(first.type, EXPRTK_VAL_OBJECT);
+        check_float_eq((double)exprtk_map_get(&first, "id").data.integer, 1.0, 0.001);
+      }
+
+      exprtk_value_t close_args[1] = {db};
+      call_fn(&t, "sqlite.close", 1, close_args);
       test_env_free(&t);
     }
   }

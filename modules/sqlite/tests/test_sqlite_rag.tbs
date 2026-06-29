@@ -1,0 +1,87 @@
+/**
+ * @file test_sqlite_rag.tbs
+ * @brief TurboScript smoke test for sqlite FTS5, embeddings, and RAG helpers.
+ *
+ * Run with: turbo_script_repl -f modules/sqlite/tests/test_sqlite_rag.tbs
+ */
+
+import("sqlite");
+
+print("========================================");
+print("SQLite/RAG TurboScript smoke test");
+print("========================================");
+
+print("=== SQLite vector helpers ===");
+let source = [1.0, 2.0, 3.0];
+let blob = sqlite.vec_blob(source);
+let roundtrip = sqlite.vec_from_blob(blob);
+
+assert(len(roundtrip) == 3, "vec_from_blob should preserve vector length");
+assert(abs(roundtrip[0] - 1.0) <= 0.001, "roundtrip[0] should be 1.0");
+assert(abs(roundtrip[1] - 2.0) <= 0.001, "roundtrip[1] should be 2.0");
+assert(abs(roundtrip[2] - 3.0) <= 0.001, "roundtrip[2] should be 3.0");
+
+print("Vector helpers OK");
+
+let db_path = ":memory:";
+let embedding_table = "embeddings";
+let count_embeddings_sql = "SELECT COUNT(*) FROM embeddings";
+let doc1_source = "sqlite_fts5.md";
+let doc1_text = "SQLite FTS5 supports local full text retrieval for RAG pipelines.";
+let doc2_source = "finance_notes.md";
+let doc2_text = "Momentum indicators and time series filters are unrelated to sqlite search.";
+let doc3_source = "xml_parser.md";
+let doc3_text = "XPath queries select XML nodes from parser output.";
+let rag_query = "sqlite retrieval";
+
+let db = sqlite.open(db_path);
+assert(db >= 0, "sqlite.open should return a valid handle");
+
+print("=== SQLite embedding search ===");
+let emb1 = [1.0, 0.0, 0.0];
+let emb2 = [0.0, 1.0, 0.0];
+let emb3 = [0.0, 0.0, 1.0];
+let emb_query = [0.95, 0.05, 0.0];
+
+assert(sqlite.embedding_init(db, embedding_table) == 1, "embedding_init should succeed");
+assert(sqlite.embedding_put(db, embedding_table, 1, emb1) == 1, "embedding_put doc 1 should succeed");
+assert(sqlite.embedding_put(db, embedding_table, 2, emb2) == 1, "embedding_put doc 2 should succeed");
+assert(sqlite.embedding_put(db, embedding_table, 3, emb3) == 1, "embedding_put doc 3 should succeed");
+assert(sqlite.query_scalar(db, count_embeddings_sql) == 3, "embedding table should contain 3 rows");
+
+let embed_hits = sqlite.embedding_search(db, embedding_table, emb_query, 3);
+assert(embed_hits[0].id == 1, "embedding_search should rank doc 1 first");
+assert(embed_hits[0].score > embed_hits[1].score, "embedding_search scores should be ordered");
+print("Embedding top hit:", embed_hits[0].id, "score:", embed_hits[0].score);
+
+print("=== SQLite RAG prerequisites ===");
+print("FTS5 available:", sqlite.fts5_available());
+print("Full RAG search requires sqlite.fts5_available() == 1");
+
+/*
+ * Enable this block when the runtime SQLite library reports FTS5 support.
+ *
+ * assert(sqlite.rag_init(db) == 1, "rag_init should succeed");
+ *
+ * assert(sqlite.rag_add(db, 1, doc1_source, doc1_text, emb1) == 1, "rag_add doc 1 should succeed");
+ * assert(sqlite.rag_add(db, 2, doc2_source, doc2_text, emb2) == 1, "rag_add doc 2 should succeed");
+ * assert(sqlite.rag_add(db, 3, doc3_source, doc3_text, emb3) == 1, "rag_add doc 3 should succeed");
+ *
+ * let rag_hits = sqlite.rag_search(db, rag_query, emb_query, 3, 1.0, 1.0);
+ * assert(rag_hits[0].id == 1, "rag_search should rank sqlite retrieval doc first");
+ * assert(rag_hits[0].vector_score > 0.9, "rag_search should include vector score");
+ * assert(rag_hits[0].fts_score > 0.0, "rag_search should include positive FTS score");
+ * assert(rag_hits[0].source == doc1_source, "rag_search should return source");
+ *
+ * print("RAG top hit:", rag_hits[0].id,
+ *       "score:", rag_hits[0].score,
+ *       "vector:", rag_hits[0].vector_score,
+ *       "fts:", rag_hits[0].fts_score,
+ *       "source:", rag_hits[0].source);
+ */
+
+sqlite.close(db);
+
+print("========================================");
+print("SQLite embedding tests PASSED; RAG prerequisite reported above");
+print("========================================");

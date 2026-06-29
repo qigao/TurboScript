@@ -39,7 +39,10 @@
     },
     {
       "name": "sqlite3",
-      "version>=": "3.49.0"
+      "version>=": "3.49.0",
+      "features": [
+        "fts5"
+      ]
     }
   ],
   "builtin-baseline": "b1b19307e2d2ec1eefbdb7ea069de7d4bcd31f01"
