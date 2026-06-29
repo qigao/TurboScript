@@ -76,6 +76,9 @@ Internal implementation details of graph data structures.
 ### Parser / CSV / JSON / Datetime Module
 See [parser README](../../modules/parser/README.md) for CSV parsing, JSON querying/native mapping, datetime parsing, and TBE schema bind/emit/validate. See [csv_filter_expression.md](../csv_filter_expression.md) for CSV filter expressions.
 
+### RulesForge Module
+See [rules_forge README](../../modules/rules_forge/README.md) for RulesForge knowledge-base/session handles, schema-bound JSON/CSV/XML fact insertion through DataBind, query access, tracing, and TurboScript RHS plugin loading.
+
 ### Technical Analysis
 See [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) for TA indicators.
 

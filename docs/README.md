@@ -125,6 +125,7 @@ TurboScript comes with a rich set of optional modules:
 | `net` | HTTP/WebSocket networking | [modules/net.md](modules/net.md) |
 | `sqlite` | Database access | [modules/sqlite.md](modules/sqlite.md) |
 | `data_bind` | Binary parsing using JIT-compiled TBE schemas | [modules/data_bind/README.md](../modules/data_bind/README.md) |
+| `rules_forge` | Rules engine integration, DataBind-backed facts, TurboScript RHS plugin loading | [rules_forge README](../modules/rules_forge/README.md) |
 | `wasm` | WebAssembly execution | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
 
 ---

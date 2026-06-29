@@ -10,6 +10,7 @@
             "cacheVariables": {
                 "TURBONET_ROOT": "c:/projects/cpp/external/pkgs/turbonet",
                 "TURBOHTTP_ROOT": "c:/projects/cpp/external/pkgs/turbohttp",
+                "RulesForge_ROOT": "c:/projects/cpp/external/pkgs/rules_forge",
                 "FSM_ROOT": "c:/projects/cpp/external/pkgs/libfsm",
                 "CMAKE_MAKE_PROGRAM": "C:/Users/lockg/scoop/shims/ninja.exe",
                 "VCPKG_TARGET_TRIPLET": "x64-windows",

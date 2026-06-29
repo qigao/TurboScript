@@ -124,6 +124,7 @@ TurboScript 提供了丰富的可选模块：
 | `net` | HTTP/WebSocket 网络 | [modules/net.md](../modules/net.md) |
 | `sqlite` | 数据库访问 | [modules/sqlite.md](../modules/sqlite.md) |
 | `data_bind` | 基于 JIT 编译 TBE 模式的二进制解析 | [../../modules/data_bind/README.md](../../modules/data_bind/README.md) |
+| `rules_forge` | 规则引擎集成、DataBind-backed fact、TurboScript RHS 插件加载 | [rules_forge README](../../modules/rules_forge/README.md) |
 | `wasm` | WebAssembly 执行 | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
 
 ---
