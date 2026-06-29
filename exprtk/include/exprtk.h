@@ -48,6 +48,7 @@ CXX_C_API exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name);
 CXX_C_API int exprtk_env_has(exprtk_env_t *env, const char *name);
 CXX_C_API void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native_fn fn,
                                         void *user_data);
+CXX_C_API int exprtk_env_has_func(exprtk_env_t *env, const char *name);
 CXX_C_API void exprtk_env_set_constant(exprtk_env_t *env, const char *name, exprtk_value_t value);
 CXX_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
 

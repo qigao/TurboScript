@@ -13,6 +13,223 @@
 #include <math.h>
 #include <stdlib.h>
 
+static int eval_value_truthy(exprtk_value_t value) {
+    if (value.type == EXPRTK_VAL_BOOL) return value.data.boolean != 0;
+    if (value.type == EXPRTK_VAL_INTEGER) return value.data.integer != 0;
+    if (value.type == EXPRTK_VAL_NUMBER) return fabs(value.data.number) > 1e-9;
+    if (value.type == EXPRTK_VAL_STRING) return value.data.string.len > 0;
+    if (value.type == EXPRTK_VAL_BYTES) return value.data.bytes.len > 0;
+    if (value.type == EXPRTK_VAL_UUID) return 1;
+    if (value.type == EXPRTK_VAL_DATETIME) return 1;
+    if (value.type == EXPRTK_VAL_DATE || value.type == EXPRTK_VAL_TIME ||
+        value.type == EXPRTK_VAL_DURATION || value.type == EXPRTK_VAL_DECIMAL) return 1;
+    if (value.type == EXPRTK_VAL_BIGINT) return value.data.bigint.text.len > 0;
+    if (value.type == EXPRTK_VAL_MONEY || value.type == EXPRTK_VAL_ENUM ||
+        value.type == EXPRTK_VAL_FLAGS || value.type == EXPRTK_VAL_OFFSET_DATETIME)
+        return 1;
+    if (value.type == EXPRTK_VAL_TYPED_ARRAY) return value.data.typed_array.count > 0;
+    if (value.type == EXPRTK_VAL_VECTOR) return value.data.vector.size > 0;
+    if (value.type == EXPRTK_VAL_LIST) return value.data.list.count > 0;
+    if (value.type == EXPRTK_VAL_SET) return value.data.list.count > 0;
+    if (exprtk_value_is_object_like(&value)) return exprtk_map_count(&value) > 0;
+    if (value.type == EXPRTK_VAL_FUNCTION || value.type == EXPRTK_VAL_CLASS ||
+        value.type == EXPRTK_VAL_INSTANCE || value.type == EXPRTK_VAL_BOUND_METHOD)
+        return 1;
+    return 0;
+}
+
+static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
+                           const char **out_data, size_t *out_len) {
+    int n;
+    if (!out_data || !out_len) return 0;
+    if (value.type == EXPRTK_VAL_STRING) {
+        *out_data = value.data.string.data;
+        *out_len = value.data.string.len;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_INTEGER) {
+        n = snprintf(buf, buf_size, "%lld", (long long)value.data.integer);
+    } else if (value.type == EXPRTK_VAL_NUMBER) {
+        n = snprintf(buf, buf_size, "%g", value.data.number);
+    } else if (value.type == EXPRTK_VAL_BOOL) {
+        *out_data = value.data.boolean ? "true" : "false";
+        *out_len = value.data.boolean ? 4 : 5;
+        return 1;
+    } else if (value.type == EXPRTK_VAL_BYTES) {
+        n = snprintf(buf, buf_size, "bytes(%zu)", value.data.bytes.len);
+    } else if (value.type == EXPRTK_VAL_UUID) {
+        if (!uuid_to_s(value.data.uuid, buf, (int)buf_size)) return 0;
+        *out_data = buf;
+        *out_len = strlen(buf);
+        return 1;
+    } else if (value.type == EXPRTK_VAL_DATETIME) {
+        time_t ts = turbo_datetime_to_time(&value.data.datetime);
+        if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, buf_size) < 0) return 0;
+        *out_data = buf;
+        *out_len = strlen(buf);
+        return 1;
+    } else if (value.type == EXPRTK_VAL_OFFSET_DATETIME) {
+        int offset = value.data.offset_datetime.offset_minutes;
+        char sign = '+';
+        if (offset < 0) {
+            sign = '-';
+            offset = -offset;
+        }
+        n = snprintf(buf, buf_size, "%04d-%02d-%02dT%02d:%02d:%02d%c%02d:%02d",
+                     value.data.offset_datetime.datetime.year,
+                     value.data.offset_datetime.datetime.month,
+                     value.data.offset_datetime.datetime.day,
+                     value.data.offset_datetime.datetime.hour,
+                     value.data.offset_datetime.datetime.minute,
+                     value.data.offset_datetime.datetime.second,
+                     sign, offset / 60, offset % 60);
+    } else if (value.type == EXPRTK_VAL_DATE) {
+        n = snprintf(buf, buf_size, "%04d-%02d-%02d", value.data.date.year,
+                     value.data.date.month, value.data.date.day);
+    } else if (value.type == EXPRTK_VAL_TIME) {
+        if (value.data.time.millisecond > 0)
+            n = snprintf(buf, buf_size, "%02d:%02d:%02d.%03d", value.data.time.hour,
+                         value.data.time.minute, value.data.time.second,
+                         value.data.time.millisecond);
+        else
+            n = snprintf(buf, buf_size, "%02d:%02d:%02d", value.data.time.hour,
+                         value.data.time.minute, value.data.time.second);
+    } else if (value.type == EXPRTK_VAL_DURATION) {
+        int64_t rem = value.data.duration_ms < 0 ? -value.data.duration_ms
+                                                 : value.data.duration_ms;
+        int64_t h = rem / 3600000;
+        int64_t m;
+        int64_t s;
+        rem %= 3600000;
+        m = rem / 60000;
+        rem %= 60000;
+        s = rem / 1000;
+        rem %= 1000;
+        n = snprintf(buf, buf_size, "%s%lld:%02lld:%02lld.%03lld",
+                     value.data.duration_ms < 0 ? "-" : "", (long long)h,
+                     (long long)m, (long long)s, (long long)rem);
+    } else if (value.type == EXPRTK_VAL_DECIMAL) {
+        exprtk_decimal_t dec = value.data.decimal;
+        char digits[32];
+        char *p = digits + sizeof(digits);
+        uint64_t mag;
+        size_t digit_count;
+        size_t pos = 0;
+        int negative;
+        while (dec.scale > 0 && dec.mantissa % 10 == 0) {
+            dec.mantissa /= 10;
+            dec.scale--;
+        }
+        if (dec.mantissa == 0) dec.scale = 0;
+        negative = dec.mantissa < 0;
+        mag = negative ? (uint64_t)(-(dec.mantissa + 1)) + 1ULL : (uint64_t)dec.mantissa;
+        *--p = '\0';
+        do {
+            *--p = (char)('0' + (mag % 10ULL));
+            mag /= 10ULL;
+        } while (mag != 0);
+        digit_count = strlen(p);
+        if (negative) buf[pos++] = '-';
+        if (dec.scale == 0) {
+            if (pos + digit_count >= buf_size) return 0;
+            memcpy(buf + pos, p, digit_count + 1);
+        } else if ((size_t)dec.scale >= digit_count) {
+            size_t zeros = (size_t)dec.scale - digit_count;
+            if (pos + 2 + zeros + digit_count >= buf_size) return 0;
+            buf[pos++] = '0';
+            buf[pos++] = '.';
+            while (zeros-- > 0) buf[pos++] = '0';
+            memcpy(buf + pos, p, digit_count);
+            pos += digit_count;
+            buf[pos] = '\0';
+        } else {
+            size_t whole = digit_count - (size_t)dec.scale;
+            if (pos + digit_count + 1 >= buf_size) return 0;
+            memcpy(buf + pos, p, whole);
+            pos += whole;
+            buf[pos++] = '.';
+            memcpy(buf + pos, p + whole, (size_t)dec.scale);
+            pos += (size_t)dec.scale;
+            buf[pos] = '\0';
+        }
+        *out_data = buf;
+        *out_len = strlen(buf);
+        return 1;
+    } else if (value.type == EXPRTK_VAL_BIGINT) {
+        *out_data = value.data.bigint.text.data ? value.data.bigint.text.data : "";
+        *out_len = value.data.bigint.text.len;
+        return 1;
+    } else if (value.type == EXPRTK_VAL_MONEY) {
+        exprtk_decimal_t dec = value.data.money.amount;
+        char digits[32];
+        char *p = digits + sizeof(digits);
+        uint64_t mag;
+        size_t digit_count;
+        size_t pos = 0;
+        int negative;
+        while (dec.scale > 0 && dec.mantissa % 10 == 0) {
+            dec.mantissa /= 10;
+            dec.scale--;
+        }
+        if (dec.mantissa == 0) dec.scale = 0;
+        negative = dec.mantissa < 0;
+        mag = negative ? (uint64_t)(-(dec.mantissa + 1)) + 1ULL : (uint64_t)dec.mantissa;
+        *--p = '\0';
+        do {
+            *--p = (char)('0' + (mag % 10ULL));
+            mag /= 10ULL;
+        } while (mag != 0);
+        digit_count = strlen(p);
+        if (pos + 4 >= buf_size) return 0;
+        memcpy(buf + pos, value.data.money.currency, 3);
+        pos += 3;
+        buf[pos++] = ' ';
+        if (negative) buf[pos++] = '-';
+        if (dec.scale == 0) {
+            if (pos + digit_count >= buf_size) return 0;
+            memcpy(buf + pos, p, digit_count + 1);
+        } else if ((size_t)dec.scale >= digit_count) {
+            size_t zeros = (size_t)dec.scale - digit_count;
+            if (pos + 2 + zeros + digit_count >= buf_size) return 0;
+            buf[pos++] = '0';
+            buf[pos++] = '.';
+            while (zeros-- > 0) buf[pos++] = '0';
+            memcpy(buf + pos, p, digit_count);
+            pos += digit_count;
+            buf[pos] = '\0';
+        } else {
+            size_t whole = digit_count - (size_t)dec.scale;
+            if (pos + digit_count + 1 >= buf_size) return 0;
+            memcpy(buf + pos, p, whole);
+            pos += whole;
+            buf[pos++] = '.';
+            memcpy(buf + pos, p + whole, (size_t)dec.scale);
+            pos += (size_t)dec.scale;
+            buf[pos] = '\0';
+        }
+        *out_data = buf;
+        *out_len = strlen(buf);
+        return 1;
+    } else if (value.type == EXPRTK_VAL_ENUM || value.type == EXPRTK_VAL_FLAGS) {
+        if (value.data.enum_val.symbol.data && value.data.enum_val.symbol.len > 0) {
+            *out_data = value.data.enum_val.symbol.data;
+            *out_len = value.data.enum_val.symbol.len;
+            return 1;
+        }
+        n = snprintf(buf, buf_size, "%lld", (long long)value.data.enum_val.value);
+    } else if (value.type == EXPRTK_VAL_NULL) {
+        *out_data = "null";
+        *out_len = 4;
+        return 1;
+    } else {
+        return 0;
+    }
+    if (n < 0) return 0;
+    *out_data = buf;
+    *out_len = (size_t)n;
+    return 1;
+}
+
 exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
     exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
     if (!node || (env && env->aborted)) return zero;
@@ -86,18 +303,41 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                     char num_buf[64];
                                     snprintf(num_buf, sizeof(num_buf), "%lld", (long long)expr_val.data.integer);
                                     APPEND_STR(num_buf, strlen(num_buf));
+                                } else if (expr_val.type == EXPRTK_VAL_BOOL) {
+                                    if (expr_val.data.boolean) APPEND_STR("true", 4);
+                                    else APPEND_STR("false", 5);
                                 } else if (expr_val.type == EXPRTK_VAL_NUMBER) {
                                     char num_buf[64];
                                     snprintf(num_buf, sizeof(num_buf), "%g", expr_val.data.number);
                                     APPEND_STR(num_buf, strlen(num_buf));
                                 } else if (expr_val.type == EXPRTK_VAL_STRING) {
                                     APPEND_STR(expr_val.data.string.data, expr_val.data.string.len);
+                                } else if (expr_val.type == EXPRTK_VAL_BYTES) {
+                                    char bytes_buf[64];
+                                    int bytes_len = snprintf(bytes_buf, sizeof(bytes_buf), "bytes(%zu)", expr_val.data.bytes.len);
+                                    if (bytes_len > 0) APPEND_STR(bytes_buf, (size_t)bytes_len);
+                                } else if (expr_val.type == EXPRTK_VAL_UUID) {
+                                    char uuid_buf[UUID4_STR_BUFFER_SIZE];
+                                    if (uuid_to_s(expr_val.data.uuid, uuid_buf, sizeof(uuid_buf)))
+                                        APPEND_STR(uuid_buf, strlen(uuid_buf));
+                                } else if (expr_val.type == EXPRTK_VAL_DATE ||
+                                           expr_val.type == EXPRTK_VAL_TIME ||
+                                           expr_val.type == EXPRTK_VAL_DURATION ||
+                                           expr_val.type == EXPRTK_VAL_DECIMAL) {
+                                    char value_buf[64];
+                                    const char *value_text = NULL;
+                                    size_t value_len = 0;
+                                    if (eval_value_text(expr_val, value_buf, sizeof(value_buf),
+                                                        &value_text, &value_len))
+                                        APPEND_STR(value_text, value_len);
                                 } else if (expr_val.type == EXPRTK_VAL_NULL) {
                                     APPEND_STR("null", 4);
                                 } else if (expr_val.type == EXPRTK_VAL_VECTOR) {
                                     APPEND_STR("[vector]", 8);
                                 } else if (expr_val.type == EXPRTK_VAL_MAP) {
                                     APPEND_STR("[map]", 5);
+                                } else if (expr_val.type == EXPRTK_VAL_OBJECT) {
+                                    APPEND_STR("[object]", 8);
                                 } else if (expr_val.type == EXPRTK_VAL_LIST) {
                                     APPEND_STR("[list]", 6);
                                 }
@@ -147,16 +387,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             exprtk_value_t cond_val = exprtk_eval(node->data.if_stmt.condition, env);
             if (env && env->flow != exprtk_FLOW_NORMAL) return zero;
 
-            double cond = 0.0;
-            if (cond_val.type == EXPRTK_VAL_INTEGER) {
-                cond = (double)cond_val.data.integer;
-            } else if (cond_val.type == EXPRTK_VAL_NUMBER) {
-                cond = cond_val.data.number;
-            } else if (cond_val.type == EXPRTK_VAL_STRING) {
-                cond = (double)(cond_val.data.string.len > 0);
-            }
-
-            if (fabs(cond) > 1e-9) {
+            if (eval_value_truthy(cond_val)) {
                 if (node->data.if_stmt.if_branch) return exprtk_eval(node->data.if_stmt.if_branch, env);
             } else {
                 if (node->data.if_stmt.else_branch) return exprtk_eval(node->data.if_stmt.else_branch, env);
@@ -172,15 +403,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 exprtk_value_t cond_val = exprtk_eval(node->data.while_loop.condition, env);
                 if (env && (env->flow != exprtk_FLOW_NORMAL || env->aborted)) break;
 
-                double cond = 0.0;
-                if (cond_val.type == EXPRTK_VAL_INTEGER) {
-                    cond = (double)cond_val.data.integer;
-                } else if (cond_val.type == EXPRTK_VAL_NUMBER) {
-                    cond = cond_val.data.number;
-                } else if (cond_val.type == EXPRTK_VAL_STRING) {
-                    cond = (double)(cond_val.data.string.len > 0);
-                }
-                if (fabs(cond) <= 1e-9) break;
+                if (!eval_value_truthy(cond_val)) break;
 
                 if (env) {
                     env->curr_loop_iterations++;
@@ -208,15 +431,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 if (node->data.for_loop.condition) {
                     exprtk_value_t cond_val = exprtk_eval(node->data.for_loop.condition, env);
                     if (env && (env->flow != exprtk_FLOW_NORMAL || env->aborted)) break;
-                    double cond = 0.0;
-                    if (cond_val.type == EXPRTK_VAL_INTEGER) {
-                        cond = (double)cond_val.data.integer;
-                    } else if (cond_val.type == EXPRTK_VAL_NUMBER) {
-                        cond = cond_val.data.number;
-                    } else if (cond_val.type == EXPRTK_VAL_STRING) {
-                        cond = (double)(cond_val.data.string.len > 0);
-                    }
-                    if (fabs(cond) <= 1e-9) break;
+                    if (!eval_value_truthy(cond_val)) break;
                 }
 
                 if (env) {
@@ -309,11 +524,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 }
             }
 
-            // (INTEGER | NUMBER) + (INTEGER | NUMBER) → NUMBER (type promotion)
-            if ((l_val.type == EXPRTK_VAL_INTEGER || l_val.type == EXPRTK_VAL_NUMBER) &&
-                (r_val.type == EXPRTK_VAL_INTEGER || r_val.type == EXPRTK_VAL_NUMBER)) {
-                double l = (l_val.type == EXPRTK_VAL_INTEGER) ? (double)l_val.data.integer : l_val.data.number;
-                double r = (r_val.type == EXPRTK_VAL_INTEGER) ? (double)r_val.data.integer : r_val.data.number;
+            // (INTEGER | NUMBER | BOOL) + (INTEGER | NUMBER | BOOL) -> NUMBER
+            if ((l_val.type == EXPRTK_VAL_INTEGER || l_val.type == EXPRTK_VAL_NUMBER ||
+                 l_val.type == EXPRTK_VAL_BOOL) &&
+                (r_val.type == EXPRTK_VAL_INTEGER || r_val.type == EXPRTK_VAL_NUMBER ||
+                 r_val.type == EXPRTK_VAL_BOOL)) {
+                double l = val_to_double(l_val);
+                double r = val_to_double(r_val);
                 switch (node->data.binary.op) {
                     case exprtk_TOKEN_PLUS:     return exprtk_val_num(l + r);
                     case exprtk_TOKEN_MINUS:    return exprtk_val_num(l - r);
@@ -339,31 +556,14 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             // STRING + ANY → STRING (concatenation)
             if (node->data.binary.op == exprtk_TOKEN_PLUS &&
                 (l_val.type == EXPRTK_VAL_STRING || r_val.type == EXPRTK_VAL_STRING)) {
-                char n_buf[32], r_buf[32];
+                char n_buf[64], r_buf[64];
                 const char *l_data, *r_data;
                 size_t l_len, r_len;
 
-                if (l_val.type == EXPRTK_VAL_STRING) {
-                    l_data = l_val.data.string.data;
-                    l_len = l_val.data.string.len;
-                } else if (l_val.type == EXPRTK_VAL_INTEGER) {
-                    l_len = snprintf(n_buf, sizeof(n_buf), "%lld", (long long)l_val.data.integer);
-                    l_data = n_buf;
-                } else {
-                    l_len = snprintf(n_buf, sizeof(n_buf), "%g", l_val.data.number);
-                    l_data = n_buf;
-                }
-
-                if (r_val.type == EXPRTK_VAL_STRING) {
-                    r_data = r_val.data.string.data;
-                    r_len = r_val.data.string.len;
-                } else if (r_val.type == EXPRTK_VAL_INTEGER) {
-                    r_len = snprintf(r_buf, sizeof(r_buf), "%lld", (long long)r_val.data.integer);
-                    r_data = r_buf;
-                } else {
-                    r_len = snprintf(r_buf, sizeof(r_buf), "%g", r_val.data.number);
-                    r_data = r_buf;
-                }
+                if (!eval_value_text(l_val, n_buf, sizeof(n_buf), &l_data, &l_len) ||
+                    !eval_value_text(r_val, r_buf, sizeof(r_buf), &r_data, &r_len))
+                    return throw_error(env, node, "Type error: cannot stringify %s and %s",
+                                       type_name(l_val.type), type_name(r_val.type));
 
                 size_t new_len = l_len + r_len;
                 char *new_data = (char*)mem_alloc(node->arena, new_len + 1);
@@ -381,6 +581,110 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 if (node->data.binary.op == exprtk_TOKEN_NE) {
                     return exprtk_val_num(!tstr_v_eq(l_val.data.string, r_val.data.string) ? 1.0 : 0.0);
                 }
+            }
+
+            if (l_val.type == EXPRTK_VAL_BOOL && r_val.type == EXPRTK_VAL_BOOL) {
+                if (node->data.binary.op == exprtk_TOKEN_EQ)
+                    return exprtk_val_num(l_val.data.boolean == r_val.data.boolean ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE)
+                    return exprtk_val_num(l_val.data.boolean != r_val.data.boolean ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_BYTES && r_val.type == EXPRTK_VAL_BYTES) {
+                int equal = l_val.data.bytes.len == r_val.data.bytes.len &&
+                            (l_val.data.bytes.len == 0 ||
+                             memcmp(l_val.data.bytes.data, r_val.data.bytes.data,
+                                    l_val.data.bytes.len) == 0);
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_UUID && r_val.type == EXPRTK_VAL_UUID) {
+                int equal = memcmp(l_val.data.uuid.bytes, r_val.data.uuid.bytes,
+                                   sizeof(l_val.data.uuid.bytes)) == 0;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_DATETIME && r_val.type == EXPRTK_VAL_DATETIME) {
+                int equal = memcmp(&l_val.data.datetime, &r_val.data.datetime,
+                                   sizeof(l_val.data.datetime)) == 0;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_OFFSET_DATETIME &&
+                r_val.type == EXPRTK_VAL_OFFSET_DATETIME) {
+                int equal = l_val.data.offset_datetime.offset_minutes ==
+                                r_val.data.offset_datetime.offset_minutes &&
+                            memcmp(&l_val.data.offset_datetime.datetime,
+                                   &r_val.data.offset_datetime.datetime,
+                                   sizeof(l_val.data.offset_datetime.datetime)) == 0;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_DATE && r_val.type == EXPRTK_VAL_DATE) {
+                int equal = l_val.data.date.year == r_val.data.date.year &&
+                            l_val.data.date.month == r_val.data.date.month &&
+                            l_val.data.date.day == r_val.data.date.day;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_TIME && r_val.type == EXPRTK_VAL_TIME) {
+                int equal = l_val.data.time.hour == r_val.data.time.hour &&
+                            l_val.data.time.minute == r_val.data.time.minute &&
+                            l_val.data.time.second == r_val.data.time.second &&
+                            l_val.data.time.millisecond == r_val.data.time.millisecond;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_DURATION && r_val.type == EXPRTK_VAL_DURATION) {
+                int equal = l_val.data.duration_ms == r_val.data.duration_ms;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_DECIMAL && r_val.type == EXPRTK_VAL_DECIMAL) {
+                exprtk_decimal_t l = l_val.data.decimal;
+                exprtk_decimal_t r = r_val.data.decimal;
+                while (l.scale > 0 && l.mantissa % 10 == 0) {
+                    l.mantissa /= 10;
+                    l.scale--;
+                }
+                while (r.scale > 0 && r.mantissa % 10 == 0) {
+                    r.mantissa /= 10;
+                    r.scale--;
+                }
+                if (l.mantissa == 0) l.scale = 0;
+                if (r.mantissa == 0) r.scale = 0;
+                int equal = l.mantissa == r.mantissa && l.scale == r.scale;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_BIGINT && r_val.type == EXPRTK_VAL_BIGINT) {
+                int equal = tstr_v_eq(l_val.data.bigint.text, r_val.data.bigint.text);
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if (l_val.type == EXPRTK_VAL_MONEY && r_val.type == EXPRTK_VAL_MONEY) {
+                int equal = l_val.data.money.amount.mantissa == r_val.data.money.amount.mantissa &&
+                            l_val.data.money.amount.scale == r_val.data.money.amount.scale &&
+                            memcmp(l_val.data.money.currency, r_val.data.money.currency, 4) == 0;
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
+            }
+
+            if ((l_val.type == EXPRTK_VAL_ENUM || l_val.type == EXPRTK_VAL_FLAGS) &&
+                l_val.type == r_val.type) {
+                int equal = l_val.data.enum_val.value == r_val.data.enum_val.value &&
+                            tstr_v_eq(l_val.data.enum_val.type_name, r_val.data.enum_val.type_name);
+                if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
+                if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
             }
 
             // NULL == NULL
@@ -502,8 +806,19 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
             exprtk_value_t mc_result;
             switch (mc.obj.type) {
-                case EXPRTK_VAL_LIST:   mc_result = eval_list_method(&mc);   break;
-                case EXPRTK_VAL_MAP:    mc_result = eval_map_method(&mc);    break;
+                case EXPRTK_VAL_LIST:
+                case EXPRTK_VAL_SET:    mc_result = eval_list_method(&mc);   break;
+                case EXPRTK_VAL_MAP:
+                case EXPRTK_VAL_OBJECT: mc_result = eval_map_method(&mc);    break;
+                case EXPRTK_VAL_BYTES:  mc_result = eval_bytes_method(&mc);  break;
+                case EXPRTK_VAL_UUID:   mc_result = eval_uuid_method(&mc);   break;
+                case EXPRTK_VAL_DATETIME: mc_result = eval_datetime_method(&mc); break;
+                case EXPRTK_VAL_DATE:   mc_result = eval_date_method(&mc);   break;
+                case EXPRTK_VAL_TIME:   mc_result = eval_time_method(&mc);   break;
+                case EXPRTK_VAL_DURATION: mc_result = eval_duration_method(&mc); break;
+                case EXPRTK_VAL_DECIMAL: mc_result = eval_decimal_method(&mc); break;
+                case EXPRTK_VAL_OFFSET_DATETIME: mc_result = eval_offset_datetime_method(&mc); break;
+                case EXPRTK_VAL_TYPED_ARRAY: mc_result = eval_typed_array_method(&mc); break;
                 case EXPRTK_VAL_STRING: mc_result = eval_string_method(&mc); break;
                 case EXPRTK_VAL_VECTOR: mc_result = eval_vector_method(&mc); break;
                 // OOP: Instance method call
@@ -577,15 +892,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 exprtk_value_t cond_val = exprtk_eval(node->data.do_while.condition, env);
                 if (env && (env->flow != exprtk_FLOW_NORMAL || env->aborted)) break;
 
-                double cond = 0.0;
-                if (cond_val.type == EXPRTK_VAL_INTEGER) {
-                    cond = (double)cond_val.data.integer;
-                } else if (cond_val.type == EXPRTK_VAL_NUMBER) {
-                    cond = cond_val.data.number;
-                } else if (cond_val.type == EXPRTK_VAL_STRING) {
-                    cond = (double)(cond_val.data.string.len > 0);
-                }
-                if (fabs(cond) <= 1e-9) break;
+                if (!eval_value_truthy(cond_val)) break;
 
                 if (env) {
                     env->curr_loop_iterations++;
@@ -622,20 +929,38 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 return exprtk_val_num(arr.data.vector.data[idx]);
             }
             /* List index: l[i] → any value */
-            if (arr.type == EXPRTK_VAL_LIST && (idx_val.type == EXPRTK_VAL_NUMBER || idx_val.type == EXPRTK_VAL_INTEGER)) {
+            if ((arr.type == EXPRTK_VAL_LIST || arr.type == EXPRTK_VAL_SET) &&
+                (idx_val.type == EXPRTK_VAL_NUMBER || idx_val.type == EXPRTK_VAL_INTEGER)) {
                 int idx = (idx_val.type == EXPRTK_VAL_INTEGER) ? (int)idx_val.data.integer : (int)idx_val.data.number;
                 if (idx < 0 || idx >= (int)arr.data.list.count) {
                     return throw_error(env, node, "List index %d out of bounds [0, %zu)", idx, arr.data.list.count);
                 }
                 return arr.data.list.items[idx];
             }
+            if (arr.type == EXPRTK_VAL_TYPED_ARRAY &&
+                (idx_val.type == EXPRTK_VAL_NUMBER || idx_val.type == EXPRTK_VAL_INTEGER)) {
+                int idx = (idx_val.type == EXPRTK_VAL_INTEGER) ? (int)idx_val.data.integer : (int)idx_val.data.number;
+                if (idx < 0 || idx >= (int)arr.data.typed_array.count) {
+                    return throw_error(env, node, "Typed array index %d out of bounds [0, %zu)",
+                                       idx, arr.data.typed_array.count);
+                }
+                return exprtk_typed_array_get_value(arr, (size_t)idx);
+            }
+            /* Bytes index: b[i] -> byte value */
+            if (arr.type == EXPRTK_VAL_BYTES && (idx_val.type == EXPRTK_VAL_NUMBER || idx_val.type == EXPRTK_VAL_INTEGER)) {
+                int idx = (idx_val.type == EXPRTK_VAL_INTEGER) ? (int)idx_val.data.integer : (int)idx_val.data.number;
+                if (idx < 0 || idx >= (int)arr.data.bytes.len) {
+                    return throw_error(env, node, "Bytes index %d out of bounds [0, %zu)", idx, arr.data.bytes.len);
+                }
+                return exprtk_val_int((unsigned char)arr.data.bytes.data[idx]);
+            }
             /* Dynamic map index: m["key"] */
-            if (arr.type == EXPRTK_VAL_MAP && idx_val.type == EXPRTK_VAL_STRING) {
+            if (exprtk_value_is_object_like(&arr) && idx_val.type == EXPRTK_VAL_STRING) {
                 return exprtk_map_get(&arr, idx_val.data.string.data);
             }
 
             // Type error
-            return throw_error(env, node, "Invalid indexing: expected vector[number], list[number], or map[string], got %s[%s]",
+            return throw_error(env, node, "Invalid indexing: expected vector[number], list[number], typed_array[number], or map[string], got %s[%s]",
                              type_name(arr.type), type_name(idx_val.type));
         }
         case EXPRTK_NODE_SLICE: {
@@ -668,7 +993,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 if (node->data.map_literal.keys[i] == NULL) {
                     /* Spread operator */
                     exprtk_value_t other = exprtk_eval(node->data.map_literal.values[i], env);
-                    if (other.type == EXPRTK_VAL_MAP) {
+                    if (exprtk_value_is_object_like(&other)) {
                         exprtk_map_iter_t it = exprtk_map_iter_begin(&other);
                         const char *k;
                         exprtk_value_t v;
@@ -753,12 +1078,53 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 return throw_error(env, node, "Class has no static field or method '%s'", member);
             }
 
-            if (obj.type == EXPRTK_VAL_MAP) {
+            if (exprtk_value_is_object_like(&obj)) {
                 return exprtk_map_get(&obj, member);
             }
             /* String property access */
             if (obj.type == EXPRTK_VAL_STRING) {
                 if (strcmp(member, "length") == 0) return exprtk_val_num((double)obj.data.string.len);
+            }
+            if (obj.type == EXPRTK_VAL_BYTES) {
+                if (strcmp(member, "length") == 0) return exprtk_val_num((double)obj.data.bytes.len);
+            }
+            if (obj.type == EXPRTK_VAL_DATETIME) {
+                exprtk_value_t datetime_member;
+                if (exprtk_datetime_member_get(obj, member, &datetime_member)) return datetime_member;
+            }
+            if (obj.type == EXPRTK_VAL_OFFSET_DATETIME) {
+                exprtk_value_t offset_datetime_member;
+                if (exprtk_offset_datetime_member_get(obj, member, &offset_datetime_member))
+                    return offset_datetime_member;
+            }
+            if (obj.type == EXPRTK_VAL_DATE) {
+                exprtk_value_t date_member;
+                if (exprtk_date_member_get(obj, member, &date_member)) return date_member;
+            }
+            if (obj.type == EXPRTK_VAL_TIME) {
+                exprtk_value_t time_member;
+                if (exprtk_time_member_get(obj, member, &time_member)) return time_member;
+            }
+            if (obj.type == EXPRTK_VAL_DURATION) {
+                exprtk_value_t duration_member;
+                if (exprtk_duration_member_get(obj, member, &duration_member)) return duration_member;
+            }
+            if (obj.type == EXPRTK_VAL_DECIMAL) {
+                exprtk_value_t decimal_member;
+                if (exprtk_decimal_member_get(obj, member, &decimal_member)) return decimal_member;
+            }
+            if (obj.type == EXPRTK_VAL_MONEY) {
+                exprtk_value_t money_member;
+                if (exprtk_money_member_get(obj, member, &money_member)) return money_member;
+            }
+            if (obj.type == EXPRTK_VAL_ENUM || obj.type == EXPRTK_VAL_FLAGS) {
+                exprtk_value_t enum_member;
+                if (exprtk_enum_member_get(obj, member, &enum_member)) return enum_member;
+            }
+            if (obj.type == EXPRTK_VAL_TYPED_ARRAY) {
+                exprtk_value_t typed_array_member;
+                if (exprtk_typed_array_member_get(obj, member, &typed_array_member))
+                    return typed_array_member;
             }
             /* Vector property access */
             if (obj.type == EXPRTK_VAL_VECTOR) {
@@ -841,7 +1207,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 const char *var_name = object_node->data.variable.name;
                 /* Get the variable from hash table */
                 exprtk_value_t var_val = exprtk_env_get(env, var_name);
-                if (var_val.type == EXPRTK_VAL_MAP) {
+                if (exprtk_value_is_object_like(&var_val)) {
                     exprtk_map_set(&var_val, node->data.member_set.member, val);
                     /* Update the variable in hash table */
                     exprtk_env_set(env, var_name, var_val);
@@ -930,7 +1296,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     if (env && env->flow == exprtk_FLOW_CONTINUE) env->flow = exprtk_FLOW_NORMAL;
                     if (env && env->flow == exprtk_FLOW_RETURN) break;
                 }
-            } else if (collection.type == EXPRTK_VAL_MAP) {
+            } else if (exprtk_value_is_object_like(&collection)) {
                 exprtk_map_iter_t it = exprtk_map_iter_begin(&collection);
                 const char *key;
                 while (exprtk_map_iter_next(&it, &key, NULL)) {
@@ -947,13 +1313,26 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     if (env && env->flow == exprtk_FLOW_CONTINUE) env->flow = exprtk_FLOW_NORMAL;
                     if (env && env->flow == exprtk_FLOW_RETURN) break;
                 }
-            } else if (collection.type == EXPRTK_VAL_LIST) {
+            } else if (collection.type == EXPRTK_VAL_LIST || collection.type == EXPRTK_VAL_SET) {
                 for (size_t i = 0; i < collection.data.list.count; ++i) {
                     if (env) {
                         env->curr_loop_iterations++;
                         if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
                     }
                     exprtk_env_set(env, node->data.for_in.var_name, collection.data.list.items[i]);
+                    last_val = exprtk_eval(node->data.for_in.body, env);
+                    if (env && env->flow == exprtk_FLOW_BREAK) { env->flow = exprtk_FLOW_NORMAL; break; }
+                    if (env && env->flow == exprtk_FLOW_CONTINUE) env->flow = exprtk_FLOW_NORMAL;
+                    if (env && env->flow == exprtk_FLOW_RETURN) break;
+                }
+            } else if (collection.type == EXPRTK_VAL_TYPED_ARRAY) {
+                for (size_t i = 0; i < collection.data.typed_array.count; ++i) {
+                    if (env) {
+                        env->curr_loop_iterations++;
+                        if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
+                    }
+                    exprtk_env_set(env, node->data.for_in.var_name,
+                                   exprtk_typed_array_get_value(collection, i));
                     last_val = exprtk_eval(node->data.for_in.body, env);
                     if (env && env->flow == exprtk_FLOW_BREAK) { env->flow = exprtk_FLOW_NORMAL; break; }
                     if (env && env->flow == exprtk_FLOW_CONTINUE) env->flow = exprtk_FLOW_NORMAL;
@@ -1043,9 +1422,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
                 int match = 0;
                 if ((switch_val.type == EXPRTK_VAL_NUMBER || switch_val.type == EXPRTK_VAL_INTEGER ||
-                     switch_val.type == EXPRTK_VAL_STRING || switch_val.type == EXPRTK_VAL_NULL) &&
+                     switch_val.type == EXPRTK_VAL_BOOL || switch_val.type == EXPRTK_VAL_STRING ||
+                     switch_val.type == EXPRTK_VAL_BYTES || switch_val.type == EXPRTK_VAL_UUID ||
+                     switch_val.type == EXPRTK_VAL_NULL) &&
                     (case_val.type == EXPRTK_VAL_NUMBER || case_val.type == EXPRTK_VAL_INTEGER ||
-                     case_val.type == EXPRTK_VAL_STRING || case_val.type == EXPRTK_VAL_NULL))
+                     case_val.type == EXPRTK_VAL_BOOL || case_val.type == EXPRTK_VAL_STRING ||
+                     case_val.type == EXPRTK_VAL_BYTES || case_val.type == EXPRTK_VAL_UUID ||
+                     case_val.type == EXPRTK_VAL_NULL))
                     match = values_match(switch_val, case_val);
 
                 if (match)

@@ -83,6 +83,27 @@ typedef struct {
 
 exprtk_value_t eval_list_method(mc_ctx_t *mc);
 exprtk_value_t eval_map_method(mc_ctx_t *mc);
+exprtk_value_t eval_bytes_method(mc_ctx_t *mc);
+exprtk_value_t eval_uuid_method(mc_ctx_t *mc);
+exprtk_value_t eval_datetime_method(mc_ctx_t *mc);
+int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+exprtk_value_t eval_date_method(mc_ctx_t *mc);
+exprtk_value_t eval_time_method(mc_ctx_t *mc);
+exprtk_value_t eval_duration_method(mc_ctx_t *mc);
+exprtk_value_t eval_decimal_method(mc_ctx_t *mc);
+int exprtk_date_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_time_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_duration_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_decimal_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_money_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_enum_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+exprtk_value_t eval_offset_datetime_method(mc_ctx_t *mc);
+int exprtk_offset_datetime_member_get(exprtk_value_t value, const char *member,
+                                      exprtk_value_t *out);
+exprtk_value_t eval_typed_array_method(mc_ctx_t *mc);
+int exprtk_typed_array_member_get(exprtk_value_t value, const char *member,
+                                  exprtk_value_t *out);
+exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index);
 exprtk_value_t eval_string_method(mc_ctx_t *mc);
 exprtk_value_t eval_vector_method(mc_ctx_t *mc);
 

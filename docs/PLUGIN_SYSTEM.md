@@ -117,7 +117,7 @@ let sharpe = strategy.sharpe(RETURNS, 0.02, 252);
 
 **Real-world examples:**
 ```javascript
-// cck_herding_model.ts
+// cck_herding_model.tbs
 import("fin");
 import("ta");
 

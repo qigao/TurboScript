@@ -228,24 +228,50 @@ vec.range(0, 10);
 - ✅ CSV 句柄 API：`parser.csv_parse` / `parser.csv_parse_file` / `parser.csv_rows` / `parser.csv_cols` / `parser.csv_get` / `parser.csv_get_num` / `parser.csv_close`
 - ✅ Inline CSV API：`csv.rows` / `csv.cols` / `csv.get` / `csv.get_num` / `csv.col` / `csv.filter` / `csv.filter_count` / `csv.write`
 - ✅ JSON 查询与原生映射：`json.query` / `json.query_num` / `json.to_vec` / `json.parse` / `json.stringify`
+- ✅ Plain object 映射：JSON object、XML 查询节点、schema reflection 和 schema-bound record/union 返回 `object`；TBE `map<K,V>` 字段仍返回 `map`
 - ✅ Datetime 解析：`datetime.parse` / `datetime.to_time` / `datetime.timestamp` / `datetime.format_rfc822`
+- ✅ Date/Time/Duration 原生值：`date.parse` / `time.parse` / `duration.parse` / `*.to_string` / 字段访问
+- ✅ Decimal 原生值：`decimal.parse` / `decimal.to_string` / `decimal.mantissa` / `decimal.scale` / 字段访问
 
 #### TBE Schema 反射
 - ✅ `schema.parse` / `schema.parse_ex` / `schema.close` / `schema.error`
 - ✅ `schema.types` / `schema.fields` / `schema.enums` / `schema.flags` / `schema.unions`
 - ✅ `schema.attributes` / `schema.layout` / `schema.type_exists`
 
-#### JSON/CSV Schema Binding
+#### JSON/CSV/XML Schema Binding
 - ✅ `json.bind` / `json.bind_all` / `json.emit` / `json.validate` / `json.validate_ex`
 - ✅ `csv.bind` / `csv.bind_all` / `csv.emit` / `csv.validate` / `csv.validate_ex`
+- ✅ `xml.bind` / `xml.bind_all` / `xml.validate` / `xml.validate_ex`
 - ✅ schema text 与 schema handle 两种入口
 - ✅ record/composite/group、fixed array、list、set、map
 - ✅ scalar、enum、flags、union
 - ✅ optional/default 字段
+- ✅ string 字段格式校验：`[format(ipaddr)]`、`[format(url)]`、`[format(email)]` 等；绑定结果仍为普通字符串
 - ✅ CSV 扁平路径、sanitized 列名、动态 header 合并
 - ✅ 绑定失败不制造伪有效值：非法 scalar、非法 record、错误 container shape 会绑定失败；`bind_all` 跳过无法绑定的元素，`validate_ex` 返回诊断
 
-**剩余增强**: XML DOM 不属于 schema binding 主线；通用 JSON parse/stringify 与 datetime parser 桥接已支持。
+#### 原生类型流转
+
+| 类型 | 核心运行时 | JSON parse/stringify | Schema bind/emit/validate |
+|------|------------|----------------------|----------------------------|
+| `bool` | ✅ `typeof` / `is_bool` / 条件表达式 | ✅ JSON bool 原生映射 | ✅ JSON/CSV/XML text binding，严格布尔 validate |
+| `int64` | ✅ 整数字面量与 `is_int64` | ✅ 数字映射 | ✅ 整数 schema scalar、enum、flags |
+| `bytes` | ✅ `bytes()` / `from_bytes()` / `.length` / 索引 | ✅ 无 schema 时 stringify 为 byte 数组 | ✅ JSON/XML 字符串文本、CSV cell 文本绑定为原生 `bytes`；schema emit 输出文本单元 |
+| `uuid` | ✅ `uuid()` / `uuid4()` / `uuid7()` / `uuid_string()` | ✅ stringify 为 canonical UUID 字符串 | ✅ JSON/XML UUID 字符串、CSV cell 文本绑定为原生 `uuid` |
+| `datetime` | ✅ `datetime()` / `datetime.to_time()` / `datetime.to_string()` / 字段访问 | ✅ stringify 为 RFC822/HTTP GMT 文本 | ✅ JSON/XML/CSV 文本绑定为原生 `datetime`；validate 拒绝无法解析的文本 |
+| `date` | ✅ `date.parse()` / `date.to_string()` / `year` `month` `day` | ✅ stringify 为 `YYYY-MM-DD` 字符串 | ✅ JSON/XML/CSV schema bind/emit/validate 为原生 `date` |
+| `time` | ✅ `time.parse()` / `time.to_string()` / `hour` `minute` `second` `millisecond` | ✅ stringify 为 `HH:MM:SS[.mmm]` 字符串 | ✅ JSON/XML/CSV schema bind/emit/validate 为原生 `time` |
+| `duration` | ✅ `duration.parse()` / `duration.seconds()` / `milliseconds` `seconds` | ✅ stringify 为 `H:MM:SS.mmm` 字符串 | ✅ JSON/XML/CSV schema bind/emit/validate 为原生 `duration` |
+| `decimal` | ✅ `decimal.parse()` / `decimal.to_string()` / `mantissa` `scale` / 精确定点相等比较 | ✅ stringify 为规范化 decimal 字符串 | ✅ JSON/XML/CSV schema bind/emit/validate 为原生 `decimal` |
+| `bigint` | ✅ `bigint.parse()` / `bigint.to_string()` / 原生 `bigint` 值 | ✅ stringify 为 JSON string，避免精度丢失 | ✅ JSON/XML/CSV schema bind/validate 为原生 `bigint` |
+| `money` | ✅ `money()` / `money.to_string()` / `.amount` `.currency` | ✅ stringify 为 `{ amount, currency }` object | ✅ JSON/XML/CSV schema bind/validate 为原生 `money` |
+| `set` | ✅ `set(...)` 去重 / `.length()` / `.contains()` / for-in | ✅ stringify 为 JSON array | ✅ schema `set<T>` bind 为原生 `set` |
+| `offset_datetime` | ✅ `offset_datetime.parse()` / `.tz_offset` / `.timestamp()` | ✅ stringify 为 ISO offset datetime 字符串 | ✅ 可作为运行时值参与 parser emit |
+| `typed_array` | ✅ `typed.i32/i64/f32/f64(...)` / `.length` `.kind` / 索引 / for-in | ✅ stringify 为 JSON array | ✅ 可作为高频数值容器参与 parser emit |
+| `string format` | ✅ 运行时仍为普通 `string` | ✅ JSON string 映射 | ✅ schema 字段支持 `ipaddr`/`cidr`/`hostname`/`domain`/`email`/`url`/`uri`/`macaddr`/`semver`/`hex`/`base64`/`base64url`/`currency`/`json_pointer`/`jsonpath`/`xpath`/`cron`/`color`/`mime`/`regex` 校验 |
+| `object` | ✅ host plain object 字段访问、索引访问、迭代、`typeof == "object"` | ✅ JSON object 映射为 plain object | ✅ schema-bound record/union 与 reflection 返回 plain object |
+
+**边界说明**: 脚本层 `parser` 公开 JSON/CSV/XML schema bind/validate 与 XML XPath 查询；JSON/CSV emit 由 parser 本地实现。底层 `tbe/data_bind` C ABI 是 JSON/CSV/XML schema bind/validate 的主事实源。
 
 ---
 
@@ -255,7 +281,7 @@ vec.range(0, 10);
 
 ```javascript
 // 当前无法实现
-chmod("script.ts", 0755);             // ❌ 不存在
+chmod("script.tbs", 0755);             // ❌ 不存在
 let target = readlink("latest");      // ❌ 不存在
 flock("data.lock");                   // ❌ 不存在
 ```
@@ -268,35 +294,40 @@ flock("data.lock");                   // ❌ 不存在
 
 ---
 
-### 2. 正则表达式
+### 2. 正则表达式语法糖
 
 ```javascript
-// 当前无法实现
-let pattern = /\d{3}-\d{4}/;          // ❌ 不支持
-let match = pattern.exec("555-1234"); // ❌ 不存在
+// 当前已有 core regex 函数和 RegExp 对象 API；还没有 /.../ 字面量
+let h = regex.compile("\\d{3}-\\d{4}");
+let ok = regex.match(h, "555-1234");  // ✅ 已支持
+let pattern = /\d{3}-\d{4}/;          // ❌ 语法糖未支持
+let re = RegExp("\\d{3}-\\d{4}");
+let match = re.exec("555-1234");       // ✅ 已支持
+regex.free(h);
 ```
 
-**影响**: 复杂文本解析困难
+**影响**: 复杂文本解析已有函数式 API 和 JavaScript 风格对象 API，剩余差距是 regex literal 语法糖
 
-**实施**: 桥接 PCRE2 或 RE2
+**实施**: 在语法层新增 regex literal，并将其映射到 core `RegExp`/`regex` API
 
-**预计工作量**: 2-3 周
+**预计工作量**: 1-2 周
 
 ---
 
-### 3. 加密与哈希
+### 3. 高级密码学 API
 
 ```javascript
-// 当前无法实现
-let hash = crypto.sha256("hello");    // ❌ 不存在
-let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
+let digest = crypto.sha256("hello");      // ✅ SHA-256
+let keyed = crypto.blake2b_keyed(data, k); // ✅ keyed BLAKE2b
+let cipher = crypto.aes_encrypt(data, key, iv); // ✅ AES-CTR
+let box = crypto.aead_lock(data, key32, nonce24, ad); // ✅ XChaCha20-Poly1305 AEAD
+let dk = crypto.argon2(password, salt, 32, 65536, 3, 2); // ✅ Argon2id
+let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 ```
 
-**影响**: 安全相关功能受限
+**现状**: 摘要、快速哈希、常量时间比较、AES-CTR、Monocypher AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305 和 Elligator 已可用。
 
-**实施**: 桥接 OpenSSL 或 monocypher（项目已有依赖）
-
-**预计工作量**: 2-3 周
+**剩余**: Monocypher 的增量 BLAKE2b/AEAD/Poly1305 context 仍未暴露为脚本可变对象；脚本层当前使用一次性函数 API。
 
 ---
 
@@ -308,11 +339,12 @@ let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
 | String | ✅ 100% | 27 | 生产就绪 |
 | Stats | ✅ 100% | 16 | 生产就绪 |
 | File I/O | ⚠️ 99% | 32 | 缺 chmod/symlink/flock 等高级增强 |
-| Date/Time | ⚠️ 90% | 6 | 缺时区数据库 |
+| Date/Time | ✅ 97% | 16 | 原生 datetime/date/time/duration 已支持；高级时区数据库未接入 |
 | Vector | ✅ 100% | 30+ | 生产就绪 |
-| Parser / Schema Binding | ✅ 100% | 40+ | JSON/CSV schema binding 生产就绪 |
-| Regex | ❌ 0% | 0 | 未实现 |
-| Crypto | ❌ 0% | 0 | 未实现 |
+| Parser / Schema Binding | ✅ 100% | 40+ | JSON/CSV/XML schema binding 生产就绪 |
+| Regex | ✅ 90% | 14 | core `regex.*` 与 `RegExp` 对象 API 已实现；缺 regex literal |
+| Hash | ✅ 100% | 3 | `xxh32`、`xxh64_hex`、`xxh3_64_hex` |
+| Crypto | ✅ 95% | 34 | SHA-256、BLAKE2b、AES-CTR、XChaCha20-Poly1305 AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305、Elligator、常量时间比较；剩余增量 context 对象 |
 
 **总体评估**: 标准库已有 **240+ 函数**，**85%+ 完备度**
 
@@ -328,9 +360,9 @@ let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
 | 字符串 | `str` 类 (50 方法) | 27 函数 | ⚠️ 约 50% |
 | 统计 | `statistics` (15 函数) | 16 函数 | ✅ 持平 |
 | 文件 I/O | `pathlib` + `os` | 32 函数 | ⚠️ 缺 chmod/symlink/flock 等增强 |
-| 日期时间 | `datetime` | 6 函数 | ⚠️ 约 20% |
-| 正则 | `re` 模块 | 无 | ❌ 0% |
-| 加密 | `hashlib` | 无 | ❌ 0% |
+| 日期时间 | `datetime` | 16 函数 + 原生 `datetime`/`date`/`time`/`duration` 值 | ⚠️ 基础解析/格式化已覆盖，缺时区数据库 |
+| 正则 | `re` 模块 | core `regex.*` + `RegExp` | ⚠️ 函数式/对象 API 已有，缺字面量 |
+| 加密 | `hashlib` | `crypto.sha256` + `crypto.blake2b` + `crypto.aes_*` + `crypto.aead_*` + `crypto.argon2` + `crypto.x25519` + `crypto.eddsa_*` + `hash.xxhash` | ⚠️ 常用摘要、KDF、对称加密、AEAD、签名和密钥交换已覆盖；缺增量 context 对象 |
 
 ### JavaScript 对比
 
@@ -340,8 +372,8 @@ let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
 | 字符串 | `String` 类 (60 方法) | 27 函数 | ⚠️ 约 45% |
 | 数组 | `Array` 类 (40 方法) | 30+ 函数 | ⚠️ 约 75% |
 | 文件 I/O | Node.js `fs` | 32 函数 | ⚠️ 缺 chmod/symlink/flock 等增强 |
-| 日期时间 | `Date` 类 | 6 函数 | ⚠️ 约 30% |
-| 正则 | `RegExp` 类 | 无 | ❌ 0% |
+| 日期时间 | `Date` 类 | 16 函数 + 原生 temporal 值 | ✅ 基础能力对齐；缺时区数据库 |
+| 正则 | `RegExp` 类 | core `RegExp` 对象 API | ⚠️ 缺 `/.../` 字面量 |
 
 ---
 
@@ -352,17 +384,17 @@ let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
 - **工作量**: 2-4 周
 - **依赖**: `turbo_fs.h` 增加跨平台 API
 
-### 2. 正则表达式 - **高优先级**
-- **影响**: 文本处理能力翻倍
-- **工作量**: 2-3 周
-- **依赖**: PCRE2 或 RE2
+### 2. Regex literal - **中优先级**
+- **影响**: 在已有 core regex / RegExp 能力上补齐更自然的脚本语法
+- **工作量**: 1-2 周
+- **依赖**: 现有 libfsm/libre 正则后端与 core `RegExp` 对象 API
 
-### 3. 加密哈希 - **中优先级**
-- **影响**: 启用安全功能
-- **工作量**: 2-3 周
-- **依赖**: monocypher（项目已有）或 OpenSSL
+### 3. Crypto 增量 context 对象 - **中优先级**
+- **影响**: 对大文件或长消息暴露 BLAKE2b/AEAD/Poly1305 streaming API，减少一次性缓冲需求
+- **工作量**: 1-2 周
+- **依赖**: monocypher（项目已有）
 
-### 4. 完善日期时间 - **低优先级**
+### 4. 时区数据库 - **低优先级**
 - **影响**: 增强时间处理
 - **工作量**: 3-4 周
 - **依赖**: tzdata 或 C++20 `<chrono>`
@@ -376,19 +408,19 @@ let encrypted = crypto.aes_encrypt(data, key); // ❌ 不存在
 1. ✅ **数学/统计库世界一流** - 90+ 函数，超越 Python/JavaScript
 2. ✅ **字符串处理完备** - 覆盖所有常见操作
 3. ✅ **文件 I/O 99% 完整** - 已有目录列举、复制、截断和递归目录操作，剩余权限/符号链接/锁等增强
-4. ✅ **日期时间基础完备** - 满足大部分需求
+4. ✅ **日期时间基础完备** - 原生 `datetime`、解析、格式化与 schema binding 已覆盖
 
-**关键缺口**仅有 3 个：
+**剩余关键增强**主要有 3 个：
 1. 文件权限、符号链接与文件锁
-2. 正则表达式
-3. 加密哈希
+2. Regex literal
+3. Crypto 增量 context 对象
 
 **战略建议**：
 - 待 `turbo_fs.h` 暴露 chmod/symlink/readlink/flock 后再桥接脚本 API
-- 然后添加正则表达式（2-3 周）
-- 加密哈希可延后（非核心）
+- 然后在现有 core `RegExp` 上补 regex literal
+- 加密扩展已有 SHA-256、BLAKE2b、AES-CTR、XChaCha20-Poly1305 AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305 和 Elligator；下一步补增量 context 对象
 
-实现这 3 个功能后，TurboScript 的标准库将达到 **95% 完备度**，足以支撑生产环境使用。
+完成这些增强后，TurboScript 的标准库将达到 **95%+ 完备度**，足以支撑生产环境使用。
 
 ---
 

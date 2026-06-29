@@ -7,7 +7,7 @@
  * template files (built-in or custom).
  *
  * CLI (via cmd_arger):
- *   tbe_compiler <file> [--template <file>] [--lang c|python|rust|mir|bmir]
+ *   tbe_compiler <file> [--template <file>] [--lang c|cpp|go|rust|python|py|ts|mir|bmir]
  *              [--output <file>] [--dsl-output <file>]
  */
 
@@ -32,16 +32,22 @@ int main(int argc, char **argv) {
                                  "Path to a custom Mustache template file");
     
     turbo_cmd_enum_t lang_choices[] = {
-        { "c",      "C/C++ header output",            TBE_COMPILER_LANG_C },
-        { "python", "Python dataclass output",         TBE_COMPILER_LANG_PYTHON },
+        { "c",      "C header output",                 TBE_COMPILER_LANG_C },
+        { "cpp",    "C++ type output",                 TBE_COMPILER_LANG_CPP },
+        { "cxx",    "C++ type output",                 TBE_COMPILER_LANG_CPP },
+        { "go",     "Go type output",                  TBE_COMPILER_LANG_GO },
         { "rust",   "Rust struct output",              TBE_COMPILER_LANG_RUST },
+        { "python", "Python dataclass output",         TBE_COMPILER_LANG_PYTHON },
+        { "py",     "Python dataclass output",         TBE_COMPILER_LANG_PYTHON },
+        { "ts",     "TypeScript type output",          TBE_COMPILER_LANG_TS },
+        { "typescript", "TypeScript type output",      TBE_COMPILER_LANG_TS },
         { "mir",    "MIR textual IR output",           TBE_COMPILER_LANG_MIR },
         { "bmir",   "MIR binary IR output",            TBE_COMPILER_LANG_BMIR },
     };
     
     turbo_cmd_add_enum(parser, &lang_enum, "lang", "l",
                                "Target language (built-in template)",
-                               lang_choices, 5);
+                               lang_choices, sizeof(lang_choices) / sizeof(lang_choices[0]));
                                
     turbo_cmd_add_string(parser, &output_path, "output", "o",
                                  "Output file path (default: stdout)");

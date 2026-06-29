@@ -209,12 +209,17 @@ spec("turbo_script") {
           "var data = json.parse(\"{\\\"name\\\":\\\"Alice\\\",\\\"age\\\":30,"
           "\\\"ok\\\":true,\\\"xs\\\":[1,2],\\\"nested\\\":{\\\"v\\\":\\\"x\\\"}}\");"
           "var total = data.age + data.ok + data.xs[1] + data.name.length() + "
-          "data.nested.v.length();";
+          "data.nested.v.length();"
+          "var object_checks = (typeof(data) == \"object\") + is_object(data) + "
+          "is_object(data.nested) + is_map(data);"
+          "var bool_checks = (typeof(data.ok) == \"bool\") + is_bool(data.ok);";
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("JSON parse Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "total"), 39.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "object_checks"), 3.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "bool_checks"), 2.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -249,6 +254,35 @@ spec("turbo_script") {
       if (res != 0) printf("JSON invalid parse Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should stringify native bool and bytes as JSON") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var obj = map{ok:true,raw:bytes(\"Az\")};"
+          "var text = json.stringify(obj);"
+          "var back = json.parse(text);"
+          "var schema = \"message Blob { bytes raw; }\";"
+          "var json_in = \"{\\\"raw\\\":\\\"Az\\\"}\";"
+          "var blob = json.bind(schema, json_in, \"Blob\");"
+          "var json_out = json.emit(schema, blob, \"Blob\");"
+          "var csv_out = csv.emit(schema, blob, \"Blob\");"
+          "var json_ok = json.validate_ex(schema, json_in, \"Blob\");"
+          "var csv_ok = csv.validate_ex(schema, csv_out, \"Blob\");"
+          "var schema_total = (typeof(blob.raw) == \"bytes\") + is_bytes(blob.raw) + "
+          "(json_out == json_in) + (csv_out == \"raw\\nAz\") + json_ok.ok + csv_ok.ok;"
+          "var total = (typeof(obj.ok) == \"bool\") + is_bool(obj.ok) + "
+          "(typeof(obj.raw) == \"bytes\") + is_bytes(obj.raw) + "
+          "back.ok + back.raw[0] + back.raw[1] + schema_total;";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("JSON bool/bytes stringify Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "total"), 198.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -293,17 +327,197 @@ spec("turbo_script") {
           "var direct = parser.datetime_to_time(\"2006-03-14T13:27:54+03:45\");"
           "var text = datetime.format_rfc822(ts);"
           "var bad = datetime.parse(\"not-a-date\");"
+          "var kind_ok = typeof(dt) == \"datetime\" && is_datetime(dt);"
+          "var schema = \"message Event { datetime at; }\";"
+          "var json_in = \"{\\\"at\\\":\\\"Sat, 04 Mar 2006 13:27:54 GMT\\\"}\";"
+          "var event = json.bind(schema, json_in, \"Event\");"
+          "var dt_json = json.stringify(event.at);"
+          "var json_out = json.emit(schema, event, \"Event\");"
+          "var json_ok = json.validate_ex(schema, json_in, \"Event\");"
+          "var json_bad = json.validate_ex(schema, \"{\\\"at\\\":\\\"not-a-date\\\"}\", \"Event\");"
+          "var csv_out = csv.emit(schema, event, \"Event\");"
+          "var csv_ok = csv.validate_ex(schema, csv_out, \"Event\");"
+          "var flow_ok = (typeof(event.at) == \"datetime\") + "
+          "(dt_json == \"\\\"Sat, 04 Mar 2006 13:27:54 GMT\\\"\") + "
+          "(json_out == json_in) + json_ok.ok + (json_bad.ok == 0) + "
+          "csv_ok.ok + (csv_out == \"at\\n\\\"Sat, 04 Mar 2006 13:27:54 GMT\\\"\");"
           "var total = dt.year + dt.month + dt.day + dt.hour + dt.minute + "
-          "dt.second + dt.has_tz + dt.tz_offset + is_null(bad);"
+          "dt.second + dt.has_tz + dt.tz_offset + is_null(bad) + kind_ok;"
           "var text_len = text.length();";
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Datetime parser Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "total"), 2109.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "total"), 2110.0, 0.001);
       check_float_eq(ts_get_num(ctx, "ts"), 1141478874.0, 0.001);
       check_float_eq(ts_get_num(ctx, "direct"), 1142329374.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "flow_ok"), 7.0, 0.001);
       check_float_gt(ts_get_num(ctx, "text_len"), 20.0);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should expose native date time and duration values") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var d = date.parse(\"2026-06-28\");"
+          "var t = time.parse(\"09:30:05.123\");"
+          "var dur = duration.parse(\"1h30m5s250ms\");"
+          "var json = json.stringify(list(d,t,dur));"
+          "var text = `${d}|${t}|${dur}`;"
+          "var type_score = (typeof(d) == \"date\") + is_date(d) + "
+          "(typeof(t) == \"time\") + is_time(t) + "
+          "(typeof(dur) == \"duration\") + is_duration(dur);"
+          "var member_score = (d.year == 2026) + (d.month == 6) + (d.day == 28) + "
+          "(t.hour == 9) + (t.minute == 30) + (t.second == 5) + "
+          "(t.millisecond == 123) + (dur.milliseconds == 5405250) + "
+          "(dur.seconds == 5405.25);"
+          "var string_fn_score = (date.to_string(d) == \"2026-06-28\") + "
+          "(time.to_string(t) == \"09:30:05.123\") + "
+          "(duration.to_string(dur) == \"1:30:05.250\");"
+          "var json_ok = json == \"[\\\"2026-06-28\\\",\\\"09:30:05.123\\\",\\\"1:30:05.250\\\"]\";"
+          "var template_ok = text == \"2026-06-28|09:30:05.123|1:30:05.250\";";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Temporal values Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "type_score"), 6.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "member_score"), 9.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "string_fn_score"), 3.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "json_ok"), 1.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "template_ok"), 1.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should bind date time and duration through TBE schemas") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var schema = \"message Event { date d; time t; duration span; }\";"
+          "var json_in = \"{\\\"d\\\":\\\"2026-06-28\\\","
+          "\\\"t\\\":\\\"09:30:05.123\\\",\\\"span\\\":\\\"1h30m5s250ms\\\"}\";"
+          "var event = json.bind(schema, json_in, \"Event\");"
+          "var json_out = json.emit(schema, event, \"Event\");"
+          "var rebound = json.bind(schema, json_out, \"Event\");"
+          "var csv_out = csv.emit(schema, event, \"Event\");"
+          "var csv_back = csv.bind(schema, csv_out, 0, \"Event\");"
+          "var xml_in = \"<event><d>2026-06-28</d><t>09:30:05.123</t>\" + "
+          "\"<span>1h30m5s250ms</span></event>\";"
+          "var xml_event = xml.bind(schema, xml_in, \"Event\");"
+          "var json_ok = json.validate_ex(schema, json_out, \"Event\");"
+          "var csv_ok = csv.validate_ex(schema, csv_out, \"Event\");"
+          "var xml_ok = xml.validate_ex(schema, xml_in, \"Event\");"
+          "var bad = json.validate_ex(schema, "
+          "\"{\\\"d\\\":\\\"2026-02-31\\\",\\\"t\\\":\\\"09:30:05.123\\\","
+          "\\\"span\\\":\\\"1h30m5s250ms\\\"}\", \"Event\");"
+          "var type_score = (typeof(event.d) == \"date\") + "
+          "(typeof(event.t) == \"time\") + (typeof(event.span) == \"duration\") + "
+          "(typeof(xml_event.d) == \"date\") + (typeof(csv_back.t) == \"time\");"
+          "var value_score = (event.d.year == 2026) + (event.t.millisecond == 123) + "
+          "(event.span.milliseconds == 5405250) + (rebound.span.seconds == 5405.25);"
+          "var io_score = (json_out == \"{\\\"d\\\":\\\"2026-06-28\\\","
+          "\\\"t\\\":\\\"09:30:05.123\\\",\\\"span\\\":\\\"1:30:05.250\\\"}\") + "
+          "(csv_out == \"d,t,span\\n2026-06-28,09:30:05.123,1:30:05.250\") + "
+          "json_ok.ok + csv_ok.ok + xml_ok.ok + (bad.ok == 0);";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Temporal schema bind Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "type_score"), 5.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "value_score"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "io_score"), 6.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should expose native decimal values") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var d = decimal.parse(\"123.4500\");"
+          "var same = decimal.parse(\"123.45\");"
+          "var json = json.stringify(list(d));"
+          "var text = `${d}`;"
+          "var type_score = (typeof(d) == \"decimal\") + is_decimal(d);"
+          "var member_score = (d.mantissa == 12345) + (d.scale == 2) + "
+          "(decimal.mantissa(d) == 12345) + (decimal.scale(d) == 2);"
+          "var string_score = (decimal.to_string(d) == \"123.45\") + "
+          "(d.to_string() == \"123.45\") + (json == \"[\\\"123.45\\\"]\") + "
+          "(text == \"123.45\") + (d == same);";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Decimal values Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "type_score"), 2.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "member_score"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "string_score"), 5.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should bind decimal through TBE schemas") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var schema = \"message Quote { decimal price; }\";"
+          "var json_in = \"{\\\"price\\\":\\\"123.4500\\\"}\";"
+          "var quote = json.bind(schema, json_in, \"Quote\");"
+          "var json_out = json.emit(schema, quote, \"Quote\");"
+          "var csv_out = csv.emit(schema, quote, \"Quote\");"
+          "var csv_back = csv.bind(schema, csv_out, 0, \"Quote\");"
+          "var xml_in = \"<quote><price>-0.1250</price></quote>\";"
+          "var xml_quote = xml.bind(schema, xml_in, \"Quote\");"
+          "var json_ok = json.validate_ex(schema, json_out, \"Quote\");"
+          "var csv_ok = csv.validate_ex(schema, csv_out, \"Quote\");"
+          "var xml_ok = xml.validate_ex(schema, xml_in, \"Quote\");"
+          "var bad = json.validate_ex(schema, \"{\\\"price\\\":\\\"bad\\\"}\", \"Quote\");"
+          "var type_score = (typeof(quote.price) == \"decimal\") + "
+          "(typeof(xml_quote.price) == \"decimal\") + (typeof(csv_back.price) == \"decimal\");"
+          "var value_score = (quote.price.mantissa == 12345) + (quote.price.scale == 2) + "
+          "(xml_quote.price.mantissa == -125) + (xml_quote.price.scale == 3);"
+          "var io_score = (json_out == \"{\\\"price\\\":\\\"123.45\\\"}\") + "
+          "(csv_out == \"price\\n123.45\") + json_ok.ok + csv_ok.ok + xml_ok.ok + "
+          "(bad.ok == 0) + (bad.message == \"expected decimal but got string\");";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Decimal schema bind Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "type_score"), 3.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "value_score"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "io_score"), 7.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should bind XML through TBE schemas") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+
+      const char *script =
+          "var schema = \"message Event { uuid id; bytes raw; datetime at; }\";"
+          "var xml_in = \"<event><id>01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001</id>\" + "
+          "\"<raw>Az</raw><at>Sat, 04 Mar 2006 13:27:54 GMT</at></event>\";"
+          "var many = \"<events>\" + xml_in + xml_in + \"</events>\";"
+          "var event = xml.bind(schema, xml_in, \"Event\");"
+          "var rows = xml.bind_all(schema, many, \"//event\", \"Event\");"
+          "var ok = xml.validate_ex(schema, many, \"//event\", \"Event\");"
+          "var bad = xml.validate_ex(schema, "
+          "\"<event><id>01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001</id><raw>Az</raw><at>bad</at></event>\", "
+          "\"Event\");"
+          "var score = (typeof(event.id) == \"uuid\") + (typeof(event.raw) == \"bytes\") + "
+          "(event.raw.length == 2) + (typeof(event.at) == \"datetime\") + "
+          "(rows.length() == 2) + ok.ok + (bad.ok == 0);";
+
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("XML schema bind Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "score"), 7.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -318,13 +532,17 @@ spec("turbo_script") {
           "\\\"qty\\\":10,\\\"active\\\":true}\";"
           "var trade = json.bind(schema, js, \"Trade\");"
           "var total = trade.price * trade.qty + trade.active;"
-          "var symbol_len = trade.symbol.length();";
+          "var symbol_len = trade.symbol.length();"
+          "var bool_checks = (typeof(trade.active) == \"bool\") + is_bool(trade.active);"
+          "var object_checks = (typeof(trade) == \"object\") + is_object(trade);";
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("JSON bind Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "total"), 1236.0, 0.001);
       check_float_eq(ts_get_num(ctx, "symbol_len"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "bool_checks"), 2.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "object_checks"), 2.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -613,6 +831,8 @@ spec("turbo_script") {
           "var array_inner_len = fields[1].inner_type.length();"
           "var group_type_len = fields[3].group_type.length();"
           "var map_value_len = fields[4].value_type.length();"
+          "var reflection_objects = is_object(types[0]) + is_object(fields[0]) + "
+          "is_object(fields_from_text[0]);"
           "var has_book = schema.type_exists(schema_id, \"Book\");"
           "var has_missing = schema.type_exists(schema_text, \"Missing\");"
           "var close_rc = schema.close(schema_id);";
@@ -628,6 +848,7 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "array_inner_len"), 6.0, 0.001);
       check_float_eq(ts_get_num(ctx, "group_type_len"), 5.0, 0.001);
       check_float_eq(ts_get_num(ctx, "map_value_len"), 5.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "reflection_objects"), 3.0, 0.001);
       check_float_eq(ts_get_num(ctx, "has_book"), 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "has_missing"), 0.0, 0.001);
       check_float_eq(ts_get_num(ctx, "close_rc"), 0.0, 0.001);
@@ -661,6 +882,9 @@ spec("turbo_script") {
           "var book_kind_len = book_layout.kind.length();"
           "var book_fixed = book_layout.fixed_block_size;"
           "var field_kind_len = fields[1].kind.length();"
+          "var reflection_objects = is_object(enums[0]) + is_object(root_attrs) + "
+          "is_object(book_attrs) + is_object(root_layout) + is_object(book_layout) + "
+          "is_object(fields[0]);"
           "var close_rc = schema.close(schema_id);";
 
       int res = turbo_script_run(ctx, script);
@@ -676,7 +900,8 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "root_order_len"), 6.0, 0.001);
       check_float_eq(ts_get_num(ctx, "book_kind_len"), 7.0, 0.001);
       check_float_eq(ts_get_num(ctx, "book_fixed"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "field_kind_len"), 6.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "field_kind_len"), 4.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "reflection_objects"), 6.0, 0.001);
       check_float_eq(ts_get_num(ctx, "close_rc"), 0.0, 0.001);
 
       turbo_script_free(ctx);
@@ -707,6 +932,8 @@ spec("turbo_script") {
           "var variant_count = unions[0].variant_count;"
           "var union_field_count = fields.length();"
           "var union_kind_len = layout.kind.length();"
+          "var reflection_objects = is_object(types[0]) + is_object(flags[0]) + "
+          "is_object(unions[0]) + is_object(fields[0]) + is_object(layout);"
           "var close_rc = schema.close(schema_id);";
 
       int res = turbo_script_run(ctx, script);
@@ -721,6 +948,7 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "variant_count"), 2.0, 0.001);
       check_float_eq(ts_get_num(ctx, "union_field_count"), 2.0, 0.001);
       check_float_eq(ts_get_num(ctx, "union_kind_len"), 5.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "reflection_objects"), 5.0, 0.001);
       check_float_eq(ts_get_num(ctx, "has_result"), 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "close_rc"), 0.0, 0.001);
 
@@ -1312,6 +1540,7 @@ spec("turbo_script") {
           "var bad_code = bad.code;"
           "var bad_message_len = bad.message.length();"
           "var last_error = schema.error();"
+          "var diag_objects = is_object(good) + is_object(types[0]) + is_object(bad);"
           "var last_error_len = last_error.length();";
 
       int res = turbo_script_run(ctx, script);
@@ -1325,6 +1554,7 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "bad_handle"), -1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "bad_code") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "bad_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "diag_objects"), 3.0, 0.001);
       check_float_eq(ts_get_num(ctx, "last_error_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
 
       turbo_script_free(ctx);
@@ -1709,11 +1939,11 @@ spec("turbo_script") {
 
       // Write it using native file_write (or just setup beforehand? native is easier if we have
       // ctx) But we can use turbo_script_run to write it!
-      turbo_script_run(ctx, "write_file(\"utils.ts\", "
+      turbo_script_run(ctx, "write_file(\"utils.tbs\", "
                             "\"var MODULE_VERSION = 2.0; func square(x) { return x * x; };\");");
 
       // Main script
-      const char *script = "import(\"utils.ts\"); "
+      const char *script = "import(\"utils.tbs\"); "
                            "res = square(5); "
                            "ver = MODULE_VERSION;";
 
@@ -1722,15 +1952,15 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "ver"), 2.0, 0.1);
 
       // Clean up
-      turbo_script_run(ctx, "file_remove(\"utils.ts\");");
+      turbo_script_run(ctx, "file_remove(\"utils.tbs\");");
       turbo_script_free(ctx);
     }
 
     it("should resolve nested relative script imports from run_file") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *util_src = "func helper(x) { return x + 1; };";
-      const char *child_src = "import(\"./utils.ts\");";
-      const char *main_src = "import(\"sub/child.ts\"); res = helper(7);";
+      const char *child_src = "import(\"./utils.tbs\");";
+      const char *main_src = "import(\"sub/child.tbs\"); res = helper(7);";
       char root_dir[TURBO_FS_MAX_PATH];
       char sub_dir[TURBO_FS_MAX_PATH];
       char main_path[TURBO_FS_MAX_PATH];
@@ -1742,9 +1972,9 @@ spec("turbo_script") {
       check_int_eq(turbo_fs_mkdir(root_dir, 0755), 0);
       check_int_eq(turbo_fs_path_join(sub_dir, sizeof(sub_dir), root_dir, "sub"), 0);
       check_int_eq(turbo_fs_mkdir(sub_dir, 0755), 0);
-      check_int_eq(turbo_fs_path_join(main_path, sizeof(main_path), root_dir, "main.ts"), 0);
-      check_int_eq(turbo_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.ts"), 0);
-      check_int_eq(turbo_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.ts"), 0);
+      check_int_eq(turbo_fs_path_join(main_path, sizeof(main_path), root_dir, "main.tbs"), 0);
+      check_int_eq(turbo_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.tbs"), 0);
+      check_int_eq(turbo_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.tbs"), 0);
 
       buf = turbo_fs_buf_init((char *)util_src, strlen(util_src));
       check_int_eq(turbo_fs_write_file(util_path, &buf), 0);
@@ -1764,6 +1994,18 @@ spec("turbo_script") {
       turbo_script_free(ctx);
     }
 
+    it("should only treat .tbs files as script imports") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+
+      turbo_script_run(ctx, "write_file(\"legacy.ts\", \"legacy_value = 7;\");");
+
+      check_int_eq(turbo_script_run(ctx, "import(\"legacy.ts\");"), -1);
+      check_float_eq(ts_get_num(ctx, "legacy_value"), 0.0, 0.001);
+
+      turbo_script_run(ctx, "file_remove(\"legacy.ts\");");
+      turbo_script_free(ctx);
+    }
+
     it("should return explicit script exports as a module map") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *module_src = "load_count = load_count + 1; "
@@ -1775,7 +2017,7 @@ spec("turbo_script") {
       char script[512];
       turbo_fs_buf_t buf;
 
-      ts_test_make_name(module_path, sizeof(module_path), "_ts_export_mod", ".ts");
+      ts_test_make_name(module_path, sizeof(module_path), "_ts_export_mod", ".tbs");
       buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
       check_int_eq(turbo_fs_write_file(module_path, &buf), 0);
 
@@ -1806,7 +2048,7 @@ spec("turbo_script") {
       char script[640];
       turbo_fs_buf_t buf;
 
-      ts_test_make_name(module_path, sizeof(module_path), "_ts_isolated_mod", ".ts");
+      ts_test_make_name(module_path, sizeof(module_path), "_ts_isolated_mod", ".tbs");
       buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
       check_int_eq(turbo_fs_write_file(module_path, &buf), 0);
 
@@ -2032,7 +2274,7 @@ spec("turbo_script") {
   }
 
   describe("Containers") {
-    it("should preserve the current container contract") {
+    it("should use broad truthiness for containers") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = ""
                            "m0 = map{}; "
@@ -2051,9 +2293,9 @@ spec("turbo_script") {
       check_float_eq(ts_get_num(ctx, "miss1"), 0.0, 0.001);
       check_float_eq(ts_get_num(ctx, "miss2"), 0.0, 0.001);
       check_float_eq(ts_get_num(ctx, "tm0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tm1"), 0.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "tm1"), 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "tl0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tl1"), 0.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "tl1"), 1.0, 0.001);
       turbo_script_free(ctx);
     }
   }
@@ -2714,13 +2956,14 @@ spec("turbo_script") {
                            "var bs = bytes(\"Az\"); "
                            "var raw = from_bytes(bs); "
                            "var raw_vec = from_bytes([65,66]); "
+                           "var type_score = (typeof(bs) == \"bytes\") + is_bytes(bs); "
                            "var score = hits.length() + hits[0] + hits[1] + hits[2] + "
-                           "overlap_count + bs.length() + bs[0] + bs[1];";
+                           "overlap_count + bs.length() + bs[0] + bs[1] + type_score;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String extended helper Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
 
-      check_float_eq(ts_get_num(ctx, "score"), 198.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 200.0, 0.001);
       check_str_eq(ts_get_str(ctx, "wrapped"), "alpha beta\ngamma");
       check_str_eq(ts_get_str(ctx, "hard_wrap"), "abc\ndef\ngh");
       check_str_eq(ts_get_str(ctx, "unbroken"), "abcdefgh");
@@ -3084,6 +3327,29 @@ spec("turbo_script") {
       check_str_eq(ts_get_str(ctx, "iter0"), "12");
       check_str_eq(ts_get_str(ctx, "iter1"), "345");
 
+      turbo_script_free(ctx);
+    }
+
+    it("should support RegExp object API") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "var re = RegExp(\"[0-9]+\"); "
+                           "var ci = RegExp(\"abc\", \"i\"); "
+                           "var found = re.test(\"a12b\"); "
+                           "var full = re.match(\"123\"); "
+                           "var no_full = re.match(\"a123\"); "
+                           "var pos = re.search(\"a12b\"); "
+                           "var info = re.exec(\"a12b\"); "
+                           "var none = re.exec(\"abc\"); "
+                           "var all = re.find_all(\"a12b345\"); "
+                           "var source = re.toString(); "
+                           "var score = found + full + no_full + pos + info.start + info.end + "
+                           "            all.length() + ci.test(\"ABC\") + (none == null);";
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("RegExp object Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+
+      check_float_eq(ts_get_num(ctx, "score"), 11.0, 0.001);
+      check_str_eq(ts_get_str(ctx, "source"), "[0-9]+");
       turbo_script_free(ctx);
     }
 
@@ -3687,15 +3953,15 @@ spec("turbo_script") {
       check_not_null(ctx);
 
       turbo_script_run(ctx, ""
-                            "write_file(\"utils_dot.ts\", \"func square(x) { return x * x; };\");");
+                            "write_file(\"utils_dot.tbs\", \"func square(x) { return x * x; };\");");
 
-      const char *script = "import(\"utils_dot.ts\"); "
+      const char *script = "import(\"utils_dot.tbs\"); "
                            "res = square(7);";
 
       check_int_eq(turbo_script_run(ctx, script), 0);
       check_float_eq(ts_get_num(ctx, "res"), 49.0, 0.1);
 
-      turbo_script_run(ctx, "file_remove(\"utils_dot.ts\");");
+      turbo_script_run(ctx, "file_remove(\"utils_dot.tbs\");");
       turbo_script_free(ctx);
     }
   }
@@ -4790,11 +5056,11 @@ spec("turbo_script") {
       check_int_eq(turbo_fs_write_file(xml_path, &buf), 0);
 
       snprintf(script, sizeof(script),
-          "var total = stream.xml(\"%s\", \"//price\")"
+          "var total = stream.file(\"%s\").xml(\"//price\")"
           "  .filter(n => to_num(n.text) > 5)"
           "  .map(n => to_num(n.text))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var attr_count = stream.xml(\"%s\", \"//@id\").count(); "
+          "var attr_count = stream.file(\"%s\").xml(\"//@id\").count(); "
           "var score = total + attr_count;",
           xml_path, xml_path);
 
@@ -4821,19 +5087,19 @@ spec("turbo_script") {
           "write_file(\"%s\", \"[{\\\"price\\\":10,\\\"qty\\\":2},{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]\"); "
           "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
           "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
-          "var json_total = stream.json(\"%s\")"
+          "var json_total = stream.file(\"%s\").json()"
           "  .filter(r => r.price > 5)"
           "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_total = stream.csv(\"%s\")"
+          "var csv_total = stream.file(\"%s\").csv()"
           "  .filter(r => to_num(r.price) > 5)"
           "  .map(r => to_num(r.price) * to_num(r.qty))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_no_header_total = stream.csv(\"%s\", 0)"
+          "var csv_no_header_total = stream.file(\"%s\").csv(0)"
           "  .filter(r => to_num(r.c0) > 5)"
           "  .map(r => to_num(r.c0) * to_num(r.c1))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var line_count = stream.lines(\"%s\").filter(line => line.length() > 0).count(); "
+          "var line_count = stream.file(\"%s\").lines().filter(line => line.length() > 0).count(); "
           "var score = json_total + csv_total + csv_no_header_total + line_count;",
           json_path, csv_path, csv_no_header_path, json_path, csv_path,
           csv_no_header_path, csv_path);
@@ -4867,18 +5133,18 @@ spec("turbo_script") {
           "{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]}\"); "
           "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
           "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
-          "var json_total = stream.json(\"%s\", \"$.orders[@.price > 5]\")"
+          "var json_total = stream.file(\"%s\").json(\"$.orders[@.price > 5]\")"
           "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_total = stream.csv(\"%s\")"
+          "var csv_total = stream.file(\"%s\").csv()"
           "  .filterExpr(\"price > 5\")"
           "  .map(r => to_num(r.price) * to_num(r.qty))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_alias_total = stream.csv(\"%s\")"
+          "var csv_alias_total = stream.file(\"%s\").csv()"
           "  .where(\"price > 5\")"
           "  .map(r => to_num(r.price) * to_num(r.qty))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_no_header_total = stream.csv(\"%s\", 0)"
+          "var csv_no_header_total = stream.file(\"%s\").csv(0)"
           "  .filterExpr(\"c0 > 5\")"
           "  .map(r => to_num(r.c0) * to_num(r.c1))"
           "  .reduce(0, (acc, v) => acc + v); "
@@ -4910,11 +5176,11 @@ spec("turbo_script") {
           "write_file(\"%s\", \"<orders><order id=\\\"a\\\"><price>10</price></order>"
           "<order id=\\\"b\\\"><price>3</price></order>"
           "<order id=\\\"c\\\"><price>8</price></order></orders>\"); "
-          "var total = stream.xml(\"%s\", \"//price\")"
+          "var total = stream.file(\"%s\").xml(\"//price\")"
           "  .filter(n => to_num(n.text) > 5)"
           "  .map(n => to_num(n.text))"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var names = stream.xml(\"%s\", \"//@id\").map(n => n.text).toList(); "
+          "var names = stream.file(\"%s\").xml(\"//@id\").map(n => n.text).toList(); "
           "var score = total + names.length() + (names[1] == \"b\");",
           xml_path, xml_path, xml_path);
 

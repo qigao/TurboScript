@@ -108,6 +108,8 @@ static const char *value_signature_type(exprtk_value_t value) {
             return "vector";
         case EXPRTK_VAL_MAP:
             return "map";
+        case EXPRTK_VAL_OBJECT:
+            return "object";
         case EXPRTK_VAL_NULL:
             return "null";
         case EXPRTK_VAL_LIST:

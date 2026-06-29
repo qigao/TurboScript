@@ -86,8 +86,8 @@ target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS}
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC TurboNet::Utils
-  PRIVATE TurboNet::Parser TurboNet::Mustache mir_static libfsm::libre libfsm::libfsm miniblas_linalg)
+  PUBLIC TurboNet::Utils TurboNet::Parser uuid
+  PRIVATE TurboNet::Mustache mir_static libfsm::libre libfsm::libfsm miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
 if(MSVC)

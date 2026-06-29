@@ -148,7 +148,7 @@ spec("data_bind_module") {
       };
 
       exprtk_value_t res_map = call_fn(&t, "data_bind.parse", 3, parse_args);
-      check_int_eq(res_map.type, EXPRTK_VAL_MAP);
+      check_int_eq(res_map.type, EXPRTK_VAL_OBJECT);
 
       /* Check map values using map helper functions */
       check(exprtk_map_has(&res_map, "attrs"));
@@ -169,6 +169,140 @@ spec("data_bind_module") {
       call_fn(&t, "data_bind.close", 1, close_args);
 
       remove("test_parse_plugin.tbe");
+      test_env_free(&t);
+    }
+  }
+
+  describe("data_bind.json / data_bind.csv / data_bind.xml") {
+    it("should bind JSON CSV and XML through the plugin API") {
+      test_env_t t;
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+
+      write_schema("test_dynamic_plugin.tbe",
+        "enum Side <uint8> { Buy = 1; Sell = 2; }\n"
+        "message Order {\n"
+        "  uint32 id;\n"
+        "  Side side;\n"
+        "  datetime at;\n"
+        "  bool active;\n"
+        "  list<uint32> qtys;\n"
+        "  map<string,int32> attrs;\n"
+        "}\n"
+      );
+
+      exprtk_value_t create_args[1] = {make_str(&t, "test_dynamic_plugin.tbe")};
+      exprtk_value_t handle = call_fn(&t, "data_bind.create", 1, create_args);
+      check(handle.data.number >= 0.0);
+
+      {
+        exprtk_value_t json_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "{\"id\":7,\"side\":\"Buy\",\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"active\":true,\"qtys\":[10,20],\"attrs\":{\"x\":30}}")
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.json", 3, json_args);
+        exprtk_value_t qtys;
+        exprtk_value_t attrs;
+        exprtk_value_t at;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 7.0, 0.01);
+        check_float_eq(exprtk_map_get(&order, "side").data.number, 1.0, 0.01);
+        at = exprtk_map_get(&order, "at");
+        check_int_eq(at.type, EXPRTK_VAL_DATETIME);
+        check_int_eq(at.data.datetime.year, 2006);
+        check_int_eq(exprtk_map_get(&order, "active").type, EXPRTK_VAL_BOOL);
+        check_int_eq(exprtk_map_get(&order, "active").data.boolean, 1);
+        qtys = exprtk_map_get(&order, "qtys");
+        check_int_eq(qtys.type, EXPRTK_VAL_LIST);
+        check_size_eq(qtys.data.list.count, 2);
+        check_float_eq(qtys.data.list.items[1].data.number, 20.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 30.0, 0.01);
+      }
+
+      {
+        exprtk_value_t csv_args[4] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "id,side,at,active,qtys[0],qtys[1],attrs.x\n8,Sell,\"Sat, 04 Mar 2006 13:27:54 GMT\",false,11,22,44\n"),
+          exprtk_val_num(0.0)
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.csv", 4, csv_args);
+        exprtk_value_t qtys;
+        exprtk_value_t attrs;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 8.0, 0.01);
+        check_float_eq(exprtk_map_get(&order, "side").data.number, 2.0, 0.01);
+        check_int_eq(exprtk_map_get(&order, "at").type, EXPRTK_VAL_DATETIME);
+        check_int_eq(exprtk_map_get(&order, "active").type, EXPRTK_VAL_BOOL);
+        check_int_eq(exprtk_map_get(&order, "active").data.boolean, 0);
+        qtys = exprtk_map_get(&order, "qtys");
+        check_int_eq(qtys.type, EXPRTK_VAL_LIST);
+        check_float_eq(qtys.data.list.items[0].data.number, 11.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 44.0, 0.01);
+      }
+
+      {
+        exprtk_value_t csv_all_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "id,side,at,active,qtys[0],attrs.x\n"
+                       "1,Buy,\"Sat, 04 Mar 2006 13:27:54 GMT\",true,10,30\n"
+                       "2,Sell,\"Sat, 04 Mar 2006 13:27:54 GMT\",false,20,40\n")
+        };
+        exprtk_value_t rows = call_fn(&t, "data_bind.csv_all", 3, csv_all_args);
+        check_int_eq(rows.type, EXPRTK_VAL_LIST);
+        check_size_eq(rows.data.list.count, 2);
+        check_int_eq(rows.data.list.items[1].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
+      }
+
+      {
+        exprtk_value_t xml_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "<order id=\"9\" active=\"true\"><side>Buy</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><qtys>12</qtys><qtys>24</qtys><attrs><x>48</x></attrs></order>")
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.xml", 3, xml_args);
+        exprtk_value_t qtys;
+        exprtk_value_t attrs;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 9.0, 0.01);
+        check_float_eq(exprtk_map_get(&order, "side").data.number, 1.0, 0.01);
+        check_int_eq(exprtk_map_get(&order, "at").type, EXPRTK_VAL_DATETIME);
+        check_int_eq(exprtk_map_get(&order, "active").type, EXPRTK_VAL_BOOL);
+        check_int_eq(exprtk_map_get(&order, "active").data.boolean, 1);
+        qtys = exprtk_map_get(&order, "qtys");
+        check_int_eq(qtys.type, EXPRTK_VAL_LIST);
+        check_float_eq(qtys.data.list.items[1].data.number, 24.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 48.0, 0.01);
+      }
+
+      {
+        exprtk_value_t xml_all_args[4] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "<orders><order><id>1</id><side>Buy</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><active>true</active><qtys>10</qtys><attrs><x>30</x></attrs></order>"
+                       "<order><id>2</id><side>Sell</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><active>false</active><qtys>20</qtys><attrs><x>40</x></attrs></order></orders>"),
+          make_str(&t, "//order")
+        };
+        exprtk_value_t rows = call_fn(&t, "data_bind.xml_all", 4, xml_all_args);
+        check_int_eq(rows.type, EXPRTK_VAL_LIST);
+        check_size_eq(rows.data.list.count, 2);
+        check_int_eq(rows.data.list.items[1].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
+      }
+
+      exprtk_value_t close_args[1] = {handle};
+      call_fn(&t, "data_bind.close", 1, close_args);
+
+      remove("test_dynamic_plugin.tbe");
       test_env_free(&t);
     }
   }

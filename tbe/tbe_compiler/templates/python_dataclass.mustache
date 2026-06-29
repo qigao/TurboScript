@@ -28,7 +28,7 @@ class {{name}}:
     Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
     """
 {{#fields}}
-    {{name}}: {{type}} # size: {{size_bytes}} bytes
+    {{name}}: {{python_type}} # size: {{size_bytes}} bytes
 {{/fields}}
 
 {{/composites}}
@@ -44,7 +44,7 @@ class {{name}}:
     Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
     """
 {{#fields}}
-    {{name}}: {{type}} # size: {{size_bytes}} bytes
+    {{name}}: {{python_type}} # size: {{size_bytes}} bytes
 {{/fields}}
 
 {{/groups}}
@@ -60,7 +60,7 @@ class {{name}}:
     Attributes: {{#attributes}}[ {{name}}: {{value}} ] {{/attributes}}
     """
 {{#fields}}
-    {{name}}: {{type}} # size: {{size_bytes}} bytes
+    {{name}}: {{python_type}} # size: {{size_bytes}} bytes
 {{/fields}}
 
 {{/messages}}

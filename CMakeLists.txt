@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
-# TurboNet Project - Unified High-Performance Networking Library
+# TurboScript Project - A Simple DSL with MIR JIT Backend
 project(
   TurboScript
   VERSION 1.0.0
@@ -17,7 +17,7 @@ get_filename_component(CMAKE_INSTALL_PREFIX "${CMAKE_INSTALL_PREFIX}" ABSOLUTE)
 
 # Project description
 set(PROJECT_DESCRIPTION "A simple DSL")
-set(PROJECT_HOMEPAGE_URL "https://github.com/qigao/turboscript")
+set(PROJECT_HOMEPAGE_URL "https://github.com/qigao/TurboScript")
 
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # Language standards - unified approach
@@ -57,9 +57,7 @@ find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
 # Additional components
 add_subdirectory(tools)
 include(FindTools)
-add_subdirectory(vendor)
-#add_subdirectory(shared)
-#add_subdirectory(parser)
+add_subdirectory(vendor) 
 
 add_subdirectory(exprtk) 
 add_subdirectory(turbo_script) 

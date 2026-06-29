@@ -3,6 +3,7 @@ project(uuid LANGUAGES C)
 
 # Create a static library target
 add_library(uuid STATIC uuid.c uuid.h)
+add_library(TurboScript::uuid ALIAS uuid)
 
 # Include the current directory so that the header can be found
 target_include_directories(uuid
@@ -18,6 +19,13 @@ set_target_properties(uuid PROPERTIES
     POSITION_INDEPENDENT_CODE ON
      FOLDER "vendor/uuid"
 )
+
+cmake_config_target(
+    uuid
+    FOLDER "vendor/uuid"
+    EXPORT_NAME uuid)
+
+install(FILES uuid.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 if(BUILD_TESTING)
     add_executable(uuid_test tests/uuid_test.c)

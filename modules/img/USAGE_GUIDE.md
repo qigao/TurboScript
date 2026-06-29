@@ -328,7 +328,7 @@ process_workflow();
 ## 十、参考资源
 
 - 完整 API 文档: `README.md`
-- 更多示例: `test/example_usage.ts`
+- 更多示例: `test/example_usage.tbs`
 - 单元测试: `test/test_img.c`
 
 ---

@@ -74,8 +74,18 @@ exprtk_value_t exprtk_val_map(void) {
   return val;
 }
 
+exprtk_value_t exprtk_val_object(void) {
+  exprtk_value_t val = exprtk_val_map();
+  val.type = EXPRTK_VAL_OBJECT;
+  return val;
+}
+
+int exprtk_value_is_object_like(const exprtk_value_t *value) {
+  return value && (value->type == EXPRTK_VAL_MAP || value->type == EXPRTK_VAL_OBJECT);
+}
+
 exprtk_value_t exprtk_map_get(const exprtk_value_t *map, const char *key) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return exprtk_val_num(0);
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -89,7 +99,7 @@ exprtk_value_t exprtk_map_get(const exprtk_value_t *map, const char *key) {
 }
 
 void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
-  if (!map || map->type != EXPRTK_VAL_MAP)
+  if (!exprtk_value_is_object_like(map))
     return;
 
   /* Lazy init: if htab is NULL (e.g. from memset-zero'd value), create it */
@@ -99,7 +109,7 @@ void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) 
     map->data.map.htab = htab;
   }
 
-  /* Deep copy string values to avoid dangling pointers when arena is reset */
+  /* Deep copy arena-backed buffers to avoid dangling pointers when arena is reset. */
   exprtk_value_t value_copy = value;
   if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
     char *str_copy = (char *)malloc(value.data.string.len + 1);
@@ -108,6 +118,13 @@ void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) 
       str_copy[value.data.string.len] = '\0';
       value_copy.data.string.data = str_copy;
     }
+  } else if (value.type == EXPRTK_VAL_BYTES && value.data.bytes.data) {
+    char *bytes_copy = (char *)malloc(value.data.bytes.len);
+    if (bytes_copy || value.data.bytes.len == 0) {
+      if (value.data.bytes.len > 0)
+        memcpy(bytes_copy, value.data.bytes.data, value.data.bytes.len);
+      value_copy.data.bytes.data = bytes_copy;
+    }
   }
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -115,9 +132,11 @@ void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) 
   exprtk_map_kv_t result;
 
   if (HTAB_OP(exprtk_map_kv_t, do)(htab, probe, HTAB_FIND, &result)) {
-    /* Update existing - free old string if it was a string */
+    /* Update existing - free old copied buffers */
     if (result.value.type == EXPRTK_VAL_STRING && result.value.data.string.data) {
       free((void *)result.value.data.string.data);
+    } else if (result.value.type == EXPRTK_VAL_BYTES && result.value.data.bytes.data) {
+      free((void *)result.value.data.bytes.data);
     }
     result.value = value_copy;
     HTAB_OP(exprtk_map_kv_t, do)(htab, result, HTAB_REPLACE, &result);
@@ -129,7 +148,7 @@ void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) 
 }
 
 int exprtk_map_has(const exprtk_value_t *map, const char *key) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return 0;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -140,7 +159,7 @@ int exprtk_map_has(const exprtk_value_t *map, const char *key) {
 }
 
 int exprtk_map_delete(exprtk_value_t *map, const char *key) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return 0;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -149,9 +168,11 @@ int exprtk_map_delete(exprtk_value_t *map, const char *key) {
 
   if (HTAB_OP(exprtk_map_kv_t, do)(htab, probe, HTAB_FIND, &result)) {
     free(result.key);
-    /* Free string value if it was deep-copied */
+    /* Free copied buffers */
     if (result.value.type == EXPRTK_VAL_STRING && result.value.data.string.data) {
       free((void *)result.value.data.string.data);
+    } else if (result.value.type == EXPRTK_VAL_BYTES && result.value.data.bytes.data) {
+      free((void *)result.value.data.bytes.data);
     }
     HTAB_OP(exprtk_map_kv_t, do)(htab, probe, HTAB_DELETE, &result);
     return 1;
@@ -160,7 +181,7 @@ int exprtk_map_delete(exprtk_value_t *map, const char *key) {
 }
 
 size_t exprtk_map_count(const exprtk_value_t *map) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return 0;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -168,7 +189,7 @@ size_t exprtk_map_count(const exprtk_value_t *map) {
 }
 
 exprtk_value_t *exprtk_map_get_ptr(const exprtk_value_t *map, const char *key) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return NULL;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -189,7 +210,7 @@ exprtk_value_t *exprtk_map_get_ptr(const exprtk_value_t *map, const char *key) {
 }
 
 void exprtk_map_free(exprtk_value_t *map) {
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;
@@ -199,9 +220,11 @@ void exprtk_map_free(exprtk_value_t *map) {
   for (htab_size_t i = 0; i < bound; i++) {
     if (els[i].hash != HTAB_DELETED_HASH) {
       free(els[i].el.key);
-      /* Free string values that were deep-copied */
+      /* Free copied buffers */
       if (els[i].el.value.type == EXPRTK_VAL_STRING && els[i].el.value.data.string.data) {
         free((void *)els[i].el.value.data.string.data);
+      } else if (els[i].el.value.type == EXPRTK_VAL_BYTES && els[i].el.value.data.bytes.data) {
+        free((void *)els[i].el.value.data.bytes.data);
       }
     }
   }
@@ -216,7 +239,7 @@ void exprtk_map_free(exprtk_value_t *map) {
 
 exprtk_map_iter_t exprtk_map_iter_begin(const exprtk_value_t *map) {
   exprtk_map_iter_t it = {NULL, 0, 0};
-  if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab)
+  if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return it;
 
   HTAB(exprtk_map_kv_t) *htab = (HTAB(exprtk_map_kv_t) *)map->data.map.htab;

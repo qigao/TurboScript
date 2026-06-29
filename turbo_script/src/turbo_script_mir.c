@@ -30,6 +30,11 @@ exprtk_value_t throw_field_access_error(exprtk_env_t *env, const exprtk_node_t *
                                         const char *field_name, int access_level);
 const char *type_name(int type);
 int values_match(exprtk_value_t lhs, exprtk_value_t rhs);
+int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_date_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_time_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_duration_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
+int exprtk_decimal_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
 exprtk_class_t *eval_current_class(exprtk_env_t *env);
 exprtk_func_t *eval_find_constructor_typed(exprtk_class_t *klass, size_t argc,
                                            exprtk_value_t *args);
@@ -191,7 +196,13 @@ typedef struct {
 static double ts_mir_numeric_value(exprtk_value_t val) {
   if (val.type == EXPRTK_VAL_INTEGER) return (double)val.data.integer;
   if (val.type == EXPRTK_VAL_NUMBER) return val.data.number;
+  if (val.type == EXPRTK_VAL_BOOL) return val.data.boolean ? 1.0 : 0.0;
   return 0.0;
+}
+
+static int ts_mir_value_is_numeric(exprtk_value_t val) {
+  return val.type == EXPRTK_VAL_INTEGER || val.type == EXPRTK_VAL_NUMBER ||
+         val.type == EXPRTK_VAL_BOOL;
 }
 
 static int ts_mir_null_compare_value(exprtk_value_t lhs, exprtk_value_t rhs, int op,
@@ -1616,7 +1627,7 @@ static MIR_reg_t ts_emit_member_access(ts_mir_compiler_t *c, const char *obj_nam
   MIR_reg_t oop_slot = ts_try_emit_oop_member_get_slot(c, obj_name, member, object_node);
   if (oop_slot) return oop_slot;
 
-  if (obj.type == EXPRTK_VAL_MAP && exprtk_map_has(&obj, member)) {
+  if (exprtk_value_is_object_like(&obj) && exprtk_map_has(&obj, member)) {
     MIR_reg_t ptr_reg = ts_mir_get_or_add_map_ptr(c, obj_name, member);
 
     if (ptr_reg) {
@@ -5172,6 +5183,124 @@ static int ts_mir_runtime_value_text(exprtk_value_t value, char *buf, size_t buf
     *out_len = (size_t)n;
     return 1;
   }
+  if (value.type == EXPRTK_VAL_BOOL) {
+    *out_data = value.data.boolean ? "true" : "false";
+    *out_len = value.data.boolean ? 4 : 5;
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_BYTES) {
+    int n = snprintf(buf, buf_size, "bytes(%zu)", value.data.bytes.len);
+    if (n < 0) return 0;
+    *out_data = buf;
+    *out_len = (size_t)n;
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_UUID) {
+    if (!uuid_to_s(value.data.uuid, buf, (int)buf_size)) return 0;
+    *out_data = buf;
+    *out_len = strlen(buf);
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_DATETIME) {
+    time_t ts = turbo_datetime_to_time(&value.data.datetime);
+    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, buf_size) < 0) return 0;
+    *out_data = buf;
+    *out_len = strlen(buf);
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_DATE) {
+    int n = snprintf(buf, buf_size, "%04d-%02d-%02d", value.data.date.year,
+                     value.data.date.month, value.data.date.day);
+    if (n < 0) return 0;
+    *out_data = buf;
+    *out_len = (size_t)n;
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_TIME) {
+    int n;
+    if (value.data.time.millisecond > 0)
+      n = snprintf(buf, buf_size, "%02d:%02d:%02d.%03d", value.data.time.hour,
+                   value.data.time.minute, value.data.time.second,
+                   value.data.time.millisecond);
+    else
+      n = snprintf(buf, buf_size, "%02d:%02d:%02d", value.data.time.hour,
+                   value.data.time.minute, value.data.time.second);
+    if (n < 0) return 0;
+    *out_data = buf;
+    *out_len = (size_t)n;
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_DURATION) {
+    int64_t rem = value.data.duration_ms < 0 ? -value.data.duration_ms
+                                             : value.data.duration_ms;
+    int64_t h = rem / 3600000;
+    int64_t m;
+    int64_t s;
+    int n;
+    rem %= 3600000;
+    m = rem / 60000;
+    rem %= 60000;
+    s = rem / 1000;
+    rem %= 1000;
+    n = snprintf(buf, buf_size, "%s%lld:%02lld:%02lld.%03lld",
+                 value.data.duration_ms < 0 ? "-" : "", (long long)h,
+                 (long long)m, (long long)s, (long long)rem);
+    if (n < 0) return 0;
+    *out_data = buf;
+    *out_len = (size_t)n;
+    return 1;
+  }
+  if (value.type == EXPRTK_VAL_DECIMAL) {
+    exprtk_decimal_t dec = value.data.decimal;
+    char digits[32];
+    char *p = digits + sizeof(digits);
+    uint64_t mag;
+    size_t digit_count;
+    size_t pos = 0;
+    int negative;
+    while (dec.scale > 0 && dec.mantissa % 10 == 0) {
+      dec.mantissa /= 10;
+      dec.scale--;
+    }
+    if (dec.mantissa == 0) dec.scale = 0;
+    negative = dec.mantissa < 0;
+    mag = negative ? (uint64_t)(-(dec.mantissa + 1)) + 1ULL : (uint64_t)dec.mantissa;
+    *--p = '\0';
+    do {
+      *--p = (char)('0' + (mag % 10ULL));
+      mag /= 10ULL;
+    } while (mag != 0);
+    digit_count = strlen(p);
+    if (negative) {
+      if (pos + 1 >= buf_size) return 0;
+      buf[pos++] = '-';
+    }
+    if (dec.scale == 0) {
+      if (pos + digit_count >= buf_size) return 0;
+      memcpy(buf + pos, p, digit_count + 1);
+    } else if ((size_t)dec.scale >= digit_count) {
+      size_t zeros = (size_t)dec.scale - digit_count;
+      if (pos + 2 + zeros + digit_count >= buf_size) return 0;
+      buf[pos++] = '0';
+      buf[pos++] = '.';
+      while (zeros-- > 0) buf[pos++] = '0';
+      memcpy(buf + pos, p, digit_count);
+      pos += digit_count;
+      buf[pos] = '\0';
+    } else {
+      size_t whole = digit_count - (size_t)dec.scale;
+      if (pos + digit_count + 1 >= buf_size) return 0;
+      memcpy(buf + pos, p, whole);
+      pos += whole;
+      buf[pos++] = '.';
+      memcpy(buf + pos, p + whole, (size_t)dec.scale);
+      pos += (size_t)dec.scale;
+      buf[pos] = '\0';
+    }
+    *out_data = buf;
+    *out_len = strlen(buf);
+    return 1;
+  }
   if (value.type == EXPRTK_VAL_NULL) {
     *out_data = "null";
     *out_len = 4;
@@ -5225,6 +5354,91 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     return 1;
   }
 
+  if (lhs.type == EXPRTK_VAL_BOOL && rhs.type == EXPRTK_VAL_BOOL &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = lhs.data.boolean == rhs.data.boolean;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_BYTES && rhs.type == EXPRTK_VAL_BYTES &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = lhs.data.bytes.len == rhs.data.bytes.len &&
+                (lhs.data.bytes.len == 0 ||
+                 memcmp(lhs.data.bytes.data, rhs.data.bytes.data, lhs.data.bytes.len) == 0);
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_UUID && rhs.type == EXPRTK_VAL_UUID &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = memcmp(lhs.data.uuid.bytes, rhs.data.uuid.bytes,
+                       sizeof(lhs.data.uuid.bytes)) == 0;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_DATETIME && rhs.type == EXPRTK_VAL_DATETIME &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = memcmp(&lhs.data.datetime, &rhs.data.datetime, sizeof(lhs.data.datetime)) == 0;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_DATE && rhs.type == EXPRTK_VAL_DATE &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = lhs.data.date.year == rhs.data.date.year &&
+                lhs.data.date.month == rhs.data.date.month &&
+                lhs.data.date.day == rhs.data.date.day;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_TIME && rhs.type == EXPRTK_VAL_TIME &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = lhs.data.time.hour == rhs.data.time.hour &&
+                lhs.data.time.minute == rhs.data.time.minute &&
+                lhs.data.time.second == rhs.data.time.second &&
+                lhs.data.time.millisecond == rhs.data.time.millisecond;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_DURATION && rhs.type == EXPRTK_VAL_DURATION &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    int equal = lhs.data.duration_ms == rhs.data.duration_ms;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
+  if (lhs.type == EXPRTK_VAL_DECIMAL && rhs.type == EXPRTK_VAL_DECIMAL &&
+      (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
+    exprtk_decimal_t ldec = lhs.data.decimal;
+    exprtk_decimal_t rdec = rhs.data.decimal;
+    int equal;
+    while (ldec.scale > 0 && ldec.mantissa % 10 == 0) {
+      ldec.mantissa /= 10;
+      ldec.scale--;
+    }
+    while (rdec.scale > 0 && rdec.mantissa % 10 == 0) {
+      rdec.mantissa /= 10;
+      rdec.scale--;
+    }
+    if (ldec.mantissa == 0) ldec.scale = 0;
+    if (rdec.mantissa == 0) rdec.scale = 0;
+    equal = ldec.mantissa == rdec.mantissa && ldec.scale == rdec.scale;
+    *out = exprtk_val_num(node->data.binary.op == exprtk_TOKEN_EQ ? (double)equal
+                                                                  : (double)!equal);
+    return 1;
+  }
+
   if ((lhs.type == EXPRTK_VAL_STRING || lhs.type == EXPRTK_VAL_NULL) &&
       (rhs.type == EXPRTK_VAL_STRING || rhs.type == EXPRTK_VAL_NULL) &&
       (node->data.binary.op == exprtk_TOKEN_EQ || node->data.binary.op == exprtk_TOKEN_NE)) {
@@ -5262,6 +5476,16 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     data[l_len + r_len] = '\0';
     *out = exprtk_val_str(tstr_v_from_buf(data, l_len + r_len));
     return 1;
+  }
+
+  if (!ts_mir_value_is_numeric(lhs) || !ts_mir_value_is_numeric(rhs)) {
+    if (env) {
+      env->aborted = 1;
+      snprintf(env->error_msg, sizeof(env->error_msg),
+               "MIR runtime error: unsupported runtime binary op %d with value types %d and %d",
+               node->data.binary.op, lhs.type, rhs.type);
+    }
+    return 0;
   }
 
   l = ts_mir_numeric_value(lhs);
@@ -5354,15 +5578,41 @@ static int ts_mir_template_append_value(exprtk_env_t *env, char **buf, size_t *l
   case EXPRTK_VAL_NUMBER:
     n = snprintf(num_buf, sizeof(num_buf), "%g", value.data.number);
     return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
+  case EXPRTK_VAL_BOOL:
+    return value.data.boolean
+               ? ts_mir_template_append(env, buf, len, cap, "true", 4)
+               : ts_mir_template_append(env, buf, len, cap, "false", 5);
   case EXPRTK_VAL_STRING:
     return ts_mir_template_append(env, buf, len, cap, value.data.string.data,
                                   value.data.string.len);
+  case EXPRTK_VAL_BYTES:
+    n = snprintf(num_buf, sizeof(num_buf), "bytes(%zu)", value.data.bytes.len);
+    return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
+  case EXPRTK_VAL_UUID:
+    if (!uuid_to_s(value.data.uuid, num_buf, sizeof(num_buf))) return 0;
+    return ts_mir_template_append(env, buf, len, cap, num_buf, strlen(num_buf));
+  case EXPRTK_VAL_DATETIME: {
+    time_t ts = turbo_datetime_to_time(&value.data.datetime);
+    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, num_buf, sizeof(num_buf)) < 0) return 0;
+    return ts_mir_template_append(env, buf, len, cap, num_buf, strlen(num_buf));
+  }
+  case EXPRTK_VAL_DATE:
+  case EXPRTK_VAL_TIME:
+  case EXPRTK_VAL_DURATION:
+  case EXPRTK_VAL_DECIMAL: {
+    const char *text = NULL;
+    size_t text_len = 0;
+    if (!ts_mir_runtime_value_text(value, num_buf, sizeof(num_buf), &text, &text_len)) return 0;
+    return ts_mir_template_append(env, buf, len, cap, text, text_len);
+  }
   case EXPRTK_VAL_NULL:
     return ts_mir_template_append(env, buf, len, cap, "null", 4);
   case EXPRTK_VAL_VECTOR:
     return ts_mir_template_append(env, buf, len, cap, "[vector]", 8);
   case EXPRTK_VAL_MAP:
     return ts_mir_template_append(env, buf, len, cap, "[map]", 5);
+  case EXPRTK_VAL_OBJECT:
+    return ts_mir_template_append(env, buf, len, cap, "[object]", 8);
   case EXPRTK_VAL_LIST:
     return ts_mir_template_append(env, buf, len, cap, "[list]", 6);
   default:
@@ -5538,9 +5788,22 @@ static int ts_mir_runtime_define_func_in_env(exprtk_env_t *env, exprtk_node_t *n
 }
 
 static int ts_mir_value_truthy(exprtk_value_t value) {
+  if (value.type == EXPRTK_VAL_BOOL) return value.data.boolean != 0;
   if (value.type == EXPRTK_VAL_INTEGER) return llabs(value.data.integer) > 0;
   if (value.type == EXPRTK_VAL_NUMBER) return fabs(value.data.number) > 1e-9;
   if (value.type == EXPRTK_VAL_STRING) return value.data.string.len > 0;
+  if (value.type == EXPRTK_VAL_BYTES) return value.data.bytes.len > 0;
+  if (value.type == EXPRTK_VAL_UUID) return 1;
+  if (value.type == EXPRTK_VAL_DATETIME || value.type == EXPRTK_VAL_DATE ||
+      value.type == EXPRTK_VAL_TIME || value.type == EXPRTK_VAL_DURATION ||
+      value.type == EXPRTK_VAL_DECIMAL)
+    return 1;
+  if (value.type == EXPRTK_VAL_VECTOR) return value.data.vector.size > 0;
+  if (value.type == EXPRTK_VAL_LIST) return value.data.list.count > 0;
+  if (exprtk_value_is_object_like(&value)) return exprtk_map_count(&value) > 0;
+  if (value.type == EXPRTK_VAL_FUNCTION || value.type == EXPRTK_VAL_CLASS ||
+      value.type == EXPRTK_VAL_INSTANCE || value.type == EXPRTK_VAL_BOUND_METHOD)
+    return 1;
   return 0;
 }
 
@@ -5701,7 +5964,7 @@ static int ts_mir_runtime_for_in_value(exprtk_node_t *node, exprtk_env_t *env,
       ts_mir_runtime_body_flow_done(env, &done);
       if (done) break;
     }
-  } else if (collection.type == EXPRTK_VAL_MAP) {
+  } else if (exprtk_value_is_object_like(&collection)) {
     exprtk_map_iter_t it = exprtk_map_iter_begin(&collection);
     const char *key = NULL;
     while (exprtk_map_iter_next(&it, &key, NULL)) {
@@ -5981,7 +6244,7 @@ static int ts_mir_runtime_member_set_value(exprtk_node_t *node, exprtk_env_t *en
   if (object_node->type == EXPRTK_NODE_VARIABLE) {
     const char *var_name = object_node->data.variable.name;
     exprtk_value_t object = exprtk_env_get(env, var_name);
-    if (object.type == EXPRTK_VAL_MAP) {
+    if (exprtk_value_is_object_like(&object)) {
       exprtk_map_set(&object, node->data.member_set.member, val);
       exprtk_env_set(env, var_name, object);
       *out = val;
@@ -6217,7 +6480,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
   case EXPRTK_NODE_IF: {
     exprtk_value_t cond;
     if (!ts_mir_runtime_value_arg(node->data.if_stmt.condition, env, &cond)) return 0;
-    if (fabs(ts_mir_numeric_value(cond)) > 1e-9) {
+    if (ts_mir_value_truthy(cond)) {
       return node->data.if_stmt.if_branch
                  ? ts_mir_runtime_value_arg(node->data.if_stmt.if_branch, env, out)
                  : (*out = exprtk_val_num(0.0), 1);
@@ -6325,10 +6588,15 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
         *out = exprtk_val_num((double)object.data.string.len);
         return 1;
       }
+      if (object.type == EXPRTK_VAL_BYTES) {
+        *out = exprtk_val_num((double)object.data.bytes.len);
+        return 1;
+      }
     }
     if (object.type == EXPRTK_VAL_INSTANCE || object.type == EXPRTK_VAL_CLASS ||
-        object.type == EXPRTK_VAL_MAP || object.type == EXPRTK_VAL_LIST ||
-        object.type == EXPRTK_VAL_VECTOR || object.type == EXPRTK_VAL_STRING) {
+        exprtk_value_is_object_like(&object) || object.type == EXPRTK_VAL_LIST ||
+        object.type == EXPRTK_VAL_VECTOR || object.type == EXPRTK_VAL_STRING ||
+        object.type == EXPRTK_VAL_BYTES) {
       const char *temp_name = "__ts_mir_value_receiver";
       exprtk_env_set(env, temp_name, object);
       *out = exprtk_member_call_checked_value_nodes(temp_name, node->data.member_call.method,
@@ -6427,7 +6695,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       return 0;
     }
 
-    if (index.type == EXPRTK_VAL_STRING && array.type == EXPRTK_VAL_MAP) {
+    if (index.type == EXPRTK_VAL_STRING && exprtk_value_is_object_like(&array)) {
       *out = exprtk_map_get(&array, index.data.string.data);
       return 1;
     }
@@ -6445,6 +6713,12 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     }
     if (array.type == EXPRTK_VAL_LIST) {
       *out = exprtk_list_get(&array, (size_t)idx);
+      return 1;
+    }
+    if (array.type == EXPRTK_VAL_BYTES) {
+      *out = (size_t)idx < array.data.bytes.len
+                 ? exprtk_val_int((unsigned char)array.data.bytes.data[idx])
+                 : exprtk_val_num(0.0);
       return 1;
     }
     return 0;
@@ -6525,10 +6799,29 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
         *out = exprtk_val_num((double)object.data.string.len);
         return 1;
       }
+      if (object.type == EXPRTK_VAL_BYTES) {
+        *out = exprtk_val_num((double)object.data.bytes.len);
+        return 1;
+      }
     }
-    if (object.type == EXPRTK_VAL_MAP) {
+    if (exprtk_value_is_object_like(&object)) {
       *out = exprtk_map_get(&object, member);
       return 1;
+    }
+    if (object.type == EXPRTK_VAL_DATETIME) {
+      return exprtk_datetime_member_get(object, member, out);
+    }
+    if (object.type == EXPRTK_VAL_DATE) {
+      return exprtk_date_member_get(object, member, out);
+    }
+    if (object.type == EXPRTK_VAL_TIME) {
+      return exprtk_time_member_get(object, member, out);
+    }
+    if (object.type == EXPRTK_VAL_DURATION) {
+      return exprtk_duration_member_get(object, member, out);
+    }
+    if (object.type == EXPRTK_VAL_DECIMAL) {
+      return exprtk_decimal_member_get(object, member, out);
     }
     if (object.type == EXPRTK_VAL_INSTANCE || object.type == EXPRTK_VAL_CLASS) {
       const char *object_name = NULL;
@@ -6739,7 +7032,7 @@ static int ts_mir_string_equals(exprtk_value_t value, const char *text) {
 }
 
 static exprtk_value_t ts_mir_await_result(exprtk_value_t value) {
-  if (value.type == EXPRTK_VAL_MAP && exprtk_map_has(&value, "status") &&
+  if (exprtk_value_is_object_like(&value) && exprtk_map_has(&value, "status") &&
       exprtk_map_has(&value, "value")) {
     exprtk_value_t status = exprtk_map_get(&value, "status");
     if (ts_mir_string_equals(status, "suspended") || ts_mir_string_equals(status, "dead")) {
@@ -7085,7 +7378,7 @@ double ts_mir_oop_predicate(void *ctx_ptr, int64_t kind, const char *name, const
   exprtk_value_t value;
   if (member) {
     exprtk_value_t object = exprtk_env_get(&ctx->env, name);
-    if (object.type == EXPRTK_VAL_MAP && exprtk_map_has(&object, member)) {
+    if (exprtk_value_is_object_like(&object) && exprtk_map_has(&object, member)) {
       value = exprtk_map_get(&object, member);
     } else {
       value = exprtk_oop_get_member_checked(name, member, (exprtk_node_t *)object_node, &ctx->env);
@@ -7198,7 +7491,22 @@ double ts_mir_member_get(void *ctx_ptr, const char *obj_name, const char *member
     if (strcmp(member, "length") == 0) return (double)obj.data.vector.size;
   } else if (obj.type == EXPRTK_VAL_STRING) {
     if (strcmp(member, "length") == 0) return (double)obj.data.string.len;
-  } else if (obj.type == EXPRTK_VAL_MAP) {
+  } else if (obj.type == EXPRTK_VAL_DATETIME) {
+    exprtk_value_t val;
+    if (exprtk_datetime_member_get(obj, member, &val)) return ts_mir_numeric_value(val);
+  } else if (obj.type == EXPRTK_VAL_DATE) {
+    exprtk_value_t val;
+    if (exprtk_date_member_get(obj, member, &val)) return ts_mir_numeric_value(val);
+  } else if (obj.type == EXPRTK_VAL_TIME) {
+    exprtk_value_t val;
+    if (exprtk_time_member_get(obj, member, &val)) return ts_mir_numeric_value(val);
+  } else if (obj.type == EXPRTK_VAL_DURATION) {
+    exprtk_value_t val;
+    if (exprtk_duration_member_get(obj, member, &val)) return ts_mir_numeric_value(val);
+  } else if (obj.type == EXPRTK_VAL_DECIMAL) {
+    exprtk_value_t val;
+    if (exprtk_decimal_member_get(obj, member, &val)) return ts_mir_numeric_value(val);
+  } else if (exprtk_value_is_object_like(&obj)) {
     exprtk_value_t val = exprtk_map_get(&obj, member);
     return ts_mir_numeric_value(val);
   }
@@ -7220,7 +7528,17 @@ double ts_mir_member_get_assign(void *ctx_ptr, const char *target_name, const ch
     if (strcmp(member, "length") == 0) value = exprtk_val_num((double)obj.data.vector.size);
   } else if (obj.type == EXPRTK_VAL_STRING) {
     if (strcmp(member, "length") == 0) value = exprtk_val_num((double)obj.data.string.len);
-  } else if (obj.type == EXPRTK_VAL_MAP) {
+  } else if (obj.type == EXPRTK_VAL_DATETIME) {
+    (void)exprtk_datetime_member_get(obj, member, &value);
+  } else if (obj.type == EXPRTK_VAL_DATE) {
+    (void)exprtk_date_member_get(obj, member, &value);
+  } else if (obj.type == EXPRTK_VAL_TIME) {
+    (void)exprtk_time_member_get(obj, member, &value);
+  } else if (obj.type == EXPRTK_VAL_DURATION) {
+    (void)exprtk_duration_member_get(obj, member, &value);
+  } else if (obj.type == EXPRTK_VAL_DECIMAL) {
+    (void)exprtk_decimal_member_get(obj, member, &value);
+  } else if (exprtk_value_is_object_like(&obj)) {
     value = exprtk_map_get(&obj, member);
   } else {
     value = exprtk_oop_get_member_cached_checked(
@@ -7250,7 +7568,7 @@ void *ts_mir_vec_data(void *ctx_ptr, const char *name) {
 double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_value_t obj = exprtk_env_get(&ctx->env, obj_name);
-  if (obj.type == EXPRTK_VAL_MAP) {
+  if (exprtk_value_is_object_like(&obj)) {
     exprtk_value_t val = exprtk_map_get(&obj, key);
     return ts_mir_numeric_value(val);
   }
@@ -7262,7 +7580,7 @@ double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key) 
 void *ts_mir_map_num_ptr(void *ctx_ptr, const char *obj_name, const char *key) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_value_t obj = exprtk_env_get(&ctx->env, obj_name);
-  if (obj.type == EXPRTK_VAL_MAP) {
+  if (exprtk_value_is_object_like(&obj)) {
     /* We need a stable pointer into the HTAB entry.
      * Use exprtk_map_get_ptr which returns a pointer to the value inside the htab. */
     exprtk_value_t *vp = exprtk_map_get_ptr(&obj, key);
@@ -9104,8 +9422,7 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   }
 
   char mod_name[64];
-  static int mod_idx = 0;
-  snprintf(mod_name, sizeof(mod_name), "ts_jit_mod_%d", mod_idx++);
+  snprintf(mod_name, sizeof(mod_name), "ts_jit_mod_%d", ctx->mir_mod_idx++);
 
   MIR_module_t mod = MIR_new_module(mir_ctx, mod_name);
 
@@ -9200,8 +9517,18 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
    * Variable name strings and monomorphic OOP class strings are also baked in as pointer
    * immediates for helper calls. We intentionally keep them alive for the MIR context
    * lifetime. */
-  /* exprtk_free(ast); -- intentionally NOT freed */
-  /* Variable-entry names are intentionally kept alive with the MIR module. */
+  /* Track the compiled AST in the context to be freed on teardown */
+  if (ctx->compiled_ast_count >= ctx->compiled_ast_capacity) {
+    size_t new_cap = ctx->compiled_ast_capacity == 0 ? 16 : ctx->compiled_ast_capacity * 2;
+    exprtk_node_t **new_asts = (exprtk_node_t **)realloc(ctx->compiled_asts, new_cap * sizeof(exprtk_node_t *));
+    if (new_asts) {
+      ctx->compiled_asts = new_asts;
+      ctx->compiled_ast_capacity = new_cap;
+    }
+  }
+  if (ctx->compiled_ast_count < ctx->compiled_ast_capacity) {
+    ctx->compiled_asts[ctx->compiled_ast_count++] = ast;
+  }
 
   MIR_load_module(mir_ctx, mod);
 
@@ -9359,7 +9686,10 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
   /*  Check compile cache — skip parse/compile on hit */
   uint64_t hash = ts_hash_script(script);
   uint32_t slot = (uint32_t)(hash % TS_JIT_CACHE_SIZE);
-  if (ctx->jit_cache[slot].hash == hash && ctx->jit_cache[slot].fn_ptr) {
+  if (ctx->jit_cache[slot].hash == hash &&
+      ctx->jit_cache[slot].script &&
+      strcmp(ctx->jit_cache[slot].script, script) == 0 &&
+      ctx->jit_cache[slot].fn_ptr) {
     ctx->jit_cache[slot].access_count++;  // 更新 LRU 访问计数
     
     // 记录缓存命中统计
@@ -9389,6 +9719,8 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
   if (turbo_script_compile_mir(ctx, script) != 0) return -1;
 
   /* Store in cache */
+  free(ctx->jit_cache[slot].script);
+  ctx->jit_cache[slot].script = strdup(script);
   ctx->jit_cache[slot].hash = hash;
   ctx->jit_cache[slot].fn_ptr = ctx->mir_last_fn;
   ctx->jit_cache[slot].access_count = 1;  // 初始化访问计数

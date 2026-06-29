@@ -336,6 +336,76 @@ suite("exprtk_grammar") {
             exprtk_free(root);
             exprtk_env_free(&env);
         }
+
+        it("should support native bigint money and set values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input =
+                "id = bigint.parse(\"123456789012345678901234567890\");"
+                "price = money(decimal.parse(\"12.30\"), \"USD\");"
+                "tags = set(\"a\", \"a\", \"b\");";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            exprtk_eval(root, &env);
+
+            exprtk_value_t id = exprtk_env_get(&env, "id");
+            check_int_eq(id.type, EXPRTK_VAL_BIGINT);
+            check_int_eq(id.data.bigint.text.len, strlen("123456789012345678901234567890"));
+            check_int_eq(strncmp(id.data.bigint.text.data,
+                                 "123456789012345678901234567890",
+                                 id.data.bigint.text.len), 0);
+
+            exprtk_value_t price = exprtk_env_get(&env, "price");
+            check_int_eq(price.type, EXPRTK_VAL_MONEY);
+            check_int_eq(price.data.money.amount.mantissa, 123);
+            check_int_eq(price.data.money.amount.scale, 1);
+            check_int_eq(memcmp(price.data.money.currency, "USD", 3), 0);
+
+            exprtk_value_t tags = exprtk_env_get(&env, "tags");
+            check_int_eq(tags.type, EXPRTK_VAL_SET);
+            check_int_eq(tags.data.list.count, 2);
+            check_int_eq(tags.data.list.items[1].type, EXPRTK_VAL_STRING);
+            check_int_eq(tags.data.list.items[1].data.string.len, 1);
+            check_int_eq(tags.data.list.items[1].data.string.data[0], 'b');
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should support offset datetime values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input =
+                "dt = offset_datetime.parse(\"2026-06-28T09:30:15+08:00\");"
+                "(typeof(dt) == \"offset_datetime\") + is_offset_datetime(dt) +"
+                "(dt.year == 2026) + (dt.month == 6) + (dt.day == 28) +"
+                "(dt.hour == 9) + (dt.minute == 30) + (dt.second == 15) +"
+                "(dt.tz_offset == 480) +"
+                "(offset_datetime.to_string(dt) == \"2026-06-28T09:30:15+08:00\")";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 10.0, 0.0001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should support typed arrays") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input =
+                "a = typed.i32(1, 2, 3);"
+                "sum = 0; for (x in a) { sum += x };"
+                "(typeof(a) == \"typed_array\") + is_typed_array(a) +"
+                "(a.kind == \"i32\") + (a.length == 3) + (a[1] == 2) + sum +"
+                "(a.toList()[2] == 3)";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 12.0, 0.0001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
     }
 
     group("New Language Features") {
@@ -1008,7 +1078,7 @@ suite("exprtk_grammar") {
     }
 
     group("Type Introspection (typeof)") {
-        it("should return 'number' for numeric values") {
+        it("should return 'int64' for integer values") {
             exprtk_env_t env;
             exprtk_env_init(&env);
             exprtk_registry_init();
@@ -1017,7 +1087,64 @@ suite("exprtk_grammar") {
             check_not_null(root);
             exprtk_value_t res = exprtk_eval(root, &env);
             check_int_eq(res.type, EXPRTK_VAL_STRING);
+            check_int_eq(strncmp(res.data.string.data, "int64", 5), 0);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should return 'number' for floating point values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input = "typeof(42.5)";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            exprtk_value_t res = exprtk_eval(root, &env);
+            check_int_eq(res.type, EXPRTK_VAL_STRING);
             check_int_eq(strncmp(res.data.string.data, "number", 6), 0);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should return 'bool' for boolean values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input = "typeof(true)";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            exprtk_value_t res = exprtk_eval(root, &env);
+            check_int_eq(res.type, EXPRTK_VAL_STRING);
+            check_int_eq(strncmp(res.data.string.data, "bool", 4), 0);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should return 'bytes' for byte buffers") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_env_add_module(&env, exprtk_module_string());
+            exprtk_registry_init();
+            const char *input = "typeof(bytes(\"Az\"))";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            exprtk_value_t res = exprtk_eval(root, &env);
+            check_int_eq(res.type, EXPRTK_VAL_STRING);
+            check_int_eq(strncmp(res.data.string.data, "bytes", 5), 0);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should return 'uuid' for UUID values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            const char *input = "typeof(uuid(\"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\"))";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            exprtk_value_t res = exprtk_eval(root, &env);
+            check_int_eq(res.type, EXPRTK_VAL_STRING);
+            check_int_eq(strncmp(res.data.string.data, "uuid", 4), 0);
             exprtk_free(root);
             exprtk_env_free(&env);
         }
@@ -1350,6 +1477,98 @@ suite("exprtk_grammar") {
             exprtk_env_free(&env);
         }
 
+        it("should correctly identify int64 bool and bytes") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_env_add_module(&env, exprtk_module_string());
+            exprtk_registry_init();
+            exprtk_node_t *root = exprtk_parse(
+                "is_int64(42) + is_bool(true) + is_bytes(bytes(\"Az\")) + "
+                "(true + 2) + bytes(\"Az\").length() + bytes(\"Az\")[1]", 0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 130.0, 0.001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should parse compare and stringify UUID values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            exprtk_node_t *root = exprtk_parse(
+                "u = uuid(\"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\"); "
+                "(u == uuid(uuid_string(u))) + is_uuid(u) + "
+                "(u.to_string() == \"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\")",
+                0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 3.0, 0.001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should parse and expose datetime values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            exprtk_node_t *root = exprtk_parse(
+                "dt = datetime(\"Sat, 04 Mar 2006 13:27:54 GMT\"); "
+                "(typeof(dt) == \"datetime\") + is_datetime(dt) + "
+                "(dt.year == 2006) + (dt.month == 3) + (dt.day == 4) + "
+                "(dt.timestamp == 1141478874) + "
+                "(dt.to_time() == datetime.timestamp(dt)) + "
+                "(datetime_string(dt).length() > 20)",
+                0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 8.0, 0.001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should parse and expose date time and duration values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            exprtk_node_t *root = exprtk_parse(
+                "d = date.parse(\"2026-06-28\"); "
+                "t = time.parse(\"09:30:05.123\"); "
+                "dur = duration.parse(\"1h30m5s250ms\"); "
+                "(typeof(d) == \"date\") + is_date(d) + (d.year == 2026) + "
+                "(d.month == 6) + (d.day == 28) + "
+                "(date.to_string(d) == \"2026-06-28\") + "
+                "(d.to_string() == \"2026-06-28\") + "
+                "(typeof(t) == \"time\") + is_time(t) + (t.hour == 9) + "
+                "(t.minute == 30) + (t.second == 5) + (t.millisecond == 123) + "
+                "(time.to_string(t) == \"09:30:05.123\") + "
+                "(typeof(dur) == \"duration\") + is_duration(dur) + "
+                "(dur.milliseconds == 5405250) + (dur.ms == 5405250) + "
+                "(duration.seconds(dur) == 5405.25) + "
+                "(duration.to_string(dur) == \"1:30:05.250\")",
+                0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 20.0, 0.001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should parse and expose decimal values") {
+            exprtk_env_t env;
+            exprtk_env_init(&env);
+            exprtk_registry_init();
+            exprtk_node_t *root = exprtk_parse(
+                "d = decimal.parse(\"123.4500\"); "
+                "same = decimal.parse(\"123.45\"); "
+                "(typeof(d) == \"decimal\") + is_decimal(d) + "
+                "(d.mantissa == 12345) + (d.scale == 2) + "
+                "(decimal.mantissa(d) == 12345) + (decimal.scale(d) == 2) + "
+                "(decimal.to_string(d) == \"123.45\") + "
+                "(d.to_string() == \"123.45\") + (d == same)",
+                0);
+            check_not_null(root);
+            check_float_eq(value_to_double(exprtk_eval(root, &env)), 9.0, 0.001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
         it("should report line and column for syntax errors") {
             mem_pool_t arena;
             mem_init(&arena, 1024);
@@ -1596,7 +1815,7 @@ suite("exprtk_grammar") {
             check_not_null(root);
             exprtk_value_t res = exprtk_eval(root, &env);
             check_int_eq(res.type, EXPRTK_VAL_STRING);
-            check_int_eq(strstr(res.data.string.data, "Member access 'length' is invalid for number") != NULL, 1);
+            check_int_eq(strstr(res.data.string.data, "Member access 'length' is invalid for int64") != NULL, 1);
             exprtk_free(root);
             exprtk_env_free(&env);
         }

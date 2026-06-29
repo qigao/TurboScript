@@ -41,7 +41,8 @@ The language should revolve around a small number of primary value shapes:
 - `number`: scalar numeric computation
 - `string`: text, paths, dates, messages
 - `vector`: dense numeric arrays for math and time-series work
-- `map`: structured records and configuration objects
+- `object`: host/parser/data_bind plain records and schema-bound data
+- `map`: explicit script key-value containers and schema map fields
 - `class`/`instance`: domain objects, interfaces, and encapsulated behavior
 - `null`: explicit absence
 
@@ -52,7 +53,8 @@ Classes and interfaces are supported, but they are a modeling tool, not the cent
 Design rule:
 
 - numeric pipelines should prefer `vector`
-- structured records should prefer `map`
+- host/parser/schema records should prefer plain `object`
+- script-authored key-value containers should prefer `map`
 - APIs should not force users to guess between `vector` and `list` unless there is a real semantic reason
 
 ---

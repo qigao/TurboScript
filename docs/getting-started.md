@@ -8,7 +8,7 @@ TurboScript is a TypeScript/JavaScript-like embeddable scripting engine. It lowe
 
 ## Hello World
 
-Create a file `hello.ts`:
+Create a file `hello.tbs`:
 
 ```javascript
 var name = "World";
@@ -17,7 +17,7 @@ print("Hello, " + name + "!");
 
 Run it:
 ```bash
-turbo_script hello.ts
+turbo_script hello.tbs
 ```
 
 Output:
@@ -209,7 +209,7 @@ file_truncate("backup.txt", 5);
 
 // Directory listing and recursive directories
 var files = listdir(".");
-var scripts = glob("*.ts");
+var scripts = glob("*.tbs");
 mkdir_recursive("data/tmp/cache");
 rmdir_recursive("data/tmp");
 ```

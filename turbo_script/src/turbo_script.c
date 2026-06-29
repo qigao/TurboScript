@@ -103,13 +103,28 @@ void turbo_script_free(turbo_script_ctx_t *ctx) {
   if (ctx->expr) exprtk_free(ctx->expr);
   free(ctx->expr_source);
 
+  // Free JIT cache copied script strings
+  for (int i = 0; i < TS_JIT_CACHE_SIZE; ++i) {
+    free(ctx->jit_cache[i].script);
+  }
+
+  // Free compiled ASTs
+  if (ctx->compiled_asts) {
+    for (size_t i = 0; i < ctx->compiled_ast_count; ++i) {
+      if (ctx->compiled_asts[i]) {
+        exprtk_free(ctx->compiled_asts[i]);
+      }
+    }
+    free(ctx->compiled_asts);
+  }
+
   // Free imported modules
   imported_module_t *mod = ctx->imports;
   while (mod) {
     imported_module_t *next = mod->next;
     free(mod->name);
     if (mod->expr) exprtk_free(mod->expr);
-    if (mod->has_exports && mod->exports.type == EXPRTK_VAL_MAP) exprtk_map_free(&mod->exports);
+    if (mod->has_exports && exprtk_value_is_object_like(&mod->exports)) exprtk_map_free(&mod->exports);
     free(mod);
     mod = next;
   }
@@ -121,6 +136,9 @@ void turbo_script_free(turbo_script_ctx_t *ctx) {
   }
   if (ctx->mir_interp_ctx) {
     MIR_finish(ctx->mir_interp_ctx);
+  }
+  if (ctx->script_mir_ctx) {
+    MIR_finish(ctx->script_mir_ctx);
   }
 
   exprtk_env_free(&ctx->env);
@@ -274,10 +292,10 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
 }
 
 static int ts_is_script_import(const char *name) {
+  size_t len;
   if (!name || !*name) return 0;
-  if (strstr(name, ".ts") != NULL) return 1;
-  if (strchr(name, '/') != NULL || strchr(name, '\\') != NULL) return 1;
-  return 0;
+  len = strlen(name);
+  return len >= 4 && strcmp(name + len - 4, ".tbs") == 0;
 }
 
 static int ts_script_already_imported(const turbo_script_ctx_t *ctx, const char *name) {
@@ -353,7 +371,8 @@ static exprtk_value_t ts_rebind_function_closures(exprtk_value_t value, exprtk_e
       value.data.list.items[i] = ts_rebind_function_closures(value.data.list.items[i], from, to);
     }
     break;
-  case EXPRTK_VAL_MAP: {
+  case EXPRTK_VAL_MAP:
+  case EXPRTK_VAL_OBJECT: {
     exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
     const char *key = NULL;
     exprtk_value_t child;
@@ -472,27 +491,49 @@ static int ts_run_script_file_in_env(turbo_script_ctx_t *ctx, const char *filena
   if (exec_env == &ctx->env) {
     rc = turbo_script_run_mir_interp(ctx, script);
   } else {
-    exprtk_env_t saved_env = ctx->env;
     exprtk_env_t *saved_import_env = ctx->current_import_env;
     exprtk_env_t *saved_parent = exec_env->parent;
 
+    // Swap exec_env and ctx->env to transfer ownership of internal tables
+    exprtk_env_t tmp = ctx->env;
     ctx->env = *exec_env;
-    ctx->env.parent = &saved_env;
+    *exec_env = tmp;
+
+    // Set parent of current env to the one now stored in exec_env (the original ctx->env)
+    ctx->env.parent = exec_env;
     ctx->current_import_env = &ctx->env;
+
     rc = turbo_script_run_mir_interp(ctx, script);
 
-    *exec_env = ctx->env;
-    exec_env->parent = saved_parent;
+    // Rebind internal functions in the module environment (currently in ctx->env)
+    // so their closure scopes point to the stable exec_env instead of the temporary &ctx->env.
+    exprtk_func_t *f = ctx->env.funcs;
+    while (f) {
+      if (f->is_script && f->closure_env == &ctx->env) {
+        f->closure_env = exec_env;
+      }
+      f = f->next;
+    }
+
+    // Rebind exported function closures first while ctx->env holds the module env
     ctx->current_import_exports =
         ts_rebind_function_closures(ctx->current_import_exports, &ctx->env, exec_env);
-    ctx->env = saved_env;
+
+    // Restore parent pointer of module env
+    ctx->env.parent = saved_parent;
+
+    // Swap back to restore original ctx->env (parent env) and update exec_env with the new module env
+    tmp = ctx->env;
+    ctx->env = *exec_env;
+    *exec_env = tmp;
+
     ctx->current_import_env = saved_import_env;
   }
 
 done:
   if (import_state_pushed) {
     if (exports_out) *exports_out = ctx->current_import_exports;
-    else if (ctx->current_import_exports.type == EXPRTK_VAL_MAP) exprtk_map_free(&ctx->current_import_exports);
+    else if (exprtk_value_is_object_like(&ctx->current_import_exports)) exprtk_map_free(&ctx->current_import_exports);
     if (has_exports_out) *has_exports_out = ctx->current_import_has_exports;
     ctx->current_import_name = prev_import_name;
     ctx->current_import_exports = prev_import_exports;
@@ -537,11 +578,11 @@ static exprtk_value_t ts_import_script_common(turbo_script_ctx_t *ctx, const cha
       return TS_ZERO;
     }
     if (ts_mark_script_imported(ctx, resolved, exports, has_exports, isolated) != 0) {
-      if (exports.type == EXPRTK_VAL_MAP) exprtk_map_free(&exports);
+      if (exprtk_value_is_object_like(&exports)) exprtk_map_free(&exports);
       TS_ERROR(ctx, TURBO_SCRIPT_ERROR_OOM, "import: out of memory");
       return TS_ZERO;
     }
-    if (exports.type == EXPRTK_VAL_MAP) exprtk_map_free(&exports);
+    if (exprtk_value_is_object_like(&exports)) exprtk_map_free(&exports);
     mod = ts_find_imported_script(ctx, resolved, isolated);
   }
 
@@ -565,6 +606,12 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, void *user_da
 
   if (ts_is_script_import(name)) {
     return ts_import_script_common(ctx, name, 0);
+  }
+
+  if (strcmp(name, "math") == 0 || strcmp(name, "string") == 0 ||
+      strcmp(name, "stats") == 0 || strcmp(name, "io") == 0 ||
+      strcmp(name, "core") == 0 || strcmp(name, "regex") == 0) {
+    return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
   if (ts_load_plugin(ctx, name) == 0) {
@@ -623,15 +670,102 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
   case EXPRTK_VAL_NUMBER:
     printf("%g", val->data.number);
     break;
+  case EXPRTK_VAL_INTEGER:
+    printf("%lld", (long long)val->data.integer);
+    break;
+  case EXPRTK_VAL_BOOL:
+    printf("%s", val->data.boolean ? "true" : "false");
+    break;
   case EXPRTK_VAL_STRING:
     printf("%.*s", (int)val->data.string.len, val->data.string.data);
     break;
+  case EXPRTK_VAL_BYTES:
+    printf("bytes(%zu)", val->data.bytes.len);
+    break;
+  case EXPRTK_VAL_UUID: {
+    char text[UUID4_STR_BUFFER_SIZE];
+    if (uuid_to_s(val->data.uuid, text, sizeof(text))) printf("%s", text);
+    else printf("[uuid]");
+    break;
+  }
+  case EXPRTK_VAL_DATETIME: {
+    char text[64];
+    time_t ts = turbo_datetime_to_time(&val->data.datetime);
+    if (ts != (time_t)-1 && turbo_datetime_format_rfc822(ts, text, sizeof(text)) >= 0)
+      printf("%s", text);
+    else
+      printf("[datetime]");
+    break;
+  }
+  case EXPRTK_VAL_DATE:
+    printf("%04d-%02d-%02d", val->data.date.year, val->data.date.month, val->data.date.day);
+    break;
+  case EXPRTK_VAL_TIME:
+    if (val->data.time.millisecond > 0)
+      printf("%02d:%02d:%02d.%03d", val->data.time.hour, val->data.time.minute,
+             val->data.time.second, val->data.time.millisecond);
+    else
+      printf("%02d:%02d:%02d", val->data.time.hour, val->data.time.minute,
+             val->data.time.second);
+    break;
+  case EXPRTK_VAL_DURATION: {
+    int64_t rem = val->data.duration_ms < 0 ? -val->data.duration_ms : val->data.duration_ms;
+    int64_t h = rem / 3600000;
+    int64_t m;
+    int64_t s;
+    rem %= 3600000;
+    m = rem / 60000;
+    rem %= 60000;
+    s = rem / 1000;
+    rem %= 1000;
+    printf("%s%lld:%02lld:%02lld.%03lld", val->data.duration_ms < 0 ? "-" : "",
+           (long long)h, (long long)m, (long long)s, (long long)rem);
+    break;
+  }
+  case EXPRTK_VAL_DECIMAL: {
+    exprtk_decimal_t dec = val->data.decimal;
+    char digits[32];
+    char *p = digits + sizeof(digits);
+    uint64_t mag;
+    size_t digit_count;
+    int negative;
+    while (dec.scale > 0 && dec.mantissa % 10 == 0) {
+      dec.mantissa /= 10;
+      dec.scale--;
+    }
+    if (dec.mantissa == 0) dec.scale = 0;
+    negative = dec.mantissa < 0;
+    mag = negative ? (uint64_t)(-(dec.mantissa + 1)) + 1ULL : (uint64_t)dec.mantissa;
+    *--p = '\0';
+    do {
+      *--p = (char)('0' + (mag % 10ULL));
+      mag /= 10ULL;
+    } while (mag != 0);
+    digit_count = strlen(p);
+    if (negative) printf("-");
+    if (dec.scale == 0) {
+      printf("%s", p);
+    } else if ((size_t)dec.scale >= digit_count) {
+      size_t zeros = (size_t)dec.scale - digit_count;
+      printf("0.");
+      while (zeros-- > 0) printf("0");
+      printf("%s", p);
+    } else {
+      size_t whole = digit_count - (size_t)dec.scale;
+      printf("%.*s.%s", (int)whole, p, p + whole);
+    }
+    break;
+  }
   case EXPRTK_VAL_VECTOR:
     ts_print_vector(val);
     break;
   case EXPRTK_VAL_MAP:
     if (repl_mode) printf("{map}");
     else printf("{map:%zu}", exprtk_map_count(val));
+    break;
+  case EXPRTK_VAL_OBJECT:
+    if (repl_mode) printf("{object}");
+    else printf("{object:%zu}", exprtk_map_count(val));
     break;
   case EXPRTK_VAL_LIST:
     if (repl_mode) printf("[list]");
@@ -641,8 +775,7 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
     printf("null");
     break;
   case EXPRTK_VAL_FUNCTION:
-    if (repl_mode) printf("[function]");
-    else printf("[unknown type %d]", val->type);
+    printf("[function]");
     break;
   default:
     if (repl_mode) printf("[unknown]");
@@ -699,7 +832,7 @@ int turbo_script_run(turbo_script_ctx_t *ctx, const char *script) {
     set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "script is NULL");
     return -1;
   }
-  if (ts_prepare_expr(ctx, script) != 0) return -1;
+  clear_error(ctx);
   return turbo_script_run_mir_interp(ctx, script);
 }
 
@@ -792,13 +925,27 @@ int turbo_script_exec(turbo_script_ctx_t *ctx, turbo_script_compiled_t *compiled
 
 bool turbo_script_value_as_bool(exprtk_value_t val) {
   switch (val.type) {
+  case EXPRTK_VAL_BOOL:
+    return val.data.boolean != 0;
+  case EXPRTK_VAL_INTEGER:
+    return val.data.integer != 0;
   case EXPRTK_VAL_NUMBER:
     return fabs(val.data.number) > 1e-9;
   case EXPRTK_VAL_STRING:
     return val.data.string.len > 0;
+  case EXPRTK_VAL_BYTES:
+    return val.data.bytes.len > 0;
+  case EXPRTK_VAL_UUID:
+  case EXPRTK_VAL_DATETIME:
+  case EXPRTK_VAL_DATE:
+  case EXPRTK_VAL_TIME:
+  case EXPRTK_VAL_DURATION:
+  case EXPRTK_VAL_DECIMAL:
+    return true;
   case EXPRTK_VAL_VECTOR:
     return val.data.vector.size > 0;
   case EXPRTK_VAL_MAP:
+  case EXPRTK_VAL_OBJECT:
     return exprtk_map_count(&val) > 0;
   case EXPRTK_VAL_LIST:
     return val.data.list.count > 0;
@@ -877,6 +1024,7 @@ double ts_get_num(turbo_script_ctx_t *ctx, const char *name) {
   exprtk_value_t v = exprtk_env_get(&ctx->env, name);
   if (v.type == EXPRTK_VAL_NUMBER) return v.data.number;
   if (v.type == EXPRTK_VAL_INTEGER) return (double)v.data.integer;
+  if (v.type == EXPRTK_VAL_BOOL) return v.data.boolean ? 1.0 : 0.0;
   return 0.0;
 }
 

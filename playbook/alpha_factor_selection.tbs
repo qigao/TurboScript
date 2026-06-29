@@ -1,0 +1,46 @@
+/**
+ * @strategy alpha_factor_selection.tbs
+ *
+ * Repurposed from QuantsPlaybook Category B (Factors).
+ * Focuses on Microstructure and Behavioral Bias:
+ * - W-Factor (Institutional Reversal)
+ * - STR (Salience Theory)
+ * - SMART Money Index
+ */
+
+import("finance");
+
+function run() {
+    // 1. Behavioral Bias: Salience STR
+    // Identifies stocks that "stand out" compared to the index
+    var str_score = finance.vec_str(RETURNS, INDEX_RETURNS, 0.1);
+
+    // 2. Microstructure: W-Factor
+    // Institutional dip-buying behavior
+    var w_factor = finance.w_factor(RETURNS, AMOUNT, COUNT_Daily, 20);
+
+    // 3. Flow Index: SMART Money
+    // High ratio of afternoon vs morning intraday volume
+    var smart_money = finance.smart_money(CLOSE, VOLUME, 20);
+
+    /* ── Multi-Factor Combination ────────────────────────────────────────── */
+    
+    // Normalize and combine (Equal Weighted)
+    var combo_alpha = (last(str_score) + last(w_factor) + last(smart_money)) / 3.0;
+
+    if (is_flat()) {
+        // Threshold-based entry for high-conviction alpha
+        if (combo_alpha > 0.5) {
+            buy(1.0, 0, 0);
+        }
+    } 
+    
+    else if (is_long()) {
+        // Exit on Alpha decay
+        if (combo_alpha < 0.1) {
+            flat();
+        }
+    }
+}
+
+run();

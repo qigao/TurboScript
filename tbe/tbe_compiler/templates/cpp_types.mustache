@@ -1,0 +1,40 @@
+#pragma once
+
+#include <cstdint>
+#include <map>
+#include <set>
+#include <string>
+#include <vector>
+
+{{#enums}}
+enum class {{enum_name}} : {{cpp_underlying_type}} {
+{{#items}}
+    {{name}} = {{value}},
+{{/items}}
+};
+
+{{/enums}}
+{{#composites}}
+struct {{name}} {
+{{#fields}}
+    {{cpp_type}} {{name}};
+{{/fields}}
+};
+
+{{/composites}}
+{{#groups}}
+struct {{name}} {
+{{#fields}}
+    {{cpp_type}} {{name}};
+{{/fields}}
+};
+
+{{/groups}}
+{{#messages}}
+struct {{name}} {
+{{#fields}}
+    {{cpp_type}} {{name}};
+{{/fields}}
+};
+
+{{/messages}}

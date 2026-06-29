@@ -43,13 +43,14 @@ TurboScript 面向需要内嵌脚本能力的宿主应用，而不是完整替�
 - **数字**：64 位浮点数
 - **字符串**：UTF-8，支持模板字符串
 - **向量**：高效的数值数组
+- **对象**：parser/data_bind API 返回的 plain record
 - **映射**：基于哈希表的键值存储
 - **列表**：异构集合
 
 ### 内置库
 - **数学与矩阵**：标量数学、统计、矩阵辅助函数、线性代数
 - **字符串**：UTF-8 文本操作、解析、格式化、模板
-- **Parser/Data bind**：CSV、JSON、TBE schema bind/emit/validate
+- **Parser/Data bind**：CSV、JSON、XML、TBE schema bind/emit/validate，返回 plain object 结果
 - **时间序列 / TA / 金融**：rolling/window、技术指标、风险指标、组合辅助函数
 - **文件 I/O**：读写文件、目录操作
 - **日期/时间**：解析、格式化、时间戳

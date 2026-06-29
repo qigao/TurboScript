@@ -99,12 +99,12 @@ img_free(img);
 
 ## 3. 示例集成
 
-### examples/img_processing.ts
+### examples/img_processing.tbs
 
 建议在 `examples/` 目录创建完整示例：
 
 ```javascript
-// examples/img_processing.ts
+// examples/img_processing.tbs
 import("img");
 
 // 批量生成缩略图
@@ -178,7 +178,7 @@ function batch_thumbnails(inputs, output_dir, max_size) {
 ### 运行时验证
 
 ```javascript
-// test_img_plugin.ts
+// test_img_plugin.tbs
 import("img");
 
 print("IMG 模块已加载");
@@ -194,7 +194,7 @@ if (img != 0) {
 
 运行：
 ```bash
-turbo_script test_img_plugin.ts
+turbo_script test_img_plugin.tbs
 ```
 
 ## 7. 版本说明

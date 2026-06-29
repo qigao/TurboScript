@@ -1,12 +1,10 @@
 /**
  * @file data_bind_ctx.h
- * @brief data_bind plugin context — codec handle table and value-builder callbacks.
+ * @brief data_bind plugin context - codec handle table.
  *
  * Each codec handle holds a `DataBind *` from the tbe/data_bind library.
- * During a parse call the value-builder callbacks write results into a
- * `db_build_ctx_t` that wraps the live `exprtk_env_t` arena so that all
- * heap allocations for strings and nested objects are pool-backed and
- * freed together when the env is torn down.
+ * Parse results are returned by the core data_bind library as DataBindValue
+ * trees and converted at the module boundary into exprtk values.
  */
 #ifndef DATA_BIND_CTX_H
 #define DATA_BIND_CTX_H
@@ -30,18 +28,6 @@ typedef struct {
 typedef struct {
     db_handle_t handles[DB_MAX_HANDLES];
 } db_ctx_t;
-
-/* ── Per-call value builder context ──────────────────────────────────────── */
-
-/**
- * Passed as user_data to the DataBindValueApi callbacks during a single
- * data_bind.parse() call.  The callbacks build a tree of exprtk_value_t
- * objects in the arena.
- */
-typedef struct {
-    exprtk_env_t *env;      /**< Live environment — provides the arena */
-    mem_pool_t   *scratch;  /**< Scratch pool for temporary C-strings    */
-} db_build_ctx_t;
 
 /* ── Plugin user-data (kept alive for the env lifetime) ──────────────────── */
 

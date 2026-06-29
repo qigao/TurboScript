@@ -2,7 +2,9 @@
 #define exprtk_TYPES_H
 
 #include "turbo_buffer.h"
+#include "turbo_parser.h"
 #include "turbo_str_view.h"
+#include "uuid.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -252,6 +254,59 @@ typedef struct {
   size_t size;
 } exprtk_vector_t;
 
+typedef struct {
+  int year;
+  int month;
+  int day;
+} exprtk_date_t;
+
+typedef struct {
+  int hour;
+  int minute;
+  int second;
+  int millisecond;
+} exprtk_time_t;
+
+typedef struct {
+  int64_t mantissa;
+  int32_t scale;
+} exprtk_decimal_t;
+
+typedef struct {
+  tstr_v text;
+} exprtk_bigint_t;
+
+typedef struct {
+  exprtk_decimal_t amount;
+  char currency[4];
+} exprtk_money_t;
+
+typedef struct {
+  tstr_v type_name;
+  tstr_v symbol;
+  int64_t value;
+  int is_flags;
+} exprtk_enum_value_t;
+
+typedef struct {
+  turbo_datetime_t datetime;
+  int offset_minutes;
+} exprtk_offset_datetime_t;
+
+typedef enum {
+  EXPRTK_TYPED_I32 = 1,
+  EXPRTK_TYPED_I64 = 2,
+  EXPRTK_TYPED_F32 = 3,
+  EXPRTK_TYPED_F64 = 4
+} exprtk_typed_array_kind_t;
+
+typedef struct {
+  exprtk_typed_array_kind_t kind;
+  void *data;
+  size_t count;
+  int heap_owned;
+} exprtk_typed_array_t;
+
 // Forward declaration for map
 struct exprtk_map_entry_s;
 struct exprtk_map_s;
@@ -260,8 +315,11 @@ typedef enum {
   EXPRTK_VAL_NUMBER,
   EXPRTK_VAL_STRING,
   EXPRTK_VAL_INTEGER,
+  EXPRTK_VAL_BOOL,
+  EXPRTK_VAL_BYTES,
   EXPRTK_VAL_VECTOR,
   EXPRTK_VAL_MAP,
+  EXPRTK_VAL_OBJECT,        // Plain object (JS/TS-style dynamic object)
   EXPRTK_VAL_NULL,
   EXPRTK_VAL_LIST,
   EXPRTK_VAL_FUNCTION,
@@ -269,7 +327,20 @@ typedef enum {
   // OOP value types
   EXPRTK_VAL_CLASS,         // 类对象
   EXPRTK_VAL_INSTANCE,      // 实例对象
-  EXPRTK_VAL_BOUND_METHOD   // 绑定了 this 的方法
+  EXPRTK_VAL_BOUND_METHOD,  // 绑定了 this 的方法
+  EXPRTK_VAL_UUID,
+  EXPRTK_VAL_DATETIME,
+  EXPRTK_VAL_DATE,
+  EXPRTK_VAL_TIME,
+  EXPRTK_VAL_DURATION,
+  EXPRTK_VAL_DECIMAL,
+  EXPRTK_VAL_BIGINT,
+  EXPRTK_VAL_MONEY,
+  EXPRTK_VAL_ENUM,
+  EXPRTK_VAL_FLAGS,
+  EXPRTK_VAL_SET,
+  EXPRTK_VAL_OFFSET_DATETIME,
+  EXPRTK_VAL_TYPED_ARRAY
 } exprtk_value_type_t;
 
 typedef enum {
@@ -285,6 +356,19 @@ typedef struct exprtk_value_s {
     double number;
     tstr_v string;
     int64_t integer;
+    int boolean;
+    tstr_v bytes;
+    uuid_t uuid;
+    turbo_datetime_t datetime;
+    exprtk_date_t date;
+    exprtk_time_t time;
+    int64_t duration_ms;
+    exprtk_decimal_t decimal;
+    exprtk_bigint_t bigint;
+    exprtk_money_t money;
+    exprtk_enum_value_t enum_val;
+    exprtk_offset_datetime_t offset_datetime;
+    exprtk_typed_array_t typed_array;
     exprtk_vector_t vector;
     struct {
       void *htab; // HTAB(exprtk_map_kv_t)* — O(1) lookup

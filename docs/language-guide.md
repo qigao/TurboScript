@@ -22,7 +22,7 @@ Complete reference for TurboScript syntax and language features.
 
 ## Data Types
 
-TurboScript supports six core data types:
+TurboScript supports native scalar and container data types:
 
 ### Number
 
@@ -34,6 +34,16 @@ var decimal = 3.14159;
 var scientific = 1.5e10;
 var negative = -273.15;
 ```
+
+Integer literals are represented as native `int64` runtime values:
+
+```javascript
+var count = 42;
+```
+
+### Boolean
+
+`true` and `false` are native `bool` values. They can still participate in numeric contexts as `1` and `0`.
 
 ### String
 
@@ -72,6 +82,71 @@ var nested = map{
 };
 ```
 
+### Plain Object
+
+Plain objects are dynamic record values produced by host modules such as
+`parser` and `data_bind`. They are not created with `map{...}` literals, but
+they support the same field operations for day-to-day scripting:
+
+```javascript
+import("parser");
+
+var user = json.parse("{\"name\":\"Alice\",\"age\":30}");
+print(user.name);        // "Alice"
+print(user["age"]);      // 30
+```
+
+Use plain objects for schema-bound records and parsed JSON/XML records. Use
+`map` when the script itself needs an explicit key-value container, including
+TBE `map<K,V>` fields.
+
+### Datetime
+
+Parsed date-time values are native `datetime` values:
+
+```javascript
+var dt = datetime("Sat, 04 Mar 2006 13:27:54 GMT");
+dt.year;                 // 2006
+datetime.to_time(dt);    // 1141478874
+datetime_string(dt);     // RFC822/HTTP GMT text
+```
+
+### Date, Time, and Duration
+
+Use `date.parse`, `time.parse`, and `duration.parse` when the script needs
+native values instead of the legacy Unix timestamp returned by `date(str)`:
+
+```javascript
+var d = date.parse("2026-06-28");
+d.year;                  // 2026
+date.to_string(d);       // "2026-06-28"
+
+var t = time.parse("09:30:05.123");
+t.hour;                  // 9
+time.to_string(t);       // "09:30:05.123"
+
+var span = duration.parse("1h30m5s250ms");
+span.milliseconds;       // 5405250
+duration.seconds(span);  // 5405.25
+duration.to_string(span);// "1:30:05.250"
+```
+
+### Decimal
+
+Use `decimal.parse` for exact fixed-point values when binary floating point is
+not appropriate:
+
+```javascript
+var price = decimal.parse("123.4500");
+price.mantissa;              // 12345
+price.scale;                 // 2
+decimal.to_string(price);    // "123.45"
+price.to_string();           // "123.45"
+```
+
+Decimal values compare after normalizing trailing fractional zeroes, so
+`decimal.parse("123.4500") == decimal.parse("123.45")`.
+
 ### List
 
 Heterogeneous collections (mixed types):
@@ -98,23 +173,43 @@ var nothing = nil;  // equivalent to null
 | `e` | 2.71828182845904… | Euler's number |
 | `inf` | ∞ | Positive infinity |
 | `nan` | NaN | Not a Number |
-| `true` | 1.0 | Boolean true |
-| `false` | 0.0 | Boolean false |
+| `true` | true | Boolean true |
+| `false` | false | Boolean false |
 | `null` / `nil` | null | Null value |
 
 ### Type Introspection
 
 ```javascript
-typeof(42)          // "number"
+typeof(42)          // "int64"
+typeof(42.5)        // "number"
+typeof(true)        // "bool"
+typeof(bytes("Az")) // "bytes"
+typeof(uuid4())     // "uuid"
+typeof(datetime("Sat, 04 Mar 2006 13:27:54 GMT")) // "datetime"
+typeof(date.parse("2026-06-28")) // "date"
+typeof(time.parse("09:30:05"))   // "time"
+typeof(duration.parse("1h"))     // "duration"
+typeof(decimal.parse("123.45"))  // "decimal"
 typeof("hello")     // "string"
 typeof([1,2,3])     // "vector"
 typeof(map{a: 1})   // "map"
+// json.parse("{\"a\":1}") has typeof(...) == "object"
 typeof(null)        // "null"
 
 is_number(42)       // 1 (true)
+is_int64(42)        // 1 (true)
+is_bool(true)       // 1 (true)
+is_bytes(bytes("Az")) // 1 (true)
+is_uuid(uuid4())    // 1 (true)
+is_datetime(datetime("Sat, 04 Mar 2006 13:27:54 GMT")) // 1 (true)
+is_date(date.parse("2026-06-28")) // 1 (true)
+is_time(time.parse("09:30:05"))   // 1 (true)
+is_duration(duration.parse("1h")) // 1 (true)
+is_decimal(decimal.parse("123.45")) // 1 (true)
 is_string("hi")     // 1 (true)
 is_vector([1,2])    // 1 (true)
 is_map(map{})       // 1 (true)
+is_object(obj)      // 1 for host/parser/data_bind plain objects
 is_null(null)       // 1 (true)
 ```
 
@@ -650,9 +745,9 @@ Indexing and slicing rules:
 
 Truthiness rules:
 
-- In script conditions, numbers use numeric truth, and strings use `len > 0`.
-- `map`, `list`, `vector`, and `null` currently behave as false unless converted explicitly to a number.
-- In host C APIs, `turbo_script_value_as_bool()` is broader than script `if` semantics; do not assume they are identical.
+- In script conditions, numbers use numeric truth, strings and bytes use `len > 0`, and containers are true when non-empty.
+- `null` is false. Functions, classes, and instances are true.
+- Host C APIs use the same broad truthiness model for exported `exprtk_value_t` values.
 
 ---
 
@@ -808,50 +903,52 @@ var filtered = csv.filter(data, "price > 100");
 Script imports now support an explicit export surface:
 
 ```javascript
-// math_utils.ts
+// math_utils.tbs
 func add1(x) { return x + 1; };
 export("add1");
 export("answer", 41);
 
-// main.ts
-var mod = import("./math_utils.ts");
+// main.tbs
+var mod = import("./math_utils.tbs");
 var f = mod.add1;
 var result = f(4) + mod.answer;   // 46
 ```
 
 Current contract:
 
-- `import("./file.ts")` still executes the script once for compatibility.
+- `import("./file.tbs")` executes the script once.
+- Script import paths must end with `.tbs`; `.ts` is not recognized as a TurboScript source extension.
 - If the script calls `export(...)`, `import()` returns a `map` of exported names.
 - Re-importing the same resolved script path uses the cached module result and does not re-execute the file.
-- Old scripts that rely on global side effects still work, but new scripts should prefer explicit exports.
+- Scripts that rely on global side effects still work, but new scripts should prefer explicit exports.
 
 ### Isolated Script Modules
 
 When you want module exports without global leakage, use `import_module()`:
 
 ```javascript
-// scoped_math.ts
+// scoped_math.tbs
 shared = 99;
 secret = 5;
 func add_secret(x) { return x + secret; };
 export("add_secret");
 export("shared");
 
-// caller.ts
+// caller.tbs
 shared = 7;
-var mod = import_module("./scoped_math.ts");
+var mod = import_module("./scoped_math.tbs");
 var out = mod.add_secret(3);   // 8
 var keep = shared;             // still 7
 ```
 
 Current contract:
 
-- `import_module("./file.ts")` only accepts script paths.
+- `import_module("./file.tbs")` only accepts script paths.
+- Module script paths must end with `.tbs`.
 - The imported script runs against an isolated variable snapshot, not the caller's global scope.
 - Explicit exports remain available through the returned `map`.
 - Re-importing the same resolved script path reuses the cached isolated module result.
-- Use plain `import()` only when compatibility with legacy side effects is required.
+- Use plain `import()` only when shared global side effects are required.
 
 ### Built-in Functions (No Import Needed)
 
@@ -882,21 +979,22 @@ os_name(), pid(), uptime_ms(), monotonic_ms()
 ```
 
 File and path built-ins use TurboNet `turbo_fs`. Date formatting and local/UTC
-time conversion use TurboNet platform datetime helpers; the optional `parser`
-module adds structured `datetime.parse()` and RFC822 formatting helpers.
+time conversion use TurboNet platform datetime helpers. Native temporal values
+are available through `datetime.parse()`, `date.parse()`, `time.parse()`, and
+`duration.parse()`.
 
 ### Importing Scripts
 
 Load other TurboScript files:
 
 ```javascript
-// utils.ts
+// utils.tbs
 func helper(x) {
     return x * 2;
 }
 
-// main.ts
-import("utils.ts");
+// main.tbs
+import("utils.tbs");
 var result = helper(5);  // 10
 ```
 

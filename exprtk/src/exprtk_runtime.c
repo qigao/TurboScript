@@ -199,6 +199,52 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
             copied.len = value.data.string.len;
             return exprtk_val_str(copied);
         }
+        case EXPRTK_VAL_BIGINT: {
+            if (!value.data.bigint.text.data) return value;
+            char *buf = (char*)mem_alloc(&dst_env->arena, value.data.bigint.text.len + 1);
+            if (!buf) return exprtk_val_bigint(tstr_v_from_cstr(""));
+            memcpy(buf, value.data.bigint.text.data, value.data.bigint.text.len);
+            buf[value.data.bigint.text.len] = '\0';
+            return exprtk_val_bigint(tstr_v_from_buf(buf, value.data.bigint.text.len));
+        }
+        case EXPRTK_VAL_ENUM:
+        case EXPRTK_VAL_FLAGS: {
+            char *type_buf = NULL;
+            char *symbol_buf = NULL;
+            tstr_v type_name = {0};
+            tstr_v symbol = {0};
+            if (value.data.enum_val.type_name.data) {
+                type_buf = (char*)mem_alloc(&dst_env->arena, value.data.enum_val.type_name.len + 1);
+                if (type_buf) {
+                    memcpy(type_buf, value.data.enum_val.type_name.data, value.data.enum_val.type_name.len);
+                    type_buf[value.data.enum_val.type_name.len] = '\0';
+                    type_name = tstr_v_from_buf(type_buf, value.data.enum_val.type_name.len);
+                }
+            }
+            if (value.data.enum_val.symbol.data) {
+                symbol_buf = (char*)mem_alloc(&dst_env->arena, value.data.enum_val.symbol.len + 1);
+                if (symbol_buf) {
+                    memcpy(symbol_buf, value.data.enum_val.symbol.data, value.data.enum_val.symbol.len);
+                    symbol_buf[value.data.enum_val.symbol.len] = '\0';
+                    symbol = tstr_v_from_buf(symbol_buf, value.data.enum_val.symbol.len);
+                }
+            }
+            return exprtk_val_enum(type_name, symbol, value.data.enum_val.value,
+                                   value.type == EXPRTK_VAL_FLAGS);
+        }
+        case EXPRTK_VAL_BYTES: {
+            if (!value.data.bytes.data) return value;
+            char *buf = (char*)mem_alloc(&dst_env->arena, value.data.bytes.len);
+            if (!buf && value.data.bytes.len > 0) {
+                tstr_v empty = {0};
+                return exprtk_val_bytes(empty);
+            }
+            if (value.data.bytes.len > 0) memcpy(buf, value.data.bytes.data, value.data.bytes.len);
+            tstr_v copied;
+            copied.data = buf;
+            copied.len = value.data.bytes.len;
+            return exprtk_val_bytes(copied);
+        }
         case EXPRTK_VAL_VECTOR: {
             if (!value.data.vector.data || value.data.vector.size == 0) return value;
             double *data = (double*)mem_alloc(&dst_env->arena, value.data.vector.size * sizeof(double));
@@ -206,8 +252,27 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
             memcpy(data, value.data.vector.data, value.data.vector.size * sizeof(double));
             return exprtk_val_vec(data, value.data.vector.size);
         }
-        case EXPRTK_VAL_LIST: {
-            exprtk_value_t cloned = exprtk_val_list_empty();
+        case EXPRTK_VAL_TYPED_ARRAY: {
+            size_t elem_size = 0;
+            void *data;
+            if (!value.data.typed_array.data || value.data.typed_array.count == 0) return value;
+            switch (value.data.typed_array.kind) {
+                case EXPRTK_TYPED_I32: elem_size = sizeof(int32_t); break;
+                case EXPRTK_TYPED_I64: elem_size = sizeof(int64_t); break;
+                case EXPRTK_TYPED_F32: elem_size = sizeof(float); break;
+                case EXPRTK_TYPED_F64: elem_size = sizeof(double); break;
+                default: return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
+            }
+            data = mem_alloc(&dst_env->arena, value.data.typed_array.count * elem_size);
+            if (!data) return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
+            memcpy(data, value.data.typed_array.data, value.data.typed_array.count * elem_size);
+            return exprtk_val_typed_array(value.data.typed_array.kind, data,
+                                          value.data.typed_array.count, 0);
+        }
+        case EXPRTK_VAL_LIST:
+        case EXPRTK_VAL_SET: {
+            exprtk_value_t cloned = value.type == EXPRTK_VAL_SET ? exprtk_val_set_empty()
+                                                                 : exprtk_val_list_empty();
             if (!value.data.list.items || value.data.list.count == 0) return cloned;
 
             exprtk_value_t *items =
@@ -217,10 +282,15 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
             for (size_t i = 0; i < value.data.list.count; ++i) {
                 items[i] = exprtk_value_clone_to_env(value.data.list.items[i], dst_env);
             }
-            return exprtk_val_list_ex(items, value.data.list.count, 0);
+            cloned = exprtk_val_list_ex(items, value.data.list.count, 0);
+            if (value.type == EXPRTK_VAL_SET) cloned.type = EXPRTK_VAL_SET;
+            return cloned;
         }
-        case EXPRTK_VAL_MAP: {
-            exprtk_value_t cloned = exprtk_val_map();
+        case EXPRTK_VAL_MAP:
+        case EXPRTK_VAL_OBJECT: {
+            exprtk_value_t cloned = value.type == EXPRTK_VAL_OBJECT
+                ? exprtk_val_object()
+                : exprtk_val_map();
             exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
             const char *key;
             exprtk_value_t child;
@@ -467,7 +537,7 @@ void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *e
             }
         }
     } else if (target->type == EXPRTK_NODE_MAP_LITERAL) {
-        if (rhs.type != EXPRTK_VAL_MAP) return;
+        if (!exprtk_value_is_object_like(&rhs)) return;
         exprtk_node_t *rest_node = NULL;
         for (size_t i = 0; i < target->data.map_literal.count; ++i) {
             char *key = target->data.map_literal.keys[i];
@@ -552,8 +622,8 @@ void exprtk_env_init(exprtk_env_t *env) {
         exprtk_env_set_constant(env, "e", exprtk_val_num(2.71828182845904523536));
         exprtk_env_set_constant(env, "inf", exprtk_val_num(INFINITY));
         exprtk_env_set_constant(env, "nan", exprtk_val_num(NAN));
-        exprtk_env_set_constant(env, "true", exprtk_val_num(1.0));
-        exprtk_env_set_constant(env, "false", exprtk_val_num(0.0));
+        exprtk_env_set_constant(env, "true", exprtk_val_bool(1));
+        exprtk_env_set_constant(env, "false", exprtk_val_bool(0));
     }
 }
 
@@ -608,7 +678,7 @@ exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
 }
 
 static void exprtk_release_map_value(exprtk_value_t *map, exprtk_release_state_t *state) {
-    if (!map || map->type != EXPRTK_VAL_MAP || !map->data.map.htab) return;
+    if (!exprtk_value_is_object_like(map) || !map->data.map.htab) return;
     if (!ptr_set_mark_seen(&state->maps, map->data.map.htab)) return;
 
     exprtk_map_iter_t it = exprtk_map_iter_begin(map);
@@ -621,7 +691,9 @@ static void exprtk_release_map_value(exprtk_value_t *map, exprtk_release_state_t
 }
 
 static void exprtk_release_list_value(exprtk_value_t *list, exprtk_release_state_t *state) {
-    if (!list || list->type != EXPRTK_VAL_LIST || !list->data.list.items) return;
+    if (!list || (list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) ||
+        !list->data.list.items)
+        return;
     if (!ptr_set_mark_seen(&state->lists, list->data.list.items)) return;
 
     for (size_t i = 0; i < list->data.list.count; ++i) {
@@ -655,9 +727,11 @@ static void exprtk_release_value(exprtk_value_t *value, exprtk_release_state_t *
 
     switch (value->type) {
         case EXPRTK_VAL_LIST:
+        case EXPRTK_VAL_SET:
             exprtk_release_list_value(value, state);
             break;
         case EXPRTK_VAL_MAP:
+        case EXPRTK_VAL_OBJECT:
             exprtk_release_map_value(value, state);
             break;
         case EXPRTK_VAL_CLASS: {
@@ -674,6 +748,12 @@ static void exprtk_release_value(exprtk_value_t *value, exprtk_release_state_t *
             break;
         case EXPRTK_VAL_BOUND_METHOD:
             exprtk_release_owned_instance(value->data.bound_method_val.instance, state);
+            break;
+        case EXPRTK_VAL_TYPED_ARRAY:
+            if (value->data.typed_array.heap_owned) free(value->data.typed_array.data);
+            value->data.typed_array.data = NULL;
+            value->data.typed_array.count = 0;
+            value->data.typed_array.heap_owned = 0;
             break;
         default:
             break;
@@ -841,6 +921,16 @@ void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native
     env->funcs = new_func;
 }
 
+int exprtk_env_has_func(exprtk_env_t *env, const char *name) {
+    if (!env || !name) return 0;
+    for (exprtk_env_t *curr_env = env; curr_env; curr_env = curr_env->parent) {
+        for (exprtk_func_t *f = curr_env->funcs; f; f = f->next) {
+            if (f->name && strcmp(f->name, name) == 0) return 1;
+        }
+    }
+    return 0;
+}
+
 void exprtk_env_set_constant(exprtk_env_t *env, const char *name, exprtk_value_t value) {
     exprtk_env_set(env, name, value);
 
@@ -889,16 +979,32 @@ exprtk_value_t throw_error(exprtk_env_t *env, const exprtk_node_t *node, const c
 const char* type_name(int type) {
     switch (type) {
         case EXPRTK_VAL_NUMBER: return "number";
-        case EXPRTK_VAL_INTEGER: return "number";
+        case EXPRTK_VAL_INTEGER: return "int64";
+        case EXPRTK_VAL_BOOL: return "bool";
         case EXPRTK_VAL_STRING: return "string";
+        case EXPRTK_VAL_BYTES: return "bytes";
         case EXPRTK_VAL_VECTOR: return "vector";
         case EXPRTK_VAL_MAP: return "map";
+        case EXPRTK_VAL_OBJECT: return "object";
         case EXPRTK_VAL_NULL: return "null";
         case EXPRTK_VAL_LIST: return "list";
+        case EXPRTK_VAL_SET: return "set";
         case EXPRTK_VAL_FUNCTION: return "function";
         case EXPRTK_VAL_CLASS: return "class";
         case EXPRTK_VAL_INSTANCE: return "instance";
         case EXPRTK_VAL_BOUND_METHOD: return "bound_method";
+        case EXPRTK_VAL_UUID: return "uuid";
+        case EXPRTK_VAL_DATETIME: return "datetime";
+        case EXPRTK_VAL_DATE: return "date";
+        case EXPRTK_VAL_TIME: return "time";
+        case EXPRTK_VAL_DURATION: return "duration";
+        case EXPRTK_VAL_DECIMAL: return "decimal";
+        case EXPRTK_VAL_BIGINT: return "bigint";
+        case EXPRTK_VAL_MONEY: return "money";
+        case EXPRTK_VAL_ENUM: return "enum";
+        case EXPRTK_VAL_FLAGS: return "flags";
+        case EXPRTK_VAL_OFFSET_DATETIME: return "offset_datetime";
+        case EXPRTK_VAL_TYPED_ARRAY: return "typed_array";
         default: return "unknown";
     }
 }
@@ -907,6 +1013,7 @@ const char* type_name(int type) {
 double val_to_double(exprtk_value_t val) {
     if (val.type == EXPRTK_VAL_INTEGER) return (double)val.data.integer;
     if (val.type == EXPRTK_VAL_NUMBER) return val.data.number;
+    if (val.type == EXPRTK_VAL_BOOL) return val.data.boolean ? 1.0 : 0.0;
     return 0.0;
 }
 
@@ -916,8 +1023,57 @@ int values_match(exprtk_value_t lhs, exprtk_value_t rhs) {
 
     if (lhs_numeric && rhs_numeric)
         return fabs(val_to_double(lhs) - val_to_double(rhs)) < 1e-9;
+    if (lhs.type == EXPRTK_VAL_BOOL && rhs.type == EXPRTK_VAL_BOOL)
+        return lhs.data.boolean == rhs.data.boolean;
     if (lhs.type == EXPRTK_VAL_STRING && rhs.type == EXPRTK_VAL_STRING)
         return tstr_v_eq(lhs.data.string, rhs.data.string);
+    if (lhs.type == EXPRTK_VAL_BYTES && rhs.type == EXPRTK_VAL_BYTES)
+        return lhs.data.bytes.len == rhs.data.bytes.len &&
+               (lhs.data.bytes.len == 0 ||
+                memcmp(lhs.data.bytes.data, rhs.data.bytes.data, lhs.data.bytes.len) == 0);
+    if (lhs.type == EXPRTK_VAL_UUID && rhs.type == EXPRTK_VAL_UUID)
+        return memcmp(lhs.data.uuid.bytes, rhs.data.uuid.bytes, sizeof(lhs.data.uuid.bytes)) == 0;
+    if (lhs.type == EXPRTK_VAL_DATETIME && rhs.type == EXPRTK_VAL_DATETIME)
+        return memcmp(&lhs.data.datetime, &rhs.data.datetime, sizeof(lhs.data.datetime)) == 0;
+    if (lhs.type == EXPRTK_VAL_OFFSET_DATETIME && rhs.type == EXPRTK_VAL_OFFSET_DATETIME)
+        return lhs.data.offset_datetime.offset_minutes == rhs.data.offset_datetime.offset_minutes &&
+               memcmp(&lhs.data.offset_datetime.datetime, &rhs.data.offset_datetime.datetime,
+                      sizeof(lhs.data.offset_datetime.datetime)) == 0;
+    if (lhs.type == EXPRTK_VAL_DATE && rhs.type == EXPRTK_VAL_DATE)
+        return lhs.data.date.year == rhs.data.date.year &&
+               lhs.data.date.month == rhs.data.date.month &&
+               lhs.data.date.day == rhs.data.date.day;
+    if (lhs.type == EXPRTK_VAL_TIME && rhs.type == EXPRTK_VAL_TIME)
+        return lhs.data.time.hour == rhs.data.time.hour &&
+               lhs.data.time.minute == rhs.data.time.minute &&
+               lhs.data.time.second == rhs.data.time.second &&
+               lhs.data.time.millisecond == rhs.data.time.millisecond;
+    if (lhs.type == EXPRTK_VAL_DURATION && rhs.type == EXPRTK_VAL_DURATION)
+        return lhs.data.duration_ms == rhs.data.duration_ms;
+    if (lhs.type == EXPRTK_VAL_DECIMAL && rhs.type == EXPRTK_VAL_DECIMAL) {
+        exprtk_decimal_t l = lhs.data.decimal;
+        exprtk_decimal_t r = rhs.data.decimal;
+        while (l.scale > 0 && l.mantissa % 10 == 0) {
+            l.mantissa /= 10;
+            l.scale--;
+        }
+        while (r.scale > 0 && r.mantissa % 10 == 0) {
+            r.mantissa /= 10;
+            r.scale--;
+        }
+        if (l.mantissa == 0) l.scale = 0;
+        if (r.mantissa == 0) r.scale = 0;
+        return l.mantissa == r.mantissa && l.scale == r.scale;
+    }
+    if (lhs.type == EXPRTK_VAL_BIGINT && rhs.type == EXPRTK_VAL_BIGINT)
+        return tstr_v_eq(lhs.data.bigint.text, rhs.data.bigint.text);
+    if (lhs.type == EXPRTK_VAL_MONEY && rhs.type == EXPRTK_VAL_MONEY)
+        return lhs.data.money.amount.mantissa == rhs.data.money.amount.mantissa &&
+               lhs.data.money.amount.scale == rhs.data.money.amount.scale &&
+               memcmp(lhs.data.money.currency, rhs.data.money.currency, 4) == 0;
+    if ((lhs.type == EXPRTK_VAL_ENUM || lhs.type == EXPRTK_VAL_FLAGS) && lhs.type == rhs.type)
+        return lhs.data.enum_val.value == rhs.data.enum_val.value &&
+               tstr_v_eq(lhs.data.enum_val.type_name, rhs.data.enum_val.type_name);
     if (lhs.type == EXPRTK_VAL_NULL && rhs.type == EXPRTK_VAL_NULL)
         return 1;
 
@@ -2167,7 +2323,7 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
     exprtk_value_t object = exprtk_env_get(env, object_name);
 
     exprtk_value_t field_value = exprtk_val_num(value);
-    if (object.type == EXPRTK_VAL_MAP) {
+    if (exprtk_value_is_object_like(&object)) {
         exprtk_map_set(&object, member_name, field_value);
         exprtk_env_set(env, object_name, object);
         return field_value;
@@ -2207,7 +2363,7 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
     exprtk_value_t object = exprtk_env_get(env, object_name);
 
     exprtk_value_t field_value = exprtk_val_num(value);
-    if (object.type == EXPRTK_VAL_MAP) {
+    if (exprtk_value_is_object_like(&object)) {
         exprtk_map_set(&object, member_name, field_value);
         exprtk_env_set(env, object_name, object);
         return field_value;
@@ -2366,6 +2522,42 @@ static int eval_callable_value(exprtk_value_t callee, const char *name, size_t a
     return 0;
 }
 
+static int rt_dispatch_provider_method(mc_ctx_t *mc, exprtk_value_t *out) {
+    exprtk_value_t provider;
+    char full_name[160];
+    exprtk_value_t stack_args[8];
+    exprtk_value_t *call_args;
+    size_t call_argc;
+
+    if (!mc || !out || !mc->method || !mc->env ||
+        !exprtk_value_is_object_like(&mc->obj) ||
+        !exprtk_map_has(&mc->obj, "__ts_method_provider")) {
+        return 0;
+    }
+
+    provider = exprtk_map_get(&mc->obj, "__ts_method_provider");
+    if (provider.type != EXPRTK_VAL_STRING || !provider.data.string.data ||
+        provider.data.string.len == 0) {
+        return 0;
+    }
+
+    if (provider.data.string.len + strlen(mc->method) + 2 >= sizeof(full_name))
+        return 0;
+
+    snprintf(full_name, sizeof(full_name), "%.*s.%s",
+             (int)provider.data.string.len, provider.data.string.data, mc->method);
+    if (!exprtk_env_has_func(mc->env, full_name) && !exprtk_find_builtin(full_name, mc->env))
+        return 0;
+
+    call_argc = mc->argc + 1;
+    call_args = mc_prepare_call_args(mc, stack_args, sizeof(stack_args) / sizeof(stack_args[0]));
+    if (!call_args) return 0;
+
+    *out = exprtk_call_internal(full_name, call_argc, call_args, mc->env, mc->arena);
+    if (call_args != stack_args) free(call_args);
+    return 1;
+}
+
 extern exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const char *method,
                                                 size_t argc, exprtk_value_t *args,
                                                 exprtk_env_t *env, mem_pool_t *arena);
@@ -2398,7 +2590,7 @@ static exprtk_value_t rt_stream_map_entries(exprtk_value_t source) {
     exprtk_map_iter_t it;
     exprtk_value_t value;
 
-    if (source.type != EXPRTK_VAL_MAP) return values;
+    if (!exprtk_value_is_object_like(&source)) return values;
     it = exprtk_map_iter_begin(&source);
     while (exprtk_map_iter_next(&it, NULL, &value)) {
         exprtk_list_push(&values, value);
@@ -2437,7 +2629,7 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
     if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
         return exprtk_val_num((double)mc->obj.data.list.count);
 
-    if (strcmp(m, "push") == 0 && mc->argc > 0) {
+    if (mc->obj.type == EXPRTK_VAL_LIST && strcmp(m, "push") == 0 && mc->argc > 0) {
         exprtk_value_t var; const char *vn;
         if (mc_get_var(mc, &var, &vn) && var.type == EXPRTK_VAL_LIST) {
             exprtk_list_push(&var, mc->args[0]);
@@ -2446,7 +2638,7 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
         }
     }
 
-    if (strcmp(m, "pop") == 0 && mc->obj.data.list.count > 0) {
+    if (mc->obj.type == EXPRTK_VAL_LIST && strcmp(m, "pop") == 0 && mc->obj.data.list.count > 0) {
         exprtk_value_t var; const char *vn;
         if (mc_get_var(mc, &var, &vn) && var.type == EXPRTK_VAL_LIST && var.data.list.count > 0) {
             exprtk_value_t popped = var.data.list.items[var.data.list.count - 1];
@@ -2485,7 +2677,7 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
         }
     }
 
-    return unknown_method_error(mc, "list");
+    return unknown_method_error(mc, mc->obj.type == EXPRTK_VAL_SET ? "set" : "list");
 }
 
 exprtk_value_t eval_map_method(mc_ctx_t *mc) {
@@ -2501,6 +2693,13 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
         exprtk_value_t callee = exprtk_map_get(&mc->obj, m);
         exprtk_value_t result = { EXPRTK_VAL_NUMBER, {0.0} };
         if (eval_callable_value(callee, m, mc->argc, mc->args, mc->env, &result)) {
+            return result;
+        }
+    }
+
+    {
+        exprtk_value_t result = { EXPRTK_VAL_NUMBER, {0.0} };
+        if (rt_dispatch_provider_method(mc, &result)) {
             return result;
         }
     }
@@ -2548,7 +2747,7 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
 
     if (strcmp(m, "delete") == 0 && mc->argc > 0 && mc->args[0].type == EXPRTK_VAL_STRING) {
         exprtk_value_t var; const char *vn;
-        if (mc_get_var(mc, &var, &vn) && var.type == EXPRTK_VAL_MAP) {
+        if (mc_get_var(mc, &var, &vn) && exprtk_value_is_object_like(&var)) {
             char key_buf[256];
             size_t klen = mc->args[0].data.string.len < 255 ? mc->args[0].data.string.len : 255;
             memcpy(key_buf, mc->args[0].data.string.data, klen);
@@ -2634,6 +2833,387 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
     if (call_args != stack_args) free(call_args);
     if (!handled) return unknown_method_error(mc, "string");
     return result;
+}
+
+exprtk_value_t eval_bytes_method(mc_ctx_t *mc) {
+    const char *m = mc->method;
+    if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
+        return exprtk_val_num((double)mc->obj.data.bytes.len);
+    return unknown_method_error(mc, "bytes");
+}
+
+exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
+    char text[UUID4_STR_BUFFER_SIZE];
+    char *buf;
+    size_t len;
+
+    if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
+        return unknown_method_error(mc, "uuid");
+    if (!uuid_to_s(mc->obj.data.uuid, text, sizeof(text))) return exprtk_val_num(0);
+    len = strlen(text);
+    buf = (char *)mem_alloc(mc->arena, len + 1);
+    if (!buf) return exprtk_val_num(0);
+    memcpy(buf, text, len + 1);
+    return exprtk_val_str(tstr_v_from_buf(buf, len));
+}
+
+static exprtk_value_t runtime_string_value(mem_pool_t *arena, const char *text) {
+    size_t len;
+    char *buf;
+    if (!text) text = "";
+    len = strlen(text);
+    buf = (char *)mem_alloc(arena, len + 1);
+    if (!buf) return exprtk_val_num(0);
+    memcpy(buf, text, len + 1);
+    return exprtk_val_str(tstr_v_from_buf(buf, len));
+}
+
+int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    const turbo_datetime_t *dt;
+    time_t ts;
+    if (!out || value.type != EXPRTK_VAL_DATETIME || !member) return 0;
+    dt = &value.data.datetime;
+    if (strcmp(member, "year") == 0) *out = exprtk_val_int(dt->year);
+    else if (strcmp(member, "month") == 0) *out = exprtk_val_int(dt->month);
+    else if (strcmp(member, "day") == 0) *out = exprtk_val_int(dt->day);
+    else if (strcmp(member, "hour") == 0) *out = exprtk_val_int(dt->hour);
+    else if (strcmp(member, "minute") == 0) *out = exprtk_val_int(dt->minute);
+    else if (strcmp(member, "second") == 0) *out = exprtk_val_int(dt->second);
+    else if (strcmp(member, "millisecond") == 0) *out = exprtk_val_int(dt->millisecond);
+    else if (strcmp(member, "tz_offset") == 0) *out = exprtk_val_int(dt->tz_offset);
+    else if (strcmp(member, "has_tz") == 0) *out = exprtk_val_bool(dt->has_tz != 0);
+    else if (strcmp(member, "day_of_week") == 0) *out = exprtk_val_int(dt->day_of_week);
+    else if (strcmp(member, "timestamp") == 0) {
+        ts = turbo_datetime_to_time(dt);
+        *out = exprtk_val_num((double)ts);
+    } else {
+        return 0;
+    }
+    return 1;
+}
+
+exprtk_value_t eval_datetime_method(mc_ctx_t *mc) {
+    const char *m = mc->method;
+    time_t ts;
+    char buf[64];
+    if (strcmp(m, "timestamp") == 0 || strcmp(m, "to_time") == 0) {
+        ts = turbo_datetime_to_time(&mc->obj.data.datetime);
+        return exprtk_val_num((double)ts);
+    }
+    if (strcmp(m, "toString") == 0 || strcmp(m, "to_string") == 0 ||
+        strcmp(m, "format_rfc822") == 0) {
+        ts = turbo_datetime_to_time(&mc->obj.data.datetime);
+        if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+            return exprtk_val_str(tstr_v_from_cstr(""));
+        return runtime_string_value(mc->arena, buf);
+    }
+    return unknown_method_error(mc, "datetime");
+}
+
+static int runtime_offset_datetime_text(exprtk_offset_datetime_t value,
+                                        char *out, size_t out_size) {
+    int offset = value.offset_minutes;
+    char sign = '+';
+    int hours;
+    int minutes;
+
+    if (!out || out_size == 0) return 0;
+    if (offset < 0) {
+        sign = '-';
+        offset = -offset;
+    }
+    hours = offset / 60;
+    minutes = offset % 60;
+    return snprintf(out, out_size, "%04d-%02d-%02dT%02d:%02d:%02d%s%c%02d:%02d",
+                    value.datetime.year, value.datetime.month, value.datetime.day,
+                    value.datetime.hour, value.datetime.minute, value.datetime.second,
+                    value.datetime.millisecond > 0 ? "" : "", sign, hours, minutes) > 0;
+}
+
+int exprtk_offset_datetime_member_get(exprtk_value_t value, const char *member,
+                                      exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_OFFSET_DATETIME || !member) return 0;
+    if (strcmp(member, "offset_minutes") == 0 || strcmp(member, "tz_offset") == 0)
+        *out = exprtk_val_int(value.data.offset_datetime.offset_minutes);
+    else if (strcmp(member, "datetime") == 0)
+        *out = exprtk_val_datetime(value.data.offset_datetime.datetime);
+    else {
+        exprtk_value_t datetime_value = exprtk_val_datetime(value.data.offset_datetime.datetime);
+        return exprtk_datetime_member_get(datetime_value, member, out);
+    }
+    return 1;
+}
+
+exprtk_value_t eval_offset_datetime_method(mc_ctx_t *mc) {
+    char buf[64];
+    if (strcmp(mc->method, "timestamp") == 0 || strcmp(mc->method, "to_time") == 0)
+        return exprtk_val_num((double)turbo_datetime_to_time(&mc->obj.data.offset_datetime.datetime));
+    if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
+        if (!runtime_offset_datetime_text(mc->obj.data.offset_datetime, buf, sizeof(buf)))
+            return exprtk_val_str(tstr_v_from_cstr(""));
+        return runtime_string_value(mc->arena, buf);
+    }
+    return unknown_method_error(mc, "offset_datetime");
+}
+
+static int runtime_date_text(exprtk_date_t date, char *out, size_t out_size) {
+    return out && out_size > 0 &&
+           snprintf(out, out_size, "%04d-%02d-%02d", date.year, date.month, date.day) > 0;
+}
+
+static int runtime_time_text(exprtk_time_t time, char *out, size_t out_size) {
+    if (!out || out_size == 0) return 0;
+    if (time.millisecond > 0)
+        return snprintf(out, out_size, "%02d:%02d:%02d.%03d", time.hour, time.minute,
+                        time.second, time.millisecond) > 0;
+    return snprintf(out, out_size, "%02d:%02d:%02d", time.hour, time.minute,
+                    time.second) > 0;
+}
+
+static int runtime_duration_text(int64_t ms, char *out, size_t out_size) {
+    int64_t sign = ms < 0 ? -1 : 1;
+    int64_t rem = ms < 0 ? -ms : ms;
+    int64_t h = rem / 3600000;
+    int64_t m;
+    int64_t s;
+    rem %= 3600000;
+    m = rem / 60000;
+    rem %= 60000;
+    s = rem / 1000;
+    rem %= 1000;
+    if (!out || out_size == 0) return 0;
+    return snprintf(out, out_size, "%s%lld:%02lld:%02lld.%03lld",
+                    sign < 0 ? "-" : "", (long long)h, (long long)m,
+                    (long long)s, (long long)rem) > 0;
+}
+
+static int runtime_decimal_text(exprtk_decimal_t value, char *out, size_t out_size) {
+    char digits[32];
+    char *p = digits + sizeof(digits);
+    uint64_t mag;
+    size_t digit_count;
+    size_t pos = 0;
+    int negative;
+
+    if (!out || out_size == 0 || value.scale < 0) return 0;
+    while (value.scale > 0 && value.mantissa % 10 == 0) {
+        value.mantissa /= 10;
+        value.scale--;
+    }
+    if (value.mantissa == 0) value.scale = 0;
+    negative = value.mantissa < 0;
+    mag = negative ? (uint64_t)(-(value.mantissa + 1)) + 1ULL : (uint64_t)value.mantissa;
+    *--p = '\0';
+    do {
+        *--p = (char)('0' + (mag % 10ULL));
+        mag /= 10ULL;
+    } while (mag != 0);
+    digit_count = strlen(p);
+    if (negative) {
+        if (pos + 1 >= out_size) return 0;
+        out[pos++] = '-';
+    }
+    if (value.scale == 0) {
+        if (pos + digit_count >= out_size) return 0;
+        memcpy(out + pos, p, digit_count + 1);
+        return 1;
+    }
+    if ((size_t)value.scale >= digit_count) {
+        size_t zeros = (size_t)value.scale - digit_count;
+        if (pos + 2 + zeros + digit_count >= out_size) return 0;
+        out[pos++] = '0';
+        out[pos++] = '.';
+        while (zeros-- > 0) out[pos++] = '0';
+        memcpy(out + pos, p, digit_count);
+        pos += digit_count;
+        out[pos] = '\0';
+        return 1;
+    }
+    {
+        size_t whole = digit_count - (size_t)value.scale;
+        if (pos + digit_count + 1 >= out_size) return 0;
+        memcpy(out + pos, p, whole);
+        pos += whole;
+        out[pos++] = '.';
+        memcpy(out + pos, p + whole, (size_t)value.scale);
+        pos += (size_t)value.scale;
+        out[pos] = '\0';
+        return 1;
+    }
+}
+
+int exprtk_date_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_DATE || !member) return 0;
+    if (strcmp(member, "year") == 0) *out = exprtk_val_int(value.data.date.year);
+    else if (strcmp(member, "month") == 0) *out = exprtk_val_int(value.data.date.month);
+    else if (strcmp(member, "day") == 0) *out = exprtk_val_int(value.data.date.day);
+    else return 0;
+    return 1;
+}
+
+int exprtk_time_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_TIME || !member) return 0;
+    if (strcmp(member, "hour") == 0) *out = exprtk_val_int(value.data.time.hour);
+    else if (strcmp(member, "minute") == 0) *out = exprtk_val_int(value.data.time.minute);
+    else if (strcmp(member, "second") == 0) *out = exprtk_val_int(value.data.time.second);
+    else if (strcmp(member, "millisecond") == 0) *out = exprtk_val_int(value.data.time.millisecond);
+    else return 0;
+    return 1;
+}
+
+int exprtk_duration_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_DURATION || !member) return 0;
+    if (strcmp(member, "milliseconds") == 0 || strcmp(member, "ms") == 0)
+        *out = exprtk_val_int(value.data.duration_ms);
+    else if (strcmp(member, "seconds") == 0)
+        *out = exprtk_val_num((double)value.data.duration_ms / 1000.0);
+    else return 0;
+    return 1;
+}
+
+int exprtk_decimal_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_DECIMAL || !member) return 0;
+    if (strcmp(member, "mantissa") == 0)
+        *out = exprtk_val_int(value.data.decimal.mantissa);
+    else if (strcmp(member, "scale") == 0)
+        *out = exprtk_val_int(value.data.decimal.scale);
+    else return 0;
+    return 1;
+}
+
+int exprtk_money_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_MONEY || !member) return 0;
+    if (strcmp(member, "amount") == 0) *out = exprtk_val_decimal(value.data.money.amount);
+    else if (strcmp(member, "currency") == 0) {
+        tstr_v sv;
+        sv.data = value.data.money.currency;
+        sv.len = 3;
+        *out = exprtk_val_str(sv);
+    } else return 0;
+    return 1;
+}
+
+int exprtk_enum_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
+    if (!out || (value.type != EXPRTK_VAL_ENUM && value.type != EXPRTK_VAL_FLAGS) || !member)
+        return 0;
+    if (strcmp(member, "value") == 0) *out = exprtk_val_int(value.data.enum_val.value);
+    else if (strcmp(member, "name") == 0 || strcmp(member, "symbol") == 0)
+        *out = exprtk_val_str(value.data.enum_val.symbol);
+    else if (strcmp(member, "type") == 0)
+        *out = exprtk_val_str(value.data.enum_val.type_name);
+    else if (strcmp(member, "is_flags") == 0)
+        *out = exprtk_val_bool(value.type == EXPRTK_VAL_FLAGS);
+    else return 0;
+    return 1;
+}
+
+static const char *runtime_typed_array_kind_name(exprtk_typed_array_kind_t kind) {
+    switch (kind) {
+        case EXPRTK_TYPED_I32: return "i32";
+        case EXPRTK_TYPED_I64: return "i64";
+        case EXPRTK_TYPED_F32: return "f32";
+        case EXPRTK_TYPED_F64: return "f64";
+        default: return "";
+    }
+}
+
+exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index) {
+    if (value.type != EXPRTK_VAL_TYPED_ARRAY || !value.data.typed_array.data ||
+        index >= value.data.typed_array.count)
+        return exprtk_val_num(0);
+    switch (value.data.typed_array.kind) {
+        case EXPRTK_TYPED_I32:
+            return exprtk_val_int(((const int32_t *)value.data.typed_array.data)[index]);
+        case EXPRTK_TYPED_I64:
+            return exprtk_val_int(((const int64_t *)value.data.typed_array.data)[index]);
+        case EXPRTK_TYPED_F32:
+            return exprtk_val_num((double)((const float *)value.data.typed_array.data)[index]);
+        case EXPRTK_TYPED_F64:
+            return exprtk_val_num(((const double *)value.data.typed_array.data)[index]);
+        default:
+            return exprtk_val_num(0);
+    }
+}
+
+int exprtk_typed_array_member_get(exprtk_value_t value, const char *member,
+                                  exprtk_value_t *out) {
+    if (!out || value.type != EXPRTK_VAL_TYPED_ARRAY || !member) return 0;
+    if (strcmp(member, "length") == 0 || strcmp(member, "size") == 0)
+        *out = exprtk_val_int((int64_t)value.data.typed_array.count);
+    else if (strcmp(member, "kind") == 0)
+        *out = exprtk_val_str(tstr_v_from_cstr(runtime_typed_array_kind_name(value.data.typed_array.kind)));
+    else return 0;
+    return 1;
+}
+
+exprtk_value_t eval_typed_array_method(mc_ctx_t *mc) {
+    const char *m = mc->method;
+    if (strcmp(m, "length") == 0 || strcmp(m, "size") == 0)
+        return exprtk_val_int((int64_t)mc->obj.data.typed_array.count);
+    if (strcmp(m, "kind") == 0)
+        return runtime_string_value(mc->arena,
+                                    runtime_typed_array_kind_name(mc->obj.data.typed_array.kind));
+    if (strcmp(m, "toList") == 0 || strcmp(m, "to_list") == 0) {
+        exprtk_value_t list = exprtk_val_list_empty();
+        for (size_t i = 0; i < mc->obj.data.typed_array.count; ++i)
+            exprtk_list_push(&list, exprtk_typed_array_get_value(mc->obj, i));
+        return list;
+    }
+    if (strcmp(m, "toVector") == 0 || strcmp(m, "to_vector") == 0) {
+        double *data = (double *)mem_alloc(mc->arena,
+                                           mc->obj.data.typed_array.count * sizeof(double));
+        if (!data && mc->obj.data.typed_array.count > 0) return exprtk_val_vec(NULL, 0);
+        for (size_t i = 0; i < mc->obj.data.typed_array.count; ++i)
+            data[i] = val_to_double(exprtk_typed_array_get_value(mc->obj, i));
+        return exprtk_val_vec(data, mc->obj.data.typed_array.count);
+    }
+    return unknown_method_error(mc, "typed_array");
+}
+
+exprtk_value_t eval_date_method(mc_ctx_t *mc) {
+    char buf[32];
+    if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
+        return unknown_method_error(mc, "date");
+    if (!runtime_date_text(mc->obj.data.date, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return runtime_string_value(mc->arena, buf);
+}
+
+exprtk_value_t eval_time_method(mc_ctx_t *mc) {
+    char buf[32];
+    if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
+        return unknown_method_error(mc, "time");
+    if (!runtime_time_text(mc->obj.data.time, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return runtime_string_value(mc->arena, buf);
+}
+
+exprtk_value_t eval_duration_method(mc_ctx_t *mc) {
+    char buf[64];
+    if (strcmp(mc->method, "milliseconds") == 0 || strcmp(mc->method, "ms") == 0)
+        return exprtk_val_int(mc->obj.data.duration_ms);
+    if (strcmp(mc->method, "seconds") == 0)
+        return exprtk_val_num((double)mc->obj.data.duration_ms / 1000.0);
+    if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
+        if (!runtime_duration_text(mc->obj.data.duration_ms, buf, sizeof(buf)))
+            return exprtk_val_str(tstr_v_from_cstr(""));
+        return runtime_string_value(mc->arena, buf);
+    }
+    return unknown_method_error(mc, "duration");
+}
+
+exprtk_value_t eval_decimal_method(mc_ctx_t *mc) {
+    char buf[64];
+    if (strcmp(mc->method, "mantissa") == 0)
+        return exprtk_val_int(mc->obj.data.decimal.mantissa);
+    if (strcmp(mc->method, "scale") == 0)
+        return exprtk_val_int(mc->obj.data.decimal.scale);
+    if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
+        if (!runtime_decimal_text(mc->obj.data.decimal, buf, sizeof(buf)))
+            return exprtk_val_str(tstr_v_from_cstr(""));
+        return runtime_string_value(mc->arena, buf);
+    }
+    return unknown_method_error(mc, "decimal");
 }
 
 exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
@@ -2762,8 +3342,19 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
     };
 
     switch (mc.obj.type) {
-        case EXPRTK_VAL_LIST:   return eval_list_method(&mc);
-        case EXPRTK_VAL_MAP:    return eval_map_method(&mc);
+        case EXPRTK_VAL_LIST:
+        case EXPRTK_VAL_SET:   return eval_list_method(&mc);
+        case EXPRTK_VAL_MAP:
+        case EXPRTK_VAL_OBJECT: return eval_map_method(&mc);
+        case EXPRTK_VAL_BYTES:  return eval_bytes_method(&mc);
+        case EXPRTK_VAL_UUID:   return eval_uuid_method(&mc);
+        case EXPRTK_VAL_DATETIME: return eval_datetime_method(&mc);
+        case EXPRTK_VAL_DATE: return eval_date_method(&mc);
+        case EXPRTK_VAL_TIME: return eval_time_method(&mc);
+        case EXPRTK_VAL_DURATION: return eval_duration_method(&mc);
+        case EXPRTK_VAL_DECIMAL: return eval_decimal_method(&mc);
+        case EXPRTK_VAL_OFFSET_DATETIME: return eval_offset_datetime_method(&mc);
+        case EXPRTK_VAL_TYPED_ARRAY: return eval_typed_array_method(&mc);
         case EXPRTK_VAL_STRING: return eval_string_method(&mc);
         case EXPRTK_VAL_VECTOR: return eval_vector_method(&mc);
         default:

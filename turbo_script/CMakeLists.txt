@@ -3,8 +3,16 @@ project(turbo_script)
 set(TARGET_NAME turbo_script)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
-# Collect sources
-cmake_collect_files(SOURCE_FILES RECURSE)
+# Source files listed explicitly to avoid CMake globbing configuration issues
+set(SOURCE_FILES
+  src/mir_mod.c
+  src/turbo_script.c
+  src/turbo_script_closure_analysis.c
+  src/turbo_script_closure_analysis.h
+  src/turbo_script_internal.h
+  src/turbo_script_mir.c
+  src/turbo_script_registry.c
+)
 
 # ── STATIC lib for testing ────────────────────────────────────────
 add_library(${TARGET_NAME_LIB} STATIC ${SOURCE_FILES})

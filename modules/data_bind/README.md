@@ -10,22 +10,33 @@ Loads a TBE schema file and compiles it into MIR JIT-executable parsing function
 * **Returns**: `handle` (number >= 0 on success, or `-1` on failure)
 
 ### `data_bind.parse(handle, type_name, bytes)`
-Parses a binary payload (given as a raw byte string) into a dynamic nested map/list tree representation in the environment.
+Parses a binary payload (given as a raw byte string) into a dynamic nested object/list tree representation in the environment.
 * **Arguments**:
   * `handle` (number) - The schema codec handle returned by `create`.
   * `type_name` (string) - The message type to parse from the schema.
   * `bytes` (string) - The raw binary buffer. The string contents are passed directly to the JIT parser.
-* **Returns**: `map` (object map on success, or `0` on failure)
+* **Returns**: `object` (plain object on success, or `0` on failure)
+
+Returned records are TurboScript plain objects: `typeof(value)` returns
+`"object"` and `is_object(value)` returns `1`. They support dot access,
+string index access, for-in iteration, spread, and JSON serialization. TBE
+`map<K,V>` fields remain script `map` values inside the object tree because
+they represent schema map fields, not record objects.
+
+Scalar fields preserve native TurboScript runtime types where available:
+schema `bool` maps to `bool`, `int64/uint64` maps to `int64`, fixed/variable
+`bytes` maps to `bytes`, schema `uuid` maps to native `uuid`, schema
+`datetime` maps to native `datetime` for JSON/CSV/XML text binding, and other
+numeric fields map to `number`.
+
+For text binding, JSON/XML bytes fields read string text as the byte sequence and
+CSV bytes fields read the cell text. Binary parsing reads fixed or variable TBE
+bytes payloads directly.
 
 ### `data_bind.close(handle)`
 Frees the underlying schema JIT module and resources.
 * **Arguments**: `handle` (number)
 * **Returns**: `0`
-
-### `data_bind.error(handle)`
-Retrieves the last error message from the codec.
-* **Arguments**: `handle` (number)
-* **Returns**: `string`
 
 ---
 
@@ -45,10 +56,10 @@ if (handle < 0) {
 // Example layout: count (32-bit LE) followed by key-value pairs.
 var payload = hex_decode("0200000001000000781e000000010000007928000000");
 
-// 3. Parse bytes to structured map object
+// 3. Parse bytes to a structured plain object
 var msg = data_bind.parse(handle, "Attrs", payload);
 if (msg == 0) {
-    print("Parse error: " + data_bind.error(handle));
+    print("Parse error");
 } else {
     print("Parsed attrs.x: " + msg.attrs.x); // Prints 30
     print("Parsed attrs.y: " + msg.attrs.y); // Prints 40

@@ -5,16 +5,18 @@
  * Exposes the following functions to scripts:
  *
  *   data_bind.create(schema_path)         -> number (codec handle)
- *   data_bind.parse(handle, type, bytes)  -> map   (parsed message object)
+ *   data_bind.parse(handle, type, bytes)  -> object (parsed message object)
+ *   data_bind.json(handle, type, json)    -> object (schema-bound JSON object)
+ *   data_bind.csv(handle, type, csv, row) -> object (schema-bound CSV row)
+ *   data_bind.xml(handle, type, xml)      -> object (schema-bound XML document)
  *   data_bind.close(handle)               -> number (0)
- *   data_bind.error(handle)               -> string (last error)
  *
  * `bytes` is a TurboScript string carrying raw bytes.  The plugin passes
  * the string buffer directly to the JIT-compiled parser.
  *
- * The DataBindValueApi callbacks build a native exprtk_value_t tree
- * (maps, lists, numbers, strings) directly into the env arena so that
- * the returned object lives as long as the script env.
+ * The core data_bind library owns dynamic parsing and returns a DataBindValue
+ * tree.  This module only adapts that tree into native exprtk containers at
+ * the scripting boundary.
  */
 #include "data_bind_ctx.h"
 
@@ -62,229 +64,102 @@ static void db_handle_free(db_ctx_t *ctx, int h) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
- * DataBindValueApi callbacks
- *
- * All "Value *" pointers here are actually exprtk_value_t * cast to Value *.
- * The macros in data_bind.h use `typedef struct Value Value;` with no
- * definition — the host (us) owns the layout.  We use exprtk_value_t.
+ * DataBindValue -> exprtk_value_t conversion
  * ══════════════════════════════════════════════════════════════════════════ */
 
-/* We store the build context in a thread-local-ish pointer set before every
- * parse call and cleared after.  Since DataBind has no user_data slot in
- * ValueApi callbacks we use a module-level pointer. This is safe as long as
- * parse calls are not concurrent on the same codec — which matches the
- * single-threaded TurboScript model. */
-static db_build_ctx_t *g_build_ctx = NULL;
-
-/* Helper: arena-dup a C string */
-static char *bc_dup(const char *s) {
-    if (!s || !g_build_ctx) return NULL;
-    size_t len = strlen(s);
-    return db_arena_cstr(&g_build_ctx->env->arena, s, len);
+static exprtk_value_t db_null_value(void) {
+    exprtk_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.type = EXPRTK_VAL_NULL;
+    return value;
 }
 
-/* ── Object / scalar callbacks ─────────────────────────────────────────── */
-
-static Value *bc_create_object(void) {
-    exprtk_value_t *v = (exprtk_value_t *)mem_alloc(
-        &g_build_ctx->env->arena, sizeof(exprtk_value_t));
-    if (!v) return NULL;
-    *v = exprtk_val_map();
-    return (Value *)v;
+static exprtk_value_t db_string_value(exprtk_env_t *env, const char *data) {
+    size_t len = data ? strlen(data) : 0;
+    char *copy = db_arena_cstr(&env->arena, data ? data : "", len);
+    if (!copy) return DB_ZERO;
+    return exprtk_val_str(tstr_v_from_buf(copy, len));
 }
 
-static void bc_set_field_int(Value *obj, const char *name, int32_t val) {
-    exprtk_value_t *map = (exprtk_value_t *)obj;
-    if (!map || !name) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    exprtk_map_set(map, k, exprtk_val_num((double)val));
+static exprtk_value_t db_bytes_value(exprtk_env_t *env, const DataBindValue *value) {
+    size_t len = 0;
+    const uint8_t *bytes = data_bind_value_as_bytes(value, &len);
+    char *copy;
+
+    if (!env || (!bytes && len > 0)) return DB_ZERO;
+    copy = (char *)mem_alloc(&env->arena, len + 1);
+    if (!copy) return DB_ZERO;
+    if (len > 0) memcpy(copy, bytes, len);
+    copy[len] = '\0';
+    return exprtk_val_bytes(tstr_v_from_buf(copy, len));
 }
 
-static void bc_set_field_int64(Value *obj, const char *name, int64_t val) {
-    exprtk_value_t *map = (exprtk_value_t *)obj;
-    if (!map || !name) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    exprtk_map_set(map, k, exprtk_val_int(val));
+static exprtk_value_t db_uuid_value(const DataBindValue *value) {
+    uuid_t uuid;
+    if (!data_bind_value_as_uuid(value, &uuid)) return DB_ZERO;
+    return exprtk_val_uuid(uuid);
 }
 
-static void bc_set_field_double(Value *obj, const char *name, double val) {
-    exprtk_value_t *map = (exprtk_value_t *)obj;
-    if (!map || !name) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    exprtk_map_set(map, k, exprtk_val_num(val));
+static exprtk_value_t db_datetime_value(const DataBindValue *value) {
+    turbo_datetime_t dt;
+    if (!data_bind_value_as_datetime(value, &dt)) return DB_ZERO;
+    return exprtk_val_datetime(dt);
 }
 
-static void bc_set_field_string(Value *obj, const char *name, const char *val) {
-    exprtk_value_t *map = (exprtk_value_t *)obj;
-    if (!map || !name) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    size_t vlen = val ? strlen(val) : 0;
-    char  *vcopy = val ? db_arena_cstr(&g_build_ctx->env->arena, val, vlen) : NULL;
-    tstr_v sv = {vcopy ? vcopy : "", vlen};
-    exprtk_map_set(map, k, exprtk_val_str(sv));
+static exprtk_value_t db_value_to_exprtk(db_ud_t *ud, const DataBindValue *value) {
+    size_t i;
+
+    if (!ud || !value) return db_null_value();
+
+    switch (data_bind_value_kind(value)) {
+    case DATA_BIND_VALUE_OBJECT: {
+        exprtk_value_t map = exprtk_val_object();
+        size_t count = data_bind_value_field_count(value);
+        for (i = 0; i < count; i++) {
+            const char *name = data_bind_value_field_name(value, i);
+            const DataBindValue *child = data_bind_value_field_at(value, i);
+            if (name) exprtk_map_set(&map, name, db_value_to_exprtk(ud, child));
+        }
+        return map;
+    }
+    case DATA_BIND_VALUE_LIST:
+    case DATA_BIND_VALUE_SET: {
+        exprtk_value_t list = exprtk_val_list_empty();
+        size_t count = data_bind_value_count(value);
+        for (i = 0; i < count; i++)
+            exprtk_list_push(&list, db_value_to_exprtk(ud, data_bind_value_at(value, i)));
+        return list;
+    }
+    case DATA_BIND_VALUE_MAP: {
+        exprtk_value_t map = exprtk_val_map();
+        size_t count = data_bind_value_count(value);
+        for (i = 0; i < count; i++) {
+            DataBindMapEntry entry = data_bind_value_map_entry_at(value, i);
+            if (entry.key) exprtk_map_set(&map, entry.key, db_value_to_exprtk(ud, entry.value));
+        }
+        return map;
+    }
+    case DATA_BIND_VALUE_INT:
+        return exprtk_val_num((double)data_bind_value_as_int(value));
+    case DATA_BIND_VALUE_INT64:
+        return exprtk_val_int(data_bind_value_as_int64(value));
+    case DATA_BIND_VALUE_DOUBLE:
+        return exprtk_val_num(data_bind_value_as_double(value));
+    case DATA_BIND_VALUE_BOOL:
+        return exprtk_val_bool(data_bind_value_as_bool(value));
+    case DATA_BIND_VALUE_STRING:
+        return db_string_value(ud->env, data_bind_value_as_string(value));
+    case DATA_BIND_VALUE_BYTES:
+        return db_bytes_value(ud->env, value);
+    case DATA_BIND_VALUE_UUID:
+        return db_uuid_value(value);
+    case DATA_BIND_VALUE_DATETIME:
+        return db_datetime_value(value);
+    case DATA_BIND_VALUE_NULL:
+    default:
+        return db_null_value();
+    }
 }
-
-static void bc_set_field_bytes(Value *obj, const char *name,
-                               const uint8_t *data, size_t len) {
-    exprtk_value_t *map = (exprtk_value_t *)obj;
-    if (!map || !name) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    /* Expose bytes as a numeric vector (each element = byte value 0-255) */
-    double *buf = (double *)mem_alloc(&g_build_ctx->env->arena,
-                                      len * sizeof(double));
-    if (!buf) return;
-    for (size_t i = 0; i < len; i++) buf[i] = (double)data[i];
-    exprtk_map_set(map, k, exprtk_val_vec(buf, len));
-}
-
-/* ── List callbacks ─────────────────────────────────────────────────────── */
-
-static Value *bc_create_list(void) {
-    exprtk_value_t *v = (exprtk_value_t *)mem_alloc(
-        &g_build_ctx->env->arena, sizeof(exprtk_value_t));
-    if (!v) return NULL;
-    *v = exprtk_val_list_empty();
-    return (Value *)v;
-}
-
-static void bc_add_list_item_int(Value *list, int32_t val) {
-    exprtk_value_t *l = (exprtk_value_t *)list;
-    if (!l) return;
-    exprtk_list_push(l, exprtk_val_num((double)val));
-}
-
-static void bc_add_list_item_int64(Value *list, int64_t val) {
-    exprtk_value_t *l = (exprtk_value_t *)list;
-    if (!l) return;
-    exprtk_list_push(l, exprtk_val_int(val));
-}
-
-static void bc_add_list_item_double(Value *list, double val) {
-    exprtk_value_t *l = (exprtk_value_t *)list;
-    if (!l) return;
-    exprtk_list_push(l, exprtk_val_num(val));
-}
-
-static void bc_add_list_item_string(Value *list, const char *val) {
-    exprtk_value_t *l = (exprtk_value_t *)list;
-    if (!l) return;
-    size_t vlen = val ? strlen(val) : 0;
-    char  *vcopy = val ? db_arena_cstr(&g_build_ctx->env->arena, val, vlen) : NULL;
-    tstr_v sv = {vcopy ? vcopy : "", vlen};
-    exprtk_list_push(l, exprtk_val_str(sv));
-}
-
-static void bc_add_list_item_object(Value *list, Value *obj) {
-    exprtk_value_t *l = (exprtk_value_t *)list;
-    exprtk_value_t *o = (exprtk_value_t *)obj;
-    if (!l || !o) return;
-    exprtk_list_push(l, *o);
-}
-
-static void bc_set_field_list(Value *obj, const char *name, Value *list) {
-    exprtk_value_t *map  = (exprtk_value_t *)obj;
-    exprtk_value_t *lval = (exprtk_value_t *)list;
-    if (!map || !name || !lval) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    exprtk_map_set(map, k, *lval);
-}
-
-/* ── Set callbacks (exposed same as list) ────────────────────────────────── */
-
-static Value *bc_create_set(void) { return bc_create_list(); }
-
-static void bc_add_set_item_int(Value *set, int32_t val) {
-    bc_add_list_item_int(set, val);
-}
-
-static void bc_add_set_item_double(Value *set, double val) {
-    bc_add_list_item_double(set, val);
-}
-
-static void bc_add_set_item_string(Value *set, const char *val) {
-    bc_add_list_item_string(set, val);
-}
-
-static void bc_set_field_set(Value *obj, const char *name, Value *set) {
-    bc_set_field_list(obj, name, set);
-}
-
-/* ── Map callbacks ──────────────────────────────────────────────────────── */
-
-static Value *bc_create_map(void) {
-    /* A TBE map<K,V> becomes a nested exprtk map */
-    return bc_create_object();
-}
-
-static void bc_add_map_entry_str_str(Value *map, const char *key, const char *val) {
-    exprtk_value_t *m = (exprtk_value_t *)map;
-    if (!m || !key) return;
-    char *k = bc_dup(key);
-    if (!k) return;
-    size_t vlen = val ? strlen(val) : 0;
-    char  *vcopy = val ? db_arena_cstr(&g_build_ctx->env->arena, val, vlen) : NULL;
-    tstr_v sv = {vcopy ? vcopy : "", vlen};
-    exprtk_map_set(m, k, exprtk_val_str(sv));
-}
-
-static void bc_add_map_entry_str_int(Value *map, const char *key, int32_t val) {
-    exprtk_value_t *m = (exprtk_value_t *)map;
-    if (!m || !key) return;
-    char *k = bc_dup(key);
-    if (!k) return;
-    exprtk_map_set(m, k, exprtk_val_num((double)val));
-}
-
-static void bc_add_map_entry_str_dbl(Value *map, const char *key, double val) {
-    exprtk_value_t *m = (exprtk_value_t *)map;
-    if (!m || !key) return;
-    char *k = bc_dup(key);
-    if (!k) return;
-    exprtk_map_set(m, k, exprtk_val_num(val));
-}
-
-static void bc_set_field_map(Value *obj, const char *name, Value *map) {
-    exprtk_value_t *parent = (exprtk_value_t *)obj;
-    exprtk_value_t *mval   = (exprtk_value_t *)map;
-    if (!parent || !name || !mval) return;
-    char *k = bc_dup(name);
-    if (!k) return;
-    exprtk_map_set(parent, k, *mval);
-}
-
-/* ── Shared api descriptor ───────────────────────────────────────────────── */
-
-static const DataBindValueApi g_value_api = {
-    .create_object              = bc_create_object,
-    .set_field_int              = bc_set_field_int,
-    .set_field_int64            = bc_set_field_int64,
-    .set_field_double           = bc_set_field_double,
-    .set_field_string           = bc_set_field_string,
-    .set_field_bytes            = bc_set_field_bytes,
-    .create_list                = bc_create_list,
-    .add_list_item_int          = bc_add_list_item_int,
-    .add_list_item_int64        = bc_add_list_item_int64,
-    .add_list_item_double       = bc_add_list_item_double,
-    .add_list_item_string       = bc_add_list_item_string,
-    .add_list_item_object       = bc_add_list_item_object,
-    .set_field_list             = bc_set_field_list,
-    .create_set                 = bc_create_set,
-    .add_set_item_int           = bc_add_set_item_int,
-    .add_set_item_double        = bc_add_set_item_double,
-    .add_set_item_string        = bc_add_set_item_string,
-    .set_field_set              = bc_set_field_set,
-    .create_map                 = bc_create_map,
-    .add_map_entry_string_string = bc_add_map_entry_str_str,
-    .add_map_entry_string_int   = bc_add_map_entry_str_int,
-    .add_map_entry_string_double = bc_add_map_entry_str_dbl,
-    .set_field_map              = bc_set_field_map,
-};
 
 /* ══════════════════════════════════════════════════════════════════════════
  * Script-visible functions
@@ -305,9 +180,10 @@ static exprtk_value_t fn_db_create(size_t argc, exprtk_value_t *args, void *ud_)
                                args[0].data.string.len);
     if (!path) { DB_ERROR(ud, "data_bind.create: OOM"); return DB_ZERO; }
 
-    DataBind *codec = data_bind_create(path, &g_value_api);
-    if (!codec) {
-        DB_ERROR(ud, "data_bind.create: failed to create codec");
+    DataBind *codec = NULL;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    if (data_bind_create(path, &codec, &err) != DATA_BIND_OK) {
+        DB_ERROR(ud, err.message[0] ? err.message : "data_bind.create: failed to create codec");
         return exprtk_val_num(-1.0);
     }
 
@@ -321,7 +197,7 @@ static exprtk_value_t fn_db_create(size_t argc, exprtk_value_t *args, void *ud_)
 }
 
 /**
- * data_bind.parse(handle, type_name, bytes) -> map | 0
+ * data_bind.parse(handle, type_name, bytes) -> object | 0
  *
  * bytes is a TurboScript string whose data is the raw binary payload.
  */
@@ -350,18 +226,214 @@ static exprtk_value_t fn_db_parse(size_t argc, exprtk_value_t *args, void *ud_) 
     const uint8_t *buf = (const uint8_t *)args[2].data.string.data;
     size_t buf_len = args[2].data.string.len;
 
-    /* Install build context so the ValueApi callbacks can reach the env */
-    db_build_ctx_t bctx = { .env = ud->env, .scratch = ud->scratch };
-    g_build_ctx = &bctx;
+    DataBindValue *result = NULL;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    DataBindStatus status = data_bind_parse(codec, type_name, buf, buf_len, &result, &err);
+    exprtk_value_t out;
 
-    Value *result = data_bind_parse(codec, type_name, buf, buf_len);
+    if (status != DATA_BIND_OK) {
+        if (err.message[0]) DB_ERROR(ud, err.message);
+        return DB_ZERO;
+    }
 
-    g_build_ctx = NULL;
+    out = db_value_to_exprtk(ud, result);
+    data_bind_value_free(result);
+    return out;
+}
 
+static exprtk_value_t db_convert_result(db_ud_t *ud, DataBindValue *result) {
+    exprtk_value_t out;
     if (!result) return DB_ZERO;
+    out = db_value_to_exprtk(ud, result);
+    data_bind_value_free(result);
+    return out;
+}
 
-    /* result is an arena-allocated exprtk_value_t (a map) */
-    return *(exprtk_value_t *)result;
+static exprtk_value_t db_convert_status_result(db_ud_t *ud, DataBindStatus status,
+                                               DataBindValue *result,
+                                               const DataBindError *err) {
+    if (status != DATA_BIND_OK) {
+        if (err && err->message[0]) DB_ERROR(ud, err->message);
+        return DB_ZERO;
+    }
+    return db_convert_result(ud, result);
+}
+
+static exprtk_value_t fn_db_json(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    DataBind *codec;
+    int h;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.json: expected (number, string, string)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.json: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) { DB_ERROR(ud, "data_bind.json: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_json(
+            codec, type_name, args[2].data.string.data, args[2].data.string.len, &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
+}
+
+static exprtk_value_t fn_db_json_all(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    DataBind *codec;
+    int h;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.json_all: expected (number, string, string)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.json_all: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) { DB_ERROR(ud, "data_bind.json_all: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_json_all(
+            codec, type_name, args[2].data.string.data, args[2].data.string.len, &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
+}
+
+static exprtk_value_t fn_db_csv(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    DataBind *codec;
+    int h;
+    int row;
+
+    if (argc != 4 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING ||
+        args[3].type != EXPRTK_VAL_NUMBER) {
+        DB_ERROR(ud, "data_bind.csv: expected (number, string, string, number)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    row = (int)args[3].data.number;
+    if (row < 0) return DB_ZERO;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.csv: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) { DB_ERROR(ud, "data_bind.csv: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_csv(codec, type_name, args[2].data.string.data,
+                                                    args[2].data.string.len, (size_t)row,
+                                                    &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
+}
+
+static exprtk_value_t fn_db_csv_all(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    DataBind *codec;
+    int h;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.csv_all: expected (number, string, string)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.csv_all: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) { DB_ERROR(ud, "data_bind.csv_all: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_csv_all(
+            codec, type_name, args[2].data.string.data, args[2].data.string.len, &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
+}
+
+static exprtk_value_t fn_db_xml(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    DataBind *codec;
+    int h;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.xml: expected (number, string, string)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.xml: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) { DB_ERROR(ud, "data_bind.xml: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_xml(
+            codec, type_name, args[2].data.string.data, args[2].data.string.len, &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
+}
+
+static exprtk_value_t fn_db_xml_all(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    char *type_name;
+    char *xpath;
+    DataBind *codec;
+    int h;
+
+    if (argc != 4 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING ||
+        args[3].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.xml_all: expected (number, string, string, string)");
+        return DB_ZERO;
+    }
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.xml_all: invalid handle");
+        return DB_ZERO;
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    xpath = db_arena_cstr(ud->scratch, args[3].data.string.data, args[3].data.string.len);
+    if (!type_name || !xpath) { DB_ERROR(ud, "data_bind.xml_all: OOM"); return DB_ZERO; }
+    {
+        DataBindValue *result = NULL;
+        DataBindError err = DATA_BIND_ERROR_INIT;
+        DataBindStatus status = data_bind_parse_xml_all(codec, type_name, args[2].data.string.data,
+                                                        args[2].data.string.len, xpath,
+                                                        &result, &err);
+        return db_convert_status_result(ud, status, result, &err);
+    }
 }
 
 /**
@@ -375,28 +447,6 @@ static exprtk_value_t fn_db_close(size_t argc, exprtk_value_t *args, void *ud_) 
     }
     db_handle_free(ud->ctx, (int)args[0].data.number);
     return DB_ZERO;
-}
-
-/**
- * data_bind.error(handle) -> string
- */
-static exprtk_value_t fn_db_error(size_t argc, exprtk_value_t *args, void *ud_) {
-    db_ud_t *ud = (db_ud_t *)ud_;
-    if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
-        DB_ERROR(ud, "data_bind.error: expected number handle");
-        return DB_ZERO;
-    }
-    DataBind *codec = db_handle_get(ud->ctx, (int)args[0].data.number);
-    if (!codec) return DB_ZERO;
-
-    const char *err = data_bind_get_error(codec);
-    if (!err || err[0] == '\0') return DB_ZERO;
-
-    size_t len = strlen(err);
-    char  *copy = db_arena_cstr(&ud->env->arena, err, len);
-    if (!copy) return DB_ZERO;
-    tstr_v sv = {copy, len};
-    return exprtk_val_str(sv);
 }
 
 /* ── Loader ──────────────────────────────────────────────────────────────── */
@@ -415,6 +465,11 @@ void db_plugin_load(void *p, void *e, void *s) {
 
     exprtk_env_register_func(env, "data_bind.create", fn_db_create, ud);
     exprtk_env_register_func(env, "data_bind.parse",  fn_db_parse,  ud);
+    exprtk_env_register_func(env, "data_bind.json",   fn_db_json,   ud);
+    exprtk_env_register_func(env, "data_bind.json_all", fn_db_json_all, ud);
+    exprtk_env_register_func(env, "data_bind.csv",    fn_db_csv,    ud);
+    exprtk_env_register_func(env, "data_bind.csv_all", fn_db_csv_all, ud);
+    exprtk_env_register_func(env, "data_bind.xml",    fn_db_xml,    ud);
+    exprtk_env_register_func(env, "data_bind.xml_all", fn_db_xml_all, ud);
     exprtk_env_register_func(env, "data_bind.close",  fn_db_close,  ud);
-    exprtk_env_register_func(env, "data_bind.error",  fn_db_error,  ud);
 }

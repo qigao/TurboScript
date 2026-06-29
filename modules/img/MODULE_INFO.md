@@ -25,7 +25,7 @@ modules/img/
 └── test/
     ├── CMakeLists.txt       # 测试构建配置
     ├── test_img.c           # C 单元测试
-    └── example_usage.ts     # TurboScript 使用示例
+    └── example_usage.tbs     # TurboScript 使用示例
 ```
 
 ## 构建产物

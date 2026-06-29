@@ -3,6 +3,7 @@
  * @brief Parser module core implementation
  */
 #include "parser_ctx.h"
+#include "data_bind.h"
 #include "node_tree.h"
 #include <stdlib.h>
 #include <string.h>
@@ -22,6 +23,7 @@ void *parser_ctx_create(void) {
     }
     for (int i = 0; i < PARSER_MAX_SCHEMAS; i++) {
         ctx->schemas[i] = NULL;
+        ctx->schema_codecs[i] = NULL;
     }
     
     ctx->error_msg[0] = '\0';
@@ -54,6 +56,10 @@ void parser_ctx_destroy(void *p) {
         }
     }
     for (int i = 0; i < PARSER_MAX_SCHEMAS; i++) {
+        if (ctx->schema_codecs[i]) {
+            data_bind_free(ctx->schema_codecs[i]);
+            ctx->schema_codecs[i] = NULL;
+        }
         if (ctx->schemas[i]) {
             node_free((Node *)ctx->schemas[i]);
             ctx->schemas[i] = NULL;

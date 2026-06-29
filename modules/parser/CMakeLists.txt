@@ -35,7 +35,7 @@ target_include_directories(${TARGET_NAME}
 
 target_link_libraries(${TARGET_NAME} 
     PUBLIC exprtk TurboNet::Utils TurboNet::Parser
-    PRIVATE TurboScript::SchemaBE
+    PRIVATE TurboScript::SchemaBE TurboScript::DataBind
 )
 
 set_target_properties(${TARGET_NAME} PROPERTIES

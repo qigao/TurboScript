@@ -8,7 +8,7 @@ TurboScript 是一个 TypeScript/JavaScript-like 语法的嵌入式脚本引擎�
 
 ## Hello World
 
-创建文件 `hello.ts`：
+创建文件 `hello.tbs`：
 
 ```javascript
 var name = "World";
@@ -17,7 +17,7 @@ print("Hello, " + name + "!");
 
 运行：
 ```bash
-turbo_script hello.ts
+turbo_script hello.tbs
 ```
 
 输出：
@@ -209,7 +209,7 @@ file_truncate("backup.txt", 5);
 
 // 目录列举
 var files = listdir(".");
-var scripts = glob("*.ts");
+var scripts = glob("*.tbs");
 
 // 递归目录
 mkdir_recursive("data/tmp/cache");

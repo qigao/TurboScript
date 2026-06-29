@@ -292,8 +292,8 @@ For module-specific functions (CSV, JSON, TA, etc.), see [Module Documentation](
 | `base64url_decode(s)` | Decode URL-safe Base64 | `base64url_decode("aGVsbG8_")` → `"hello?"` |
 | `hex_encode(s)` | Lowercase hex encode bytes | `hex_encode("Az")` → `"417a"` |
 | `hex_decode(s)` | Hex decode to a string | `hex_decode("417a")` → `"Az"` |
-| `bytes(s)` | Return byte values as a list | `bytes("Az")` → `[65,122]` |
-| `from_bytes(list_or_vector)` | Build a string from byte values | `from_bytes([65,122])` → `"Az"` |
+| `bytes(s)` | Return a native byte buffer | `bytes("Az")` |
+| `from_bytes(bytes/list/vector)` | Build a string from byte values | `from_bytes(bytes("Az"))` → `"Az"` |
 
 ### Hash Plugin
 
@@ -311,16 +311,43 @@ Load with `import("hash")`.
 ### Crypto Plugin
 
 Load with `import("crypto")`. Hash outputs are lowercase hexadecimal strings.
+Binary inputs may be `bytes` or strings; encryption APIs return `bytes`.
 
 | Function | Description | Example |
 |----------|-------------|---------|
+| `crypto.sha256(s)` | SHA-256 as a 32-byte digest encoded in lowercase hex | `crypto.sha256("abc")` |
+| `crypto.sha256_bytes(s)` | SHA-256 as raw 32-byte digest bytes | `crypto.sha256_bytes("abc")` |
 | `crypto.blake2b(s)` | BLAKE2b, 64-byte digest | `crypto.blake2b("abc")` |
 | `crypto.blake2b(s, size)` | BLAKE2b with digest size `1..64` bytes | `crypto.blake2b("abc", 4)` → `"63906248"` |
 | `crypto.blake2b_keyed(s, key)` | Keyed BLAKE2b, 64-byte digest | `crypto.blake2b_keyed("abc", "key")` |
 | `crypto.blake2b_keyed(s, key, size)` | Keyed BLAKE2b with digest size `1..64` bytes | `crypto.blake2b_keyed("abc", "key", 4)` → `"34d401b4"` |
+| `crypto.aes_encrypt(data, key, iv)` | AES-CTR encryption with a 16-byte key and 16-byte IV | `crypto.aes_encrypt(raw, key, iv)` |
+| `crypto.aes_decrypt(data, key, iv)` | AES-CTR decryption with the same parameters | `crypto.aes_decrypt(cipher, key, iv)` |
+| `crypto.aead_lock(data, key, nonce, ad)` | Monocypher XChaCha20-Poly1305 AEAD with 32-byte key and 24-byte nonce; returns `{cipher, mac}` | `crypto.aead_lock(raw, key, nonce, ad)` |
+| `crypto.aead_unlock(cipher, mac, key, nonce, ad)` | Verifies and decrypts AEAD data; returns `null` on authentication failure | `crypto.aead_unlock(cipher, mac, key, nonce, ad)` |
+| `crypto.argon2(pass, salt, out_len, blocks, passes, algo)` | Argon2 KDF; `algo`: `0` Argon2d, `1` Argon2i, `2` Argon2id | `crypto.argon2(pw, salt, 32, 65536, 3, 2)` |
+| `crypto.argon2(pass, salt, out_len, blocks, passes, algo, key, ad)` | Argon2 KDF with optional secret key and associated data | `crypto.argon2(pw, salt, 32, 65536, 3, 2, k, ad)` |
+| `crypto.x25519_public_key(secret32)` | X25519 public key from a 32-byte secret | `crypto.x25519_public_key(sk)` |
+| `crypto.x25519(secret32, public32)` | X25519 raw shared secret; hash it before use as a key | `crypto.x25519(sk, peer_pk)` |
+| `crypto.eddsa_key_pair(seed32)` | Monocypher EdDSA key pair; returns `{secret_key, public_key}` | `crypto.eddsa_key_pair(seed)` |
+| `crypto.eddsa_sign(secret64, message)` | Sign a message, returning a 64-byte signature | `crypto.eddsa_sign(sk, msg)` |
+| `crypto.eddsa_check(sig64, public32, message)` | Verify an EdDSA signature, returning `1` or `0` | `crypto.eddsa_check(sig, pk, msg)` |
+| `crypto.chacha20_x(data, key32, nonce24[, ctr])` | XChaCha20 stream cipher; unauthenticated, prefer AEAD for messages | `crypto.chacha20_x(raw, key, nonce, 0)` |
+| `crypto.chacha20_djb(data, key32, nonce8[, ctr])` | ChaCha20 DJB stream cipher | `crypto.chacha20_djb(raw, key, nonce)` |
+| `crypto.chacha20_ietf(data, key32, nonce12[, ctr])` | ChaCha20 IETF stream cipher | `crypto.chacha20_ietf(raw, key, nonce)` |
+| `crypto.chacha20_h(key32, in16)` | HChaCha20 32-byte subkey derivation | `crypto.chacha20_h(key, input)` |
+| `crypto.poly1305(message, key32)` | Poly1305 one-time authenticator, returning 16 bytes | `crypto.poly1305(msg, one_time_key)` |
+| `crypto.elligator_key_pair(seed32)` | Elligator-compatible key pair, returning `{hidden, secret_key}` | `crypto.elligator_key_pair(seed)` |
+| `crypto.elligator_map(hidden32)` | Map an Elligator representative to a Curve25519 point | `crypto.elligator_map(hidden)` |
+| `crypto.elligator_rev(curve32, tweak)` | Reverse Elligator map; returns `null` if not representable | `crypto.elligator_rev(point, 0)` |
 | `crypto.verify16(a, b)` | Constant-time compare of two 16-byte strings | `crypto.verify16(mac1, mac2)` |
 | `crypto.verify32(a, b)` | Constant-time compare of two 32-byte strings | `crypto.verify32(d1, d2)` |
 | `crypto.verify64(a, b)` | Constant-time compare of two 64-byte strings | `crypto.verify64(d1, d2)` |
+
+Additional low-level helpers are exposed for advanced protocols:
+`x25519_to_eddsa`, `x25519_inverse`, `x25519_dirty_small`,
+`x25519_dirty_fast`, `eddsa_to_x25519`, `eddsa_trim_scalar`,
+`eddsa_reduce`, `eddsa_mul_add`, and `eddsa_scalarbase`.
 
 ### Parsing
 
@@ -697,7 +724,7 @@ Timezone policy:
 - `format_date(ts, fmt)` keeps legacy host-local formatting for compatibility.
 - Use `date_utc(str)` and `format_date_utc(ts, fmt)` when the script needs deterministic UTC behavior.
 - Custom local/UTC formatting is backed by TurboNet platform datetime helpers.
-- For structured datetime parsing from optional modules, load `parser` and use `datetime.parse()`.
+- For native datetime values, use `datetime(text)` or `datetime.parse(text)`.
 
 **Example:**
 ```javascript
@@ -731,12 +758,73 @@ This contract is a compatibility rule for the current DSL. Future strict APIs sh
 
 ## Type Conversion
 
+### Type Introspection
+
+| Function | Description | Returns |
+|----------|-------------|---------|
+| `typeof(x)` | Runtime type name | `"number"`, `"int64"`, `"bool"`, `"bytes"`, `"uuid"`, `"datetime"`, `"date"`, `"time"`, `"duration"`, `"decimal"`, `"string"`, `"vector"`, `"map"`, `"object"`, `"list"`, `"null"`, etc. |
+| `is_number(x)` | Check for numeric value (`number` or `int64`) | 1 if numeric, else 0 |
+| `is_int64(x)` | Check for 64-bit integer value | 1 if int64, else 0 |
+| `is_bool(x)` | Check for boolean value | 1 if bool, else 0 |
+| `is_bytes(x)` | Check for byte buffer value | 1 if bytes, else 0 |
+| `is_uuid(x)` | Check for UUID value | 1 if uuid, else 0 |
+| `is_datetime(x)` | Check for datetime value | 1 if datetime, else 0 |
+| `is_date(x)` | Check for date value | 1 if date, else 0 |
+| `is_time(x)` | Check for time value | 1 if time, else 0 |
+| `is_duration(x)` | Check for duration value | 1 if duration, else 0 |
+| `is_decimal(x)` | Check for decimal value | 1 if decimal, else 0 |
+| `is_string(x)` | Check for string value | 1 if string, else 0 |
+| `is_vector(x)` | Check for numeric vector | 1 if vector, else 0 |
+| `is_map(x)` | Check for script `map` | 1 if map, else 0 |
+| `is_object(x)` | Check for host/parser/data_bind plain object | 1 if object, else 0 |
+| `is_list(x)` | Check for heterogeneous list | 1 if list, else 0 |
+| `is_null(x)` | Check for null | 1 if null, else 0 |
+
+Parser and data binding APIs return plain objects for JSON objects, XML query
+nodes, schema reflection records, and schema-bound records/unions. Script
+`map{...}` literals and TBE `map<K,V>` fields remain `map` values.
+
 | Function | Description | Example |
 |----------|-------------|---------|
 | `to_num(s)` | String to number | `to_num("123.45")` → `123.45` |
 | `to_str(x)` | Number to string | `to_str(42)` → `"42"` |
 | `to_int(s)` | String to integer | `to_int("99")` → `99` |
 | `to_bool(s)` | String to boolean | `to_bool("true")` → `1` |
+| `uuid(text)` | Parse standard UUID text into a native UUID value | `uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001")` |
+| `uuid4()` | Generate a random version 4 UUID | `uuid4()` |
+| `uuid7()` | Generate a time-ordered version 7 UUID | `uuid7()` |
+| `uuid_string(id)` / `id.to_string()` | Convert UUID to canonical text | `uuid_string(uuid4())` |
+| `datetime(text)` / `datetime.parse(text)` | Parse text into a native datetime value | `datetime("Sat, 04 Mar 2006 13:27:54 GMT")` |
+| `datetime.to_time(dt)` / `datetime.timestamp(dt)` | Convert datetime or parseable text to Unix epoch seconds | `datetime.to_time(dt)` |
+| `datetime_string(dt)` / `dt.to_string()` | Format datetime as RFC822/HTTP GMT text | `datetime_string(dt)` |
+| `date.parse(text)` | Parse `YYYY-MM-DD` or parseable datetime text into a native date | `date.parse("2026-06-28")` |
+| `date.to_string(d)` / `d.to_string()` | Format a date as `YYYY-MM-DD` | `date.to_string(d)` |
+| `time.parse(text)` | Parse `HH:MM[:SS[.mmm]]` into a native time | `time.parse("09:30:05.123")` |
+| `time.to_string(t)` / `t.to_string()` | Format a time as `HH:MM:SS[.mmm]` | `time.to_string(t)` |
+| `duration.parse(text)` | Parse duration text such as `1h30m5s250ms` into a native duration | `duration.parse("1h30m")` |
+| `duration.milliseconds(d)` / `d.milliseconds` | Duration in milliseconds | `duration.milliseconds(span)` |
+| `duration.seconds(d)` / `d.seconds` | Duration in seconds | `duration.seconds(span)` |
+| `duration.to_string(d)` / `d.to_string()` | Format a duration as `H:MM:SS.mmm` | `duration.to_string(span)` |
+| `decimal.parse(text)` | Parse fixed-point decimal text into a native decimal | `decimal.parse("123.45")` |
+| `decimal.mantissa(d)` / `d.mantissa` | Decimal mantissa after normalization | `decimal.mantissa(price)` |
+| `decimal.scale(d)` / `d.scale` | Decimal scale after normalization | `decimal.scale(price)` |
+| `decimal.to_string(d)` / `d.to_string()` | Format decimal as normalized text | `decimal.to_string(price)` |
+
+`datetime.parse`, `datetime.to_time`, and `datetime.format_rfc822` are exported
+by the script parser module and use TurboNet's datetime parser/format helpers.
+TBE schema scalars `datetime`, `date`, `time`, `duration`, `decimal`, `bigint`,
+and `money` are implemented in
+`tbe/data_bind`; DataBind uses TurboNet::Parser directly and binds JSON/XML/CSV
+text to native runtime values. Schema emit writes them back as strings.
+
+Schema string fields can also use field formats, for example
+`[format(ipaddr)] string ip;` or `[format(url)] string href;`. These validate
+JSON/CSV/XML/default text but still bind as normal strings. Supported formats:
+`ipaddr`, `ip`, `cidr`, `hostname`, `domain`, `email`, `url`, `uri`,
+`macaddr`, `mac`, `semver`, `hex`, `base64`, `base64url`, `currency`,
+`json_pointer`, `jsonpath`, `xpath`, `cron`, `color`, `mime`, and `regex`.
+`regex` validates patterns through libfsm/libre.
+`schema.fields(...)` exposes the field `format` when present.
 
 ---
 

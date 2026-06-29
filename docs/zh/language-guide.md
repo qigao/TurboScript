@@ -22,7 +22,7 @@ TurboScript 语法和语言特性完整参考。
 
 ## 数据类型
 
-TurboScript 支持六种核心数据类型：
+TurboScript 支持这些核心数据类型：
 
 ### 数字（Number）
 
@@ -43,6 +43,18 @@ UTF-8 编码字符串，支持单引号或双引号：
 var greeting = "Hello, World!";
 var message = '单引号也可以';
 var template = `模板字符串`;
+```
+
+### UUID
+
+128 位 UUID 值，可由标准 UUID 字符串或生成函数得到：
+
+```javascript
+var id = uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001");
+var random_id = uuid4();
+var ordered_id = uuid7();
+uuid_string(id);    // "01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001"
+id.to_string();     // 同上
 ```
 
 ### 向量（Vector）
@@ -71,6 +83,66 @@ var nested = map{
     scores: [95, 87, 92]
 };
 ```
+
+### Plain Object
+
+Plain object 是由 `parser`、`data_bind` 等宿主模块产出的动态 record 值。它不通过 `map{...}` 字面量创建，但日常脚本访问方式与 record 类似：
+
+```javascript
+import("parser");
+
+var user = json.parse("{\"name\":\"Alice\",\"age\":30}");
+print(user.name);        // "Alice"
+print(user["age"]);      // 30
+```
+
+schema 绑定记录、JSON object、XML 查询节点和 schema reflection 结果使用 plain object；脚本主动创建键值容器或 TBE `map<K,V>` 字段仍使用 `map`。
+
+### 日期时间（Datetime）
+
+解析后的日期时间是原生 `datetime` 值：
+
+```javascript
+var dt = datetime("Sat, 04 Mar 2006 13:27:54 GMT");
+dt.year;                 // 2006
+datetime.to_time(dt);    // 1141478874
+datetime_string(dt);     // RFC822/HTTP GMT 文本
+```
+
+### 日期、时间与时长（Date / Time / Duration）
+
+需要原生值时使用 `date.parse`、`time.parse`、`duration.parse`。旧的
+`date(str)` 仍返回 Unix timestamp：
+
+```javascript
+var d = date.parse("2026-06-28");
+d.year;                  // 2026
+date.to_string(d);       // "2026-06-28"
+
+var t = time.parse("09:30:05.123");
+t.hour;                  // 9
+time.to_string(t);       // "09:30:05.123"
+
+var span = duration.parse("1h30m5s250ms");
+span.milliseconds;       // 5405250
+duration.seconds(span);  // 5405.25
+duration.to_string(span);// "1:30:05.250"
+```
+
+### Decimal
+
+需要精确定点数时使用 `decimal.parse`，避免二进制浮点带来的精度问题：
+
+```javascript
+var price = decimal.parse("123.4500");
+price.mantissa;              // 12345
+price.scale;                 // 2
+decimal.to_string(price);    // "123.45"
+price.to_string();           // "123.45"
+```
+
+Decimal 比较前会规范化小数末尾 0，所以
+`decimal.parse("123.4500") == decimal.parse("123.45")`。
 
 ### 列表（List）
 
@@ -105,16 +177,36 @@ var nothing = nil;  // 等价于 null
 ### 类型内省
 
 ```javascript
-typeof(42)          // "number"
+typeof(42)          // "int64"
+typeof(42.5)        // "number"
+typeof(true)        // "bool"
+typeof(bytes("Az")) // "bytes"
+typeof(uuid4())     // "uuid"
+typeof(datetime("Sat, 04 Mar 2006 13:27:54 GMT")) // "datetime"
+typeof(date.parse("2026-06-28")) // "date"
+typeof(time.parse("09:30:05"))   // "time"
+typeof(duration.parse("1h"))     // "duration"
+typeof(decimal.parse("123.45"))  // "decimal"
 typeof("hello")     // "string"
 typeof([1,2,3])     // "vector"
 typeof(map{a: 1})   // "map"
+// json.parse("{\"a\":1}") 的 typeof(...) 为 "object"
 typeof(null)        // "null"
 
 is_number(42)       // 1 (true)
+is_int64(42)        // 1 (true)
+is_bool(true)       // 1 (true)
+is_bytes(bytes("Az")) // 1 (true)
+is_uuid(uuid4())    // 1 (true)
+is_datetime(datetime("Sat, 04 Mar 2006 13:27:54 GMT")) // 1 (true)
+is_date(date.parse("2026-06-28")) // 1 (true)
+is_time(time.parse("09:30:05"))   // 1 (true)
+is_duration(duration.parse("1h")) // 1 (true)
+is_decimal(decimal.parse("123.45")) // 1 (true)
 is_string("hi")     // 1 (true)
 is_vector([1,2])    // 1 (true)
 is_map(map{})       // 1 (true)
+is_object(obj)      // plain object 时为 1
 is_null(null)       // 1 (true)
 ```
 
@@ -775,21 +867,21 @@ os_name(), pid(), uptime_ms(), monotonic_ms()
 ```
 
 文件与路径内建函数基于 TurboNet `turbo_fs`。日期格式化、本地时间与 UTC
-转换基于 TurboNet platform datetime helpers；可选 `parser` 模块还提供结构化
-`datetime.parse()` 与 RFC822 格式化辅助函数。
+转换基于 TurboNet platform datetime helpers。原生 temporal 值由
+`datetime.parse()`、`date.parse()`、`time.parse()`、`duration.parse()` 提供。
 
 ### 导入脚本
 
 加载其他 TurboScript 文件：
 
 ```javascript
-// utils.ts
+// utils.tbs
 func helper(x) {
     return x * 2;
 }
 
-// main.ts
-import("utils.ts");
+// main.tbs
+import("utils.tbs");
 var result = helper(5);  // 10
 ```
 

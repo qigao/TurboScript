@@ -1,0 +1,250 @@
+/**
+ * @file test_coroutine.tbs
+ * @brief TurboScript coroutine (coro) module test script
+ * 
+ * This script tests the coroutine functionality at the TurboScript level.
+ * Run with: turbo_script_repl -f test_coroutine.tbs
+ */
+
+// Import the coroutine module
+import("coro");
+
+// ============================================================================
+// Test 1: Simple coroutine that yields values
+// ============================================================================
+func simple_generator() {
+    print("Generator: step 1");
+    coro.yield(100);
+    print("Generator: step 2");
+    coro.yield(200);
+    print("Generator: step 3");
+    return 300;
+}
+
+func test_simple_generator() {
+    print("=== Test 1: Simple Generator ===");
+    
+    let co = coro.create("simple_generator");
+    print("Created coroutine ID:", co);
+    
+    // First resume
+    let r1 = coro.resume(co);
+    print("Resume 1 - status:", r1.status, "value:", r1.value);
+    assert(r1.status == "suspended", "Expected suspended status");
+    assert(r1.value == 100, "Expected value 100");
+    
+    // Second resume
+    let r2 = coro.resume(co);
+    print("Resume 2 - status:", r2.status, "value:", r2.value);
+    assert(r2.status == "suspended", "Expected suspended status");
+    assert(r2.value == 200, "Expected value 200");
+    
+    // Third resume (completion)
+    let r3 = coro.resume(co);
+    print("Resume 3 - status:", r3.status, "value:", r3.value);
+    assert(r3.status == "dead", "Expected dead status");
+    assert(r3.value == 300, "Expected value 300");
+    
+    // Check status
+    let status = coro.status(co);
+    print("Final status:", status);
+    assert(status == "dead", "Expected dead status");
+    
+    // Destroy
+    coro.destroy(co);
+    print("Test 1 PASSED\n");
+}
+
+// ============================================================================
+// Test 2: Coroutine that calculates Fibonacci numbers
+// ============================================================================
+func fibonacci_generator() {
+    let a = 0;
+    let b = 1;
+    
+    coro.yield(a);
+    coro.yield(b);
+    
+    for (let i = 0; i < 10; i += 1) {
+        let next = a + b;
+        a = b;
+        b = next;
+        coro.yield(next);
+    }
+    
+    return "done";
+}
+
+func test_fibonacci() {
+    print("=== Test 2: Fibonacci Generator ===");
+    
+    let co = coro.create("fibonacci_generator");
+    
+    let expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34, 55, 89];
+    
+    for (let i = 0; i < len(expected); i += 1) {
+        let result = coro.resume(co);
+        print("Fibonacci", i, ":", result.value);
+        assert(result.status == "suspended", "Expected suspended");
+        assert(result.value == expected[i], "Unexpected Fibonacci value");
+    }
+    
+    // Final resume
+    let final = coro.resume(co);
+    assert(final.status == "dead", "Expected dead");
+    assert(final.value == "done", "Expected 'done'");
+    
+    coro.destroy(co);
+    print("Test 2 PASSED\n");
+}
+
+// ============================================================================
+// Test 3: Multiple coroutines running concurrently
+// ============================================================================
+func counter(start) {
+    for (let i = start; i < start + 3; i += 1) {
+        coro.yield(i);
+    }
+    return "counter_done";
+}
+
+func test_multiple_coroutines() {
+    print("=== Test 3: Multiple Coroutines ===");
+    
+    let co1 = coro.create("counter");
+    let co2 = coro.create("counter");
+    let co3 = coro.create("counter");
+    
+    print("Created 3 coroutines:", co1, co2, co3);
+    
+    // Interleave execution
+    let r1 = coro.resume(co1, 10);  // Start at 10
+    let r2 = coro.resume(co2, 20);  // Start at 20
+    let r3 = coro.resume(co3, 30);  // Start at 30
+    
+    print("co1:", r1.value, "co2:", r2.value, "co3:", r3.value);
+    assert(r1.value == 10, "co1 should yield 10");
+    assert(r2.value == 20, "co2 should yield 20");
+    assert(r3.value == 30, "co3 should yield 30");
+    
+    // Continue
+    r1 = coro.resume(co1);
+    r2 = coro.resume(co2);
+    r3 = coro.resume(co3);
+    
+    print("co1:", r1.value, "co2:", r2.value, "co3:", r3.value);
+    assert(r1.value == 11, "co1 should yield 11");
+    assert(r2.value == 21, "co2 should yield 21");
+    assert(r3.value == 31, "co3 should yield 31");
+    
+    coro.destroy(co1);
+    coro.destroy(co2);
+    coro.destroy(co3);
+    
+    print("Test 3 PASSED\n");
+}
+
+// ============================================================================
+// Test 4: Coroutine status checking
+// ============================================================================
+func simple_yielder() {
+    coro.yield(1);
+    coro.yield(2);
+    return 3;
+}
+
+func test_status() {
+    print("=== Test 4: Status Checking ===");
+    
+    let co = coro.create("simple_yielder");
+    
+    // Initial status
+    let s1 = coro.status(co);
+    print("Initial status:", s1);
+    assert(s1 == "suspended", "Expected suspended");
+    
+    // After first yield
+    coro.resume(co);
+    let s2 = coro.status(co);
+    print("After first yield:", s2);
+    assert(s2 == "suspended", "Expected suspended");
+    
+    // After second yield
+    coro.resume(co);
+    let s3 = coro.status(co);
+    print("After second yield:", s3);
+    assert(s3 == "suspended", "Expected suspended");
+    
+    // After completion
+    coro.resume(co);
+    let s4 = coro.status(co);
+    print("After completion:", s4);
+    assert(s4 == "dead", "Expected dead");
+    
+    coro.destroy(co);
+    print("Test 4 PASSED\n");
+}
+
+// ============================================================================
+// Test 5: Coroutine with no yields (immediate return)
+// ============================================================================
+func immediate_return() {
+    return 999;
+}
+
+func test_immediate_return() {
+    print("=== Test 5: Immediate Return ===");
+    
+    let co = coro.create("immediate_return");
+    
+    let result = coro.resume(co);
+    print("Result:", result.status, result.value);
+    
+    assert(result.status == "dead", "Should be dead immediately");
+    assert(result.value == 999, "Should return 999");
+    
+    coro.destroy(co);
+    print("Test 5 PASSED\n");
+}
+
+// ============================================================================
+// Test 6: Error handling (function not found)
+// ============================================================================
+func test_error_handling() {
+    print("=== Test 6: Error Handling ===");
+    
+    let co = coro.create("nonexistent_function");
+    
+    let result = coro.resume(co);
+    print("Result:", result.status);
+    
+    // Should either be "error" or "dead" depending on implementation
+    // For now, just check it doesn't crash
+    assert(result.status == "dead" || result.status == "error", 
+           "Should handle missing function gracefully");
+    
+    coro.destroy(co);
+    print("Test 6 PASSED\n");
+}
+
+// ============================================================================
+// Main test runner
+// ============================================================================
+func main() {
+    print("========================================");
+    print("TurboScript Coroutine Module Tests");
+    print("========================================\n");
+    
+    test_simple_generator();
+    test_fibonacci();
+    test_multiple_coroutines();
+    test_status();
+    test_immediate_return();
+    test_error_handling();
+    
+    print("========================================");
+    print("All tests PASSED!");
+    print("========================================");
+}
+
+main();

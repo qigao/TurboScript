@@ -27,6 +27,13 @@ static exprtk_value_t regex_zero(void) {
     return exprtk_val_num(0.0);
 }
 
+static exprtk_value_t regex_null(void) {
+    exprtk_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.type = EXPRTK_VAL_NULL;
+    return value;
+}
+
 static exprtk_env_t *regex_root_env(exprtk_env_t *env) {
     while (env && env->parent) env = env->parent;
     return env;
@@ -307,6 +314,55 @@ static int regex_optional_flags(size_t argc, exprtk_value_t *args, size_t index,
     return 1;
 }
 
+static exprtk_value_t regex_object_from_handle(int handle, exprtk_regex_pattern_t *pattern,
+                                               mem_pool_t *arena) {
+    exprtk_value_t object = exprtk_val_object();
+    const char *flags = (pattern && (pattern->flags & 1)) ? "i" : "";
+    exprtk_map_set(&object, "__ts_method_provider", exprtk_val_str(tstr_v_from_cstr("RegExp")));
+    exprtk_map_set(&object, "handle", exprtk_val_int(handle));
+    exprtk_map_set(&object, "source",
+                   pattern && pattern->pattern
+                       ? regex_copy_string(arena, pattern->pattern, strlen(pattern->pattern))
+                       : exprtk_val_str(tstr_v_from_cstr("")));
+    exprtk_map_set(&object, "flags", exprtk_val_str(tstr_v_from_cstr(flags)));
+    exprtk_map_set(&object, "lastIndex", exprtk_val_num(0.0));
+    return object;
+}
+
+static int regex_object_handle(exprtk_value_t value, exprtk_env_t *env) {
+    exprtk_value_t provider;
+    exprtk_value_t handle_value;
+    const char marker[] = "RegExp";
+
+    if (!exprtk_value_is_object_like(&value) ||
+        !exprtk_map_has(&value, "__ts_method_provider") ||
+        !exprtk_map_has(&value, "handle")) {
+        regex_set_error(env, "RegExp: expected RegExp object");
+        return -1;
+    }
+
+    provider = exprtk_map_get(&value, "__ts_method_provider");
+    if (provider.type != EXPRTK_VAL_STRING ||
+        provider.data.string.len != sizeof(marker) - 1 ||
+        memcmp(provider.data.string.data, marker, sizeof(marker) - 1) != 0) {
+        regex_set_error(env, "RegExp: expected RegExp object");
+        return -1;
+    }
+
+    handle_value = exprtk_map_get(&value, "handle");
+    return regex_arg_handle(handle_value);
+}
+
+static exprtk_regex_pattern_t *regex_object_pattern(exprtk_value_t value, exprtk_env_t *env) {
+    exprtk_regex_ctx_t *ctx = regex_get_ctx(env);
+    int handle = regex_object_handle(value, env);
+    if (!ctx || handle < 0 || handle >= EXPRTK_REGEX_MAX_PATTERNS || !ctx->patterns[handle]) {
+        regex_set_error(env, "RegExp: invalid pattern handle");
+        return NULL;
+    }
+    return ctx->patterns[handle];
+}
+
 static exprtk_value_t fn_regex_compile(size_t argc, exprtk_value_t *args,
                                        exprtk_env_t *env, mem_pool_t *arena) {
     if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING) {
@@ -349,6 +405,50 @@ static exprtk_value_t fn_regex_compile(size_t argc, exprtk_value_t *args,
         return regex_zero();
     }
     return exprtk_val_int(handle);
+}
+
+static exprtk_value_t fn_regexp_ctor(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp: expected string pattern [, flags]");
+        return regex_null();
+    }
+    int flags = 0;
+    if (!regex_optional_flags(argc, args, 1, &flags, env)) return regex_null();
+
+    exprtk_regex_ctx_t *ctx = regex_get_ctx(env);
+    char *pattern = regex_arena_string(arena, args[0].data.string);
+    if (!ctx || !pattern) {
+        regex_set_error(env, "RegExp: out of memory");
+        return regex_null();
+    }
+
+    struct fsm *fsm = regex_compile_fsm(pattern, flags, env);
+    if (!fsm) return regex_null();
+
+    exprtk_regex_pattern_t *compiled =
+        (exprtk_regex_pattern_t *)calloc(1, sizeof(exprtk_regex_pattern_t));
+    if (!compiled) {
+        fsm_free(fsm);
+        regex_set_error(env, "RegExp: out of memory");
+        return regex_null();
+    }
+    compiled->fsm = fsm;
+    compiled->flags = flags;
+    compiled->pattern = regex_strdup_len(pattern, strlen(pattern));
+    if (!compiled->pattern) {
+        regex_free_pattern(compiled);
+        regex_set_error(env, "RegExp: out of memory");
+        return regex_null();
+    }
+
+    int handle = regex_alloc_handle(ctx, compiled);
+    if (handle < 0) {
+        regex_free_pattern(compiled);
+        regex_set_error(env, "RegExp: too many compiled patterns");
+        return regex_null();
+    }
+    return regex_object_from_handle(handle, compiled, arena);
 }
 
 static exprtk_value_t fn_regex_free(size_t argc, exprtk_value_t *args,
@@ -626,7 +726,121 @@ static exprtk_value_t fn_regex_find_iter(size_t argc, exprtk_value_t *args,
     return list;
 }
 
+static exprtk_value_t fn_regexp_test(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)arena;
+    if (argc != 2 || args[1].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp.test: expected (this, string)");
+        return regex_zero();
+    }
+    exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
+    if (!pattern) return regex_zero();
+
+    tstr_v text = args[1].data.string;
+    size_t start = 0, end = 0;
+    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    return exprtk_val_num(found ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_regexp_match(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, mem_pool_t *arena) {
+    (void)arena;
+    if (argc != 2 || args[1].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp.match: expected (this, string)");
+        return regex_zero();
+    }
+    exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
+    if (!pattern) return regex_zero();
+    tstr_v text = args[1].data.string;
+    return exprtk_val_num(regex_accepts_span(pattern->fsm, text.data, text.len) ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_regexp_search(size_t argc, exprtk_value_t *args,
+                                       exprtk_env_t *env, mem_pool_t *arena) {
+    (void)arena;
+    if (argc != 2 || args[1].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp.search: expected (this, string)");
+        return regex_zero();
+    }
+    exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
+    if (!pattern) return regex_zero();
+    tstr_v text = args[1].data.string;
+    size_t start = 0, end = 0;
+    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    return exprtk_val_num(found ? (double)start : -1.0);
+}
+
+static exprtk_value_t fn_regexp_exec(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    if (argc != 2 || args[1].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp.exec: expected (this, string)");
+        return regex_null();
+    }
+    exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
+    if (!pattern) return regex_null();
+    tstr_v text = args[1].data.string;
+    size_t start = 0, end = 0;
+    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    if (!found) return regex_null();
+    return regex_match_map(arena, text.data, text.len, 1, start, end);
+}
+
+static exprtk_value_t fn_regexp_find_all(size_t argc, exprtk_value_t *args,
+                                         exprtk_env_t *env, mem_pool_t *arena) {
+    if (argc != 2 || args[1].type != EXPRTK_VAL_STRING) {
+        regex_set_error(env, "RegExp.find_all: expected (this, string)");
+        return regex_zero();
+    }
+    exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
+    if (!pattern) return regex_zero();
+    tstr_v text = args[1].data.string;
+    exprtk_value_t list = exprtk_val_list_empty();
+    size_t cursor = 0;
+    while (cursor <= text.len) {
+        size_t start = 0, end = 0;
+        if (!regex_find(pattern->fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_list_push_string(&list, arena, text.data + start, end - start)) {
+            return regex_zero();
+        }
+        cursor = end > start ? end : start + 1;
+    }
+    return list;
+}
+
+static exprtk_value_t fn_regexp_free(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)arena;
+    if (argc != 1) return regex_zero();
+    exprtk_regex_ctx_t *ctx = regex_get_ctx(env);
+    int handle = regex_object_handle(args[0], env);
+    if (!ctx || handle < 0 || handle >= EXPRTK_REGEX_MAX_PATTERNS) return regex_zero();
+    regex_free_pattern(ctx->patterns[handle]);
+    ctx->patterns[handle] = NULL;
+    return exprtk_val_num(1.0);
+}
+
+static exprtk_value_t fn_regexp_to_string(size_t argc, exprtk_value_t *args,
+                                          exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    if (argc != 1 || !exprtk_value_is_object_like(&args[0]) ||
+        !exprtk_map_has(&args[0], "source")) {
+        return regex_copy_string(arena, "", 0);
+    }
+    exprtk_value_t source = exprtk_map_get(&args[0], "source");
+    if (source.type != EXPRTK_VAL_STRING) return regex_copy_string(arena, "", 0);
+    return regex_copy_string(arena, source.data.string.data, source.data.string.len);
+}
+
 static const exprtk_func_entry_t regex_entries[] = {
+    { "RegExp",         fn_regexp_ctor },
+    { "RegExp.exec",    fn_regexp_exec },
+    { "RegExp.find_all", fn_regexp_find_all },
+    { "RegExp.free",    fn_regexp_free },
+    { "RegExp.match",   fn_regexp_match },
+    { "RegExp.search",  fn_regexp_search },
+    { "RegExp.test",    fn_regexp_test },
+    { "RegExp.toString", fn_regexp_to_string },
+    { "RegExp.to_string", fn_regexp_to_string },
     { "regex.compile",  fn_regex_compile },
     { "regex.free",     fn_regex_free },
     { "regex.find_iter", fn_regex_find_iter },

@@ -55,11 +55,19 @@ Lookup priority:
 
 1.  **Number**: 64-bit floating point (e.g., `3.14`, `-0.5`, `1e10`).
 2.  **String**: UTF-8 string literal (`"hello"`) and template string (`` `hello` ``).
-3.  **Vector**: Array of numbers (e.g., `[1, 2, 3]`).
-4.  **Map**: Key-value object (e.g., `map{name: "Alice", age: 30}`).
-5.  **List**: Heterogeneous array of any values (e.g., `list("hello", 42, [1,2])`).
-6.  **Null**: Absence of a value (`null` or `nil`).
-7.  **Boolean**: Implicitly `0.0` (false) or non-zero (true).
+3.  **Int64**: 64-bit integer literal/runtime value (e.g., `42`).
+4.  **Bool**: Native boolean (`true`, `false`).
+5.  **Bytes**: Binary byte buffer returned by `bytes(s)`.
+6.  **UUID**: 128-bit UUID value returned by `uuid(text)`, `uuid4()`, or `uuid7()`.
+7.  **Datetime**: Parsed date-time value returned by `datetime(text)` or `datetime.parse(text)`.
+8.  **Date**: Calendar date returned by `date.parse(text)`.
+9.  **Time**: Time-of-day returned by `time.parse(text)`.
+10. **Duration**: Millisecond duration returned by `duration.parse(text)`.
+11. **Vector**: Array of numbers (e.g., `[1, 2, 3]`).
+12. **Map**: Explicit script key-value container (e.g., `map{name: "Alice", age: 30}`).
+13. **Object**: Host/parser/data_bind plain record object with field access.
+14. **List**: Heterogeneous array of any values (e.g., `list("hello", 42, [1,2])`).
+15. **Null**: Absence of a value (`null` or `nil`).
 
 ### Built-in Constants
 
@@ -69,30 +77,50 @@ Lookup priority:
 | `e` | 2.71828182845904… | Euler's number |
 | `inf` | ∞ | Positive infinity |
 | `nan` | NaN | Not a Number |
-| `true` | 1.0 | Boolean true |
-| `false` | 0.0 | Boolean false |
+| `true` | true | Boolean true |
+| `false` | false | Boolean false |
 | `null` / `nil` | null | Null value |
 
 ### Type Introspection
 
 | Function | Returns |
 |----------|---------|
-| `typeof(x)` | `"number"`, `"string"`, `"vector"`, `"map"`, `"list"`, `"null"` |
+| `typeof(x)` | `"number"`, `"int64"`, `"bool"`, `"bytes"`, `"uuid"`, `"datetime"`, `"date"`, `"time"`, `"duration"`, `"string"`, `"vector"`, `"map"`, `"object"`, `"list"`, `"null"` |
 | `is_number(x)` | `1.0` if number, else `0.0` |
+| `is_int64(x)` | `1.0` if int64, else `0.0` |
+| `is_bool(x)` | `1.0` if bool, else `0.0` |
+| `is_bytes(x)` | `1.0` if bytes, else `0.0` |
+| `is_uuid(x)` | `1.0` if UUID, else `0.0` |
+| `is_datetime(x)` | `1.0` if datetime, else `0.0` |
+| `is_date(x)` | `1.0` if date, else `0.0` |
+| `is_time(x)` | `1.0` if time, else `0.0` |
+| `is_duration(x)` | `1.0` if duration, else `0.0` |
 | `is_string(x)` | `1.0` if string, else `0.0` |
 | `is_vector(x)` | `1.0` if vector, else `0.0` |
 | `is_map(x)` | `1.0` if map, else `0.0` |
+| `is_object(x)` | `1.0` if plain object, else `0.0` |
 | `is_list(x)` | `1.0` if list, else `0.0` |
 | `is_null(x)` | `1.0` if null, else `0.0` |
 
 ```js
-typeof(42)          // → "number"
+typeof(42)          // → "int64"
+typeof(42.5)        // → "number"
+typeof(true)        // → "bool"
+typeof(bytes("Az")) // → "bytes"
+typeof(uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001")) // → "uuid"
+typeof(datetime("Sat, 04 Mar 2006 13:27:54 GMT")) // → "datetime"
+typeof(date.parse("2026-06-28")) // → "date"
+typeof(time.parse("09:30:05"))   // → "time"
+typeof(duration.parse("1h"))     // → "duration"
 typeof("hello")     // → "string"
 typeof([1,2,3])     // → "vector"
 typeof(map{a: 1})   // → "map"
 typeof(null)        // → "null"
 is_number(42)       // → 1
 is_string(42)       // → 0
+is_uuid(uuid4())    // → 1
+uuid_string(uuid7()) // → "019..."
+datetime("Sat, 04 Mar 2006 13:27:54 GMT").year // → 2006
 ```
 
 ---
@@ -279,7 +307,7 @@ prices |> ta.sma(14) |> ta.rsi(14);
 ### Import
 Load and execute external script files.
 ```js
-import("utils.ts");
+import("utils.tbs");
 ```
 
 ---
@@ -386,9 +414,15 @@ All IO functions are registered globally via `exprtk_module_io()`. No `import` o
 | `format_date(ts [, fmt])` | Format timestamp → string (default RFC 822; custom format uses host local time) |
 | `format_date_utc(ts [, fmt])` | Format timestamp in UTC → string |
 
-The optional `parser` module also exposes structured datetime functions:
-`datetime.parse(text)`, `datetime.to_time(value)`, `datetime.timestamp(value)`,
-and `datetime.format_rfc822(timestamp)`.
+The core runtime and parser module expose native datetime functions:
+`datetime(text)`, `datetime.parse(text)`, `datetime.to_time(value)`,
+`datetime.timestamp(value)`, and `datetime.format_rfc822(timestamp)`.
+Datetime values support field access such as `year`, `month`, `day`, `hour`,
+`minute`, `second`, `tz_offset`, `has_tz`, `day_of_week`, and `timestamp`.
+Native date/time/duration values are exposed through `date.parse(text)`,
+`time.parse(text)`, and `duration.parse(text)`. `date` supports `year`,
+`month`, and `day`; `time` supports `hour`, `minute`, `second`, and
+`millisecond`; `duration` supports `milliseconds`/`ms` and `seconds`.
 
 ### IO Module — Platform Info (global)
 
@@ -844,8 +878,8 @@ grouped.a.value  // → 15
 | `base64url_decode(s)`             | string   | URL-safe Base64 decode into a string          |
 | `hex_encode(s)`                   | string   | Lowercase hex encode bytes                    |
 | `hex_decode(s)`                   | string   | Hex decode bytes into a string                |
-| `bytes(s)`                        | list     | Byte values as a list                         |
-| `from_bytes(list_or_vector)`      | string   | Build a string from byte values               |
+| `bytes(s)`                        | bytes    | Binary byte buffer                            |
+| `from_bytes(bytes/list/vector)`   | string   | Build a string from byte values               |
 | `template_render(t, data)`        | string   | Render a Mustache template from script data   |
 | `template_render(t, data, parts)` | string   | Render with partial templates from a map      |
 | `mustache_render(t, data)`        | string   | Alias for `template_render`                   |

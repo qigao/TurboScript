@@ -228,17 +228,11 @@ static int validate_field_layout(schema_parse_ctx_t *ctx,
         return 0;
     }
 
-    if ((ctx->cur_record_kind == SCHEMA_RECORD_MESSAGE ||
-         ctx->cur_record_kind == SCHEMA_RECORD_GROUP) &&
-        section < ctx->cur_field_section) {
-        fprintf(stderr, "schema_grammar: fields must be ordered as fixed, group, var-data\n");
-        ctx->error = 1;
-        return 0;
-    }
-
     if (ctx->cur_record_kind == SCHEMA_RECORD_MESSAGE ||
         ctx->cur_record_kind == SCHEMA_RECORD_GROUP) {
-        ctx->cur_field_section = section;
+        if (section > ctx->cur_field_section) {
+            ctx->cur_field_section = section;
+        }
     }
 
     return 1;
@@ -250,6 +244,7 @@ static void annotate_field(Node *field_map, const char *field_type,
     int size = 0;
     int is_numeric = 0;
     int is_unsigned = 0;
+    int is_uuid = 0;
     const char *host_type = NULL;
     const char *wire_reader = NULL;
     const char *map_value_type = NULL;
@@ -297,6 +292,8 @@ static void annotate_field(Node *field_map, const char *field_type,
     } else if (strcmp(field_type, "double") == 0) {
         size = 8; is_numeric = 1;
         host_type = "double"; wire_reader = "f64";
+    } else if (strcmp(field_type, "uuid") == 0) {
+        size = 16; is_uuid = 1;
     }
 
     if (is_numeric) {
@@ -313,6 +310,16 @@ static void annotate_field(Node *field_map, const char *field_type,
         if (is_unsigned) {
             add_true(field_map, "is_unsigned");
         }
+        add_true(field_map, "is_primitive");
+        add_true(field_map, "is_fixed_size");
+    }
+
+    if (is_uuid) {
+        char size_text[16];
+        snprintf(size_text, sizeof(size_text), "%d", size);
+        map_add(field_map, create_node_string("ctype", "UUID"));
+        map_add(field_map, create_node_string("size_bytes", size_text));
+        add_true(field_map, "is_uuid");
         add_true(field_map, "is_primitive");
         add_true(field_map, "is_fixed_size");
     }
@@ -400,16 +407,7 @@ static void add_field(schema_parse_ctx_t *ctx,
                       Node *attrs, int is_group_field, int is_optional, const char *default_value) {
     Node *field_map;
 
-    if (attrs != NULL) {
-        fprintf(stderr,
-                "schema_grammar: field attributes are not supported; field order defines layout\n");
-        ctx->error = 1;
-        node_free(attrs);
-        return;
-    }
-
     if (!validate_field_layout(ctx, type_str, is_collection, is_group_field, len_field)) {
-        node_free(attrs);
         return;
     }
 
@@ -426,6 +424,10 @@ static void add_field(schema_parse_ctx_t *ctx,
     if (default_value && default_value[0] != '\0') {
         map_add(field_map, create_node_string("default_value", default_value));
         add_true(field_map, "has_default");
+    }
+
+    if (attrs != NULL) {
+        map_add(field_map, attrs);
     }
     
     annotate_field(field_map, type_str, is_collection, inner, len_field, is_group_field);

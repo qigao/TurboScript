@@ -315,14 +315,22 @@ suite("tbe_parser") {
       node_free(root);
     }
 
-    it("should reject field attributes and use declaration order") {
+    it("should retain field attributes and use declaration order") {
       const char *schema = "message LoginMessage { "
                            "[id(1)] Header header; "
                            "string username; }";
       Node *root = create_node_map("root");
       int rc = parse_schema(schema, strlen(schema), root, NULL);
 
-      check_int_eq(rc, -1);
+      check_int_eq(rc, 0);
+      Node *messages = find_child(root, "messages");
+      Node *msg = messages->data.list.items[0];
+      Node *fields = find_child(msg, "fields");
+      Node *header = fields->data.list.items[0];
+      Node *attrs = find_child(header, "attributes");
+      Node *id = attrs->data.list.items[0];
+      check_str_eq(find_child(id, "name")->data.string_val, "id");
+      check_str_eq(find_child(id, "value")->data.string_val, "1");
       node_free(root);
     }
 
@@ -573,13 +581,13 @@ suite("tbe_parser") {
       node_free(root);
     }
 
-    it("should reject message fields declared out of fixed group var-data order") {
+    it("should parse message fields declared outside binary layout order") {
       const char *schema = "group Level { uint64 price; } "
                            "message Broken { string symbol; group<Level> bids; }";
       Node *root = create_node_map("root");
       int rc = parse_schema(schema, strlen(schema), root, NULL);
 
-      check_int_eq(rc, -1);
+      check_int_eq(rc, 0);
       node_free(root);
     }
   }

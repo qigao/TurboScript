@@ -44,13 +44,14 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 - **Numbers**: 64-bit floating point
 - **Strings**: UTF-8 with template literals
 - **Vectors**: Efficient numeric arrays
+- **Objects**: Plain records returned by parser/data binding APIs
 - **Maps**: Hash-based key-value stores
 - **Lists**: Heterogeneous collections
 
 ### Built-in Libraries
 - **Math & matrix**: Scalar math, statistics, dense matrix helpers, linear algebra
 - **String**: UTF-8 text operations, parsing, formatting, templates
-- **Parser/Data bind**: CSV, JSON, TBE schema bind/emit/validate
+- **Parser/Data bind**: CSV, JSON, XML, TBE schema bind/emit/validate with plain object results
 - **Time series / TA / finance**: Rolling windows, indicators, risk metrics, portfolio helpers
 - **File I/O**: Read/write files, directory operations
 - **Date/Time**: Parsing, formatting, timestamps

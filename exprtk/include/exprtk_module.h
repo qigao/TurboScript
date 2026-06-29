@@ -53,6 +53,13 @@ static inline exprtk_value_t exprtk_val_int(int64_t v) {
     return val;
 }
 
+static inline exprtk_value_t exprtk_val_bool(int v) {
+    exprtk_value_t val;
+    val.type = EXPRTK_VAL_BOOL;
+    val.data.boolean = v ? 1 : 0;
+    return val;
+}
+
 static inline exprtk_value_t exprtk_val_vec(double *data, size_t size) {
     exprtk_value_t val;
     val.type = EXPRTK_VAL_VECTOR;
@@ -68,6 +75,113 @@ static inline exprtk_value_t exprtk_val_str(tstr_v v) {
     return val;
 }
 
+static inline exprtk_value_t exprtk_val_bytes(tstr_v v) {
+    exprtk_value_t val;
+    val.type = EXPRTK_VAL_BYTES;
+    val.data.bytes = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_uuid(uuid_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_UUID;
+    val.data.uuid = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_datetime(turbo_datetime_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_DATETIME;
+    val.data.datetime = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_date(exprtk_date_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_DATE;
+    val.data.date = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_time(exprtk_time_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_TIME;
+    val.data.time = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_duration(int64_t ms) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_DURATION;
+    val.data.duration_ms = ms;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_decimal(exprtk_decimal_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_DECIMAL;
+    val.data.decimal = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_bigint(tstr_v v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_BIGINT;
+    val.data.bigint.text = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_money(exprtk_money_t v) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_MONEY;
+    val.data.money = v;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_enum(tstr_v type_name, tstr_v symbol, int64_t value, int is_flags) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = is_flags ? EXPRTK_VAL_FLAGS : EXPRTK_VAL_ENUM;
+    val.data.enum_val.type_name = type_name;
+    val.data.enum_val.symbol = symbol;
+    val.data.enum_val.value = value;
+    val.data.enum_val.is_flags = is_flags ? 1 : 0;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_offset_datetime(turbo_datetime_t datetime,
+                                                        int offset_minutes) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_OFFSET_DATETIME;
+    val.data.offset_datetime.datetime = datetime;
+    val.data.offset_datetime.offset_minutes = offset_minutes;
+    return val;
+}
+
+static inline exprtk_value_t exprtk_val_typed_array(exprtk_typed_array_kind_t kind,
+                                                    void *data, size_t count,
+                                                    int heap_owned) {
+    exprtk_value_t val;
+    memset(&val, 0, sizeof(val));
+    val.type = EXPRTK_VAL_TYPED_ARRAY;
+    val.data.typed_array.kind = kind;
+    val.data.typed_array.data = data;
+    val.data.typed_array.count = count;
+    val.data.typed_array.heap_owned = heap_owned;
+    return val;
+}
+
+exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index);
+
 /* =========================================================================
  * Map helpers — O(1) hash table backed map
  *
@@ -75,6 +189,8 @@ static inline exprtk_value_t exprtk_val_str(tstr_v v) {
  * ========================================================================= */
 
 exprtk_value_t  exprtk_val_map(void);
+exprtk_value_t  exprtk_val_object(void);
+int             exprtk_value_is_object_like(const exprtk_value_t *value);
 exprtk_value_t  exprtk_map_get(const exprtk_value_t *map, const char *key);
 void            exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value);
 int             exprtk_map_has(const exprtk_value_t *map, const char *key);
@@ -111,6 +227,12 @@ static inline exprtk_value_t exprtk_val_list_empty(void) {
     return val;
 }
 
+static inline exprtk_value_t exprtk_val_set_empty(void) {
+    exprtk_value_t val = exprtk_val_list_empty();
+    val.type = EXPRTK_VAL_SET;
+    return val;
+}
+
 static inline exprtk_value_t exprtk_val_list_ex(exprtk_value_t *items, size_t n, int heap_owned) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
@@ -127,7 +249,7 @@ static inline exprtk_value_t exprtk_val_list(exprtk_value_t *items, size_t n) {
 }
 
 static inline void exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
-    if (list->type != EXPRTK_VAL_LIST) return;
+    if (list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) return;
     if (list->data.list.count >= list->data.list.capacity) {
         size_t new_cap = list->data.list.capacity ? list->data.list.capacity * 2 : 4;
         exprtk_value_t *new_items = NULL;
@@ -150,7 +272,8 @@ static inline void exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
 }
 
 static inline exprtk_value_t exprtk_list_get(const exprtk_value_t *list, size_t idx) {
-    if (list->type != EXPRTK_VAL_LIST || idx >= list->data.list.count)
+    if ((list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) ||
+        idx >= list->data.list.count)
         return exprtk_val_num(0);
     return list->data.list.items[idx];
 }

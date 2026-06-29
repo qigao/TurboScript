@@ -28,6 +28,8 @@
 #define TT_NULL_DEVICE "/dev/null"
 #endif
 
+static void cleanup_test_file(const char *path);
+
 static Node *find_child(Node *parent, const char *name) {
   if (!parent || parent->type != NODE_MAP) return NULL;
 
@@ -76,6 +78,45 @@ cleanup:
   mustache_release(templ);
   node_free(root);
   free(template_text);
+  return output;
+}
+
+static int write_test_file(const char *path, const char *text) {
+  FILE *file = fopen(path, "wb");
+  if (!file) return -1;
+  if (fwrite(text, 1, strlen(text), file) != strlen(text)) {
+    fclose(file);
+    return -1;
+  }
+  return fclose(file);
+}
+
+static char *render_compiler_template_from_schema(const char *schema,
+                                                  const char *schema_path,
+                                                  const char *template_file,
+                                                  const char *output_path) {
+  Node *root = NULL;
+  char *schema_data = NULL;
+  char *output = NULL;
+  size_t output_size = 0;
+
+  cleanup_test_file(schema_path);
+  cleanup_test_file(output_path);
+  if (write_test_file(schema_path, schema) != 0) goto cleanup;
+  if (tbe_compiler_parse_schema_file(schema_path, &root, &schema_data) != 0) goto cleanup;
+  if (tbe_compiler_render_file(root, template_file, output_path) != 0) goto cleanup;
+  output = tt_read_file(output_path, &output_size);
+  if (!output || output_size == 0) {
+    free(output);
+    output = NULL;
+    goto cleanup;
+  }
+
+cleanup:
+  free(schema_data);
+  node_free(root);
+  cleanup_test_file(schema_path);
+  cleanup_test_file(output_path);
   return output;
 }
 
@@ -349,6 +390,12 @@ spec("tbe_compiler") {
       check_str_eq(tbe_compiler_resolve_template(NULL, 1),
                    "templates/python_dataclass.mustache");
       check_str_eq(tbe_compiler_resolve_template(NULL, 2), "templates/rust_structs.mustache");
+      check_str_eq(tbe_compiler_resolve_template(NULL, TBE_COMPILER_LANG_CPP),
+                   "templates/cpp_types.mustache");
+      check_str_eq(tbe_compiler_resolve_template(NULL, TBE_COMPILER_LANG_GO),
+                   "templates/go_types.mustache");
+      check_str_eq(tbe_compiler_resolve_template(NULL, TBE_COMPILER_LANG_TS),
+                   "templates/ts_types.mustache");
       check_str_eq(tbe_compiler_resolve_template("custom.mustache", 0), "custom.mustache");
     }
 
@@ -465,6 +512,66 @@ spec("tbe_compiler") {
 
       free(output);
       cleanup_test_file(output_path);
+    }
+
+    it("should render C++ Go Python Rust and TypeScript type outputs") {
+      const char *schema =
+          "schema Market [byte_order(little)];"
+          "enum Side <uint8> { Buy = 1; Sell = 2; }"
+          "composite Header { uint32_t seq; }"
+          "group Level { uint64 price; uint32 qty; }"
+          "message Book { Header header; bytes(16) digest; group<Level> bids; string symbol; }";
+      char *cpp_output = render_compiler_template_from_schema(
+          schema, "test_tbe_compiler_lang.schema", CPP_TYPES_TEMPLATE_FILE,
+          "test_tbe_compiler_lang.cpp.out");
+      char *go_output = render_compiler_template_from_schema(
+          schema, "test_tbe_compiler_lang.schema", GO_TYPES_TEMPLATE_FILE,
+          "test_tbe_compiler_lang.go.out");
+      char *py_output = render_compiler_template_from_schema(
+          schema, "test_tbe_compiler_lang.schema", PYTHON_DATACLASS_TEMPLATE_FILE,
+          "test_tbe_compiler_lang.py.out");
+      char *rust_output = render_compiler_template_from_schema(
+          schema, "test_tbe_compiler_lang.schema", RUST_STRUCTS_TEMPLATE_FILE,
+          "test_tbe_compiler_lang.rs.out");
+      char *ts_output = render_compiler_template_from_schema(
+          schema, "test_tbe_compiler_lang.schema", TS_TYPES_TEMPLATE_FILE,
+          "test_tbe_compiler_lang.ts.out");
+
+      check_not_null(cpp_output);
+      check_not_null(go_output);
+      check_not_null(py_output);
+      check_not_null(rust_output);
+      check_not_null(ts_output);
+
+      check_str_contains(cpp_output, "enum class Side : std::uint8_t");
+      check_str_contains(cpp_output, "std::vector<Level> bids;");
+      check_str_contains(cpp_output, "std::string symbol;");
+      check_str_contains(cpp_output, "std::vector<std::uint8_t> digest;");
+
+      check_str_contains(go_output, "package market");
+      check_str_contains(go_output, "Bids []Level");
+      check_str_contains(go_output, "Symbol string");
+      check_str_contains(go_output, "Digest []byte");
+
+      check_str_contains(py_output, "bids: list[Level]");
+      check_str_contains(py_output, "symbol: str");
+      check_str_contains(py_output, "digest: bytes");
+
+      check_str_contains(rust_output, "#[repr(u8)]");
+      check_str_contains(rust_output, "pub bids: Vec<Level>");
+      check_str_contains(rust_output, "pub symbol: String");
+      check_str_contains(rust_output, "pub digest: Vec<u8>");
+
+      check_str_contains(ts_output, "export enum Side");
+      check_str_contains(ts_output, "bids: Array<Level>;");
+      check_str_contains(ts_output, "symbol: string;");
+      check_str_contains(ts_output, "digest: Uint8Array;");
+
+      free(cpp_output);
+      free(go_output);
+      free(py_output);
+      free(rust_output);
+      free(ts_output);
     }
 
     it("should render implicit enum values and variable bytes safely") {

@@ -2154,6 +2154,7 @@ static int mod_mustache_is_truthy(const exprtk_value_t *value) {
         case EXPRTK_VAL_VECTOR:
             return value->data.vector.size > 0;
         case EXPRTK_VAL_MAP:
+        case EXPRTK_VAL_OBJECT:
             return exprtk_map_count(value) > 0;
         default:
             return 1;
@@ -2199,7 +2200,7 @@ static exprtk_value_t *mod_mustache_lookup_part(exprtk_value_t *value,
                                                 mod_mustache_provider_t *provider) {
     if (!value || !name) return NULL;
     if (size == 1 && name[0] == '.') return value;
-    if (value->type != EXPRTK_VAL_MAP) return NULL;
+    if (!exprtk_value_is_object_like(value)) return NULL;
 
     char stack_key[128];
     char *key = stack_key;
@@ -2255,7 +2256,7 @@ static void *mod_mustache_get_child_by_index(void *node, unsigned index,
 static MUSTACHE_TEMPLATE *mod_mustache_get_partial(const char *name, size_t size,
                                                    void *provider_data) {
     mod_mustache_provider_t *provider = (mod_mustache_provider_t *)provider_data;
-    if (!provider || !provider->partials || provider->partials->type != EXPRTK_VAL_MAP ||
+    if (!provider || !provider->partials || !exprtk_value_is_object_like(provider->partials) ||
         !name || size == 0) {
         return NULL;
     }
@@ -2353,7 +2354,7 @@ static exprtk_value_t fn_template_render(size_t argc, exprtk_value_t *args,
     (void)env;
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    if (argc == 3 && args[2].type != EXPRTK_VAL_MAP)
+    if (argc == 3 && !exprtk_value_is_object_like(&args[2]))
         return exprtk_val_num(0);
 
     MUSTACHE_TEMPLATE *templ =
@@ -3142,19 +3143,30 @@ static exprtk_value_t fn_constant_time_eq(size_t argc, exprtk_value_t *args, exp
 }
 
 static exprtk_value_t fn_bytes(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env; (void)arena;
+    (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
     tstr_v s = args[0].data.string;
-    exprtk_value_t list = exprtk_val_list_empty();
-    for (size_t i = 0; i < s.len; ++i)
-        exprtk_list_push(&list, exprtk_val_num((double)(unsigned char)s.data[i]));
-    return list;
+    char *buf = (char *)mem_alloc(arena, s.len);
+    if (!buf && s.len > 0) return exprtk_val_num(0);
+    if (s.len > 0) memcpy(buf, s.data, s.len);
+    return exprtk_val_bytes(tstr_v_from_buf(buf, s.len));
 }
 
 static exprtk_value_t fn_from_bytes(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
-    if (argc != 1 || (args[0].type != EXPRTK_VAL_LIST && args[0].type != EXPRTK_VAL_VECTOR))
+    if (argc != 1 || (args[0].type != EXPRTK_VAL_BYTES &&
+                      args[0].type != EXPRTK_VAL_LIST &&
+                      args[0].type != EXPRTK_VAL_VECTOR))
         return exprtk_val_num(0);
+
+    if (args[0].type == EXPRTK_VAL_BYTES) {
+        tstr_v b = args[0].data.bytes;
+        char *buf = (char *)mem_alloc(arena, b.len + 1);
+        if (!buf) return exprtk_val_num(0);
+        if (b.len > 0) memcpy(buf, b.data, b.len);
+        buf[b.len] = '\0';
+        return exprtk_val_str(tstr_v_from_buf(buf, b.len));
+    }
 
     size_t n = args[0].type == EXPRTK_VAL_LIST ? args[0].data.list.count : args[0].data.vector.size;
     char *buf = (char *)mem_alloc(arena, n + 1);

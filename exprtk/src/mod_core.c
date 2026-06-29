@@ -8,31 +8,518 @@
 
 #include "exprtk_module.h"
 #include "exprtk_internal.h"
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
+static uuid_state_t core_uuid_state;
+static int core_uuid_seeded = 0;
+
+static exprtk_value_t core_null_value(void);
+static double exprtk_numeric_value(exprtk_value_t value);
+
+static void core_uuid_seed_once(void) {
+    if (!core_uuid_seeded) {
+        uuid_seed(&core_uuid_state);
+        core_uuid_seeded = 1;
+    }
+}
+
+static int core_uuid_text(exprtk_value_t value, char *out, size_t out_size) {
+    if (!out || out_size == 0) return 0;
+    if (value.type == EXPRTK_VAL_UUID)
+        return uuid_to_s(value.data.uuid, out, (int)out_size) ? 1 : 0;
+    if (value.type == EXPRTK_VAL_STRING) {
+        size_t len = value.data.string.len < out_size - 1 ? value.data.string.len : out_size - 1;
+        if (!value.data.string.data) return 0;
+        memcpy(out, value.data.string.data, len);
+        out[len] = '\0';
+        return 1;
+    }
+    return 0;
+}
+
+static exprtk_value_t core_string_value(mem_pool_t *arena, const char *text) {
+    size_t len;
+    char *buf;
+    if (!text) text = "";
+    len = strlen(text);
+    buf = (char *)mem_alloc(arena, len + 1);
+    if (!buf) return exprtk_val_num(0);
+    memcpy(buf, text, len + 1);
+    return exprtk_val_str(tstr_v_from_buf(buf, len));
+}
+
+static int core_datetime_from_value(exprtk_value_t value, turbo_datetime_t *out) {
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_DATETIME) {
+        *out = value.data.datetime;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
+        return turbo_parse_datetime(value.data.string.data, value.data.string.len, out) == 0;
+    }
+    return 0;
+}
+
+static int core_offset_datetime_from_value(exprtk_value_t value,
+                                           exprtk_offset_datetime_t *out) {
+    turbo_datetime_t dt;
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_OFFSET_DATETIME) {
+        *out = value.data.offset_datetime;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_DATETIME && value.data.datetime.has_tz) {
+        out->datetime = value.data.datetime;
+        out->offset_minutes = value.data.datetime.tz_offset;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data &&
+        turbo_parse_datetime(value.data.string.data, value.data.string.len, &dt) == 0 &&
+        dt.has_tz) {
+        out->datetime = dt;
+        out->offset_minutes = dt.tz_offset;
+        return 1;
+    }
+    return 0;
+}
+
+static int core_date_from_value(exprtk_value_t value, exprtk_date_t *out) {
+    turbo_datetime_t dt;
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_DATE) {
+        *out = value.data.date;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_DATETIME) {
+        out->year = value.data.datetime.year;
+        out->month = value.data.datetime.month;
+        out->day = value.data.datetime.day;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
+        int y = 0, m = 0, d = 0;
+        if (sscanf(value.data.string.data, "%d-%d-%d", &y, &m, &d) == 3 ||
+            sscanf(value.data.string.data, "%d/%d/%d", &y, &m, &d) == 3) {
+            if (y >= 1 && m >= 1 && m <= 12 && d >= 1 && d <= 31) {
+                out->year = y;
+                out->month = m;
+                out->day = d;
+                return 1;
+            }
+        }
+        if (turbo_parse_datetime(value.data.string.data, value.data.string.len, &dt) == 0) {
+            out->year = dt.year;
+            out->month = dt.month;
+            out->day = dt.day;
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int core_time_from_value(exprtk_value_t value, exprtk_time_t *out) {
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_TIME) {
+        *out = value.data.time;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_DATETIME) {
+        out->hour = value.data.datetime.hour;
+        out->minute = value.data.datetime.minute;
+        out->second = value.data.datetime.second;
+        out->millisecond = value.data.datetime.millisecond;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
+        int h = 0, m = 0, s = 0, ms = 0;
+        int consumed = 0;
+        if (sscanf(value.data.string.data, "%d:%d:%d.%d%n", &h, &m, &s, &ms, &consumed) >= 3 ||
+            sscanf(value.data.string.data, "%d:%d:%d%n", &h, &m, &s, &consumed) >= 3 ||
+            sscanf(value.data.string.data, "%d:%d%n", &h, &m, &consumed) >= 2) {
+            if (h >= 0 && h <= 23 && m >= 0 && m <= 59 && s >= 0 && s <= 60 &&
+                ms >= 0 && ms <= 999) {
+                out->hour = h;
+                out->minute = m;
+                out->second = s;
+                out->millisecond = ms;
+                return 1;
+            }
+        }
+    }
+    return 0;
+}
+
+static int core_duration_from_value(exprtk_value_t value, int64_t *out) {
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_DURATION) {
+        *out = value.data.duration_ms;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_INTEGER) {
+        *out = value.data.integer;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_NUMBER) {
+        *out = (int64_t)value.data.number;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
+        const char *p = value.data.string.data;
+        const char *end = p + value.data.string.len;
+        int64_t total = 0;
+        while (p < end) {
+            char *next = NULL;
+            double n;
+            while (p < end && isspace((unsigned char)*p)) p++;
+            if (p >= end) break;
+            n = strtod(p, &next);
+            if (next == p) return 0;
+            p = next;
+            while (p < end && isspace((unsigned char)*p)) p++;
+            if (p >= end) {
+                total += (int64_t)n;
+                break;
+            }
+            if ((end - p) >= 2 && p[0] == 'm' && p[1] == 's') {
+                total += (int64_t)n;
+                p += 2;
+            } else if (*p == 's') {
+                total += (int64_t)(n * 1000.0);
+                p++;
+            } else if (*p == 'm') {
+                total += (int64_t)(n * 60.0 * 1000.0);
+                p++;
+            } else if (*p == 'h') {
+                total += (int64_t)(n * 60.0 * 60.0 * 1000.0);
+                p++;
+            } else if (*p == 'd') {
+                total += (int64_t)(n * 24.0 * 60.0 * 60.0 * 1000.0);
+                p++;
+            } else {
+                return 0;
+            }
+        }
+        *out = total;
+        return 1;
+    }
+    return 0;
+}
+
+static int core_date_text(exprtk_date_t date, char *out, size_t out_size) {
+    return out && out_size > 0 &&
+           snprintf(out, out_size, "%04d-%02d-%02d", date.year, date.month, date.day) > 0;
+}
+
+static int core_time_text(exprtk_time_t time, char *out, size_t out_size) {
+    if (!out || out_size == 0) return 0;
+    if (time.millisecond > 0)
+        return snprintf(out, out_size, "%02d:%02d:%02d.%03d", time.hour, time.minute,
+                        time.second, time.millisecond) > 0;
+    return snprintf(out, out_size, "%02d:%02d:%02d", time.hour, time.minute,
+                    time.second) > 0;
+}
+
+static int core_duration_text(int64_t ms, char *out, size_t out_size) {
+    int64_t sign = ms < 0 ? -1 : 1;
+    int64_t rem = ms < 0 ? -ms : ms;
+    int64_t h = rem / 3600000;
+    int64_t m;
+    int64_t s;
+    rem %= 3600000;
+    m = rem / 60000;
+    rem %= 60000;
+    s = rem / 1000;
+    rem %= 1000;
+    if (!out || out_size == 0) return 0;
+    return snprintf(out, out_size, "%s%lld:%02lld:%02lld.%03lld",
+                    sign < 0 ? "-" : "", (long long)h, (long long)m,
+                    (long long)s, (long long)rem) > 0;
+}
+
+static int core_decimal_normalize(exprtk_decimal_t *value) {
+    if (!value || value->scale < 0) return 0;
+    while (value->scale > 0 && value->mantissa % 10 == 0) {
+        value->mantissa /= 10;
+        value->scale--;
+    }
+    if (value->mantissa == 0) value->scale = 0;
+    return 1;
+}
+
+static int core_decimal_from_text(const char *text, size_t len, exprtk_decimal_t *out) {
+    const char *p;
+    const char *end;
+    int sign = 1;
+    int saw_digit = 0;
+    int saw_dot = 0;
+    int32_t scale = 0;
+    uint64_t acc = 0;
+    uint64_t limit;
+
+    if (!text || !out) return 0;
+    p = text;
+    end = text + len;
+    while (p < end && isspace((unsigned char)*p)) p++;
+    if (p < end && *p == '-') {
+        sign = -1;
+        p++;
+    } else if (p < end && *p == '+') {
+        p++;
+    }
+    limit = sign < 0 ? (uint64_t)INT64_MAX + 1ULL : (uint64_t)INT64_MAX;
+    while (p < end) {
+        if (isdigit((unsigned char)*p)) {
+            unsigned digit = (unsigned)(*p - '0');
+            if (acc > (limit - digit) / 10ULL) return 0;
+            acc = acc * 10ULL + digit;
+            saw_digit = 1;
+            if (saw_dot) {
+                if (scale == INT32_MAX) return 0;
+                scale++;
+            }
+            p++;
+            continue;
+        }
+        if (*p == '.') {
+            if (saw_dot) return 0;
+            saw_dot = 1;
+            p++;
+            continue;
+        }
+        if (isspace((unsigned char)*p)) {
+            while (p < end && isspace((unsigned char)*p)) p++;
+            if (p == end) break;
+        }
+        return 0;
+    }
+    if (!saw_digit) return 0;
+    out->mantissa = sign < 0
+                        ? (acc == (uint64_t)INT64_MAX + 1ULL ? INT64_MIN : -(int64_t)acc)
+                        : (int64_t)acc;
+    out->scale = scale;
+    return core_decimal_normalize(out);
+}
+
+static int core_decimal_from_value(exprtk_value_t value, exprtk_decimal_t *out) {
+    char buf[64];
+    int n;
+    if (!out) return 0;
+    if (value.type == EXPRTK_VAL_DECIMAL) {
+        *out = value.data.decimal;
+        return core_decimal_normalize(out);
+    }
+    if (value.type == EXPRTK_VAL_INTEGER) {
+        out->mantissa = value.data.integer;
+        out->scale = 0;
+        return 1;
+    }
+    if (value.type == EXPRTK_VAL_NUMBER) {
+        n = snprintf(buf, sizeof(buf), "%.17g", value.data.number);
+        return n > 0 && core_decimal_from_text(buf, (size_t)n, out);
+    }
+    if (value.type == EXPRTK_VAL_STRING && value.data.string.data)
+        return core_decimal_from_text(value.data.string.data, value.data.string.len, out);
+    return 0;
+}
+
+static int core_decimal_text(exprtk_decimal_t value, char *out, size_t out_size) {
+    char digits[32];
+    char *p = digits + sizeof(digits);
+    uint64_t mag;
+    size_t digit_count;
+    size_t pos = 0;
+    int negative;
+
+    if (!out || out_size == 0 || !core_decimal_normalize(&value)) return 0;
+    negative = value.mantissa < 0;
+    mag = negative ? (uint64_t)(-(value.mantissa + 1)) + 1ULL : (uint64_t)value.mantissa;
+    *--p = '\0';
+    do {
+        *--p = (char)('0' + (mag % 10ULL));
+        mag /= 10ULL;
+    } while (mag != 0);
+    digit_count = strlen(p);
+    if (negative) {
+        if (pos + 1 >= out_size) return 0;
+        out[pos++] = '-';
+    }
+    if (value.scale == 0) {
+        if (pos + digit_count >= out_size) return 0;
+        memcpy(out + pos, p, digit_count + 1);
+        return 1;
+    }
+    if ((size_t)value.scale >= digit_count) {
+        size_t zeros = (size_t)value.scale - digit_count;
+        if (pos + 2 + zeros + digit_count >= out_size) return 0;
+        out[pos++] = '0';
+        out[pos++] = '.';
+        while (zeros-- > 0) out[pos++] = '0';
+        memcpy(out + pos, p, digit_count);
+        pos += digit_count;
+        out[pos] = '\0';
+        return 1;
+    }
+    {
+        size_t whole = digit_count - (size_t)value.scale;
+        if (pos + digit_count + 1 >= out_size) return 0;
+        memcpy(out + pos, p, whole);
+        pos += whole;
+        out[pos++] = '.';
+        memcpy(out + pos, p + whole, (size_t)value.scale);
+        pos += (size_t)value.scale;
+        out[pos] = '\0';
+        return 1;
+    }
+}
+
+static int core_bigint_valid_text(tstr_v text) {
+    size_t i = 0;
+    if (!text.data || text.len == 0) return 0;
+    if (text.data[0] == '-' || text.data[0] == '+') i = 1;
+    if (i == text.len) return 0;
+    for (; i < text.len; ++i) {
+        if (!isdigit((unsigned char)text.data[i])) return 0;
+    }
+    return 1;
+}
+
+static exprtk_value_t core_bigint_from_value(exprtk_value_t value, mem_pool_t *arena) {
+    char buf[64];
+    const char *text = NULL;
+    size_t len = 0;
+    char *copy;
+
+    if (value.type == EXPRTK_VAL_BIGINT) return value;
+    if (value.type == EXPRTK_VAL_INTEGER) {
+        int n = snprintf(buf, sizeof(buf), "%lld", (long long)value.data.integer);
+        if (n <= 0) return core_null_value();
+        text = buf;
+        len = (size_t)n;
+    } else if (value.type == EXPRTK_VAL_STRING && core_bigint_valid_text(value.data.string)) {
+        text = value.data.string.data;
+        len = value.data.string.len;
+    } else {
+        return core_null_value();
+    }
+    copy = (char *)mem_alloc(arena, len + 1);
+    if (!copy) return core_null_value();
+    memcpy(copy, text, len);
+    copy[len] = '\0';
+    return exprtk_val_bigint(tstr_v_from_buf(copy, len));
+}
+
+static int core_money_text(exprtk_money_t money, char *out, size_t out_size) {
+    char amount[64];
+    if (!core_decimal_text(money.amount, amount, sizeof(amount))) return 0;
+    return out && out_size > 0 &&
+           snprintf(out, out_size, "%c%c%c %s", money.currency[0], money.currency[1],
+                    money.currency[2], amount) > 0;
+}
+
+static int core_offset_datetime_text(exprtk_offset_datetime_t value,
+                                     char *out, size_t out_size) {
+    int offset = value.offset_minutes;
+    char sign = '+';
+    if (!out || out_size == 0) return 0;
+    if (offset < 0) {
+        sign = '-';
+        offset = -offset;
+    }
+    return snprintf(out, out_size, "%04d-%02d-%02dT%02d:%02d:%02d%c%02d:%02d",
+                    value.datetime.year, value.datetime.month, value.datetime.day,
+                    value.datetime.hour, value.datetime.minute, value.datetime.second,
+                    sign, offset / 60, offset % 60) > 0;
+}
+
+static size_t core_typed_array_element_size(exprtk_typed_array_kind_t kind) {
+    switch (kind) {
+        case EXPRTK_TYPED_I32: return sizeof(int32_t);
+        case EXPRTK_TYPED_I64: return sizeof(int64_t);
+        case EXPRTK_TYPED_F32: return sizeof(float);
+        case EXPRTK_TYPED_F64: return sizeof(double);
+        default: return 0;
+    }
+}
+
+static exprtk_value_t core_typed_array_create(exprtk_typed_array_kind_t kind,
+                                              size_t argc, exprtk_value_t *args,
+                                              mem_pool_t *arena) {
+    size_t count = argc;
+    size_t elem_size = core_typed_array_element_size(kind);
+    void *data;
+    exprtk_value_t source = argc == 1 ? args[0] : core_null_value();
+
+    if (argc == 1 && source.type == EXPRTK_VAL_LIST) {
+        count = source.data.list.count;
+        args = source.data.list.items;
+    } else if (argc == 1 && source.type == EXPRTK_VAL_VECTOR) {
+        count = source.data.vector.size;
+    } else if (argc == 1 && source.type == EXPRTK_VAL_TYPED_ARRAY) {
+        return source;
+    }
+    if (elem_size == 0) return core_null_value();
+    data = mem_alloc(arena, count * elem_size);
+    if (!data && count > 0) return core_null_value();
+
+    for (size_t i = 0; i < count; ++i) {
+        exprtk_value_t item = (argc == 1 && source.type == EXPRTK_VAL_VECTOR)
+                                  ? exprtk_val_num(source.data.vector.data[i])
+                                  : args[i];
+        double n = exprtk_numeric_value(item);
+        switch (kind) {
+            case EXPRTK_TYPED_I32: ((int32_t *)data)[i] = (int32_t)n; break;
+            case EXPRTK_TYPED_I64: ((int64_t *)data)[i] = (int64_t)n; break;
+            case EXPRTK_TYPED_F32: ((float *)data)[i] = (float)n; break;
+            case EXPRTK_TYPED_F64: ((double *)data)[i] = n; break;
+            default: break;
+        }
+    }
+    return exprtk_val_typed_array(kind, data, count, 0);
+}
+
+static exprtk_value_t core_null_value(void) {
+    exprtk_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.type = EXPRTK_VAL_NULL;
+    return value;
+}
+
 static int exprtk_is_numeric(exprtk_value_t value) {
-    return value.type == EXPRTK_VAL_NUMBER || value.type == EXPRTK_VAL_INTEGER;
+    return value.type == EXPRTK_VAL_NUMBER || value.type == EXPRTK_VAL_INTEGER ||
+           value.type == EXPRTK_VAL_BOOL;
 }
 
 static double exprtk_numeric_value(exprtk_value_t value) {
     if (value.type == EXPRTK_VAL_INTEGER) return (double)value.data.integer;
     if (value.type == EXPRTK_VAL_NUMBER) return value.data.number;
+    if (value.type == EXPRTK_VAL_BOOL) return value.data.boolean ? 1.0 : 0.0;
     return 0.0;
-}
-
-static exprtk_value_t stream_null_value(void) {
-    exprtk_value_t value;
-    value.type = EXPRTK_VAL_NULL;
-    memset(&value.data, 0, sizeof(value.data));
-    return value;
 }
 
 static int exprtk_value_truthy(exprtk_value_t value) {
     if (value.type == EXPRTK_VAL_NUMBER) return fabs(value.data.number) > 1e-9;
     if (value.type == EXPRTK_VAL_INTEGER) return value.data.integer != 0;
+    if (value.type == EXPRTK_VAL_BOOL) return value.data.boolean != 0;
     if (value.type == EXPRTK_VAL_STRING) return value.data.string.len > 0;
+    if (value.type == EXPRTK_VAL_BYTES) return value.data.bytes.len > 0;
+    if (value.type == EXPRTK_VAL_UUID) return 1;
+    if (value.type == EXPRTK_VAL_DATETIME || value.type == EXPRTK_VAL_DATE ||
+        value.type == EXPRTK_VAL_TIME || value.type == EXPRTK_VAL_DURATION ||
+        value.type == EXPRTK_VAL_DECIMAL || value.type == EXPRTK_VAL_BIGINT ||
+        value.type == EXPRTK_VAL_MONEY || value.type == EXPRTK_VAL_ENUM ||
+        value.type == EXPRTK_VAL_FLAGS || value.type == EXPRTK_VAL_OFFSET_DATETIME)
+        return 1;
+    if (value.type == EXPRTK_VAL_VECTOR) return value.data.vector.size > 0;
+    if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET)
+        return value.data.list.count > 0;
+    if (value.type == EXPRTK_VAL_TYPED_ARRAY) return value.data.typed_array.count > 0;
+    if (exprtk_value_is_object_like(&value)) return exprtk_map_count(&value) > 0;
+    if (value.type == EXPRTK_VAL_FUNCTION || value.type == EXPRTK_VAL_CLASS ||
+        value.type == EXPRTK_VAL_INSTANCE || value.type == EXPRTK_VAL_BOUND_METHOD)
+        return 1;
     return 0;
 }
 
@@ -67,26 +554,10 @@ static exprtk_value_t stream_make(exprtk_value_t source) {
     return stream;
 }
 
-static exprtk_value_t stream_make_csv(exprtk_value_t source, exprtk_value_t csv_text,
-                                      int has_header) {
-    exprtk_value_t stream = stream_make(source);
-    exprtk_map_set(&stream, "source_kind", exprtk_val_str(tstr_v_from_cstr("csv")));
-    exprtk_map_set(&stream, "csv_text", csv_text);
-    exprtk_map_set(&stream, "csv_has_header", exprtk_val_num(has_header ? 1.0 : 0.0));
-    return stream;
-}
-
 static exprtk_value_t stream_make_text(exprtk_value_t text) {
     exprtk_value_t stream = stream_make(text);
     exprtk_map_set(&stream, "source_kind", exprtk_val_str(tstr_v_from_cstr("text")));
     exprtk_map_set(&stream, "text_text", text);
-    return stream;
-}
-
-static exprtk_value_t stream_make_file(exprtk_value_t path) {
-    exprtk_value_t stream = stream_make(path);
-    exprtk_map_set(&stream, "source_kind", exprtk_val_str(tstr_v_from_cstr("file")));
-    exprtk_map_set(&stream, "file_path", path);
     return stream;
 }
 
@@ -110,7 +581,7 @@ static exprtk_value_t stream_map_entries(exprtk_value_t source) {
     exprtk_map_iter_t it;
     exprtk_value_t value;
 
-    if (source.type != EXPRTK_VAL_MAP) return values;
+    if (!exprtk_value_is_object_like(&source)) return values;
     it = exprtk_map_iter_begin(&source);
     while (exprtk_map_iter_next(&it, NULL, &value)) {
         exprtk_list_push(&values, value);
@@ -119,19 +590,9 @@ static exprtk_value_t stream_map_entries(exprtk_value_t source) {
 }
 
 static exprtk_value_t stream_source_from_value(exprtk_value_t value) {
-    if (value.type == EXPRTK_VAL_MAP) return stream_map_entries(value);
+    if (exprtk_value_is_object_like(&value)) return stream_map_entries(value);
     if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_VECTOR) return value;
     return exprtk_val_list_empty();
-}
-
-static exprtk_value_t stream_source_from_query_value(exprtk_value_t value) {
-    exprtk_value_t list;
-
-    if (value.type == EXPRTK_VAL_NULL) return exprtk_val_list_empty();
-    if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_VECTOR) return value;
-    list = exprtk_val_list_empty();
-    exprtk_list_push(&list, value);
-    return list;
 }
 
 static exprtk_value_t stream_of_value(exprtk_value_t value) {
@@ -231,174 +692,57 @@ static int stream_text_value(exprtk_value_t stream, exprtk_value_t *out) {
     return 0;
 }
 
-static int stream_file_path_value(exprtk_value_t stream, exprtk_value_t *out) {
-    exprtk_value_t path;
+static int stream_value_equals_cstr(exprtk_value_t value, const char *text) {
+    size_t len = text ? strlen(text) : 0;
+    return value.type == EXPRTK_VAL_STRING &&
+           value.data.string.len == len &&
+           value.data.string.data &&
+           memcmp(value.data.string.data, text, len) == 0;
+}
 
-    if (!out || !stream_is_value(stream) || !exprtk_map_has(&stream, "file_path"))
+static int stream_source_kind_value(exprtk_value_t stream, exprtk_value_t *out) {
+    exprtk_value_t kind;
+
+    if (!out || !stream_is_value(stream) || !exprtk_map_has(&stream, "source_kind"))
         return 0;
-    path = exprtk_map_get(&stream, "file_path");
-    if (path.type != EXPRTK_VAL_STRING) return 0;
-    *out = path;
+    kind = exprtk_map_get(&stream, "source_kind");
+    if (kind.type != EXPRTK_VAL_STRING || !kind.data.string.data) return 0;
+    *out = kind;
     return 1;
 }
 
-static char *stream_value_to_cstr(exprtk_value_t value, mem_pool_t *arena) {
-    char *out;
-    if (value.type != EXPRTK_VAL_STRING || !arena) return NULL;
-    out = (char *)mem_alloc(arena, value.data.string.len + 1);
-    if (!out) return NULL;
-    memcpy(out, value.data.string.data, value.data.string.len);
-    out[value.data.string.len] = '\0';
-    return out;
-}
+static int stream_dispatch_provider_member(exprtk_value_t stream, const char *method,
+                                           size_t argc, exprtk_value_t *args,
+                                           exprtk_env_t *env, mem_pool_t *arena,
+                                           exprtk_value_t *out) {
+    exprtk_value_t kind;
+    char fn_name[160];
+    exprtk_value_t stack_args[8];
+    exprtk_value_t *call_args = stack_args;
+    size_t total_argc;
 
-static exprtk_value_t stream_read_file(exprtk_value_t path, exprtk_env_t *env, mem_pool_t *arena) {
-    return exprtk_call_internal("read_file", 1, &path, env, arena);
-}
+    if (!method || !env || !out || !stream_source_kind_value(stream, &kind)) return 0;
+    if (kind.data.string.len + strlen(method) + strlen("stream..") >= sizeof(fn_name))
+        return 0;
+    snprintf(fn_name, sizeof(fn_name), "stream.%.*s.%s",
+             (int)kind.data.string.len, kind.data.string.data, method);
+    if (!exprtk_env_has_func(env, fn_name) && !exprtk_find_builtin(fn_name, env)) return 0;
 
-static exprtk_value_t stream_json_source(exprtk_value_t path, exprtk_value_t jsonpath,
-                                         exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t json_text = stream_read_file(path, env, arena);
-    exprtk_value_t parsed;
-    exprtk_value_t value;
-
-    if (json_text.type != EXPRTK_VAL_STRING) return exprtk_val_list_empty();
-    if (jsonpath.type == EXPRTK_VAL_STRING) {
-        exprtk_value_t query_args[2];
-        query_args[0] = json_text;
-        query_args[1] = jsonpath;
-        value = exprtk_call_internal("json.query", 2, query_args, env, arena);
-        return stream_source_from_query_value(value);
+    total_argc = argc + 1;
+    if (total_argc > sizeof(stack_args) / sizeof(stack_args[0])) {
+        call_args = (exprtk_value_t *)malloc(total_argc * sizeof(exprtk_value_t));
+        if (!call_args) return 0;
     }
+    call_args[0] = stream;
+    for (size_t i = 0; i < argc; ++i) call_args[i + 1] = args[i];
 
-    parsed = exprtk_call_internal("json.parse", 1, &json_text, env, arena);
-    return stream_source_from_value(parsed);
-}
-
-static exprtk_value_t stream_xml_source(exprtk_value_t path, exprtk_value_t xpath,
-                                        exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t xml_text;
-    exprtk_value_t query_args[2];
-    exprtk_value_t rows;
-
-    if (!env || !arena || path.type != EXPRTK_VAL_STRING || xpath.type != EXPRTK_VAL_STRING)
-        return exprtk_val_list_empty();
-    xml_text = stream_read_file(path, env, arena);
-    if (xml_text.type != EXPRTK_VAL_STRING) return exprtk_val_list_empty();
-    query_args[0] = xml_text;
-    query_args[1] = xpath;
-    rows = exprtk_call_internal("xml.query", 2, query_args, env, arena);
-    return rows.type == EXPRTK_VAL_LIST ? rows : exprtk_val_list_empty();
-}
-
-static exprtk_value_t stream_csv_text_source(exprtk_value_t csv_text, int has_header,
-                                             exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t list = exprtk_val_list_empty();
-    exprtk_value_t parse_args[2];
-    exprtk_value_t handle;
-    exprtk_value_t rows_v;
-    exprtk_value_t cols_v;
-    int rows;
-    int cols;
-    int start_row;
-
-    if (!env || !arena || csv_text.type != EXPRTK_VAL_STRING) return list;
-    parse_args[0] = csv_text;
-    parse_args[1] = exprtk_val_num(0.0);
-    handle = exprtk_call_internal("parser.csv_parse", 2, parse_args, env, arena);
-    rows_v = exprtk_call_internal("parser.csv_rows", 1, &handle, env, arena);
-    cols_v = exprtk_call_internal("parser.csv_cols", 1, &handle, env, arena);
-    rows = (int)exprtk_numeric_value(rows_v);
-    cols = (int)exprtk_numeric_value(cols_v);
-    start_row = has_header ? 1 : 0;
-    if (rows <= start_row || cols <= 0) {
-        (void)exprtk_call_internal("parser.csv_close", 1, &handle, env, arena);
-        return list;
-    }
-
-    for (int row = start_row; row < rows; ++row) {
-        exprtk_value_t item = exprtk_val_map();
-        for (int col = 0; col < cols; ++col) {
-            exprtk_value_t get_args[3];
-            exprtk_value_t header;
-            exprtk_value_t cell;
-            char fallback[32];
-            char *key;
-
-            get_args[0] = handle;
-            get_args[1] = exprtk_val_num(0.0);
-            get_args[2] = exprtk_val_num((double)col);
-            header = has_header ? exprtk_call_internal("parser.csv_get", 3, get_args, env, arena)
-                                : exprtk_val_num(0);
-            snprintf(fallback, sizeof(fallback), "c%d", col);
-            key = header.type == EXPRTK_VAL_STRING ? stream_value_to_cstr(header, arena) : NULL;
-            if (!key || key[0] == '\0') key = fallback;
-
-            get_args[1] = exprtk_val_num((double)row);
-            cell = exprtk_call_internal("parser.csv_get", 3, get_args, env, arena);
-            exprtk_map_set(&item, key, cell);
-        }
-        exprtk_list_push(&list, item);
-    }
-
-    (void)exprtk_call_internal("parser.csv_close", 1, &handle, env, arena);
-    return list;
-}
-
-static exprtk_value_t stream_csv_source(exprtk_value_t path, int has_header,
-                                        exprtk_env_t *env, mem_pool_t *arena,
-                                        exprtk_value_t *out_text) {
-    exprtk_value_t csv_text;
-    if (out_text) *out_text = exprtk_val_str(tstr_v_from_buf("", 0));
-    if (!env || !arena || path.type != EXPRTK_VAL_STRING) return exprtk_val_list_empty();
-    csv_text = stream_read_file(path, env, arena);
-    if (csv_text.type != EXPRTK_VAL_STRING) return exprtk_val_list_empty();
-    if (out_text) *out_text = csv_text;
-    return stream_csv_text_source(csv_text, has_header, env, arena);
-}
-
-static exprtk_value_t stream_csv_with_synthetic_header(exprtk_value_t csv_text,
-                                                       exprtk_env_t *env,
-                                                       mem_pool_t *arena) {
-    exprtk_value_t parse_args[2];
-    exprtk_value_t handle;
-    exprtk_value_t cols_v;
-    int cols;
-    size_t header_len = 0;
-    size_t text_len;
-    char *buf;
-    char *p;
-
-    if (!env || !arena || csv_text.type != EXPRTK_VAL_STRING) return csv_text;
-    parse_args[0] = csv_text;
-    parse_args[1] = exprtk_val_num(0.0);
-    handle = exprtk_call_internal("parser.csv_parse", 2, parse_args, env, arena);
-    cols_v = exprtk_call_internal("parser.csv_cols", 1, &handle, env, arena);
-    cols = (int)exprtk_numeric_value(cols_v);
-    (void)exprtk_call_internal("parser.csv_close", 1, &handle, env, arena);
-    if (cols <= 0) return csv_text;
-
-    for (int col = 0; col < cols; ++col) {
-        char name[32];
-        int n = snprintf(name, sizeof(name), "%s%d", col > 0 ? ",c" : "c", col);
-        if (n > 0) header_len += (size_t)n;
-    }
-    text_len = csv_text.data.string.len;
-    buf = (char *)mem_alloc(arena, header_len + 1 + text_len + 1);
-    if (!buf) return csv_text;
-    p = buf;
-    for (int col = 0; col < cols; ++col) {
-        int n = sprintf(p, "%s%d", col > 0 ? ",c" : "c", col);
-        p += n;
-    }
-    *p++ = '\n';
-    memcpy(p, csv_text.data.string.data, text_len);
-    p[text_len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, header_len + 1 + text_len));
+    *out = exprtk_call_internal(fn_name, total_argc, call_args, env, arena);
+    if (call_args != stack_args) free(call_args);
+    return 1;
 }
 
 static exprtk_value_t stream_collect_value(exprtk_value_t stream) {
-    if (stream.type == EXPRTK_VAL_MAP && exprtk_map_has(&stream, "source"))
+    if (exprtk_value_is_object_like(&stream) && exprtk_map_has(&stream, "source"))
         return exprtk_map_get(&stream, "source");
     return exprtk_val_list_empty();
 }
@@ -406,7 +750,7 @@ static exprtk_value_t stream_collect_value(exprtk_value_t stream) {
 static size_t stream_count_source(exprtk_value_t source) {
     if (source.type == EXPRTK_VAL_LIST) return source.data.list.count;
     if (source.type == EXPRTK_VAL_VECTOR) return source.data.vector.size;
-    if (source.type == EXPRTK_VAL_MAP) return exprtk_map_count(&source);
+    if (exprtk_value_is_object_like(&source)) return exprtk_map_count(&source);
     return 0;
 }
 
@@ -440,32 +784,6 @@ static exprtk_value_t stream_filter_value(exprtk_value_t stream, exprtk_value_t 
     }
 
     return stream_make(exprtk_val_list_empty());
-}
-
-static exprtk_value_t stream_filter_expr_value(exprtk_value_t stream, exprtk_value_t expr,
-                                               exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t csv_text;
-    exprtk_value_t has_header_v;
-    exprtk_value_t table_text;
-    exprtk_value_t filter_args[2];
-    exprtk_value_t filtered;
-    int has_header;
-
-    if (expr.type != EXPRTK_VAL_STRING || !stream_is_value(stream) ||
-        !exprtk_map_has(&stream, "csv_text") || !exprtk_map_has(&stream, "csv_has_header")) {
-        return stream_make(exprtk_val_list_empty());
-    }
-
-    csv_text = exprtk_map_get(&stream, "csv_text");
-    has_header_v = exprtk_map_get(&stream, "csv_has_header");
-    has_header = exprtk_value_truthy(has_header_v);
-    table_text = has_header ? csv_text : stream_csv_with_synthetic_header(csv_text, env, arena);
-
-    filter_args[0] = table_text;
-    filter_args[1] = expr;
-    filtered = exprtk_call_internal("csv.filter_table", 2, filter_args, env, arena);
-    if (filtered.type != EXPRTK_VAL_STRING) return stream_make_csv(exprtk_val_list_empty(), filtered, 1);
-    return stream_make_csv(stream_csv_text_source(filtered, 1, env, arena), filtered, 1);
 }
 
 static exprtk_value_t stream_map_value(exprtk_value_t stream, exprtk_value_t mapper,
@@ -552,55 +870,32 @@ exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const char *meth
                                          mem_pool_t *arena) {
     exprtk_value_t source;
     exprtk_value_t text;
-    exprtk_value_t path;
+    exprtk_value_t kind;
+    exprtk_value_t provider_result;
     if (!method || !stream_is_value(stream))
         return exprtk_val_num(0);
 
-    if (stream_file_path_value(stream, &path)) {
-        if (strcmp(method, "text") == 0 && argc == 0) {
-            text = stream_read_file(path, env, arena);
-            if (text.type != EXPRTK_VAL_STRING)
-                text = exprtk_val_str(tstr_v_from_buf("", 0));
-            return stream_make_text(text);
-        }
-        if (strcmp(method, "lines") == 0 && argc == 0) {
-            text = stream_read_file(path, env, arena);
-            if (text.type != EXPRTK_VAL_STRING) return stream_make(exprtk_val_list_empty());
-            return stream_make(stream_lines_from_string(text, arena));
-        }
-        if (strcmp(method, "csv") == 0 && argc <= 1) {
-            int has_header = argc == 1 ? exprtk_value_truthy(args[0]) : 1;
-            exprtk_value_t csv_text;
-            source = stream_csv_source(path, has_header, env, arena, &csv_text);
-            return stream_make_csv(source, csv_text, has_header);
-        }
-        if (strcmp(method, "json") == 0 && argc <= 1) {
-            exprtk_value_t jsonpath = stream_null_value();
-            if (argc == 1 && args[0].type != EXPRTK_VAL_STRING)
-                return stream_make(exprtk_val_list_empty());
-            if (argc == 1) jsonpath = args[0];
-            return stream_make(stream_json_source(path, jsonpath, env, arena));
-        }
-        if (strcmp(method, "xml") == 0 && argc == 1 && args[0].type == EXPRTK_VAL_STRING)
-            return stream_make(stream_xml_source(path, args[0], env, arena));
-        if (strcmp(method, "xml") == 0)
-            return stream_make(exprtk_val_list_empty());
-    }
+    if (stream_dispatch_provider_member(stream, method, argc, args, env, arena,
+                                        &provider_result))
+        return provider_result;
+    int has_source_kind = stream_source_kind_value(stream, &kind);
 
     if (strcmp(method, "lines") == 0 && argc == 0) {
+        if (has_source_kind && !stream_value_equals_cstr(kind, "text"))
+            return stream_make(exprtk_val_list_empty());
         if (!stream_text_value(stream, &text)) return stream_make(exprtk_val_list_empty());
         return stream_make(stream_lines_from_string(text, arena));
     }
     if (strcmp(method, "split") == 0 && argc == 1) {
+        if (has_source_kind && !stream_value_equals_cstr(kind, "text"))
+            return stream_make(exprtk_val_list_empty());
         if (!stream_text_value(stream, &text)) return stream_make(exprtk_val_list_empty());
         return stream_make(stream_split_string(text, args[0], arena));
     }
     if (strcmp(method, "filter") == 0 && argc == 1)
         return stream_filter_value(stream, args[0], env, arena);
-    if (strcmp(method, "filterExpr") == 0 && argc == 1)
-        return stream_filter_expr_value(stream, args[0], env, arena);
-    if (strcmp(method, "where") == 0 && argc == 1)
-        return stream_filter_expr_value(stream, args[0], env, arena);
+    if ((strcmp(method, "filterExpr") == 0 || strcmp(method, "where") == 0) && argc == 1)
+        return stream_make(exprtk_val_list_empty());
     if (strcmp(method, "map") == 0 && argc == 1)
         return stream_map_value(stream, args[0], env, arena);
     if (strcmp(method, "reduce") == 0 && argc == 2)
@@ -650,10 +945,26 @@ static exprtk_value_t fn_typeof(size_t argc, exprtk_value_t *args,
     if (argc > 0) {
         switch (args[0].type) {
             case EXPRTK_VAL_NUMBER: name = "number"; len = 6; break;
-            case EXPRTK_VAL_INTEGER: name = "number"; len = 6; break;
+            case EXPRTK_VAL_INTEGER: name = "int64"; len = 5; break;
+            case EXPRTK_VAL_BOOL:   name = "bool";   len = 4; break;
             case EXPRTK_VAL_STRING: name = "string"; len = 6; break;
+            case EXPRTK_VAL_BYTES:  name = "bytes";  len = 5; break;
+            case EXPRTK_VAL_UUID:   name = "uuid";   len = 4; break;
+            case EXPRTK_VAL_DATETIME: name = "datetime"; len = 8; break;
+            case EXPRTK_VAL_DATE:   name = "date";   len = 4; break;
+            case EXPRTK_VAL_TIME:   name = "time";   len = 4; break;
+            case EXPRTK_VAL_DURATION: name = "duration"; len = 8; break;
+            case EXPRTK_VAL_DECIMAL: name = "decimal"; len = 7; break;
+            case EXPRTK_VAL_BIGINT: name = "bigint"; len = 6; break;
+            case EXPRTK_VAL_MONEY: name = "money"; len = 5; break;
+            case EXPRTK_VAL_ENUM: name = "enum"; len = 4; break;
+            case EXPRTK_VAL_FLAGS: name = "flags"; len = 5; break;
+            case EXPRTK_VAL_SET: name = "set"; len = 3; break;
+            case EXPRTK_VAL_OFFSET_DATETIME: name = "offset_datetime"; len = 15; break;
+            case EXPRTK_VAL_TYPED_ARRAY: name = "typed_array"; len = 11; break;
             case EXPRTK_VAL_VECTOR: name = "vector"; len = 6; break;
             case EXPRTK_VAL_MAP:    name = "map";    len = 3; break;
+            case EXPRTK_VAL_OBJECT: name = "object"; len = 6; break;
             case EXPRTK_VAL_NULL:   name = "null";   len = 4; break;
             case EXPRTK_VAL_LIST:   name = "list";   len = 4; break;
             case EXPRTK_VAL_FUNCTION: name = "function"; len = 8; break;
@@ -686,10 +997,423 @@ static exprtk_value_t fn_is_number(size_t argc, exprtk_value_t *args,
                            args[0].type == EXPRTK_VAL_INTEGER) ? 1.0 : 0.0);
 }
 
+static exprtk_value_t fn_is_int64(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_INTEGER ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_bool(size_t argc, exprtk_value_t *args,
+                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_BOOL ? 1.0 : 0.0);
+}
+
 static exprtk_value_t fn_is_string(size_t argc, exprtk_value_t *args,
                                     exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_STRING ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_bytes(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_BYTES ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_uuid(size_t argc, exprtk_value_t *args,
+                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_UUID ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_datetime(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_DATETIME ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_date(size_t argc, exprtk_value_t *args,
+                                 exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_DATE ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_time(size_t argc, exprtk_value_t *args,
+                                 exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_TIME ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_duration(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_DURATION ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_decimal(size_t argc, exprtk_value_t *args,
+                                    exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_DECIMAL ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_bigint(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_BIGINT ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_money(size_t argc, exprtk_value_t *args,
+                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_MONEY ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_enum(size_t argc, exprtk_value_t *args,
+                                 exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_ENUM ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_flags(size_t argc, exprtk_value_t *args,
+                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_FLAGS ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_offset_datetime(size_t argc, exprtk_value_t *args,
+                                            exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_OFFSET_DATETIME ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_typed_array(size_t argc, exprtk_value_t *args,
+                                        exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_TYPED_ARRAY ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_uuid(size_t argc, exprtk_value_t *args,
+                              exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    char text[UUID4_STR_BUFFER_SIZE];
+    uuid_t id;
+
+    if (argc != 1 || args[0].type != EXPRTK_VAL_STRING ||
+        !core_uuid_text(args[0], text, sizeof(text)) || !uuid_from_s(text, &id))
+        return exprtk_val_num(0);
+    return exprtk_val_uuid(id);
+}
+
+static exprtk_value_t fn_uuid4(size_t argc, exprtk_value_t *args,
+                               exprtk_env_t *env, mem_pool_t *arena) {
+    (void)argc; (void)args; (void)env; (void)arena;
+    uuid_t id;
+    core_uuid_seed_once();
+    uuid4_gen(&core_uuid_state, &id);
+    return exprtk_val_uuid(id);
+}
+
+static exprtk_value_t fn_uuid7(size_t argc, exprtk_value_t *args,
+                               exprtk_env_t *env, mem_pool_t *arena) {
+    (void)argc; (void)args; (void)env; (void)arena;
+    uuid_t id;
+    core_uuid_seed_once();
+    uuid7_gen(&core_uuid_state, &id);
+    return exprtk_val_uuid(id);
+}
+
+static exprtk_value_t fn_uuid_string(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    char text[UUID4_STR_BUFFER_SIZE];
+
+    if (argc != 1 || !core_uuid_text(args[0], text, sizeof(text)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, text);
+}
+
+static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args,
+                                        exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    turbo_datetime_t dt;
+    if (argc != 1 || !core_datetime_from_value(args[0], &dt))
+        return core_null_value();
+    return exprtk_val_datetime(dt);
+}
+
+static exprtk_value_t fn_datetime_timestamp(size_t argc, exprtk_value_t *args,
+                                            exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    turbo_datetime_t dt;
+    time_t ts;
+    if (argc != 1 || !core_datetime_from_value(args[0], &dt))
+        return exprtk_val_num(-1.0);
+    ts = turbo_datetime_to_time(&dt);
+    return exprtk_val_num((double)ts);
+}
+
+static exprtk_value_t fn_datetime_string(size_t argc, exprtk_value_t *args,
+                                         exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    turbo_datetime_t dt;
+    time_t ts;
+    char buf[64];
+    if (argc != 1 || !core_datetime_from_value(args[0], &dt))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    ts = turbo_datetime_to_time(&dt);
+    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *args,
+                                                exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    time_t ts;
+    char buf[64];
+    if (argc != 1)
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    if (args[0].type == EXPRTK_VAL_INTEGER)
+        ts = (time_t)args[0].data.integer;
+    else if (args[0].type == EXPRTK_VAL_NUMBER)
+        ts = (time_t)args[0].data.number;
+    else if (args[0].type == EXPRTK_VAL_DATETIME)
+        ts = turbo_datetime_to_time(&args[0].data.datetime);
+    else
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_offset_datetime_parse(size_t argc, exprtk_value_t *args,
+                                               exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_offset_datetime_t value;
+    if (argc != 1 || !core_offset_datetime_from_value(args[0], &value))
+        return core_null_value();
+    return exprtk_val_offset_datetime(value.datetime, value.offset_minutes);
+}
+
+static exprtk_value_t fn_offset_datetime_timestamp(size_t argc, exprtk_value_t *args,
+                                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_offset_datetime_t value;
+    if (argc != 1 || !core_offset_datetime_from_value(args[0], &value))
+        return exprtk_val_num(-1.0);
+    return exprtk_val_num((double)turbo_datetime_to_time(&value.datetime));
+}
+
+static exprtk_value_t fn_offset_datetime_string(size_t argc, exprtk_value_t *args,
+                                                exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_offset_datetime_t value;
+    char buf[64];
+    if (argc != 1 || !core_offset_datetime_from_value(args[0], &value) ||
+        !core_offset_datetime_text(value, buf, sizeof(buf)))
+        return core_string_value(arena, "");
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_date_parse(size_t argc, exprtk_value_t *args,
+                                    exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_date_t date;
+    if (argc != 1 || !core_date_from_value(args[0], &date))
+        return core_null_value();
+    return exprtk_val_date(date);
+}
+
+static exprtk_value_t fn_date_string(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_date_t date;
+    char buf[32];
+    if (argc != 1 || !core_date_from_value(args[0], &date) ||
+        !core_date_text(date, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_time_parse(size_t argc, exprtk_value_t *args,
+                                    exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_time_t time;
+    if (argc != 1 || !core_time_from_value(args[0], &time))
+        return core_null_value();
+    return exprtk_val_time(time);
+}
+
+static exprtk_value_t fn_time_string(size_t argc, exprtk_value_t *args,
+                                     exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_time_t time;
+    char buf[32];
+    if (argc != 1 || !core_time_from_value(args[0], &time) ||
+        !core_time_text(time, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_duration_parse(size_t argc, exprtk_value_t *args,
+                                        exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    int64_t ms;
+    if (argc != 1 || !core_duration_from_value(args[0], &ms))
+        return core_null_value();
+    return exprtk_val_duration(ms);
+}
+
+static exprtk_value_t fn_duration_milliseconds(size_t argc, exprtk_value_t *args,
+                                               exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    int64_t ms;
+    if (argc != 1 || !core_duration_from_value(args[0], &ms))
+        return exprtk_val_num(0.0);
+    return exprtk_val_int(ms);
+}
+
+static exprtk_value_t fn_duration_seconds(size_t argc, exprtk_value_t *args,
+                                          exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    int64_t ms;
+    if (argc != 1 || !core_duration_from_value(args[0], &ms))
+        return exprtk_val_num(0.0);
+    return exprtk_val_num((double)ms / 1000.0);
+}
+
+static exprtk_value_t fn_duration_string(size_t argc, exprtk_value_t *args,
+                                         exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    int64_t ms;
+    char buf[64];
+    if (argc != 1 || !core_duration_from_value(args[0], &ms) ||
+        !core_duration_text(ms, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_decimal_parse(size_t argc, exprtk_value_t *args,
+                                       exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_decimal_t value;
+    if (argc != 1 || !core_decimal_from_value(args[0], &value))
+        return core_null_value();
+    return exprtk_val_decimal(value);
+}
+
+static exprtk_value_t fn_decimal_to_string(size_t argc, exprtk_value_t *args,
+                                           exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_decimal_t value;
+    char buf[64];
+    if (argc != 1 || !core_decimal_from_value(args[0], &value) ||
+        !core_decimal_text(value, buf, sizeof(buf)))
+        return exprtk_val_str(tstr_v_from_cstr(""));
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_decimal_mantissa(size_t argc, exprtk_value_t *args,
+                                          exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_decimal_t value;
+    if (argc != 1 || !core_decimal_from_value(args[0], &value))
+        return exprtk_val_int(0);
+    return exprtk_val_int(value.mantissa);
+}
+
+static exprtk_value_t fn_decimal_scale(size_t argc, exprtk_value_t *args,
+                                       exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_decimal_t value;
+    if (argc != 1 || !core_decimal_from_value(args[0], &value))
+        return exprtk_val_int(0);
+    return exprtk_val_int(value.scale);
+}
+
+static exprtk_value_t fn_bigint_parse(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    if (argc != 1) return core_null_value();
+    return core_bigint_from_value(args[0], arena);
+}
+
+static exprtk_value_t fn_bigint_to_string(size_t argc, exprtk_value_t *args,
+                                          exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_value_t value;
+    if (argc != 1) return core_string_value(arena, "");
+    value = core_bigint_from_value(args[0], arena);
+    if (value.type != EXPRTK_VAL_BIGINT) return core_string_value(arena, "");
+    return core_string_value(arena, value.data.bigint.text.data ? value.data.bigint.text.data : "");
+}
+
+static exprtk_value_t fn_money_create(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    exprtk_decimal_t amount;
+    exprtk_money_t money;
+    if (argc != 2 || !core_decimal_from_value(args[0], &amount) ||
+        args[1].type != EXPRTK_VAL_STRING || args[1].data.string.len != 3)
+        return core_null_value();
+    memset(&money, 0, sizeof(money));
+    money.amount = amount;
+    memcpy(money.currency, args[1].data.string.data, 3);
+    money.currency[3] = '\0';
+    (void)arena;
+    return exprtk_val_money(money);
+}
+
+static exprtk_value_t fn_money_to_string(size_t argc, exprtk_value_t *args,
+                                         exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    char buf[96];
+    if (argc != 1 || args[0].type != EXPRTK_VAL_MONEY ||
+        !core_money_text(args[0].data.money, buf, sizeof(buf)))
+        return core_string_value(arena, "");
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_money_amount(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    if (argc != 1 || args[0].type != EXPRTK_VAL_MONEY) return exprtk_val_decimal((exprtk_decimal_t){0, 0});
+    return exprtk_val_decimal(args[0].data.money.amount);
+}
+
+static exprtk_value_t fn_money_currency(size_t argc, exprtk_value_t *args,
+                                        exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    char buf[4];
+    if (argc != 1 || args[0].type != EXPRTK_VAL_MONEY) return core_string_value(arena, "");
+    memcpy(buf, args[0].data.money.currency, 3);
+    buf[3] = '\0';
+    return core_string_value(arena, buf);
+}
+
+static exprtk_value_t fn_typed_i32(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    return core_typed_array_create(EXPRTK_TYPED_I32, argc, args, arena);
+}
+
+static exprtk_value_t fn_typed_i64(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    return core_typed_array_create(EXPRTK_TYPED_I64, argc, args, arena);
+}
+
+static exprtk_value_t fn_typed_f32(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    return core_typed_array_create(EXPRTK_TYPED_F32, argc, args, arena);
+}
+
+static exprtk_value_t fn_typed_f64(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    return core_typed_array_create(EXPRTK_TYPED_F64, argc, args, arena);
 }
 
 static exprtk_value_t fn_is_vector(size_t argc, exprtk_value_t *args,
@@ -704,6 +1428,12 @@ static exprtk_value_t fn_is_map(size_t argc, exprtk_value_t *args,
     return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_MAP ? 1.0 : 0.0);
 }
 
+static exprtk_value_t fn_is_object(size_t argc, exprtk_value_t *args,
+                                   exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_OBJECT ? 1.0 : 0.0);
+}
+
 static exprtk_value_t fn_is_null(size_t argc, exprtk_value_t *args,
                                   exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
@@ -711,9 +1441,15 @@ static exprtk_value_t fn_is_null(size_t argc, exprtk_value_t *args,
 }
 
 static exprtk_value_t fn_is_list(size_t argc, exprtk_value_t *args,
-                                  exprtk_env_t *env, mem_pool_t *arena) {
+                                 exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_LIST ? 1.0 : 0.0);
+}
+
+static exprtk_value_t fn_is_set(size_t argc, exprtk_value_t *args,
+                                exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    return exprtk_val_num(argc > 0 && args[0].type == EXPRTK_VAL_SET ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_is_function(size_t argc, exprtk_value_t *args,
@@ -749,7 +1485,7 @@ static exprtk_value_t fn_await(size_t argc, exprtk_value_t *args,
     (void)env; (void)arena;
     if (argc < 1) return exprtk_val_num(0);
 
-    if (args[0].type == EXPRTK_VAL_MAP && exprtk_map_has(&args[0], "status") &&
+    if (exprtk_value_is_object_like(&args[0]) && exprtk_map_has(&args[0], "status") &&
         exprtk_map_has(&args[0], "value")) {
         exprtk_value_t status = exprtk_map_get(&args[0], "status");
         if (exprtk_string_equals(status, "suspended") ||
@@ -811,7 +1547,9 @@ static exprtk_value_t fn_print(size_t argc, exprtk_value_t *args,
         switch (args[i].type) {
             case EXPRTK_VAL_NUMBER: printf("%g", args[i].data.number); break;
             case EXPRTK_VAL_INTEGER: printf("%lld", (long long)args[i].data.integer); break;
+            case EXPRTK_VAL_BOOL: printf("%s", args[i].data.boolean ? "true" : "false"); break;
             case EXPRTK_VAL_STRING: printf("%.*s", (int)args[i].data.string.len, args[i].data.string.data); break;
+            case EXPRTK_VAL_BYTES: printf("bytes(%zu)", args[i].data.bytes.len); break;
             case EXPRTK_VAL_VECTOR:
                 printf("[");
                 for (size_t j = 0; j < args[i].data.vector.size; ++j) {
@@ -822,6 +1560,7 @@ static exprtk_value_t fn_print(size_t argc, exprtk_value_t *args,
                 printf("]");
                 break;
             case EXPRTK_VAL_MAP:   printf("{map:%zu}", exprtk_map_count(&args[i])); break;
+            case EXPRTK_VAL_OBJECT: printf("{object:%zu}", exprtk_map_count(&args[i])); break;
             case EXPRTK_VAL_NULL:  printf("null"); break;
             default:               printf("?"); break;
         }
@@ -838,8 +1577,7 @@ static exprtk_value_t fn_assert(size_t argc, exprtk_value_t *args,
                                  exprtk_env_t *env, mem_pool_t *arena) {
     (void)arena;
     if (argc < 1) return exprtk_val_num(0);
-    double cond = exprtk_is_numeric(args[0]) ? exprtk_numeric_value(args[0]) : 0;
-    if (fabs(cond) < 1e-9) {
+    if (!exprtk_value_truthy(args[0])) {
         if (argc >= 2 && args[1].type == EXPRTK_VAL_STRING) {
             fprintf(stderr, "Assertion failed: %.*s\n", (int)args[1].data.string.len, args[1].data.string.data);
         } else {
@@ -865,21 +1603,28 @@ static exprtk_value_t fn_list(size_t argc, exprtk_value_t *args,
     return result;
 }
 
+static exprtk_value_t fn_set(size_t argc, exprtk_value_t *args,
+                             exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env; (void)arena;
+    exprtk_value_t set = exprtk_val_set_empty();
+    for (size_t i = 0; i < argc; ++i) {
+        int exists = 0;
+        for (size_t j = 0; j < set.data.list.count; ++j) {
+            if (values_match(set.data.list.items[j], args[i])) {
+                exists = 1;
+                break;
+            }
+        }
+        if (!exists) exprtk_list_push(&set, args[i]);
+    }
+    return set;
+}
+
 static exprtk_value_t fn_stream_of(size_t argc, exprtk_value_t *args,
                                    exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 1) return stream_make(exprtk_val_list_empty());
     return stream_of_value(args[0]);
-}
-
-static exprtk_value_t fn_stream_lines(size_t argc, exprtk_value_t *args,
-                                      exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t text;
-    if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
-        return stream_make(exprtk_val_list_empty());
-    text = stream_read_file(args[0], env, arena);
-    if (text.type != EXPRTK_VAL_STRING) return stream_make(exprtk_val_list_empty());
-    return stream_make(stream_lines_from_string(text, arena));
 }
 
 static exprtk_value_t fn_stream_text(size_t argc, exprtk_value_t *args,
@@ -888,43 +1633,6 @@ static exprtk_value_t fn_stream_text(size_t argc, exprtk_value_t *args,
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return stream_make_text(exprtk_val_str(tstr_v_from_buf("", 0)));
     return stream_make_text(args[0]);
-}
-
-static exprtk_value_t fn_stream_file(size_t argc, exprtk_value_t *args,
-                                     exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env; (void)arena;
-    if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
-        return stream_make(exprtk_val_list_empty());
-    return stream_make_file(args[0]);
-}
-
-static exprtk_value_t fn_stream_json(size_t argc, exprtk_value_t *args,
-                                     exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t jsonpath = stream_null_value();
-    if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING ||
-        (argc == 2 && args[1].type != EXPRTK_VAL_STRING))
-        return stream_make(exprtk_val_list_empty());
-    if (argc == 2) jsonpath = args[1];
-    return stream_make(stream_json_source(args[0], jsonpath, env, arena));
-}
-
-static exprtk_value_t fn_stream_xml(size_t argc, exprtk_value_t *args,
-                                    exprtk_env_t *env, mem_pool_t *arena) {
-    if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
-        return stream_make(exprtk_val_list_empty());
-    return stream_make(stream_xml_source(args[0], args[1], env, arena));
-}
-
-static exprtk_value_t fn_stream_csv(size_t argc, exprtk_value_t *args,
-                                    exprtk_env_t *env, mem_pool_t *arena) {
-    int has_header = 1;
-    exprtk_value_t csv_text;
-    exprtk_value_t source;
-    if (argc < 1 || argc > 2 || args[0].type != EXPRTK_VAL_STRING)
-        return stream_make(exprtk_val_list_empty());
-    if (argc == 2) has_header = exprtk_value_truthy(args[1]);
-    source = stream_csv_source(args[0], has_header, env, arena, &csv_text);
-    return stream_make_csv(source, csv_text, has_header);
 }
 
 /* =========================================================================
@@ -1073,8 +1781,8 @@ static int table_arg_key(exprtk_value_t value, char *buf, size_t cap) {
 }
 
 static exprtk_value_t table_clone_map(exprtk_value_t row) {
-    exprtk_value_t out = exprtk_val_map();
-    if (row.type != EXPRTK_VAL_MAP) return out;
+    exprtk_value_t out = row.type == EXPRTK_VAL_OBJECT ? exprtk_val_object() : exprtk_val_map();
+    if (!exprtk_value_is_object_like(&row)) return out;
     exprtk_map_iter_t it = exprtk_map_iter_begin(&row);
     const char *key = NULL;
     exprtk_value_t value;
@@ -1091,8 +1799,8 @@ static exprtk_value_t fn_table_select(size_t argc, exprtk_value_t *args,
     exprtk_value_t out = exprtk_val_list_empty();
     for (size_t i = 0; i < args[0].data.list.count; ++i) {
         exprtk_value_t row = args[0].data.list.items[i];
-        if (row.type != EXPRTK_VAL_MAP) continue;
-        exprtk_value_t selected = exprtk_val_map();
+        if (!exprtk_value_is_object_like(&row)) continue;
+        exprtk_value_t selected = row.type == EXPRTK_VAL_OBJECT ? exprtk_val_object() : exprtk_val_map();
         if (argc == 2 && args[1].type == EXPRTK_VAL_LIST) {
             for (size_t f = 0; f < args[1].data.list.count; ++f) {
                 char key[128];
@@ -1153,7 +1861,7 @@ static exprtk_value_t fn_table_groupby(size_t argc, exprtk_value_t *args,
     exprtk_value_t groups = exprtk_val_map();
     for (size_t i = 0; i < args[0].data.list.count; ++i) {
         exprtk_value_t row = args[0].data.list.items[i];
-        if (row.type != EXPRTK_VAL_MAP || !exprtk_map_has(&row, key_field)) continue;
+        if (!exprtk_value_is_object_like(&row) || !exprtk_map_has(&row, key_field)) continue;
         char group_key[128];
         if (!table_key_from_value(exprtk_map_get(&row, key_field), group_key, sizeof(group_key)))
             continue;
@@ -1186,12 +1894,12 @@ static exprtk_value_t fn_table_join(size_t argc, exprtk_value_t *args,
     exprtk_value_t out = exprtk_val_list_empty();
     for (size_t i = 0; i < args[0].data.list.count; ++i) {
         exprtk_value_t left = args[0].data.list.items[i];
-        if (left.type != EXPRTK_VAL_MAP || !exprtk_map_has(&left, key_field)) continue;
+        if (!exprtk_value_is_object_like(&left) || !exprtk_map_has(&left, key_field)) continue;
         char lk[128];
         if (!table_key_from_value(exprtk_map_get(&left, key_field), lk, sizeof(lk))) continue;
         for (size_t j = 0; j < args[1].data.list.count; ++j) {
             exprtk_value_t right = args[1].data.list.items[j];
-            if (right.type != EXPRTK_VAL_MAP || !exprtk_map_has(&right, key_field)) continue;
+            if (!exprtk_value_is_object_like(&right) || !exprtk_map_has(&right, key_field)) continue;
             char rk[128];
             if (!table_key_from_value(exprtk_map_get(&right, key_field), rk, sizeof(rk))) continue;
             if (strcmp(lk, rk) != 0) continue;
@@ -1218,27 +1926,44 @@ static const exprtk_func_entry_t core_entries[] = {
     { "await",     fn_await },
     { "drop",      fn_drop },
     { "filter",    fn_filter },
+    { "is_bool",   fn_is_bool },
+    { "is_bigint", fn_is_bigint },
+    { "is_bytes",  fn_is_bytes },
     { "is_class",  fn_is_class },
+    { "is_date",   fn_is_date },
+    { "is_datetime", fn_is_datetime },
+    { "is_decimal", fn_is_decimal },
+    { "is_duration", fn_is_duration },
+    { "is_enum",   fn_is_enum },
+    { "is_flags",  fn_is_flags },
     { "is_function", fn_is_function },
+    { "is_int64",  fn_is_int64 },
     { "is_instance", fn_is_instance },
     { "is_list",   fn_is_list },
     { "is_map",    fn_is_map },
     { "is_null",   fn_is_null },
     { "is_number", fn_is_number },
+    { "is_object", fn_is_object },
+    { "is_offset_datetime", fn_is_offset_datetime },
     { "is_string", fn_is_string },
+    { "is_set",    fn_is_set },
+    { "is_time",   fn_is_time },
+    { "is_typed_array", fn_is_typed_array },
+    { "is_uuid",   fn_is_uuid },
     { "is_vector", fn_is_vector },
     { "lag",       fn_lag },
     { "list",      fn_list },
     { "map",       fn_map },
+    { "money",     fn_money_create },
+    { "money.create", fn_money_create },
+    { "money.to_string", fn_money_to_string },
+    { "money.amount", fn_money_amount },
+    { "money.currency", fn_money_currency },
     { "print",     fn_print },
     { "reduce",    fn_reduce },
     { "range",     fn_range },
-    { "stream.csv", fn_stream_csv },
-    { "stream.file", fn_stream_file },
-    { "stream.json", fn_stream_json },
-    { "stream.lines", fn_stream_lines },
     { "stream.text", fn_stream_text },
-    { "stream.xml", fn_stream_xml },
+    { "set",       fn_set },
     { "stream.of", fn_stream_of },
     { "table.filter", fn_table_filter },
     { "table.groupby", fn_table_groupby },
@@ -1246,6 +1971,50 @@ static const exprtk_func_entry_t core_entries[] = {
     { "table.select", fn_table_select },
     { "take",      fn_take },
     { "typeof",    fn_typeof },
+    { "datetime",  fn_datetime_parse },
+    { "datetime.parse", fn_datetime_parse },
+    { "datetime.to_string", fn_datetime_string },
+    { "datetime.to_time", fn_datetime_timestamp },
+    { "datetime.timestamp", fn_datetime_timestamp },
+    { "datetime.format_rfc822", fn_datetime_format_rfc822 },
+    { "datetime_string", fn_datetime_string },
+    { "offset_datetime", fn_offset_datetime_parse },
+    { "offset_datetime.parse", fn_offset_datetime_parse },
+    { "offset_datetime.to_string", fn_offset_datetime_string },
+    { "offset_datetime.to_time", fn_offset_datetime_timestamp },
+    { "offset_datetime.timestamp", fn_offset_datetime_timestamp },
+    { "decimal.parse", fn_decimal_parse },
+    { "decimal.to_string", fn_decimal_to_string },
+    { "decimal.mantissa", fn_decimal_mantissa },
+    { "decimal.scale", fn_decimal_scale },
+    { "bigint", fn_bigint_parse },
+    { "bigint.parse", fn_bigint_parse },
+    { "bigint.to_string", fn_bigint_to_string },
+    { "typed.i32", fn_typed_i32 },
+    { "typed.i64", fn_typed_i64 },
+    { "typed.f32", fn_typed_f32 },
+    { "typed.f64", fn_typed_f64 },
+    { "typed_array.i32", fn_typed_i32 },
+    { "typed_array.i64", fn_typed_i64 },
+    { "typed_array.f32", fn_typed_f32 },
+    { "typed_array.f64", fn_typed_f64 },
+    { "decimal_string", fn_decimal_to_string },
+    { "date.parse", fn_date_parse },
+    { "date.to_string", fn_date_string },
+    { "date_string", fn_date_string },
+    { "time.parse", fn_time_parse },
+    { "time.to_string", fn_time_string },
+    { "time_string", fn_time_string },
+    { "duration.parse", fn_duration_parse },
+    { "duration.milliseconds", fn_duration_milliseconds },
+    { "duration.seconds", fn_duration_seconds },
+    { "duration.to_string", fn_duration_string },
+    { "duration_string", fn_duration_string },
+    { "uuid",      fn_uuid },
+    { "uuid.to_string", fn_uuid_string },
+    { "uuid4",     fn_uuid4 },
+    { "uuid7",     fn_uuid7 },
+    { "uuid_string", fn_uuid_string },
 };
 
 static const exprtk_module_t core_module = {

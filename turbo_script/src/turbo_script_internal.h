@@ -37,6 +37,19 @@ typedef struct {
   uint64_t var_sync_count;        // 变量同步次数
 } ts_jit_stats_t;
 
+/* Verify that the internal ts_jit_stats_t and the public turbo_script_jit_stats_t
+ * have identical layout.  Both structs are identical by definition; this assert
+ * catches any accidental divergence before the pointer cast in
+ * turbo_script_get_jit_stats() can produce undefined behaviour. */
+#ifdef __cplusplus
+static_assert(sizeof(ts_jit_stats_t) == sizeof(turbo_script_jit_stats_t),
+              "ts_jit_stats_t and turbo_script_jit_stats_t must have the same size");
+#else
+_Static_assert(sizeof(ts_jit_stats_t) == sizeof(turbo_script_jit_stats_t),
+               "ts_jit_stats_t and turbo_script_jit_stats_t must have the same size");
+#endif
+
+
 struct turbo_script_ctx_s {
   exprtk_env_t env;
   exprtk_node_t *expr;
@@ -48,8 +61,14 @@ struct turbo_script_ctx_s {
   exprtk_value_t current_import_exports;
   int current_import_has_exports;
   exprtk_env_t *current_import_env;
-  char error_msg[256];
+  char error_msg[1024];
   turbo_script_error_code_t error_code;
+
+  /* JIT compiling tracking to prevent memory leak and data race */
+  int mir_mod_idx;
+  exprtk_node_t **compiled_asts;
+  size_t compiled_ast_count;
+  size_t compiled_ast_capacity;
 
   /* Plugin handles */
   ts_plugin_handle_t *plugins[TS_MAX_PLUGINS];
@@ -64,11 +83,15 @@ struct turbo_script_ctx_s {
   MIR_item_t mir_interp_last_func;
   int mir_interp_externals_loaded;
 
-  /* Phase 18: compile cache — skip parse/compile for repeated scripts */
+  /* Isolated context for script-level mir.load/mir.call to prevent interface clash and duplicate linking */
+  MIR_context_t script_mir_ctx;
+  int script_mir_linked;
+
   struct {
     uint64_t hash;
     void *fn_ptr;
     uint32_t access_count;  // LRU 访问计数
+    char *script;           // Copy of script string to prevent hash collisions
   } jit_cache[TS_JIT_CACHE_SIZE];
 
   /* JIT 统计信息 */

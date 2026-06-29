@@ -54,12 +54,11 @@ Count: 6
 
 ## data_bind plugin (`data_bind`)
 
-Count: 4
+Count: 3
 
 - `data_bind.create`
 - `data_bind.parse`
 - `data_bind.close`
-- `data_bind.error`
 
 ## wasm plugin (`wasm`)
 

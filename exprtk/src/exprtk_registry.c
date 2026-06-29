@@ -66,6 +66,17 @@ static exprtk_value_t *normalize_numeric_args(exprtk_value_t *args, size_t argc,
     return normalized;
 }
 
+static int builtin_needs_raw_args(const char *name) {
+    const char *entry = name ? strrchr(name, '.') : NULL;
+    if (!name) return 0;
+    entry = entry ? entry + 1 : name;
+    return strcmp(entry, "typeof") == 0 ||
+           strcmp(entry, "is_int64") == 0 ||
+           strcmp(entry, "is_bool") == 0 ||
+           strcmp(entry, "is_bytes") == 0 ||
+           strcmp(entry, "is_decimal") == 0;
+}
+
 /* =========================================================================
  * Module cache: sorted flat array of all per-env module entries
  * ========================================================================= */
@@ -204,6 +215,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
     exprtk_value_t stack_args[8];
     int normalized_needs_free = 0;
     exprtk_value_t *normalized_args = normalize_numeric_args(args, argc, stack_args, 8, &normalized_needs_free);
+    exprtk_value_t *builtin_args = builtin_needs_raw_args(name) ? args : normalized_args;
 
     /* 1. Check native/script functions in environment */
     if (env) {
@@ -254,7 +266,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
         /* Try non-namespaced first */
         exprtk_builtin_fn mod_fn = mod_cache_find(env, name);
         if (mod_fn) {
-            exprtk_value_t result = mod_fn(argc, normalized_args, env, arena);
+            exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
             if (normalized_needs_free) free(normalized_args);
             return result;
         }
@@ -264,7 +276,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
         if (dot) {
             mod_fn = mod_find_in_named_module(env, name, (size_t)(dot - name), dot + 1);
             if (mod_fn) {
-                exprtk_value_t result = mod_fn(argc, normalized_args, env, arena);
+                exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
                 if (normalized_needs_free) free(normalized_args);
                 return result;
             }
@@ -275,7 +287,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
     /* Try full name first (e.g., "vec.reverse") */
     exprtk_builtin_fn mod_fn = exprtk_registry_find(name);
     if (mod_fn) {
-        exprtk_value_t result = mod_fn(argc, normalized_args, env, arena);
+        exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
         if (normalized_needs_free) free(normalized_args);
         return result;
     }
@@ -286,7 +298,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
     if (final_dot && is_global_compat_namespace(name, (size_t)(final_dot - name))) {
         mod_fn = exprtk_registry_find(final_dot + 1);
         if (mod_fn) {
-            exprtk_value_t result = mod_fn(argc, normalized_args, env, arena);
+            exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
             if (normalized_needs_free) free(normalized_args);
             return result;
         }

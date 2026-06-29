@@ -115,7 +115,7 @@ add_test(NAME test_enum_helpers COMMAND test_enum_helpers)
 
 set(C_STRUCT_TEMPLATE ${CMAKE_SOURCE_DIR}/tbe/tbe_compiler/templates/c_structs.mustache)
 
-set(ENUM_ENHANCED_SCHEMA ${CMAKE_SOURCE_DIR}/tbe/test_enum_enhanced.schema)
+set(ENUM_ENHANCED_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/test/test_enum_enhanced.schema)
 set(ENUM_ENHANCED_HEADER ${CMAKE_BINARY_DIR}/bin/test_enum_enhanced.h)
 add_custom_command(
   OUTPUT ${ENUM_ENHANCED_HEADER}
@@ -125,8 +125,10 @@ add_custom_command(
   DEPENDS tbe_compiler ${ENUM_ENHANCED_SCHEMA} ${C_STRUCT_TEMPLATE}
   COMMENT "Generating test_enum_enhanced.h"
   VERBATIM)
+add_custom_target(generate_test_enum_enhanced_header
+                  DEPENDS ${ENUM_ENHANCED_HEADER})
 
-set(ENUM_ENHANCED_SIMPLE_SCHEMA ${CMAKE_SOURCE_DIR}/tbe/test_enum_enhanced_simple.schema)
+set(ENUM_ENHANCED_SIMPLE_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/test/test_enum_enhanced_simple.schema)
 set(ENUM_ENHANCED_SIMPLE_HEADER ${CMAKE_BINARY_DIR}/bin/test_enum_enhanced_simple.h)
 add_custom_command(
   OUTPUT ${ENUM_ENHANCED_SIMPLE_HEADER}
@@ -136,28 +138,32 @@ add_custom_command(
   DEPENDS tbe_compiler ${ENUM_ENHANCED_SIMPLE_SCHEMA} ${C_STRUCT_TEMPLATE}
   COMMENT "Generating test_enum_enhanced_simple.h"
   VERBATIM)
+add_custom_target(generate_test_enum_enhanced_simple_header
+                  DEPENDS ${ENUM_ENHANCED_SIMPLE_HEADER})
 
 # 功能测试：枚举增强
 add_executable(test_enum_enhanced_functional
-               ../test_enum_enhanced_functional.c
+               test/test_enum_enhanced_functional.c
                ${ENUM_ENHANCED_HEADER})
 target_link_libraries(test_enum_enhanced_functional PRIVATE TurboScript::SchemaBE
                                                             TurboNet::TinyTest)
-target_include_directories(test_enum_enhanced_functional PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../..)
+target_include_directories(test_enum_enhanced_functional PRIVATE ${CMAKE_BINARY_DIR}/bin)
+add_dependencies(test_enum_enhanced_functional generate_test_enum_enhanced_header)
 set_target_properties(test_enum_enhanced_functional PROPERTIES FOLDER tbe/tbe)
 add_test(NAME test_enum_enhanced_functional COMMAND test_enum_enhanced_functional)
 
 # 功能测试：枚举增强（简化版）
 add_executable(test_enum_enhanced_simple_functional
-               ../test_enum_enhanced_simple_functional.c
+               test/test_enum_enhanced_simple_functional.c
                ${ENUM_ENHANCED_SIMPLE_HEADER})
 target_link_libraries(test_enum_enhanced_simple_functional PRIVATE TurboScript::SchemaBE
                                                                     TurboNet::TinyTest)
-target_include_directories(test_enum_enhanced_simple_functional PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../..)
+target_include_directories(test_enum_enhanced_simple_functional PRIVATE ${CMAKE_BINARY_DIR}/bin)
+add_dependencies(test_enum_enhanced_simple_functional generate_test_enum_enhanced_simple_header)
 set_target_properties(test_enum_enhanced_simple_functional PROPERTIES FOLDER tbe/tbe)
 add_test(NAME test_enum_enhanced_simple_functional COMMAND test_enum_enhanced_simple_functional)
 
-set(UNION_TYPES_SCHEMA ${CMAKE_SOURCE_DIR}/tbe/test_union_types.schema)
+set(UNION_TYPES_SCHEMA ${CMAKE_CURRENT_SOURCE_DIR}/test/test_union_types.schema)
 set(UNION_TYPES_HEADER ${CMAKE_BINARY_DIR}/bin/test_union_types.h)
 add_custom_command(
   OUTPUT ${UNION_TYPES_HEADER}
@@ -167,14 +173,17 @@ add_custom_command(
   DEPENDS tbe_compiler ${UNION_TYPES_SCHEMA} ${C_STRUCT_TEMPLATE}
   COMMENT "Generating test_union_types.h"
   VERBATIM)
+add_custom_target(generate_test_union_types_header
+                  DEPENDS ${UNION_TYPES_HEADER})
 
 # 功能测试：联合类型
 add_executable(test_union_types_functional
-               ../test_union_types_functional.c
+               test/test_union_types_functional.c
                ${UNION_TYPES_HEADER})
 target_link_libraries(test_union_types_functional PRIVATE TurboScript::SchemaBE
                                                           TurboNet::TinyTest)
-target_include_directories(test_union_types_functional PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/../..)
+target_include_directories(test_union_types_functional PRIVATE ${CMAKE_BINARY_DIR}/bin)
+add_dependencies(test_union_types_functional generate_test_union_types_header)
 set_target_properties(test_union_types_functional PROPERTIES FOLDER tbe/tbe)
 add_test(NAME test_union_types_functional COMMAND test_union_types_functional)
 

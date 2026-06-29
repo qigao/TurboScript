@@ -6,7 +6,7 @@ use serde::{Serialize, Deserialize};
 
 {{#enums}}
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[repr({{underlying_type}}{{^underlying_type}}i32{{/underlying_type}})]
+#[repr({{rust_underlying_type}})]
 pub enum {{enum_name}} {
 {{#items}}
     {{name}} = {{value}},
@@ -23,7 +23,7 @@ pub enum {{enum_name}} {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct {{name}} {
 {{#fields}}
-    pub {{name}}: {{type}}, // {{size_bytes}} bytes
+    pub {{name}}: {{rust_type}}, // {{size_bytes}} bytes
 {{/fields}}
 }
 
@@ -37,7 +37,7 @@ pub struct {{name}} {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct {{name}} {
 {{#fields}}
-    pub {{name}}: {{type}}, // {{size_bytes}} bytes
+    pub {{name}}: {{rust_type}}, // {{size_bytes}} bytes
 {{/fields}}
 }
 
@@ -51,7 +51,7 @@ pub struct {{name}} {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct {{name}} {
 {{#fields}}
-    pub {{name}}: {{type}}, // {{size_bytes}} bytes
+    pub {{name}}: {{rust_type}}, // {{size_bytes}} bytes
 {{/fields}}
 }
 

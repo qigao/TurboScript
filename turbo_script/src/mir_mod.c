@@ -34,8 +34,8 @@ static exprtk_value_t ts_mir_load(size_t argc, exprtk_value_t *args, void *user_
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
     return exprtk_val_num(0);
 
-  if (!ctx->mir_ctx)
-    ctx->mir_ctx = MIR_init();
+  if (!ctx->script_mir_ctx)
+    ctx->script_mir_ctx = MIR_init();
 
   /* Null-terminate the script string in a stack buffer or malloc */
   size_t len = args[0].data.string.len;
@@ -45,18 +45,25 @@ static exprtk_value_t ts_mir_load(size_t argc, exprtk_value_t *args, void *user_
   memcpy(script, args[0].data.string.data, len);
   script[len] = '\0';
 
-  DLIST(MIR_module_t) *modules = MIR_get_module_list(ctx->mir_ctx);
+  DLIST(MIR_module_t) *modules = MIR_get_module_list(ctx->script_mir_ctx);
   MIR_module_t last_before = DLIST_TAIL(MIR_module_t, *modules);
 
-  MIR_scan_string(ctx->mir_ctx, script);
+  MIR_scan_string(ctx->script_mir_ctx, script);
   free(script);
 
   MIR_module_t starting =
       last_before ? DLIST_NEXT(MIR_module_t, last_before) : DLIST_HEAD(MIR_module_t, *modules);
-  for (MIR_module_t m = starting; m != NULL; m = DLIST_NEXT(MIR_module_t, m))
-    MIR_load_module(ctx->mir_ctx, m);
+  int loaded_any = 0;
+  for (MIR_module_t m = starting; m != NULL; m = DLIST_NEXT(MIR_module_t, m)) {
+    MIR_load_module(ctx->script_mir_ctx, m);
+    loaded_any = 1;
+  }
 
-  MIR_link(ctx->mir_ctx, MIR_set_interp_interface, NULL);
+  if (loaded_any || !ctx->script_mir_linked) {
+    MIR_link(ctx->script_mir_ctx, MIR_set_interp_interface, NULL);
+    ctx->script_mir_linked = 1;
+  }
+
   return exprtk_val_num(1.0);
 }
 
@@ -64,7 +71,7 @@ static exprtk_value_t ts_mir_call(size_t argc, exprtk_value_t *args, void *user_
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   if (argc < 1 || args[0].type != EXPRTK_VAL_STRING)
     return exprtk_val_num(0);
-  if (!ctx->mir_ctx)
+  if (!ctx->script_mir_ctx)
     return exprtk_val_num(0);
 
   size_t name_len = args[0].data.string.len;
@@ -74,7 +81,7 @@ static exprtk_value_t ts_mir_call(size_t argc, exprtk_value_t *args, void *user_
   memcpy(func_name, args[0].data.string.data, name_len);
   func_name[name_len] = '\0';
 
-  MIR_item_t func_item = mir_get_global_item(ctx->mir_ctx, func_name);
+  MIR_item_t func_item = mir_get_global_item(ctx->script_mir_ctx, func_name);
   free(func_name);
 
   if (!func_item || func_item->item_type != MIR_func_item)
@@ -98,7 +105,7 @@ static exprtk_value_t ts_mir_call(size_t argc, exprtk_value_t *args, void *user_
   }
 
   MIR_val_t result;
-  MIR_interp_arr(ctx->mir_ctx, func_item, &result, mir_argc, mir_args);
+  MIR_interp_arr(ctx->script_mir_ctx, func_item, &result, mir_argc, mir_args);
   free(mir_args);
 
   if (func_item->item_type == MIR_func_item && func_item->u.func->nres > 0) {

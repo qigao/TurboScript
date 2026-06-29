@@ -212,8 +212,6 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
                                           exprtk_node_t **arg_params,
                                           size_t arg_count,
                                           exprtk_env_t *closure_env) {
-  (void)closure_env; // 目前未使用，后续可用于检查变量是否存在于父环境
-  
   // 初始化分析上下文
   ts_analysis_ctx_t ctx;
   ts_var_set_init(&ctx.used);
@@ -241,7 +239,9 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   for (size_t i = 0; i < ctx.used.count; i++) {
     const char *name = ctx.used.names[i];
     if (!ts_var_set_contains(&ctx.defined, name)) {
-      ts_var_set_add(&free_vars, name);
+      if (!closure_env || exprtk_env_has(closure_env, name)) {
+        ts_var_set_add(&free_vars, name);
+      }
     }
   }
   

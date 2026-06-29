@@ -4655,14 +4655,39 @@ spec("turbo_script_mir") {
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "l = list(1, \"x\", 3);"
                            "m = map {a: 1};"
+                           "b = bytes(\"Az\");"
                            "result = (typeof(\"hello\") == \"string\") * 1000 + "
                            "(typeof([1, 2]) == \"vector\") * 100 + "
                            "(typeof(m) == \"map\") * 10 + "
-                           "is_list(l);";
+                           "is_list(l) + "
+                           "(typeof(42) == \"int64\") + "
+                           "(typeof(true) == \"bool\") + "
+                           "(typeof(b) == \"bytes\") + "
+                           "is_int64(42) + is_bool(true) + is_bytes(b) + "
+                           "b.length() + b[0] + b[1];";
       check_int_eq(turbo_script_run(ctx_interp, script), 0);
       check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
       check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 1111.0, EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 1306.0, EPS);
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should match interpreter for native date time and duration values") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "d = date.parse(\"2026-06-28\");"
+          "t = time.parse(\"09:30:05.123\");"
+          "dur = duration.parse(\"1h30m5s250ms\");"
+          "result = (typeof(d) == \"date\") * 100000 + "
+          "(typeof(t) == \"time\") * 10000 + "
+          "(typeof(dur) == \"duration\") * 1000 + "
+          "d.month * 100 + t.hour + (dur.seconds == 5405.25);";
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 111610.0, EPS);
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }

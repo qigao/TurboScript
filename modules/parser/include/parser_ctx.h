@@ -13,6 +13,8 @@
 extern "C" {
 #endif
 
+typedef struct DataBind DataBind;
+
 #define PARSER_MAX_DOCS 16
 #define PARSER_MAX_SCHEMAS 16
 #define PARSER_MAX_JSON_DOCS 16
@@ -26,6 +28,7 @@ typedef struct parser_ctx_s {
     size_t csv_header_counts[PARSER_MAX_DOCS];
     json_value_t *json_docs[PARSER_MAX_JSON_DOCS];
     struct turbo_node_s *schemas[PARSER_MAX_SCHEMAS];
+    DataBind *schema_codecs[PARSER_MAX_SCHEMAS];
     char error_msg[256];
 } parser_ctx_t;
 

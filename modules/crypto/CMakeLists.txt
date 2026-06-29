@@ -5,6 +5,8 @@ set(CRYPTO_SOURCES src/exprtk_mod_crypto.c)
 set(CRYPTO_PLUGIN_SOURCES src/crypto_plugin.c)
 set(CRYPTO_HEADERS include/crypto.h)
 
+find_package(unofficial-tiny-aes-c CONFIG REQUIRED)
+
 add_library(${TARGET_NAME} STATIC ${CRYPTO_SOURCES} ${CRYPTO_HEADERS})
 
 cmake_config_target(
@@ -18,7 +20,11 @@ target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                          $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk monocypher TurboNet::Utils)
+target_compile_definitions(${TARGET_NAME} PRIVATE AES128=1 AES192=0 AES256=0 CBC=0 ECB=0 CTR=1)
+
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk monocypher sha2
+                                            unofficial::tiny-aes-c::tiny-aes-c
+                                            TurboNet::Utils)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${CRYPTO_PLUGIN_SOURCES})
 

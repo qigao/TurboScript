@@ -213,8 +213,8 @@
 | `base64url_decode(s)` | 解码 URL 安全 Base64 | `base64url_decode("aGVsbG8_")` → `"hello?"` |
 | `hex_encode(s)` | 小写十六进制编码字节 | `hex_encode("Az")` → `"417a"` |
 | `hex_decode(s)` | 十六进制解码为字符串 | `hex_decode("417a")` → `"Az"` |
-| `bytes(s)` | 返回字节值列表 | `bytes("Az")` → `[65,122]` |
-| `from_bytes(list_or_vector)` | 从字节值构造字符串 | `from_bytes([65,122])` → `"Az"` |
+| `bytes(s)` | 返回原生字节缓冲 | `bytes("Az")` |
+| `from_bytes(bytes/list/vector)` | 从字节值构造字符串 | `from_bytes(bytes("Az"))` → `"Az"` |
 
 ### Hash 插件
 
@@ -231,17 +231,43 @@
 
 ### Crypto 插件
 
-使用 `import("crypto")` 加载。哈希输出均为小写十六进制字符串。
+使用 `import("crypto")` 加载。哈希输出均为小写十六进制字符串。二进制输入可以使用
+`bytes` 或字符串；加密接口返回 `bytes`。
 
 | 函数 | 说明 | 示例 |
 |----------|-------------|---------|
+| `crypto.sha256(s)` | SHA-256，返回 32 字节 digest 的十六进制文本 | `crypto.sha256("abc")` |
+| `crypto.sha256_bytes(s)` | SHA-256，返回 32 字节原始 digest | `crypto.sha256_bytes("abc")` |
 | `crypto.blake2b(s)` | BLAKE2b，64 字节 digest | `crypto.blake2b("abc")` |
 | `crypto.blake2b(s, size)` | BLAKE2b，digest 大小为 `1..64` 字节 | `crypto.blake2b("abc", 4)` → `"63906248"` |
 | `crypto.blake2b_keyed(s, key)` | 带 key 的 BLAKE2b，64 字节 digest | `crypto.blake2b_keyed("abc", "key")` |
 | `crypto.blake2b_keyed(s, key, size)` | 带 key 的 BLAKE2b，digest 大小为 `1..64` 字节 | `crypto.blake2b_keyed("abc", "key", 4)` → `"34d401b4"` |
+| `crypto.aes_encrypt(data, key, iv)` | AES-CTR 加密，`key` 16 字节、`iv` 16 字节 | `crypto.aes_encrypt(raw, key, iv)` |
+| `crypto.aes_decrypt(data, key, iv)` | AES-CTR 解密，参数同加密 | `crypto.aes_decrypt(cipher, key, iv)` |
+| `crypto.aead_lock(data, key, nonce, ad)` | Monocypher XChaCha20-Poly1305 AEAD，`key` 32 字节、`nonce` 24 字节，返回 `{cipher, mac}` | `crypto.aead_lock(raw, key, nonce, ad)` |
+| `crypto.aead_unlock(cipher, mac, key, nonce, ad)` | AEAD 验证并解密；认证失败返回 `null` | `crypto.aead_unlock(cipher, mac, key, nonce, ad)` |
+| `crypto.argon2(pass, salt, out_len, blocks, passes, algo)` | Argon2 KDF；`algo`: `0` Argon2d, `1` Argon2i, `2` Argon2id | `crypto.argon2(pw, salt, 32, 65536, 3, 2)` |
+| `crypto.argon2(pass, salt, out_len, blocks, passes, algo, key, ad)` | 带可选 secret key 和关联数据的 Argon2 KDF | `crypto.argon2(pw, salt, 32, 65536, 3, 2, k, ad)` |
+| `crypto.x25519_public_key(secret32)` | 由 32 字节 secret 生成 X25519 public key | `crypto.x25519_public_key(sk)` |
+| `crypto.x25519(secret32, public32)` | X25519 原始共享 secret；用作 key 前应再 hash/KDF | `crypto.x25519(sk, peer_pk)` |
+| `crypto.eddsa_key_pair(seed32)` | Monocypher EdDSA key pair，返回 `{secret_key, public_key}` | `crypto.eddsa_key_pair(seed)` |
+| `crypto.eddsa_sign(secret64, message)` | 对消息签名，返回 64 字节 signature | `crypto.eddsa_sign(sk, msg)` |
+| `crypto.eddsa_check(sig64, public32, message)` | 验证 EdDSA signature，返回 `1` 或 `0` | `crypto.eddsa_check(sig, pk, msg)` |
+| `crypto.chacha20_x(data, key32, nonce24[, ctr])` | XChaCha20 流密码；不带认证，消息加密优先使用 AEAD | `crypto.chacha20_x(raw, key, nonce, 0)` |
+| `crypto.chacha20_djb(data, key32, nonce8[, ctr])` | ChaCha20 DJB 流密码 | `crypto.chacha20_djb(raw, key, nonce)` |
+| `crypto.chacha20_ietf(data, key32, nonce12[, ctr])` | ChaCha20 IETF 流密码 | `crypto.chacha20_ietf(raw, key, nonce)` |
+| `crypto.chacha20_h(key32, in16)` | HChaCha20，返回 32 字节 subkey | `crypto.chacha20_h(key, input)` |
+| `crypto.poly1305(message, key32)` | Poly1305 一次性认证码，返回 16 字节 MAC | `crypto.poly1305(msg, one_time_key)` |
+| `crypto.elligator_key_pair(seed32)` | 生成 Elligator-compatible key pair，返回 `{hidden, secret_key}` | `crypto.elligator_key_pair(seed)` |
+| `crypto.elligator_map(hidden32)` | 将 Elligator representative 映射为 Curve25519 point | `crypto.elligator_map(hidden)` |
+| `crypto.elligator_rev(curve32, tweak)` | 反向 Elligator map；不可表示时返回 `null` | `crypto.elligator_rev(point, 0)` |
 | `crypto.verify16(a, b)` | 常量时间比较两个 16 字节字符串 | `crypto.verify16(mac1, mac2)` |
 | `crypto.verify32(a, b)` | 常量时间比较两个 32 字节字符串 | `crypto.verify32(d1, d2)` |
 | `crypto.verify64(a, b)` | 常量时间比较两个 64 字节字符串 | `crypto.verify64(d1, d2)` |
+
+高级协议可使用这些底层 helper：`x25519_to_eddsa`、`x25519_inverse`、
+`x25519_dirty_small`、`x25519_dirty_fast`、`eddsa_to_x25519`、
+`eddsa_trim_scalar`、`eddsa_reduce`、`eddsa_mul_add`、`eddsa_scalarbase`。
 
 ### 解析
 
@@ -494,7 +520,7 @@ var file = path_basename(full);                   // "data.csv"
 - `date(str)` 使用 TurboNet 的通用 datetime parser。
 - `format_date(ts, fmt)` 为兼容旧脚本保留宿主本地时间格式化。
 - 需要确定性 UTC 行为时，使用 `date_utc(str)` 与 `format_date_utc(ts, fmt)`。
-- 需要结构化日期字段时，加载 `parser` 模块并使用 `datetime.parse()`。
+- 需要原生 datetime 值时，使用 `datetime(text)` 或 `datetime.parse(text)`。
 
 **示例：**
 ```javascript
@@ -507,12 +533,67 @@ var formatted = format_date_utc(parsed, "%Y-%m-%d %H:%M:%S"); // "2024-01-01 12:
 
 ## 类型转换
 
+### 类型内省
+
+| 函数 | 说明 | 返回值 |
+|----------|-------------|---------|
+| `typeof(x)` | 运行时类型名 | `"number"`、`"int64"`、`"bool"`、`"bytes"`、`"uuid"`、`"datetime"`、`"date"`、`"time"`、`"duration"`、`"decimal"`、`"string"`、`"vector"`、`"map"`、`"object"`、`"list"`、`"null"` 等 |
+| `is_number(x)` | 判断数值（`number` 或 `int64`） | 数值为 1，否则为 0 |
+| `is_int64(x)` | 判断 64 位整数 | int64 为 1，否则为 0 |
+| `is_bool(x)` | 判断布尔值 | bool 为 1，否则为 0 |
+| `is_bytes(x)` | 判断字节缓冲 | bytes 为 1，否则为 0 |
+| `is_uuid(x)` | 判断 UUID 值 | uuid 为 1，否则为 0 |
+| `is_datetime(x)` | 判断 datetime 值 | datetime 为 1，否则为 0 |
+| `is_date(x)` | 判断 date 值 | date 为 1，否则为 0 |
+| `is_time(x)` | 判断 time 值 | time 为 1，否则为 0 |
+| `is_duration(x)` | 判断 duration 值 | duration 为 1，否则为 0 |
+| `is_decimal(x)` | 判断 decimal 值 | decimal 为 1，否则为 0 |
+| `is_string(x)` | 判断字符串 | 字符串为 1，否则为 0 |
+| `is_vector(x)` | 判断数值 vector | vector 为 1，否则为 0 |
+| `is_map(x)` | 判断脚本 `map` | map 为 1，否则为 0 |
+| `is_object(x)` | 判断 parser/data_bind 等宿主模块产出的 plain object | object 为 1，否则为 0 |
+| `is_list(x)` | 判断异构 list | list 为 1，否则为 0 |
+| `is_null(x)` | 判断 null | null 为 1，否则为 0 |
+
+JSON object、XML 查询节点、schema reflection 记录和 schema-bound record/union 返回 plain object。脚本 `map{...}` 字面量和 TBE `map<K,V>` 字段仍是 `map`。
+
 | 函数 | 说明 | 示例 |
 |----------|-------------|---------|
 | `to_num(s)` | 字符串转数字 | `to_num("123.45")` → `123.45` |
 | `to_str(x)` | 数字转字符串 | `to_str(42)` → `"42"` |
 | `to_int(s)` | 字符串转整数 | `to_int("99")` → `99` |
 | `to_bool(s)` | 字符串转布尔值 | `to_bool("true")` → `1` |
+| `uuid(text)` | 解析标准 UUID 文本为原生 UUID 值 | `uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001")` |
+| `uuid4()` / `uuid7()` | 生成 UUID v4 / v7 | `uuid7()` |
+| `uuid_string(id)` / `id.to_string()` | UUID 转 canonical 文本 | `uuid_string(uuid4())` |
+| `datetime(text)` / `datetime.parse(text)` | 解析文本为原生 datetime 值 | `datetime("Sat, 04 Mar 2006 13:27:54 GMT")` |
+| `datetime.to_time(dt)` / `datetime.timestamp(dt)` | datetime 或可解析文本转 Unix 秒 | `datetime.to_time(dt)` |
+| `datetime_string(dt)` / `dt.to_string()` | datetime 格式化为 RFC822/HTTP GMT 文本 | `datetime_string(dt)` |
+| `date.parse(text)` | 解析 `YYYY-MM-DD` 或可解析 datetime 文本为原生 date | `date.parse("2026-06-28")` |
+| `date.to_string(d)` / `d.to_string()` | date 格式化为 `YYYY-MM-DD` | `date.to_string(d)` |
+| `time.parse(text)` | 解析 `HH:MM[:SS[.mmm]]` 为原生 time | `time.parse("09:30:05.123")` |
+| `time.to_string(t)` / `t.to_string()` | time 格式化为 `HH:MM:SS[.mmm]` | `time.to_string(t)` |
+| `duration.parse(text)` | 解析 `1h30m5s250ms` 等文本为原生 duration | `duration.parse("1h30m")` |
+| `duration.milliseconds(d)` / `d.milliseconds` | duration 的毫秒数 | `duration.milliseconds(span)` |
+| `duration.seconds(d)` / `d.seconds` | duration 的秒数 | `duration.seconds(span)` |
+| `duration.to_string(d)` / `d.to_string()` | duration 格式化为 `H:MM:SS.mmm` | `duration.to_string(span)` |
+| `decimal.parse(text)` | 解析定点 decimal 文本为原生 decimal | `decimal.parse("123.45")` |
+| `decimal.mantissa(d)` / `d.mantissa` | 规范化后的 decimal mantissa | `decimal.mantissa(price)` |
+| `decimal.scale(d)` / `d.scale` | 规范化后的 decimal scale | `decimal.scale(price)` |
+| `decimal.to_string(d)` / `d.to_string()` | decimal 格式化为规范化文本 | `decimal.to_string(price)` |
+
+`datetime.parse`、`datetime.to_time`、`datetime.format_rfc822` 由脚本 parser 模块导出，
+底层使用 TurboNet 的 datetime parser/format helper。TBE schema 标量
+`datetime`、`date`、`time`、`duration`、`decimal`、`bigint`、`money` 在 `tbe/data_bind` 中实现；DataBind 直接使用
+TurboNet::Parser，把 JSON/XML/CSV 文本绑定为原生运行时值。schema emit 会把它们写回字符串。
+
+schema 字符串字段也可以使用字段格式，例如 `[format(ipaddr)] string ip;` 或
+`[format(url)] string href;`。这些格式只做 JSON/CSV/XML/default 文本校验，
+绑定结果仍是普通字符串。支持的格式包括 `ipaddr`、`ip`、`cidr`、`hostname`、
+`domain`、`email`、`url`、`uri`、`macaddr`、`mac`、`semver`、`hex`、`base64`、
+`base64url`、`currency`、`json_pointer`、`jsonpath`、`xpath`、`cron`、`color`、
+`mime` 和 `regex`；`regex` 通过 libfsm/libre 编译校验。`schema.fields(...)` 会在字段存在格式时返回
+`format`。
 
 ---
 

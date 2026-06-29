@@ -23,10 +23,11 @@ TurboScript 已经从表达式求值器演进为一门动态类型脚本语言�
 | vector | `[1, 2, 3]` | 数值数组，适合统计和 TA 运算 |
 | list | `list("x", 1, map{})` | 异构集合 |
 | map | `map{name: "Alice"}` | 键值结构 |
+| object | parser/data_bind 返回值 | 宿主模块产出的 plain record object |
 | null | `null`, `nil` | 空值 |
 | class value / instance | `Counter`, `Counter(1)` | OOP 运行时值 |
 
-类型内省函数包括 `typeof`、`is_number`、`is_string`、`is_vector`、`is_map`、`is_list`、`is_null`。
+类型内省函数包括 `typeof`、`is_number`、`is_string`、`is_vector`、`is_map`、`is_object`、`is_list`、`is_null`。
 
 ## 变量与赋值
 
@@ -236,30 +237,28 @@ var ok = s instanceof Shape;
 import("parser");
 
 var schema_id = schema.parse(schema_text);
-var csv_id = parser.csv_parse(csv_text);
-var json_id = json.parse(json_text);
+var data = json.parse(json_text);
 
-var rows = csv.bind_all(schema_id, csv_id, "Order");
-var row = json.bind(schema_id, json_id, "Order");
+var rows = csv.bind_all_schema(schema_id, csv_text, "Order");
+var row = json.bind_schema(schema_id, json_text, "Order");
 var ok = json.validate(schema_text, json_text, "Order");
 
-parser.csv_close(csv_id);
-json.close(json_id);
 schema.close(schema_id);
 ```
 
-当前 parser 模块已完成 JSON/CSV schema binding 主线：
+当前 parser 模块已完成 JSON/CSV/XML schema binding 主线：
 
 - `json.bind` / `json.bind_all` / `json.emit` / `json.validate` / `json.validate_ex`
 - `json.parse` / `json.stringify`
 - `csv.bind` / `csv.bind_all` / `csv.emit` / `csv.validate` / `csv.validate_ex`
+- `xml.bind` / `xml.bind_all` / `xml.validate` / `xml.validate_ex`
 - schema text 与 schema handle 两种入口
 - record/composite/group、fixed array、list、set、map
 - scalar、enum、flags、union
 - optional/default 字段
 
 绑定失败不会制造伪有效值：非法 scalar、非法 record、错误 container shape 会绑定失败；`bind_all` 跳过无法绑定的元素，`validate_ex` 返回诊断。
-通用 JSON 映射已支持：JSON object/array 可直接转换为脚本 `map`/`list`，脚本 scalar、`map`、`list`、`vector` 可通过 `json.stringify` 输出 JSON。
+通用 JSON 映射已支持：JSON object/array 可直接转换为脚本 `object`/`list`，脚本 scalar、plain object、`map`、`list`、`vector` 可通过 `json.stringify` 输出 JSON。schema record、union、XML 查询节点和 schema reflection 结果也使用 plain object；TBE `map<K,V>` 字段仍使用脚本 `map` 表达 schema map 容器。
 
 ## MIR 解释器与 JIT 一致性
 

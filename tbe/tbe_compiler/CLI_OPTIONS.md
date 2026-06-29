@@ -27,7 +27,7 @@ tbe_compiler <schema_file> [options]
 
 - `--lang <language>` or `-l <language>`
   - Target language or module artifact format
-  - Options: `c`, `python`, `rust`, `mir`, `bmir`
+  - Options: `c`, `cpp`, `go`, `rust`, `python`, `py`, `ts`, `typescript`, `mir`, `bmir`
   - Default: `c`
   - Example: `--lang c`
 
@@ -74,13 +74,43 @@ end
 tbe_compiler order.schema --output order.h --dsl-output order.rfl
 ```
 
-### Example 4: Generate MIR IR Module
+### Example 4: Generate C++ Types
+
+```bash
+tbe_compiler order.schema --lang cpp --output order.hpp
+```
+
+### Example 5: Generate Go Types
+
+```bash
+tbe_compiler order.schema --lang go --output order.go
+```
+
+### Example 6: Generate TypeScript Types
+
+```bash
+tbe_compiler order.schema --lang ts --output order.ts
+```
+
+### Example 7: Generate Rust Types
+
+```bash
+tbe_compiler order.schema --lang rust --output order.rs
+```
+
+### Example 8: Generate Python Types
+
+```bash
+tbe_compiler order.schema --lang py --output order.py
+```
+
+### Example 9: Generate MIR IR Module
 
 ```bash
 tbe_compiler order.schema --lang mir --output order.mir
 ```
 
-### Example 5: Generate Binary MIR Module
+### Example 10: Generate Binary MIR Module
 
 ```bash
 tbe_compiler order.schema --lang bmir --output order.bmir
@@ -97,4 +127,6 @@ tbe_compiler order.schema --lang bmir --output order.bmir
 
 - `--dsl-output` uses `templates/rfl_types.mustache` by default.
 - DSL output is intended for use in RulesForge to define the structure of data being processed.
+- C output is the complete wire-access target with generated view/builder APIs.
+- C++, Go, Rust, Python, and TypeScript outputs currently generate schema type definitions, not complete wire codecs.
 - MIR outputs are loadable modules, not standalone executables. The host must bind runtime callbacks such as `create_obj`, `set_int`, `set_dbl`, `set_str`, and `read_varstr`, then link or JIT the module before calling generated functions such as `parse_Order`.

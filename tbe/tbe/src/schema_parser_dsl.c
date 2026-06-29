@@ -227,6 +227,10 @@ static const type_info_t *find_type_info(const char *type_name) {
 
 static int primitive_type_size(const char *type_name, size_t *out) {
     const type_info_t *info = find_type_info(type_name);
+    if (type_name && strcmp(type_name, "uuid") == 0 && out) {
+        *out = 16;
+        return 1;
+    }
     if (!info || !out) return 0;
     *out = info->size;
     return 1;
@@ -234,14 +238,14 @@ static int primitive_type_size(const char *type_name, size_t *out) {
 
 static int primitive_type_wire_reader(const char *type_name, const char **out) {
     const type_info_t *info = find_type_info(type_name);
-    if (!info || !out) return 0;
+    if (!info || !info->wire_reader || !out) return 0;
     *out = info->wire_reader;
     return 1;
 }
 
 static int primitive_type_host_type(const char *type_name, const char **out) {
     const type_info_t *info = find_type_info(type_name);
-    if (!info || !out) return 0;
+    if (!info || !info->host_type || !out) return 0;
     *out = info->host_type;
     return 1;
 }
