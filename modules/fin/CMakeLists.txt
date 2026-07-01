@@ -1,6 +1,6 @@
 # fin_plugin — import("fin")
 set(TARGET_NAME fin)
-set(TARGET_NAME_PLUGIN fin_plugin)
+set(TARGET_NAME_PLUGIN fin_tbs)
 
 find_path(SIMDE_INCLUDE_DIRS "simde/simde-common.h")
 if(SIMDE_INCLUDE_DIRS)

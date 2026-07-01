@@ -13,5 +13,5 @@ set_target_properties(test_net_module PROPERTIES FOLDER modules/net)
 add_custom_command(
   TARGET test_net_module
   POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_plugin>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>
           $<TARGET_FILE_DIR:test_net_module>)

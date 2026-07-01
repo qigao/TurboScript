@@ -1,6 +1,6 @@
-# ts_plugin — import("ts")
+# ts_tbs — import("ts")
 set(TARGET_NAME ts)
-set(TARGET_NAME_PLUGIN ts_plugin)
+set(TARGET_NAME_PLUGIN ts_tbs)
 
 find_path(SIMDE_INCLUDE_DIRS "simde/simde-common.h")
 if(SIMDE_INCLUDE_DIRS)
@@ -32,7 +32,7 @@ if(UNIX)
   target_link_libraries(${TARGET_NAME} PRIVATE m)
 endif()
 # ── SHARED plugin DLL (loaded at runtime via ts_plugin_load) ─────
-add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES}) 
+add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}

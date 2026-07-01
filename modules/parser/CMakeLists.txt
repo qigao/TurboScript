@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 set(TARGET_NAME parser)
-set(TARGET_NAME_PLUGIN parser_plugin)
+set(TARGET_NAME_PLUGIN parser_tbs)
 
 set(PARSER_SOURCES
     src/parser_core.c
@@ -27,13 +27,13 @@ cmake_config_target(
   EXPORT_NAME Parser
   NO_INSTALL)
 
-target_include_directories(${TARGET_NAME} 
+target_include_directories(${TARGET_NAME}
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
            $<INSTALL_INTERFACE:include>
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
 
-target_link_libraries(${TARGET_NAME} 
+target_link_libraries(${TARGET_NAME}
     PUBLIC exprtk TurboNet::Utils TurboNet::Parser
     PRIVATE TurboScript::SchemaBE TurboScript::DataBind
 )
@@ -77,5 +77,5 @@ if(BUILD_TESTING)
 endif()
 
 # Install headers
-cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ 
+cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
                      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/parser)

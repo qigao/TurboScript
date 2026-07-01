@@ -54,6 +54,10 @@ struct turbo_script_ctx_s {
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
+  /* 1 when ctx->expr is already tracked in compiled_asts[] (owned by that array).
+   * In that case turbo_script_free and ts_prepare_expr must NOT call exprtk_free(ctx->expr)
+   * directly — compiled_asts[] cleanup handles it. */
+  int expr_in_compiled_asts;
   imported_module_t *imports;
   mem_pool_t scratch_arena;
   char *current_script_dir;
@@ -114,8 +118,12 @@ int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_e
 
 /* Internal JIT API - for testing and advanced use */
 CXX_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);
+CXX_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+                                           const char *script);
 CXX_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx);
 CXX_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script);
+CXX_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+                                                  const char *script);
 CXX_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx);
 CXX_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out);
 CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script);

@@ -2472,7 +2472,10 @@ static int parser_node_size_value(Node *node, const char *name, size_t *out);
 
 static exprtk_value_t parser_bind_json_array(Node *schema_root, Node *field, json_value_t *value,
                                              exprtk_env_t *env) {
-    exprtk_value_t result = exprtk_val_list_empty();
+    const char *collection_kind = parser_node_string(field, "collection_kind");
+    exprtk_value_t result =
+        collection_kind && strcmp(collection_kind, "set") == 0 ? exprtk_val_set_empty()
+                                                               : exprtk_val_list_empty();
     const char *inner_type = parser_node_string(field, "inner_type");
     parser_bind_kind_t scalar_kind;
     size_t expected = 0;
@@ -2859,12 +2862,15 @@ static int parser_bind_csv_field_at_path(Node *schema_root, Node *field, turbo_c
         return parser_bind_csv_map_at_path(schema_root, field, doc, row, env, headers, path, out);
 
     if (parser_node_has(field, "is_collection") && !parser_node_has(field, "is_map")) {
+        const char *collection_kind = parser_node_string(field, "collection_kind");
         const char *inner_type = parser_node_string(field, "inner_type");
         parser_bind_kind_t scalar_kind = parser_type_kind(schema_root, inner_type);
         size_t count = 0;
         int fixed_count = 0;
         parser_index_list_t indexes = {0};
-        exprtk_value_t list = exprtk_val_list_empty();
+        exprtk_value_t list =
+            collection_kind && strcmp(collection_kind, "set") == 0 ? exprtk_val_set_empty()
+                                                                   : exprtk_val_list_empty();
         int any = 0;
 
         if (!inner_type) return 0;
@@ -2927,6 +2933,20 @@ static int parser_bind_csv_field_at_path(Node *schema_root, Node *field, turbo_c
 
     return parser_bind_csv_scalar_at_path(schema_root, doc, row, path,
                                           field_type, parser_field_kind(schema_root, field), env, out);
+}
+
+static int parser_value_is_sequence(exprtk_value_t value) {
+    return value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET;
+}
+
+static size_t parser_value_sequence_count(exprtk_value_t value) {
+    return parser_value_is_sequence(value) ? value.data.list.count : 0;
+}
+
+static exprtk_value_t parser_value_sequence_item(exprtk_value_t value, size_t index) {
+    return parser_value_is_sequence(value) && index < value.data.list.count
+               ? value.data.list.items[index]
+               : parser_null();
 }
 
 static int parser_bind_csv_record_at_path(Node *schema_root, Node *record, turbo_csv_doc_t *doc,
@@ -3537,7 +3557,7 @@ static int parser_json_emit_array(Node *schema_root, Node *field, exprtk_value_t
 
     if (!inner_type) return parser_buf_append(out, "[]");
     if (!parser_buf_append_char(out, '[')) return 0;
-    if (value.type == EXPRTK_VAL_LIST) {
+    if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET) {
         for (size_t i = 0; i < value.data.list.count; ++i) {
             if (i > 0 && !parser_buf_append_char(out, ',')) return 0;
             if (parser_node_has(field, "collection_element_is_composite") ||
@@ -3869,7 +3889,7 @@ static int parser_csv_emit_headers_for_field(Node *schema_root, Node *field, con
         const char *group_type = parser_node_string(field, "group_type");
         Node *group_record = parser_find_record(schema_root, group_type);
 
-        if (!group_record || value.type != EXPRTK_VAL_LIST) return 1;
+        if (!group_record || !parser_value_is_sequence(value)) return 1;
         for (size_t i = 0; i < value.data.list.count; ++i) {
             char item_path[256];
             if (!parser_csv_index_path(item_path, sizeof(item_path), path, i)) return 0;
@@ -3912,7 +3932,7 @@ static int parser_csv_emit_headers_for_field(Node *schema_root, Node *field, con
         size_t count = 0;
         if (!inner_type) return 1;
         if (!parser_node_size_value(field, "length_field", &count))
-            count = value.type == EXPRTK_VAL_LIST ? value.data.list.count : 0;
+            count = parser_value_sequence_count(value);
         for (size_t i = 0; i < count; ++i) {
             char item_path[256];
             if (!parser_csv_index_path(item_path, sizeof(item_path), path, i)) return 0;
@@ -3922,9 +3942,7 @@ static int parser_csv_emit_headers_for_field(Node *schema_root, Node *field, con
                                                         parser_null(), out, first))
                     return 0;
             } else if (parser_find_union(schema_root, inner_type)) {
-                exprtk_value_t item = (value.type == EXPRTK_VAL_LIST && i < value.data.list.count)
-                                          ? value.data.list.items[i]
-                                          : parser_null();
+                exprtk_value_t item = parser_value_sequence_item(value, i);
                 if (!parser_csv_emit_headers_for_union(schema_root,
                                                        parser_find_union(schema_root, inner_type),
                                                        item_path, item, out, first))
@@ -4047,7 +4065,7 @@ static int parser_csv_emit_values_for_field(Node *schema_root, Node *field, expr
         const char *group_type = parser_node_string(field, "group_type");
         Node *group_record = parser_find_record(schema_root, group_type);
 
-        if (!group_record || value.type != EXPRTK_VAL_LIST) return 1;
+        if (!group_record || !parser_value_is_sequence(value)) return 1;
         for (size_t i = 0; i < value.data.list.count; ++i) {
             if (!parser_csv_emit_values_for_record(schema_root, group_record,
                                                    value.data.list.items[i], out, first))
@@ -4087,11 +4105,9 @@ static int parser_csv_emit_values_for_field(Node *schema_root, Node *field, expr
         size_t count = 0;
         if (!inner_type) return 1;
         if (!parser_node_size_value(field, "length_field", &count))
-            count = value.type == EXPRTK_VAL_LIST ? value.data.list.count : 0;
+            count = parser_value_sequence_count(value);
         for (size_t i = 0; i < count; ++i) {
-            exprtk_value_t item = (value.type == EXPRTK_VAL_LIST && i < value.data.list.count)
-                                      ? value.data.list.items[i]
-                                      : parser_null();
+            exprtk_value_t item = parser_value_sequence_item(value, i);
             if (parser_node_has(field, "collection_element_is_composite")) {
                 if (!parser_csv_emit_values_for_record(schema_root, parser_find_record(schema_root, inner_type),
                                                        item, out, first)) return 0;
@@ -4218,7 +4234,7 @@ static int parser_value_lookup_path(exprtk_value_t value, const char *path, expr
         if (*p == '[') {
             char *end = NULL;
             unsigned long index;
-            if (current.type != EXPRTK_VAL_LIST) return 0;
+            if (!parser_value_is_sequence(current)) return 0;
             ++p;
             errno = 0;
             index = strtoul(p, &end, 10);
@@ -4263,7 +4279,7 @@ static int parser_csv_value_lookup_header_path(exprtk_value_t value, const char 
         if (*p == '[') {
             char *end = NULL;
             unsigned long index;
-            if (current.type != EXPRTK_VAL_LIST) return 0;
+            if (!parser_value_is_sequence(current)) return 0;
             ++p;
             errno = 0;
             index = strtoul(p, &end, 10);
@@ -4283,7 +4299,7 @@ static int parser_csv_value_lookup_header_path(exprtk_value_t value, const char 
         current = exprtk_map_get(&current, key);
         p += len;
 
-        if (*p == '_' && current.type == EXPRTK_VAL_LIST && p[1] >= '0' && p[1] <= '9') {
+        if (*p == '_' && parser_value_is_sequence(current) && p[1] >= '0' && p[1] <= '9') {
             char *end = NULL;
             unsigned long index;
             ++p;
@@ -4357,7 +4373,7 @@ static int parser_csv_emit_record_list_value(Node *schema_root, Node *record,
     parser_csv_headers_t headers = {0};
     int ok = 1;
 
-    if (value.type != EXPRTK_VAL_LIST) return 0;
+    if (!parser_value_is_sequence(value)) return 0;
     if (value.data.list.count == 0) {
         int first = 1;
         return parser_csv_emit_headers_for_record(schema_root, record, "", parser_null(), out, &first);
@@ -4384,7 +4400,7 @@ static int parser_csv_emit_record_list_value(Node *schema_root, Node *record,
 static int parser_csv_emit_value(Node *schema_root, Node *record, exprtk_value_t value,
                                  parser_filter_buf_t *out) {
     int first = 1;
-    if (value.type == EXPRTK_VAL_LIST)
+    if (parser_value_is_sequence(value))
         return parser_csv_emit_record_list_value(schema_root, record, value, out);
     if (!parser_csv_emit_headers_for_record(schema_root, record, "", value, out, &first)) return 0;
 
@@ -4397,14 +4413,14 @@ static int parser_csv_emit_value(Node *schema_root, Node *record, exprtk_value_t
 static int parser_csv_emit_union_value(Node *schema_root, Node *union_node, exprtk_value_t value,
                                        parser_filter_buf_t *out) {
     int first = 1;
-    if (value.type == EXPRTK_VAL_LIST) {
+    if (parser_value_is_sequence(value)) {
         if (!parser_csv_emit_headers_for_union_schema(schema_root, union_node, "", out, &first))
             return 0;
     } else if (!parser_csv_emit_headers_for_union(schema_root, union_node, "", value, out, &first)) {
         return 0;
     }
 
-    if (value.type == EXPRTK_VAL_LIST) {
+    if (parser_value_is_sequence(value)) {
         for (size_t i = 0; i < value.data.list.count; ++i) {
             first = 1;
             if (!parser_buf_append_char(out, '\n')) return 0;
@@ -4423,7 +4439,7 @@ static int parser_csv_emit_union_value(Node *schema_root, Node *union_node, expr
 
 static int parser_csv_emit_scalar_value(exprtk_value_t value, parser_filter_buf_t *out) {
     if (!parser_buf_append(out, "value")) return 0;
-    if (value.type == EXPRTK_VAL_LIST) {
+    if (parser_value_is_sequence(value)) {
         for (size_t i = 0; i < value.data.list.count; ++i) {
             if (!parser_buf_append_char(out, '\n')) return 0;
             if (!parser_csv_emit_cell(out, value.data.list.items[i])) return 0;
@@ -7068,7 +7084,8 @@ static exprtk_value_t fn_json_validate(size_t argc, exprtk_value_t *args, void *
 
     codec = parser_data_bind_from_schema_text(ud, args[0]);
     if (!codec) return exprtk_val_int(0);
-    result = parser_data_bind_validate_text(ud, codec, args[1], args[2], data_bind_validate_json);
+    result = parser_data_bind_validate_text(ud, codec, args[1], args[2],
+                                            data_bind_validate_json);
     data_bind_free(codec);
     return result;
 }
@@ -7082,9 +7099,8 @@ static exprtk_value_t fn_json_validate_schema(size_t argc, exprtk_value_t *args,
 
     if (!ud || argc != 3 || !parser_arg_int(args[0], &handle))
         return exprtk_val_int(0);
-    return parser_data_bind_validate_text(
-        ud, parser_get_schema_codec(ud->ctx, handle), args[1], args[2],
-        data_bind_validate_json);
+    return parser_data_bind_validate_text(ud, parser_get_schema_codec(ud->ctx, handle),
+                                          args[1], args[2], data_bind_validate_json);
 }
 
 /**
@@ -7092,7 +7108,7 @@ static exprtk_value_t fn_json_validate_schema(size_t argc, exprtk_value_t *args,
  */
 static exprtk_value_t fn_json_validate_ex(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
-    DataBind *codec;
+    Node *schema_root = NULL;
     exprtk_value_t result = exprtk_val_object();
     parser_validate_detail_t detail = {{0}, {0}};
 
@@ -7102,15 +7118,13 @@ static exprtk_value_t fn_json_validate_ex(size_t argc, exprtk_value_t *args, voi
         return parser_validate_detail_map(ud, 0, &detail);
     }
 
-    codec = parser_data_bind_from_schema_text(ud, args[0]);
-    if (!codec) {
+    schema_root = parser_parse_schema_value(args[0]);
+    if (!schema_root) {
         parser_validate_set_error(&detail, "", "invalid schema");
         return parser_validate_detail_map(ud, 0, &detail);
     }
-    result = parser_data_bind_validate_detail(ud, codec, args[1], args[2],
-                                              "expected (schema, json, type)",
-                                              data_bind_validate_json);
-    data_bind_free(codec);
+    result = parser_json_validate_ex_with_schema(ud, schema_root, args[1], args[2]);
+    node_free(schema_root);
     return result;
 }
 
@@ -7120,16 +7134,19 @@ static exprtk_value_t fn_json_validate_ex(size_t argc, exprtk_value_t *args, voi
 static exprtk_value_t fn_json_validate_ex_schema(size_t argc, exprtk_value_t *args, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     int handle;
+    Node *schema_root;
     parser_validate_detail_t detail = {{0}, {0}};
 
     if (!ud || argc != 3 || !parser_arg_int(args[0], &handle)) {
         parser_validate_set_error(&detail, "", "expected (schema_handle, json, type)");
         return parser_validate_detail_map(ud, 0, &detail);
     }
-    return parser_data_bind_validate_detail(ud, parser_get_schema_codec(ud->ctx, handle),
-                                            args[1], args[2],
-                                            "expected (schema_handle, json, type)",
-                                            data_bind_validate_json);
+    schema_root = parser_get_schema_handle(ud->ctx, handle);
+    if (!schema_root) {
+        parser_validate_set_error(&detail, "", "unknown schema handle");
+        return parser_validate_detail_map(ud, 0, &detail);
+    }
+    return parser_json_validate_ex_with_schema(ud, schema_root, args[1], args[2]);
 }
 
 /**

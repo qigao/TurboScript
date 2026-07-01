@@ -1,4 +1,4 @@
-# DLL-based integration test — loads sqlite_plugin at runtime
+# DLL-based integration test — loads sqlite_tbs at runtime
 add_executable(test_sqlite_module test_sqlite.c)
 target_link_libraries(test_sqlite_module PRIVATE   exprtk
                                               TurboNet::TinyTest)
@@ -10,5 +10,5 @@ set_target_properties(test_sqlite_module PROPERTIES FOLDER
 add_custom_command(
   TARGET test_sqlite_module
   POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:sqlite_plugin>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:sqlite_tbs>
           $<TARGET_FILE_DIR:test_sqlite_module>)

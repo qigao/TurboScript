@@ -6,9 +6,9 @@
 #include <stdlib.h>
 
 #ifdef _WIN32
-  #define DATA_BIND_PLUGIN_DLL "data_bind_plugin.dll"
+  #define DATA_BIND_PLUGIN_DLL "data_bind_tbs.dll"
 #else
-  #define DATA_BIND_PLUGIN_DLL "libdata_bind_plugin.so"
+  #define DATA_BIND_PLUGIN_DLL "libdata_bind_tbs.so"
 #endif
 
 typedef struct {

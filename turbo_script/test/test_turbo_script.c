@@ -4459,6 +4459,26 @@ spec("turbo_script") {
     }
   }
 
+  describe("Net Plugin (HTTP via Script)") {
+    it("should fetch mockhttp.org using http.get from script") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+
+      const char *script = ""
+                           "import(\"net\");\n"
+                           "var res = http.get(\"https://mockhttp.org/\", {timeout: 5000});\n"
+                           "var is_ok = (res.status == 200);\n"
+                           "var has_headers = (map.size(res.headers) > 0);\n";
+
+      int run_res = turbo_script_run(ctx, script);
+      if (run_res != 0) printf("Net Plugin Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(run_res, 0);
+      check_float_eq(ts_get_num(ctx, "is_ok"), 1.0, 0.1);
+      check_float_eq(ts_get_num(ctx, "has_headers"), 1.0, 0.1);
+
+      turbo_script_free(ctx);
+    }
+  }
+
   describe("DSV Filter via Script API") {
     it("should filter rows based on number column") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);

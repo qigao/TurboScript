@@ -1,4 +1,4 @@
-set(TARGET_NAME rules_forge_plugin)
+set(TARGET_NAME rules_forge_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 find_package(RulesForge CONFIG REQUIRED PATHS "${RulesForge_ROOT}")

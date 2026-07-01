@@ -2,7 +2,7 @@
 cmake_minimum_required(VERSION 3.15)
 
 set(TARGET_NAME coro)
-set(TARGET_NAME_PLUGIN coro_plugin)
+set(TARGET_NAME_PLUGIN coro_tbs)
 
 set(CORO_SOURCES
     src/minicoro_impl.c

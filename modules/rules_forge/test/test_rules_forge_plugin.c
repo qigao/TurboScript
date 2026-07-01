@@ -5,9 +5,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-  #define RULES_FORGE_PLUGIN_DLL "rules_forge_plugin.dll"
+  #define RULES_FORGE_PLUGIN_DLL "rules_forge_tbs.dll"
 #else
-  #define RULES_FORGE_PLUGIN_DLL "librules_forge_plugin.so"
+  #define RULES_FORGE_PLUGIN_DLL "librules_forge_tbs.so"
 #endif
 
 static exprtk_func_t *find_native(exprtk_env_t *env, const char *name) {

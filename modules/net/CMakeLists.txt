@@ -1,4 +1,4 @@
-set(TARGET_NAME net_plugin)
+set(TARGET_NAME net_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*

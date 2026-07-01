@@ -1,5 +1,5 @@
-# wasm_plugin — import("wasm")
-set(TARGET_NAME wasm_plugin)
+# wasm_tbs — import("wasm")
+set(TARGET_NAME wasm_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*

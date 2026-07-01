@@ -1,9 +1,9 @@
-# data_bind_plugin — import("data_bind")
+# data_bind_tbs — import("data_bind")
 #
 # Provides binary-to-script-object parsing using JIT-compiled TBE schemas.
 # Depends on: TurboScript::DataBind (the tbe/data_bind library) and exprtk.
 
-set(TARGET_NAME data_bind_plugin)
+set(TARGET_NAME data_bind_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 file(GLOB_RECURSE SOURCE_FILES

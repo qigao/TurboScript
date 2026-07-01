@@ -62,6 +62,25 @@ spec("net_ctx") {
             mem_destroy(&arena);
         }
 
+        it("should allocate multiple strings from same arena") {
+            mem_pool_t arena = {0};
+            mem_init(&arena, 256);
+
+            tstr_v sv1 = tstr_v_from_buf("hello", 5);
+            tstr_v sv2 = tstr_v_from_buf("world", 5);
+
+            char *cstr1 = net_arena_cstr(&arena, sv1);
+            char *cstr2 = net_arena_cstr(&arena, sv2);
+
+            check_not_null(cstr1);
+            check_not_null(cstr2);
+            check(cstr1 != cstr2);
+            check_str_eq(cstr1, "hello");
+            check_str_eq(cstr2, "world");
+
+            mem_destroy(&arena);
+        }
+
         it("should handle empty string view") {
             mem_pool_t arena = {0};
             mem_init(&arena, 256);

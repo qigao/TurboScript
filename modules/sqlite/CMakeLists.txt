@@ -1,5 +1,5 @@
-# sqlite_plugin — import("sqlite")
-set(TARGET_NAME sqlite_plugin)
+# sqlite_tbs — import("sqlite")
+set(TARGET_NAME sqlite_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*

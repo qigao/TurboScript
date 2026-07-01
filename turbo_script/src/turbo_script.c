@@ -8,6 +8,7 @@
 #include <mir-gen.h>
 #include <mir.h>
 
+#include <ctype.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -78,8 +79,11 @@ static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
   }
 
   if (ctx->expr) {
-    exprtk_free(ctx->expr);
+    if (!ctx->expr_in_compiled_asts) {
+      exprtk_free(ctx->expr);
+    }
     ctx->expr = NULL;
+    ctx->expr_in_compiled_asts = 0;
   }
   free(ctx->expr_source);
   ctx->expr_source = NULL;
@@ -91,6 +95,7 @@ static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
   if (!ctx->expr_source) {
     exprtk_free(ctx->expr);
     ctx->expr = NULL;
+    ctx->expr_in_compiled_asts = 0;
     set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "Out of memory");
     return -1;
   }
@@ -100,7 +105,9 @@ static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
 
 void turbo_script_free(turbo_script_ctx_t *ctx) {
   if (!ctx) return;
-  if (ctx->expr) exprtk_free(ctx->expr);
+  /* expr is freed by compiled_asts[] loop below if expr_in_compiled_asts == 1;
+   * otherwise free it directly here. */
+  if (ctx->expr && !ctx->expr_in_compiled_asts) exprtk_free(ctx->expr);
   free(ctx->expr_source);
 
   // Free JIT cache copied script strings
@@ -184,9 +191,127 @@ static void clear_error(turbo_script_ctx_t *ctx) {
     (ctx)->env.aborted = 1;                                                                        \
   } while (0)
 
+static int ts_is_ident_start(unsigned char c) { return isalpha(c) || c == '_'; }
+
+static int ts_is_ident_part(unsigned char c) { return isalnum(c) || c == '_'; }
+
+static const char *ts_skip_ws_and_comments(const char *p) {
+  for (;;) {
+    while (*p && isspace((unsigned char)*p)) ++p;
+    if (p[0] == '/' && p[1] == '/') {
+      p += 2;
+      while (*p && *p != '\n') ++p;
+      continue;
+    }
+    if (p[0] == '/' && p[1] == '*') {
+      p += 2;
+      while (*p && !(p[0] == '*' && p[1] == '/')) ++p;
+      if (*p) p += 2;
+      continue;
+    }
+    return p;
+  }
+}
+
+static int ts_brace_starts_map_arg(const char *brace) {
+  const char *p = ts_skip_ws_and_comments(brace + 1);
+  if (p[0] == '.' && p[1] == '.' && p[2] == '.') return 1;
+  if (!ts_is_ident_start((unsigned char)*p)) return 0;
+  ++p;
+  while (ts_is_ident_part((unsigned char)*p)) ++p;
+  p = ts_skip_ws_and_comments(p);
+  return *p == ':';
+}
+
+static char ts_prev_significant_char(const char *start, const char *p) {
+  while (p > start) {
+    --p;
+    if (!isspace((unsigned char)*p)) return *p;
+  }
+  return '\0';
+}
+
+static int ts_buf_append(char **buf, size_t *len, size_t *cap, const char *data, size_t n) {
+  if (n == 0) return 1;
+  if (*len + n + 1 > *cap) {
+    size_t new_cap = *cap ? *cap : 256;
+    char *new_buf;
+    while (*len + n + 1 > new_cap) new_cap *= 2;
+    new_buf = (char *)realloc(*buf, new_cap);
+    if (!new_buf) return 0;
+    *buf = new_buf;
+    *cap = new_cap;
+  }
+  memcpy(*buf + *len, data, n);
+  *len += n;
+  (*buf)[*len] = '\0';
+  return 1;
+}
+
+static char *ts_normalize_braced_map_args(const char *script, int *changed_out) {
+  const char *p = script;
+  const char *chunk = script;
+  char *out = NULL;
+  size_t out_len = 0;
+  size_t out_cap = 0;
+  int changed = 0;
+
+  if (changed_out) *changed_out = 0;
+
+  while (*p) {
+    if (*p == '"' || *p == '`' || *p == '\'') {
+      char quote = *p++;
+      while (*p) {
+        if (*p == '\\' && p[1]) {
+          p += 2;
+          continue;
+        }
+        if (*p++ == quote) break;
+      }
+      continue;
+    }
+    if (p[0] == '/' && p[1] == '/') {
+      p += 2;
+      while (*p && *p != '\n') ++p;
+      continue;
+    }
+    if (p[0] == '/' && p[1] == '*') {
+      p += 2;
+      while (*p && !(p[0] == '*' && p[1] == '/')) ++p;
+      if (*p) p += 2;
+      continue;
+    }
+    if (*p == '{') {
+      char prev = ts_prev_significant_char(script, p);
+      if ((prev == '(' || prev == ',') && ts_brace_starts_map_arg(p)) {
+        if (!ts_buf_append(&out, &out_len, &out_cap, chunk, (size_t)(p - chunk)) ||
+            !ts_buf_append(&out, &out_len, &out_cap, "map", 3)) {
+          free(out);
+          if (changed_out) *changed_out = 1;
+          return NULL;
+        }
+        chunk = p;
+        changed = 1;
+      }
+    }
+    ++p;
+  }
+
+  if (!changed) return NULL;
+  if (changed_out) *changed_out = 1;
+  if (!ts_buf_append(&out, &out_len, &out_cap, chunk, (size_t)(p - chunk))) {
+    free(out);
+    return NULL;
+  }
+  return out;
+}
+
 exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script) {
   mem_pool_t *arena = NULL;
   exprtk_node_t *root = NULL;
+  char *normalized = NULL;
+  const char *parse_script = script;
+  int normalized_changed = 0;
   int err = 0;
 
   if (!ctx || !script) return NULL;
@@ -204,7 +329,17 @@ exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char
     return NULL;
   }
 
-  root = exprtk_parse_ext(script, 0, arena, &err, ctx->error_msg, sizeof(ctx->error_msg));
+  normalized = ts_normalize_braced_map_args(script, &normalized_changed);
+  if (normalized_changed && !normalized) {
+    mem_destroy(arena);
+    free(arena);
+    set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "Out of memory");
+    return NULL;
+  }
+  if (normalized) parse_script = normalized;
+
+  root = exprtk_parse_ext(parse_script, 0, arena, &err, ctx->error_msg, sizeof(ctx->error_msg));
+  free(normalized);
   if (!err && root) return root;
 
   if (ctx->error_msg[0] == '\0') set_error(ctx, TURBO_SCRIPT_ERROR_PARSE, "Parse error");
@@ -229,7 +364,7 @@ static const char *ts_plugin_file_name(mem_pool_t *a, const char *name, const ch
                                        int use_target_suffix) {
   size_t name_len, suffix_len, target_suffix_len;
   char *buf;
-  const char target_suffix[] = "_plugin";
+  const char target_suffix[] = "_tbs";
 
   if (!a || !name || !suffix) return NULL;
 
@@ -833,6 +968,10 @@ int turbo_script_run(turbo_script_ctx_t *ctx, const char *script) {
     return -1;
   }
   clear_error(ctx);
+
+  if (ts_prepare_expr(ctx, script) != 0) {
+    return -1;
+  }
   return turbo_script_run_mir_interp(ctx, script);
 }
 
@@ -856,7 +995,7 @@ int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script) {
   }
 
   double mir_result = 0.0;
-  int ret = turbo_script_compile_mir_interp(ctx, script);
+  int ret = turbo_script_compile_mir_interp_ast(ctx, ctx->expr, script);
   if (ret == 0) ret = turbo_script_exec_mir_interp_result(ctx, &mir_result);
   if (!ctx->env.aborted && ctx->expr) {
     int is_block = ctx->expr->type == EXPRTK_NODE_BLOCK;

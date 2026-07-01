@@ -1,5 +1,5 @@
 set(TARGET_NAME img)
-set(TARGET_NAME_PLUGIN img_plugin)
+set(TARGET_NAME_PLUGIN img_tbs)
 
 file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*
      ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h*)

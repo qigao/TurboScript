@@ -1658,6 +1658,20 @@ static exprtk_value_t fn_map(size_t argc, exprtk_value_t *args,
     return exprtk_val_num(0);
 }
 
+static exprtk_value_t fn_map_size(size_t argc, exprtk_value_t *args,
+                                  exprtk_env_t *env, mem_pool_t *arena) {
+    (void)env;
+    (void)arena;
+    if (argc != 1) return exprtk_val_num(0);
+    if (exprtk_value_is_object_like(&args[0])) return exprtk_val_num((double)exprtk_map_count(&args[0]));
+    if (args[0].type == EXPRTK_VAL_LIST || args[0].type == EXPRTK_VAL_SET)
+        return exprtk_val_num((double)args[0].data.list.count);
+    if (args[0].type == EXPRTK_VAL_VECTOR) return exprtk_val_num((double)args[0].data.vector.size);
+    if (args[0].type == EXPRTK_VAL_STRING) return exprtk_val_num((double)args[0].data.string.len);
+    if (args[0].type == EXPRTK_VAL_BYTES) return exprtk_val_num((double)args[0].data.bytes.len);
+    return exprtk_val_num(0);
+}
+
 static exprtk_value_t fn_filter(size_t argc, exprtk_value_t *args,
                                  exprtk_env_t *env, mem_pool_t *arena) {
     if (argc == 2 && args[0].type == EXPRTK_VAL_VECTOR &&
@@ -1954,6 +1968,7 @@ static const exprtk_func_entry_t core_entries[] = {
     { "lag",       fn_lag },
     { "list",      fn_list },
     { "map",       fn_map },
+    { "map.size",  fn_map_size },
     { "money",     fn_money_create },
     { "money.create", fn_money_create },
     { "money.to_string", fn_money_to_string },

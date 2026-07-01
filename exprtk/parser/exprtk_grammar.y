@@ -49,6 +49,21 @@ static char *exprtk_strdup(exprtk_parse_ctx_t *ctx, const char *s, size_t n) {
     return d;
 }
 
+static char *exprtk_prefixed_name(exprtk_parse_ctx_t *ctx, const char *prefix,
+                                  size_t prefix_len, const exprtk_token_t *name) {
+    size_t len;
+    char *d;
+    if (!ctx || !prefix || !name) return NULL;
+    len = prefix_len + 1 + name->length;
+    d = (char*)mem_alloc(ctx->arena, len + 1);
+    if (!d) return NULL;
+    memcpy(d, prefix, prefix_len);
+    d[prefix_len] = '.';
+    memcpy(d + prefix_len + 1, name->start, name->length);
+    d[len] = '\0';
+    return d;
+}
+
 static tstr_v exprtk_unescape_to_arena(exprtk_parse_ctx_t *ctx, const char *s, size_t n) {
     char *d = (char*)mem_alloc(ctx->arena, n + 1);
     size_t len = 0;
@@ -1062,6 +1077,37 @@ expr(A) ::= MAP(OP) LPAREN RPAREN. {
     A = exprtk_node_new(ctx, EXPRTK_NODE_FUNCTION_CALL);
     if (A) {
         A->data.function.name = exprtk_strdup(ctx, "map", 3);
+        A->data.function.args = NULL;
+        A->data.function.arg_count = 0;
+        exprtk_node_set_pos(A, &OP);
+    }
+}
+
+expr(A) ::= MAP(OP) DOT VARIABLE(V) LPAREN expr(E) RPAREN. {
+    A = exprtk_node_new(ctx, EXPRTK_NODE_FUNCTION_CALL);
+    if (A) {
+        A->data.function.name = exprtk_prefixed_name(ctx, "map", 3, &V);
+        A->data.function.arg_count = 1;
+        A->data.function.args = (exprtk_node_t**)mem_alloc(ctx->arena, sizeof(exprtk_node_t*));
+        A->data.function.args[0] = E;
+        exprtk_node_set_pos(A, &OP);
+    }
+}
+
+expr(A) ::= MAP(OP) DOT VARIABLE(V) LPAREN expr_list_2plus(L) RPAREN. {
+    A = exprtk_node_new(ctx, EXPRTK_NODE_FUNCTION_CALL);
+    if (A) {
+        A->data.function.name = exprtk_prefixed_name(ctx, "map", 3, &V);
+        A->data.function.args = L->data.function.args;
+        A->data.function.arg_count = L->data.function.arg_count;
+        exprtk_node_set_pos(A, &OP);
+    }
+}
+
+expr(A) ::= MAP(OP) DOT VARIABLE(V) LPAREN RPAREN. {
+    A = exprtk_node_new(ctx, EXPRTK_NODE_FUNCTION_CALL);
+    if (A) {
+        A->data.function.name = exprtk_prefixed_name(ctx, "map", 3, &V);
         A->data.function.args = NULL;
         A->data.function.arg_count = 0;
         exprtk_node_set_pos(A, &OP);

@@ -1,5 +1,5 @@
 set(TARGET_NAME hash)
-set(TARGET_NAME_PLUGIN hash_plugin)
+set(TARGET_NAME_PLUGIN hash_tbs)
 
 set(HASH_SOURCES src/exprtk_mod_hash.c)
 set(HASH_PLUGIN_SOURCES src/hash_plugin.c)

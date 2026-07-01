@@ -7,12 +7,12 @@ target_link_libraries(example_wasm_module PRIVATE turbo_script)
 set_target_properties(example_wasm_module PROPERTIES FOLDER
                                                      turbo_script/examples)
 
-# Copy wasm_plugin DLL/SO next to example so turbo_script_load_plugin("wasm")
+# Copy wasm_tbs DLL/SO next to example so turbo_script_load_plugin("wasm")
 # can find it.
 add_custom_command(
   TARGET example_wasm_module
   POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:wasm_plugin>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:wasm_tbs>
           $<TARGET_FILE_DIR:example_wasm_module>)
 
 add_test(NAME test_example_wasm_module_smoke COMMAND example_wasm_module)

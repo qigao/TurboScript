@@ -3165,9 +3165,11 @@ static int ts_call_name_needs_value_eval(const char *name) {
          ts_name_starts_with(name, "matrix.") ||
          ts_name_starts_with(name, "linalg.") ||
          ts_name_starts_with(name, "table.") ||
+         ts_name_starts_with(name, "http.") ||
          ts_name_starts_with(name, "json.") ||
          ts_name_starts_with(name, "xml.") ||
          ts_name_starts_with(name, "csv.") ||
+         ts_name_starts_with(name, "map.") ||
          ts_name_starts_with(name, "parser.json_") ||
          ts_name_starts_with(name, "parser.xml_") ||
          ts_name_starts_with(name, "parser.csv_") ||
@@ -4469,9 +4471,7 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
     ts_closure_analysis_free(analysis);
     return;
   }
-  int needs_closure_env =
-      (analysis && analysis->captured_count > 0) ||
-      ts_aliases_need_closure_env(c, aliases, alias_count);
+  int needs_closure_env = 1; /* ALWAYS need ctx for native/builtin calls */
 
   ts_mir_compile_frame_t frame = ts_mir_capture_frame(c);
 
@@ -6552,6 +6552,11 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
 
     if (!node->data.member_call.object || !node->data.member_call.method) return 0;
 
+    if (node->data.member_call.object->type != EXPRTK_NODE_VARIABLE) {
+      *out = exprtk_eval(node, env);
+      return !env->aborted && env->flow != exprtk_FLOW_THROW;
+    }
+
     if (node->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
         node->data.member_call.object->data.variable.name) {
       char full_name[256];
@@ -6573,10 +6578,13 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       if (!env->aborted) return 1;
     }
 
-    if (!ts_mir_runtime_value_arg(node->data.member_call.object, env, &object)) return 0;
+    if (!ts_mir_runtime_value_arg(node->data.member_call.object, env, &object)) {
+      *out = exprtk_eval(node, env);
+      return !env->aborted && env->flow != exprtk_FLOW_THROW;
+    }
     if (strcmp(node->data.member_call.method, "length") == 0 &&
         node->data.member_call.arg_count == 0) {
-      if (object.type == EXPRTK_VAL_LIST) {
+      if (object.type == EXPRTK_VAL_LIST || object.type == EXPRTK_VAL_SET) {
         *out = exprtk_val_num((double)object.data.list.count);
         return 1;
       }
@@ -6595,6 +6603,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     }
     if (object.type == EXPRTK_VAL_INSTANCE || object.type == EXPRTK_VAL_CLASS ||
         exprtk_value_is_object_like(&object) || object.type == EXPRTK_VAL_LIST ||
+        object.type == EXPRTK_VAL_SET ||
         object.type == EXPRTK_VAL_VECTOR || object.type == EXPRTK_VAL_STRING ||
         object.type == EXPRTK_VAL_BYTES) {
       const char *temp_name = "__ts_mir_value_receiver";
@@ -6692,7 +6701,8 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
 
     if (!ts_mir_runtime_value_arg(node->data.index_access.array, env, &array) ||
         !ts_mir_runtime_value_arg(node->data.index_access.index, env, &index)) {
-      return 0;
+      *out = exprtk_eval(node, env);
+      return !env->aborted && env->flow != exprtk_FLOW_THROW;
     }
 
     if (index.type == EXPRTK_VAL_STRING && exprtk_value_is_object_like(&array)) {
@@ -6715,13 +6725,18 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       *out = exprtk_list_get(&array, (size_t)idx);
       return 1;
     }
+    if (array.type == EXPRTK_VAL_SET) {
+      *out = exprtk_list_get(&array, (size_t)idx);
+      return 1;
+    }
     if (array.type == EXPRTK_VAL_BYTES) {
       *out = (size_t)idx < array.data.bytes.len
                  ? exprtk_val_int((unsigned char)array.data.bytes.data[idx])
                  : exprtk_val_num(0.0);
       return 1;
     }
-    return 0;
+    *out = exprtk_eval(node, env);
+    return !env->aborted;
   }
 
   case EXPRTK_NODE_SLICE: {
@@ -6787,7 +6802,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       return 0;
     }
     if (strcmp(member, "length") == 0) {
-      if (object.type == EXPRTK_VAL_LIST) {
+      if (object.type == EXPRTK_VAL_LIST || object.type == EXPRTK_VAL_SET) {
         *out = exprtk_val_num((double)object.data.list.count);
         return 1;
       }
@@ -9383,25 +9398,46 @@ static void ts_emit_map_prologue(ts_mir_compiler_t *c) {
  * Public API: Compile, Exec, Run
  * ========================================================================= */
 
+static int ts_track_compiled_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast) {
+  if (!ctx || !ast) return 0;
+  for (size_t i = 0; i < ctx->compiled_ast_count; ++i) {
+    if (ctx->compiled_asts[i] == ast) return 1;
+  }
+
+  if (ctx->compiled_ast_count >= ctx->compiled_ast_capacity) {
+    size_t new_cap = ctx->compiled_ast_capacity == 0 ? 16 : ctx->compiled_ast_capacity * 2;
+    exprtk_node_t **new_asts =
+        (exprtk_node_t **)realloc(ctx->compiled_asts, new_cap * sizeof(exprtk_node_t *));
+    if (!new_asts) return 0;
+    ctx->compiled_asts = new_asts;
+    ctx->compiled_ast_capacity = new_cap;
+  }
+
+  ctx->compiled_asts[ctx->compiled_ast_count++] = ast;
+  return 1;
+}
+
 static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char *script,
-                                            int use_interp) {
+                                            exprtk_node_t *provided_ast, int use_interp) {
   uint64_t start_time = 0;
   MIR_context_t mir_ctx = NULL;
+  exprtk_node_t *ast = provided_ast;
+  int owns_ast = provided_ast == NULL;
 
   if (!ctx) return -1;
   ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   ctx->error_msg[0] = '\0';
-  if (!script) {
+  if (!ast && !script) {
     ctx->error_code = TURBO_SCRIPT_ERROR_ARGUMENT;
     snprintf(ctx->error_msg, sizeof(ctx->error_msg), "JIT compile error: script is NULL");
     return -1;
   }
-  
+
   // 开始计时（如果启用统计）
   if (ctx->jit_stats_enabled) {
     start_time = ts_get_time_us();
   }
-  
+
   if (use_interp) {
     if (!ctx->mir_interp_ctx) ctx->mir_interp_ctx = MIR_init();
     mir_ctx = ctx->mir_interp_ctx;
@@ -9412,14 +9448,23 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
     ctx->mir_last_fn = NULL;
   }
 
-  exprtk_node_t *ast = turbo_script_parse_with_error(ctx, script);
-  if (!ast) return -1;
+  if (!ast) {
+    ast = turbo_script_parse_with_error(ctx, script);
+    if (!ast) return -1;
+  }
 
   if (exprtk_validate(ast, &ctx->env, ctx->error_msg, sizeof(ctx->error_msg)) != 0) {
     ctx->error_code = TURBO_SCRIPT_ERROR_VALIDATE;
-    exprtk_free(ast);
+    if (owns_ast) exprtk_free(ast);
     return -1;
   }
+  if (!ts_track_compiled_ast(ctx, ast)) {
+    if (owns_ast) exprtk_free(ast);
+    ctx->error_code = TURBO_SCRIPT_ERROR_OOM;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "JIT compile error: out of memory");
+    return -1;
+  }
+  if (ctx->expr == ast) ctx->expr_in_compiled_asts = 1;
 
   char mod_name[64];
   snprintf(mod_name, sizeof(mod_name), "ts_jit_mod_%d", ctx->mir_mod_idx++);
@@ -9506,7 +9551,6 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   MIR_finish_module(mir_ctx);
 
   if (compiler.failed) {
-    exprtk_free(ast);
     ts_mir_destroy_compiler_storage(&compiler);
     if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE)
       ctx->error_code = TURBO_SCRIPT_ERROR_JIT;
@@ -9517,19 +9561,6 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
    * Variable name strings and monomorphic OOP class strings are also baked in as pointer
    * immediates for helper calls. We intentionally keep them alive for the MIR context
    * lifetime. */
-  /* Track the compiled AST in the context to be freed on teardown */
-  if (ctx->compiled_ast_count >= ctx->compiled_ast_capacity) {
-    size_t new_cap = ctx->compiled_ast_capacity == 0 ? 16 : ctx->compiled_ast_capacity * 2;
-    exprtk_node_t **new_asts = (exprtk_node_t **)realloc(ctx->compiled_asts, new_cap * sizeof(exprtk_node_t *));
-    if (new_asts) {
-      ctx->compiled_asts = new_asts;
-      ctx->compiled_ast_capacity = new_cap;
-    }
-  }
-  if (ctx->compiled_ast_count < ctx->compiled_ast_capacity) {
-    ctx->compiled_asts[ctx->compiled_ast_count++] = ast;
-  }
-
   MIR_load_module(mir_ctx, mod);
 
   if (use_interp) {
@@ -9564,11 +9595,21 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
 }
 
 CXX_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script) {
-  return turbo_script_compile_mir_backend(ctx, script, 0);
+  return turbo_script_compile_mir_backend(ctx, script, NULL, 0);
 }
 
 CXX_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script) {
-  return turbo_script_compile_mir_backend(ctx, script, 1);
+  return turbo_script_compile_mir_backend(ctx, script, NULL, 1);
+}
+
+CXX_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+                                           const char *script) {
+  return turbo_script_compile_mir_backend(ctx, script, ast, 0);
+}
+
+CXX_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+                                                  const char *script) {
+  return turbo_script_compile_mir_backend(ctx, script, ast, 1);
 }
 
 static void ts_jit_reset_runtime_state(turbo_script_ctx_t *ctx) {
@@ -9651,7 +9692,10 @@ CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *s
     snprintf(ctx->error_msg, sizeof(ctx->error_msg), "MIR interp run error: script is NULL");
     return -1;
   }
-
+  if (ctx->expr && ctx->expr_source && strcmp(ctx->expr_source, script) == 0) {
+    if (turbo_script_compile_mir_interp_ast(ctx, ctx->expr, script) != 0) return -1;
+    return turbo_script_exec_mir_interp(ctx);
+  }
   if (turbo_script_compile_mir_interp(ctx, script) != 0) return -1;
   return turbo_script_exec_mir_interp(ctx);
 }

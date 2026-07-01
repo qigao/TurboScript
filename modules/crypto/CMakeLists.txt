@@ -1,5 +1,5 @@
 set(TARGET_NAME crypto)
-set(TARGET_NAME_PLUGIN crypto_plugin)
+set(TARGET_NAME_PLUGIN crypto_tbs)
 
 set(CRYPTO_SOURCES src/exprtk_mod_crypto.c)
 set(CRYPTO_PLUGIN_SOURCES src/crypto_plugin.c)

@@ -1,4 +1,4 @@
-# DLL-based integration test — loads data_bind_plugin at runtime
+# DLL-based integration test — loads data_bind_tbs at runtime
 add_executable(test_data_bind_module test_data_bind.c)
 target_link_libraries(test_data_bind_module PRIVATE
   exprtk
@@ -11,6 +11,6 @@ set_target_properties(test_data_bind_module PROPERTIES FOLDER modules/data_bind)
 add_custom_command(
   TARGET test_data_bind_module
   POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:data_bind_plugin>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:data_bind_tbs>
           $<TARGET_FILE_DIR:test_data_bind_module>
 )

@@ -4,7 +4,7 @@
  *
  * Flow:
  *   1) Init bare context
- *   2) Load wasm plugin (wasm_plugin.dll / libwasm_plugin.so)
+ *   2) Load wasm plugin (wasm_tbs.dll / libwasm_tbs.so)
  *   3) Write temp fib32 wasm file
  *   4) Run script: wasm.open -> wasm.call("fib", 20) -> wasm.close
  *   5) Read result from script vars
