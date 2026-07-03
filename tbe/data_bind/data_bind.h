@@ -5,6 +5,12 @@
  * Third-party users should include this header and link TurboScript::DataBind.
  * The API exposes only opaque handles and accessor functions; returned strings
  * and child pointers are borrowed views owned by their DataBind/DataBindValue.
+ *
+ * SECURITY: Schema files are assumed to come from trusted sources. DataBind uses
+ * JIT compilation to generate binary parsers and includes validation limits to
+ * prevent common attacks (max nesting depth: 32, max field offset: 1GB, max total
+ * fields: 10,000, circular reference detection). Do not create codecs from
+ * user-supplied or untrusted schema definitions.
  */
 
 #ifndef DATA_BIND_H
@@ -204,14 +210,29 @@ DATA_BIND_API const char* data_bind_version_string(void);
 
 /**
  * @brief Create dynamic codec from schema file.
- * @param schema_path Path to .schema file
+ * @param schema_path Path to .schema file (must be from a trusted source)
+ * @param out_codec Output parameter for the created codec
+ * @param error Output parameter for error information
  * @return Status code. On success, *out_codec owns the codec and must be freed with data_bind_free().
+ *
+ * SECURITY: This function uses JIT compilation to generate optimized parsers.
+ * Only load schemas from trusted sources. The function validates schema structure
+ * (nesting depth, field offsets, circular references) but does not provide
+ * comprehensive defense against all malicious constructions.
  */
 DATA_BIND_API DataBindStatus data_bind_create(const char* schema_path, DataBind** out_codec,
                                               DataBindError* error);
 
 /**
  * @brief Create dynamic codec from schema text in memory.
+ * @param schema_text Schema definition text (must be from a trusted source)
+ * @param len Length of schema text
+ * @param out_codec Output parameter for the created codec
+ * @param error Output parameter for error information
+ * @return Status code. On success, *out_codec owns the codec and must be freed with data_bind_free().
+ *
+ * SECURITY: This function uses JIT compilation. Only process schema text from
+ * trusted sources. See data_bind_create() for security considerations.
  */
 DATA_BIND_API DataBindStatus data_bind_create_from_text(const char* schema_text, size_t len,
                                                         DataBind** out_codec,
@@ -221,6 +242,48 @@ DATA_BIND_API DataBindStatus data_bind_create_from_text(const char* schema_text,
  * @brief Free codec
  */
 DATA_BIND_API void data_bind_free(DataBind* codec);
+
+/**
+ * @brief Enable or disable MIR module caching.
+ * @param enabled Non-zero to enable caching, zero to disable
+ *
+ * When enabled (default), data_bind_create() caches compiled MIR modules by
+ * schema hash. Multiple codecs with identical schemas share the same JIT-compiled
+ * parser, reducing memory usage and codec creation time.
+ *
+ * Caching is thread-local and does not synchronize across threads. For multi-threaded
+ * usage, create codecs on a single thread and distribute them, or disable caching.
+ */
+DATA_BIND_API void data_bind_set_cache_enabled(int enabled);
+
+/**
+ * @brief Clear all cached MIR modules.
+ *
+ * Releases cached modules that are no longer referenced by any codec. This does not
+ * affect existing codecs, only prevents future codecs from reusing cached modules.
+ */
+DATA_BIND_API void data_bind_clear_cache(void);
+
+/**
+ * @brief Enable or disable the value object pool.
+ * @param enabled Non-zero to enable pooling, zero to disable
+ *
+ * When enabled (default), DataBindValue nodes are pooled and reused to reduce
+ * allocation overhead. The pool maintains up to 64 free nodes. Disabling the pool
+ * causes all allocations to use malloc/free directly.
+ *
+ * This setting is process-global. For best performance, leave pooling enabled.
+ */
+DATA_BIND_API void data_bind_set_value_pool_enabled(int enabled);
+
+/**
+ * @brief Get value pool statistics.
+ * @param allocated Total DataBindValue nodes allocated (output)
+ * @param reused Number of times pool nodes were reused (output)
+ *
+ * Use this to monitor pool effectiveness. High reuse rates indicate good cache locality.
+ */
+DATA_BIND_API void data_bind_get_value_pool_stats(size_t *allocated, size_t *reused);
 
 /**
  * @brief Parse binary data to a dynamic value tree.

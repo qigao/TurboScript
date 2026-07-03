@@ -9,9 +9,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-  #define NET_PLUGIN_DLL "net.dll"
+  #define NET_PLUGIN_DLL "net_tbs.dll"
 #else
-  #define NET_PLUGIN_DLL "libnet.so"
+  #define NET_PLUGIN_DLL "libnet_tbs.so"
 #endif
 
 static exprtk_func_t *find_native(exprtk_env_t *env, const char *name) {
@@ -74,7 +74,7 @@ spec("net_plugin") {
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "ws://invalid.url.local", 22 }};
       res = fn_ws_connect->data.native.fn(1, args, fn_ws_connect->data.native.user_data);
       check_int_eq(res.type, EXPRTK_VAL_NUMBER);
-      check(res.data.number == 0.0);
+      check(res.data.number == 0);
 
       /* Test http.get with a real mock URL: https://mockhttp.org/ */
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "https://mockhttp.org/", 21 }};
@@ -86,7 +86,7 @@ spec("net_plugin") {
       exprtk_value_t status = exprtk_map_get(&res, "status");
       check_int_eq(status.type, EXPRTK_VAL_NUMBER);
       /* mockhttp.org should return 200 OK */
-      check(status.data.number == 200.0);
+      check(status.data.number == 200);
       
       exprtk_map_free(&res);
 

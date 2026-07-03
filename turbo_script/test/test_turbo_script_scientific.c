@@ -917,6 +917,17 @@ spec("turbo_script_scientific") {
       turbo_script_free(ctx);
     }
 
+    it("should tear down JIT regex handles safely") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "var h = regex.compile(\"[0-9]+\"); "
+                           "var matched = regex.search(h, \"abc123def\");";
+      int res = turbo_script_run_jit(ctx, script);
+      if (res != 0) printf("JIT regex teardown Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+      check_float_eq(ts_get_num(ctx, "matched"), 3.0, 0.001);
+      turbo_script_free(ctx);
+    }
+
     it("should not expose capture groups in core libfsm regex") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var info = regex.match_info(\"([0-9]+)\", \"a12b\"); "

@@ -60,6 +60,30 @@ typedef struct mir_func_node {
   struct mir_func_node *next;
 } mir_func_node_t;
 
+typedef struct mir_cache_entry {
+  char schema_hash[65];
+  MIR_context_t shared_ctx;
+  mir_func_node_t *func_head;
+  int ref_count;
+  struct mir_cache_entry *next;
+} mir_cache_entry_t;
+
+/* Small object pool for frequently allocated DataBindValue nodes */
+#define VALUE_POOL_SIZE 64
+#define VALUE_POOL_ENABLED 1
+
+typedef struct value_pool {
+  DataBindValue *free_list;
+  size_t allocated_count;
+  size_t reused_count;
+} value_pool_t;
+
+static value_pool_t g_value_pool = {NULL, 0, 0};
+static int g_value_pool_enabled = VALUE_POOL_ENABLED;
+
+static mir_cache_entry_t *g_mir_cache_head = NULL;
+static int g_mir_cache_enabled = 1;
+
 typedef struct data_bind_runtime_api {
   DataBindValue *(*create_object)(void);
   void (*set_field_int)(DataBindValue *obj, const char *name, int32_t val);
@@ -100,6 +124,8 @@ struct DataBind {
   char error[256];
   char binary_error[256];
   data_bind_runtime_api_t api;
+  char schema_hash[65];  /* SHA-256 hash of schema for caching */
+  int is_cloned;         /* Whether this codec shares MIR context with another */
 };
 
 typedef struct data_bind_value_field {
@@ -296,7 +322,21 @@ static char *dbv_strdup(const char *src) {
 }
 
 static DataBindValue *dbv_new(DataBindValueKind kind) {
-  DataBindValue *value = (DataBindValue *)calloc(1, sizeof(*value));
+  DataBindValue *value = NULL;
+  
+  /* Try to get from pool first if enabled */
+  if (g_value_pool_enabled && g_value_pool.free_list != NULL) {
+    value = g_value_pool.free_list;
+    g_value_pool.free_list = (DataBindValue *)value->data.object_val.items;
+    g_value_pool.reused_count++;
+    memset(value, 0, sizeof(*value));
+  } else {
+    value = (DataBindValue *)calloc(1, sizeof(*value));
+    if (g_value_pool_enabled && value != NULL) {
+      g_value_pool.allocated_count++;
+    }
+  }
+  
   if (value != NULL) value->kind = kind;
   return value;
 }
@@ -404,7 +444,15 @@ void data_bind_value_free(DataBindValue *value) {
   default:
     break;
   }
-  free(value);
+  
+  /* Return to pool if enabled and pool not full */
+  if (g_value_pool_enabled && g_value_pool.allocated_count < VALUE_POOL_SIZE) {
+    /* Reuse object_val.items pointer as next pointer in free list */
+    value->data.object_val.items = (data_bind_value_field_t *)g_value_pool.free_list;
+    g_value_pool.free_list = value;
+  } else {
+    free(value);
+  }
 }
 
 static DataBindValue *dbv_int(int32_t value) {
@@ -1168,6 +1216,88 @@ static int set_codec_error(DataBind *codec, const char *fmt, ...) {
   return 0;
 }
 
+/**
+ * @brief Compute a simple hash of schema text for caching.
+ * Uses FNV-1a hash algorithm for simplicity.
+ */
+static void compute_schema_hash(const char *schema_text, size_t len, char *hash_out) {
+  uint64_t hash = 14695981039346656037ULL;  /* FNV offset basis */
+  size_t i;
+  if (schema_text == NULL || hash_out == NULL) return;
+  
+  for (i = 0; i < len; i++) {
+    hash ^= (uint64_t)(unsigned char)schema_text[i];
+    hash *= 1099511628211ULL;  /* FNV prime */
+  }
+  
+  snprintf(hash_out, 65, "%016llx", (unsigned long long)hash);
+}
+
+static mir_cache_entry_t *mir_cache_find(const char *schema_hash) {
+  mir_cache_entry_t *entry;
+  if (!g_mir_cache_enabled || schema_hash == NULL) return NULL;
+  
+  for (entry = g_mir_cache_head; entry != NULL; entry = entry->next) {
+    if (strcmp(entry->schema_hash, schema_hash) == 0) {
+      return entry;
+    }
+  }
+  return NULL;
+}
+
+static mir_cache_entry_t *mir_cache_insert(const char *schema_hash, MIR_context_t ctx,
+                                            mir_func_node_t *func_head) {
+  mir_cache_entry_t *entry;
+  if (!g_mir_cache_enabled || schema_hash == NULL || ctx == NULL) return NULL;
+  
+  entry = (mir_cache_entry_t *)malloc(sizeof(*entry));
+  if (entry == NULL) return NULL;
+  
+  snprintf(entry->schema_hash, sizeof(entry->schema_hash), "%s", schema_hash);
+  entry->shared_ctx = ctx;
+  entry->func_head = func_head;
+  entry->ref_count = 1;
+  entry->next = g_mir_cache_head;
+  g_mir_cache_head = entry;
+  
+  return entry;
+}
+
+static void mir_cache_release(const char *schema_hash) {
+  mir_cache_entry_t **prev_ptr = &g_mir_cache_head;
+  mir_cache_entry_t *entry;
+  
+  if (!g_mir_cache_enabled || schema_hash == NULL) return;
+  
+  entry = g_mir_cache_head;
+  while (entry != NULL) {
+    if (strcmp(entry->schema_hash, schema_hash) == 0) {
+      entry->ref_count--;
+      if (entry->ref_count <= 0) {
+        /* Remove from cache and free resources */
+        *prev_ptr = entry->next;
+        if (entry->shared_ctx != NULL) {
+          MIR_finish(entry->shared_ctx);
+        }
+        /* Free func_head nodes that belong to this cache entry */
+        if (entry->func_head != NULL) {
+          mir_func_node_t *func_node = entry->func_head;
+          while (func_node != NULL) {
+            mir_func_node_t *next = func_node->next;
+            free(func_node->type_name);
+            free(func_node);
+            func_node = next;
+          }
+        }
+        free(entry);
+      }
+      return;
+    }
+    prev_ptr = &entry->next;
+    entry = entry->next;
+  }
+}
+
 static void db_error_clear(DataBindError *error) {
   if (error == NULL || error->size < offsetof(DataBindError, message)) return;
   error->code = DATA_BIND_OK;
@@ -1177,6 +1307,25 @@ static void db_error_clear(DataBindError *error) {
     error->path[0] = '\0';
   if (error->size >= offsetof(DataBindError, message) + sizeof(error->message))
     error->message[0] = '\0';
+}
+
+/**
+ * @brief Format error path for consistent error reporting across input formats.
+ * @param out Output buffer for formatted path
+ * @param out_size Size of output buffer
+ * @param format Format identifier: "binary", "json", "csv", "xml"
+ * @param location Format-specific location (e.g., "offset 123", "$.path", "row 5 col 3")
+ */
+static void db_error_format_path(char *out, size_t out_size, const char *format,
+                                 const char *location) {
+  if (out == NULL || out_size == 0) return;
+  if (format == NULL || format[0] == '\0') {
+    snprintf(out, out_size, "%s", location != NULL ? location : "");
+  } else if (location != NULL && location[0] != '\0') {
+    snprintf(out, out_size, "%s: %s", format, location);
+  } else {
+    snprintf(out, out_size, "%s", format);
+  }
 }
 
 static DataBindStatus db_error_set(DataBindError *error, DataBindStatus code,
@@ -3403,6 +3552,164 @@ static int append_emit_field(emit_field_array_t *fields, const char *name, emit_
 static int build_fields(emit_field_array_t *fields, Node *src_fields, Node *schema_root,
                         const char *prefix, int has_set_bytes);
 
+/* Schema validation limits to prevent malicious schemas */
+#define MAX_FIELD_NESTING_DEPTH 32
+#define MAX_FIELD_OFFSET_BYTES (1024 * 1024 * 1024)  /* 1GB */
+#define MAX_TOTAL_FIELDS 10000
+
+typedef struct schema_validation_context {
+  int nesting_depth;
+  size_t total_fields;
+  size_t max_offset;
+  char visited_types[256][128];  /* Track visited types to detect cycles */
+  size_t visited_count;
+  char error[256];
+} schema_validation_context_t;
+
+static int schema_validation_type_visited(schema_validation_context_t *ctx, const char *type_name) {
+  size_t i;
+  if (type_name == NULL) return 0;
+  for (i = 0; i < ctx->visited_count; i++) {
+    if (strcmp(ctx->visited_types[i], type_name) == 0) return 1;
+  }
+  return 0;
+}
+
+static int schema_validation_mark_visited(schema_validation_context_t *ctx, const char *type_name) {
+  if (type_name == NULL) return 0;
+  if (ctx->visited_count >= 256) {
+    snprintf(ctx->error, sizeof(ctx->error), "Too many nested types (max 256)");
+    return 0;
+  }
+  snprintf(ctx->visited_types[ctx->visited_count], 128, "%s", type_name);
+  ctx->visited_count++;
+  return 1;
+}
+
+static void schema_validation_unmark_visited(schema_validation_context_t *ctx) {
+  if (ctx->visited_count > 0) ctx->visited_count--;
+}
+
+static int validate_field_offset_safe(schema_validation_context_t *ctx, size_t offset, size_t size) {
+  if (offset > MAX_FIELD_OFFSET_BYTES) {
+    snprintf(ctx->error, sizeof(ctx->error), "Field offset %zu exceeds maximum %d bytes",
+             offset, MAX_FIELD_OFFSET_BYTES);
+    return 0;
+  }
+  if (size > 0 && offset + size > MAX_FIELD_OFFSET_BYTES) {
+    snprintf(ctx->error, sizeof(ctx->error), "Field range [%zu, %zu) exceeds maximum",
+             offset, offset + size);
+    return 0;
+  }
+  if (offset + size > ctx->max_offset) {
+    ctx->max_offset = offset + size;
+  }
+  return 1;
+}
+
+static int validate_schema_fields(schema_validation_context_t *ctx, Node *src_fields,
+                                  Node *schema_root, const char *parent_type);
+
+static int validate_composite_or_group_type(schema_validation_context_t *ctx, Node *schema_root,
+                                            const char *type_name, const char *list_name) {
+  Node *record;
+  int saved_depth;
+  int result;
+
+  if (type_name == NULL) return 1;
+
+  /* Check for circular reference */
+  if (schema_validation_type_visited(ctx, type_name)) {
+    snprintf(ctx->error, sizeof(ctx->error), "Circular type reference detected: %s", type_name);
+    return 0;
+  }
+
+  record = find_named_record(schema_root, list_name, type_name);
+  if (record == NULL) return 1;  /* Not found is not a validation error */
+
+  /* Check nesting depth */
+  if (ctx->nesting_depth >= MAX_FIELD_NESTING_DEPTH) {
+    snprintf(ctx->error, sizeof(ctx->error), 
+             "Field nesting depth exceeds maximum %d (in type %s)",
+             MAX_FIELD_NESTING_DEPTH, type_name);
+    return 0;
+  }
+
+  /* Mark as visited and recurse */
+  if (!schema_validation_mark_visited(ctx, type_name)) return 0;
+
+  saved_depth = ctx->nesting_depth;
+  ctx->nesting_depth++;
+  result = validate_schema_fields(ctx, find_child(record, "fields"), schema_root, type_name);
+  ctx->nesting_depth = saved_depth;
+
+  schema_validation_unmark_visited(ctx);
+  return result;
+}
+
+static int validate_schema_fields(schema_validation_context_t *ctx, Node *src_fields,
+                                  Node *schema_root, const char *parent_type) {
+  size_t i;
+  if (src_fields == NULL || src_fields->type != NODE_LIST) return 1;
+
+  for (i = 0; i < src_fields->data.list.count; i++) {
+    Node *field = src_fields->data.list.items[i];
+    const char *field_name = get_string_val(find_child(field, "name"));
+    const char *field_type = get_string_val(find_child(field, "type"));
+    Node *offset_node = find_child(field, "offset");
+    Node *size_node = find_child(field, "size");
+
+    if (field_name == NULL) continue;
+
+    /* Count total fields */
+    ctx->total_fields++;
+    if (ctx->total_fields > MAX_TOTAL_FIELDS) {
+      snprintf(ctx->error, sizeof(ctx->error),
+               "Total field count exceeds maximum %d", MAX_TOTAL_FIELDS);
+      return 0;
+    }
+
+    /* Validate offset if present */
+    if (offset_node != NULL && offset_node->type == NODE_STRING) {
+      const char *offset_str = get_string_val(offset_node);
+      const char *size_str = size_node != NULL ? get_string_val(size_node) : NULL;
+      if (offset_str != NULL) {
+        int offset_int = parse_positive_int(offset_str);
+        int size_int = size_str != NULL ? parse_positive_int(size_str) : 0;
+        if (offset_int >= 0 && size_int >= 0) {
+          if (!validate_field_offset_safe(ctx, (size_t)offset_int, (size_t)size_int))
+            return 0;
+        }
+      }
+    }
+
+    /* Validate composite references */
+    if (field_flag(field, "is_composite_ref")) {
+      if (!validate_composite_or_group_type(ctx, schema_root, field_type, "composites"))
+        return 0;
+      continue;
+    }
+
+    /* Validate group references */
+    if (field_flag(field, "is_group_field")) {
+      const char *group_type = get_string_val(find_child(field, "group_type"));
+      if (!validate_composite_or_group_type(ctx, schema_root, group_type, "groups"))
+        return 0;
+      continue;
+    }
+
+    /* Validate collection inner types */
+    if (field_flag(field, "is_collection")) {
+      const char *inner_type = get_string_val(find_child(field, "inner_type"));
+      if (inner_type != NULL) {
+        if (!validate_composite_or_group_type(ctx, schema_root, inner_type, "composites"))
+          return 0;
+      }
+    }
+  }
+  return 1;
+}
+
 static void build_full_field_name(const char *prefix, const char *field_name, char *out,
                                   size_t out_size) {
   if (prefix != NULL && prefix[0] != '\0') snprintf(out, out_size, "%s.%s", prefix, field_name);
@@ -4385,11 +4692,20 @@ static int generate_message_function(mir_builder_t *builder, Node *message_node,
   const char *message_name = get_string_val(find_child(message_node, "name"));
   Node *fields_node = find_child(message_node, "fields");
   emit_field_array_t fields = {0};
+  schema_validation_context_t validation_ctx = {0};
   MIR_type_t result_type = MIR_T_P;
   MIR_var_t args[] = {{MIR_T_P, "buf", 0}, {MIR_T_I64, "len", 0}};
   char func_name[256];
   mir_emitter_t e;
   if (message_name == NULL) return 0;
+
+  /* Validate schema structure before code generation */
+  if (!validate_schema_fields(&validation_ctx, fields_node, schema_root, message_name)) {
+    set_codec_error(builder->codec, "Schema validation failed for %s: %s",
+                    message_name, validation_ctx.error);
+    return 0;
+  }
+
   if (!build_fields(&fields, fields_node, schema_root, NULL, has_set_bytes)) {
     emit_field_array_free(&fields);
     return 0;
@@ -4478,14 +4794,19 @@ static void data_bind_free_contents(DataBind *codec) {
   mir_func_node_t *func_node;
   owned_alloc_node_t *alloc_node;
   if (codec == NULL) return;
-  func_node = codec->func_head;
-  while (func_node != NULL) {
-    mir_func_node_t *next = func_node->next;
-    free(func_node->type_name);
-    free(func_node);
-    func_node = next;
+  
+  /* Only free func_head if this codec owns it (not from cache) */
+  if (!codec->is_cloned) {
+    func_node = codec->func_head;
+    while (func_node != NULL) {
+      mir_func_node_t *next = func_node->next;
+      free(func_node->type_name);
+      free(func_node);
+      func_node = next;
+    }
   }
   codec->func_head = NULL;
+  
   alloc_node = codec->owned_allocs;
   while (alloc_node != NULL) {
     owned_alloc_node_t *next = alloc_node->next;
@@ -4494,10 +4815,20 @@ static void data_bind_free_contents(DataBind *codec) {
     alloc_node = next;
   }
   codec->owned_allocs = NULL;
+  
+  /* Handle MIR context based on whether this is a cloned codec */
   if (codec->ctx != NULL) {
-    MIR_finish(codec->ctx);
+    if (codec->is_cloned && codec->schema_hash[0] != '\0') {
+      /* Release cache reference - context will be freed by cache when ref_count reaches 0 */
+      mir_cache_release(codec->schema_hash);
+    } else if (!codec->is_cloned && codec->schema_hash[0] == '\0') {
+      /* Owned context not in cache, can be destroyed directly */
+      MIR_finish(codec->ctx);
+    }
+    /* If is_cloned == 0 but schema_hash exists, context is in cache and will be freed by cache */
     codec->ctx = NULL;
   }
+  
   if (codec->schema_root != NULL) {
     node_free(codec->schema_root);
     codec->schema_root = NULL;
@@ -4646,8 +4977,30 @@ static void register_parse_functions(DataBind *codec, MIR_module_t module) {
   }
 }
 
-static DataBindStatus data_bind_finish_codec(DataBind *codec, DataBindError *error) {
+static DataBindStatus data_bind_finish_codec(DataBind *codec, DataBindError *error,
+                                             const char *schema_text, size_t schema_len) {
   MIR_module_t module;
+  mir_cache_entry_t *cache_entry = NULL;
+  
+  /* Compute schema hash for caching */
+  if (schema_text != NULL && schema_len > 0) {
+    compute_schema_hash(schema_text, schema_len, codec->schema_hash);
+    cache_entry = mir_cache_find(codec->schema_hash);
+  }
+  
+  /* Use cached MIR context if available */
+  if (cache_entry != NULL && cache_entry->shared_ctx != NULL) {
+    codec->ctx = cache_entry->shared_ctx;
+    codec->func_head = cache_entry->func_head;
+    codec->is_cloned = 1;
+    cache_entry->ref_count++;
+    db_error_clear(error);
+    codec->error[0] = '\0';
+    codec->binary_error[0] = '\0';
+    return DATA_BIND_OK;
+  }
+  
+  /* Generate new MIR module */
   module = generate_parser_module(codec);
   if (module == NULL) {
     snprintf(codec->binary_error, sizeof(codec->binary_error), "%s",
@@ -4664,6 +5017,19 @@ static DataBindStatus data_bind_finish_codec(DataBind *codec, DataBindError *err
     return DATA_BIND_OK;
   }
   register_parse_functions(codec, module);
+  
+  /* Cache the MIR context if hashing was successful */
+  if (codec->schema_hash[0] != '\0') {
+    cache_entry = mir_cache_insert(codec->schema_hash, codec->ctx, codec->func_head);
+    if (cache_entry != NULL) {
+      codec->is_cloned = 1;  /* Mark as using cached context */
+    } else {
+      codec->is_cloned = 0;  /* Cache failed, codec owns the context */
+    }
+  } else {
+    codec->is_cloned = 0;  /* No hash, codec owns the context */
+  }
+  
   db_error_clear(error);
   codec->error[0] = '\0';
   codec->binary_error[0] = '\0';
@@ -4673,7 +5039,9 @@ static DataBindStatus data_bind_finish_codec(DataBind *codec, DataBindError *err
 static DataBindStatus data_bind_create_with_api_from_root(Node *schema_root,
                                                           const data_bind_runtime_api_t *api,
                                                           DataBind **out_codec,
-                                                          DataBindError *error) {
+                                                          DataBindError *error,
+                                                          const char *schema_text,
+                                                          size_t schema_len) {
   DataBind *codec;
   DataBindStatus status;
   if (out_codec != NULL) *out_codec = NULL;
@@ -4691,7 +5059,9 @@ static DataBindStatus data_bind_create_with_api_from_root(Node *schema_root,
   }
   codec->api = *api;
   codec->schema_root = schema_root;
-  status = data_bind_finish_codec(codec, error);
+  codec->is_cloned = 0;
+  codec->schema_hash[0] = '\0';
+  status = data_bind_finish_codec(codec, error, schema_text, schema_len);
   if (status != DATA_BIND_OK) {
     data_bind_free(codec);
     return status;
@@ -4705,11 +5075,28 @@ static DataBindStatus data_bind_create_with_api(const char *schema_path,
                                                 DataBind **out_codec,
                                                 DataBindError *error) {
   Node *schema_root;
+  turbo_fs_buf_t schema_buf = {NULL, 0};
+  DataBindStatus status;
+  
   if (out_codec != NULL) *out_codec = NULL;
-  schema_root = load_and_parse_schema(schema_path, NULL, 0, error);
-  if (schema_root == NULL)
+  
+  /* Load schema file to get both parsed AST and raw text for hashing */
+  if (turbo_fs_read_file(schema_path, &schema_buf) != 0) {
+    return db_error_set(error, DATA_BIND_ERR_IO, schema_path, -1, -1,
+                       "Cannot read schema: %s", schema_path);
+  }
+  
+  schema_root = parse_schema_text_to_root(schema_buf.base, schema_buf.len,
+                                          schema_path, NULL, 0, error);
+  if (schema_root == NULL) {
+    turbo_fs_buf_free(&schema_buf);
     return error != NULL && error->code != DATA_BIND_OK ? error->code : DATA_BIND_ERR_SCHEMA;
-  return data_bind_create_with_api_from_root(schema_root, api, out_codec, error);
+  }
+  
+  status = data_bind_create_with_api_from_root(schema_root, api, out_codec, error,
+                                                schema_buf.base, schema_buf.len);
+  turbo_fs_buf_free(&schema_buf);
+  return status;
 }
 
 DataBindStatus data_bind_create(const char *schema_path, DataBind **out_codec,
@@ -4724,13 +5111,66 @@ DataBindStatus data_bind_create_from_text(const char *schema_text, size_t len,
   schema_root = parse_schema_text_to_root(schema_text, len, NULL, NULL, 0, error);
   if (schema_root == NULL)
     return error != NULL && error->code != DATA_BIND_OK ? error->code : DATA_BIND_ERR_SCHEMA;
-  return data_bind_create_with_api_from_root(schema_root, &DYNAMIC_VALUE_API, out_codec, error);
+  return data_bind_create_with_api_from_root(schema_root, &DYNAMIC_VALUE_API, out_codec, error,
+                                              schema_text, len);
 }
 
 void data_bind_free(DataBind *codec) {
   if (codec == NULL) return;
   data_bind_free_contents(codec);
   free(codec);
+}
+
+void data_bind_set_cache_enabled(int enabled) {
+  g_mir_cache_enabled = enabled != 0;
+}
+
+void data_bind_clear_cache(void) {
+  mir_cache_entry_t *entry = g_mir_cache_head;
+  mir_cache_entry_t *next;
+  
+  while (entry != NULL) {
+    next = entry->next;
+    /* Only free entries with zero ref count */
+    if (entry->ref_count <= 0) {
+      if (entry->shared_ctx != NULL) {
+        MIR_finish(entry->shared_ctx);
+      }
+      free(entry);
+    }
+    entry = next;
+  }
+  
+  /* Rebuild list with only referenced entries */
+  g_mir_cache_head = NULL;
+  entry = g_mir_cache_head;
+  while (entry != NULL) {
+    if (entry->ref_count > 0) {
+      entry->next = g_mir_cache_head;
+      g_mir_cache_head = entry;
+    }
+    entry = entry->next;
+  }
+}
+
+void data_bind_set_value_pool_enabled(int enabled) {
+  g_value_pool_enabled = enabled != 0;
+  
+  /* If disabling, free all pooled nodes */
+  if (!g_value_pool_enabled) {
+    DataBindValue *node = g_value_pool.free_list;
+    while (node != NULL) {
+      DataBindValue *next = (DataBindValue *)node->data.object_val.items;
+      free(node);
+      node = next;
+    }
+    g_value_pool.free_list = NULL;
+  }
+}
+
+void data_bind_get_value_pool_stats(size_t *allocated, size_t *reused) {
+  if (allocated != NULL) *allocated = g_value_pool.allocated_count;
+  if (reused != NULL) *reused = g_value_pool.reused_count;
 }
 
 static DataBindStatus data_bind_emit_file_to_writer(FILE *file, DataBindWriteFn write,
@@ -4799,23 +5239,28 @@ DataBindStatus data_bind_parse(DataBind *codec, const char *type_name, const uin
   mir_func_node_t *node;
   DataBindValue *(*parse_fn)(const uint8_t *, int64_t);
   DataBindValue *result;
+  char error_path[64];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || type_name == NULL || buf == NULL || out_value == NULL)
     return db_codec_error(codec, error, DATA_BIND_ERR_INVALID_ARG,
                           "Invalid binary bind arguments");
-  if (codec->func_head == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_RUNTIME, "%s",
-                          codec->binary_error[0] != '\0'
-                              ? codec->binary_error
-                              : "Binary parser is unavailable for this schema");
+  if (codec->func_head == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "binary", NULL);
+    return db_error_set(error, DATA_BIND_ERR_RUNTIME, error_path, -1, -1, "%s",
+                        codec->binary_error[0] != '\0'
+                            ? codec->binary_error
+                            : "Binary parser is unavailable for this schema");
+  }
   for (node = codec->func_head; node != NULL; node = node->next) {
     if (strcmp(node->type_name, type_name) == 0) {
       parse_fn = (DataBindValue *(*)(const uint8_t *, int64_t))node->parse_fn;
       codec->error[0] = '\0';
       result = parse_fn(buf, (int64_t)len);
-      if (result == NULL)
-        return db_codec_error(codec, error, DATA_BIND_ERR_RUNTIME,
-                              "Binary bind failed for type: %s", type_name);
+      if (result == NULL) {
+        db_error_format_path(error_path, sizeof(error_path), "binary", "parse failed");
+        return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1,
+                            "Binary bind failed for type: %s", type_name);
+      }
       *out_value = result;
       db_error_clear(error);
       return DATA_BIND_OK;
@@ -4831,6 +5276,7 @@ DataBindStatus data_bind_parse_json(DataBind *codec, const char *type_name,
   json_value_t *root = NULL;
   DataBindValue *result;
   void *ptr;
+  char error_path[128];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || json == NULL ||
       out_value == NULL)
@@ -4838,18 +5284,22 @@ DataBindStatus data_bind_parse_json(DataBind *codec, const char *type_name,
                           "Invalid JSON bind arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "json", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_json((const uint8_t *)json, len, &root) != 0 || root == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "JSON parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "json", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "JSON parse failed");
   }
   result = bind_json_typed_value(codec->schema_root, type_name, root);
   ptr = root;
   turbo_free_json(&ptr);
-  if (result == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "JSON bind failed for type: %s", type_name);
+  if (result == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "json", "$");
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, -1, -1,
+                        "JSON bind failed for type: %s", type_name);
+  }
   *out_value = result;
   db_error_clear(error);
   return DATA_BIND_OK;
@@ -4862,6 +5312,7 @@ DataBindStatus data_bind_parse_json_all(DataBind *codec, const char *type_name,
   DataBindValue *list;
   void *ptr;
   size_t i;
+  char error_path[128];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || json == NULL ||
       out_value == NULL)
@@ -4869,11 +5320,13 @@ DataBindStatus data_bind_parse_json_all(DataBind *codec, const char *type_name,
                           "Invalid JSON bind_all arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "json", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_json((const uint8_t *)json, len, &root) != 0 || root == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "JSON parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "json", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "JSON parse failed");
   }
   list = dbv_new(DATA_BIND_VALUE_LIST);
   if (list != NULL) {
@@ -4901,9 +5354,11 @@ DataBindStatus data_bind_parse_json_all(DataBind *codec, const char *type_name,
   }
   ptr = root;
   turbo_free_json(&ptr);
-  if (list == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "JSON bind_all failed for type: %s", type_name);
+  if (list == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "json", "$[]");
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, -1, -1,
+                        "JSON bind_all failed for type: %s", type_name);
+  }
   *out_value = list;
   db_error_clear(error);
   return DATA_BIND_OK;
@@ -4917,6 +5372,7 @@ DataBindStatus data_bind_parse_csv(DataBind *codec, const char *type_name,
   turbo_csv_options_t opts = {true, ',', '"', true};
   DataBindValue *result = NULL;
   void *ptr;
+  char error_path[128];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || csv == NULL ||
       out_value == NULL)
@@ -4924,20 +5380,24 @@ DataBindStatus data_bind_parse_csv(DataBind *codec, const char *type_name,
                           "Invalid CSV bind arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "csv", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_csv_opts((const uint8_t *)csv, len, &opts, &doc) != 0 || doc == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "CSV parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "csv", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "CSV parse failed");
   }
   if (csv_parse_header_names(csv, len, &headers))
     result = bind_csv_typed_value(codec->schema_root, type_name, doc, row, &headers, "");
   csv_headers_free(&headers);
   ptr = doc;
   turbo_free_csv(&ptr);
-  if (result == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "CSV bind failed for type: %s", type_name);
+  if (result == NULL) {
+    snprintf(error_path, sizeof(error_path), "csv: row %zu", row);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, (int)row, -1,
+                        "CSV bind failed for type: %s", type_name);
+  }
   *out_value = result;
   db_error_clear(error);
   return DATA_BIND_OK;
@@ -4952,6 +5412,7 @@ DataBindStatus data_bind_parse_csv_all(DataBind *codec, const char *type_name,
   DataBindValue *list = NULL;
   void *ptr;
   size_t row;
+  char error_path[128];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || csv == NULL ||
       out_value == NULL)
@@ -4959,11 +5420,13 @@ DataBindStatus data_bind_parse_csv_all(DataBind *codec, const char *type_name,
                           "Invalid CSV bind_all arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "csv", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_csv_opts((const uint8_t *)csv, len, &opts, &doc) != 0 || doc == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "CSV parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "csv", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "CSV parse failed");
   }
   if (csv_parse_header_names(csv, len, &headers)) {
     list = dbv_new(DATA_BIND_VALUE_LIST);
@@ -4984,9 +5447,11 @@ DataBindStatus data_bind_parse_csv_all(DataBind *codec, const char *type_name,
   csv_headers_free(&headers);
   ptr = doc;
   turbo_free_csv(&ptr);
-  if (list == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "CSV bind_all failed for type: %s", type_name);
+  if (list == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "csv", "multiple rows");
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, -1, -1,
+                        "CSV bind_all failed for type: %s", type_name);
+  }
   *out_value = list;
   db_error_clear(error);
   return DATA_BIND_OK;
@@ -4998,6 +5463,7 @@ DataBindStatus data_bind_parse_xml(DataBind *codec, const char *type_name,
   turbo_xml_doc_t *doc = NULL;
   DataBindValue *result = NULL;
   void *ptr;
+  char error_path[128];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || xml == NULL ||
       out_value == NULL)
@@ -5005,18 +5471,22 @@ DataBindStatus data_bind_parse_xml(DataBind *codec, const char *type_name,
                           "Invalid XML bind arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "xml", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_xml((const uint8_t *)xml, len, &doc) != 0 || doc == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "XML parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "xml", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "XML parse failed");
   }
   result = bind_xml_typed_value(codec->schema_root, type_name, doc, "/*");
   ptr = doc;
   turbo_free_xml(&ptr);
-  if (result == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "XML bind failed for type: %s", type_name);
+  if (result == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "xml", "/*");
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, -1, -1,
+                        "XML bind failed for type: %s", type_name);
+  }
   *out_value = result;
   db_error_clear(error);
   return DATA_BIND_OK;
@@ -5028,6 +5498,7 @@ DataBindStatus data_bind_parse_xml_all(DataBind *codec, const char *type_name,
   turbo_xml_doc_t *doc = NULL;
   DataBindValue *list = NULL;
   void *ptr;
+  char error_path[256];
   if (out_value != NULL) *out_value = NULL;
   if (codec == NULL || codec->schema_root == NULL || type_name == NULL || xml == NULL ||
       out_value == NULL)
@@ -5035,11 +5506,13 @@ DataBindStatus data_bind_parse_xml_all(DataBind *codec, const char *type_name,
                           "Invalid XML bind_all arguments");
   codec->error[0] = '\0';
   if (!bind_type_supported(codec->schema_root, type_name)) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_NOT_FOUND,
-                          "Type not found: %s", type_name);
+    db_error_format_path(error_path, sizeof(error_path), "xml", NULL);
+    return db_error_set(error, DATA_BIND_ERR_TYPE_NOT_FOUND, error_path, -1, -1,
+                        "Type not found: %s", type_name);
   }
   if (turbo_parse_xml((const uint8_t *)xml, len, &doc) != 0 || doc == NULL) {
-    return db_codec_error(codec, error, DATA_BIND_ERR_PARSE, "XML parse failed");
+    db_error_format_path(error_path, sizeof(error_path), "xml", NULL);
+    return db_error_set(error, DATA_BIND_ERR_PARSE, error_path, -1, -1, "XML parse failed");
   }
   list = dbv_new(DATA_BIND_VALUE_LIST);
   if (list != NULL) {
@@ -5078,9 +5551,12 @@ DataBindStatus data_bind_parse_xml_all(DataBind *codec, const char *type_name,
   }
   ptr = doc;
   turbo_free_xml(&ptr);
-  if (list == NULL)
-    return db_codec_error(codec, error, DATA_BIND_ERR_TYPE_MISMATCH,
-                          "XML bind_all failed for type: %s", type_name);
+  if (list == NULL) {
+    db_error_format_path(error_path, sizeof(error_path), "xml", 
+                         xpath != NULL && xpath[0] != '\0' ? xpath : "/*");
+    return db_error_set(error, DATA_BIND_ERR_TYPE_MISMATCH, error_path, -1, -1,
+                        "XML bind_all failed for type: %s", type_name);
+  }
   *out_value = list;
   db_error_clear(error);
   return DATA_BIND_OK;

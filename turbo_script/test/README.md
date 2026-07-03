@@ -8,8 +8,13 @@
 
 | 文件 | 描述 | 类型 |
 |------|------|------|
-| `test_turbo_script.c` | 核心功能测试 | 集成测试 |
-| `test_turbo_script_mir.c` | JIT 编译器测试 | 单元测试 |
+| `test_turbo_script_basics.c` | 基础语言与运行时测试 | 集成测试 |
+| `test_turbo_script_quant.c` | 量化相关内置能力测试 | 集成测试 |
+| `test_turbo_script_scientific.c` | 科学计算、模板与 regex 测试 | 集成测试 |
+| `test_turbo_script_io.c` | IO 与插件相关测试 | 集成测试 |
+| `test_turbo_script_mir_core.c` | JIT 核心路径测试 | 单元测试 |
+| `test_turbo_script_mir_oop.c` | JIT OOP 路径测试 | 单元测试 |
+| `test_turbo_script_mir_advanced.c` | JIT 高级语义测试 | 单元测试 |
 | `bench_turbo_script.c` | 解释器性能基准 | 性能测试 |
 | `bench_turbo_script_mir.c` | JIT 性能基准 | 性能测试 |
 
@@ -22,7 +27,8 @@
 ```bash
 cd build
 cmake ..
-cmake --build . --target test_turbo_script_mir
+cmake --build . --target test_turbo_script_scientific
+cmake --build . --target test_turbo_script_mir_core
 cmake --build . --target bench_turbo_script_mir
 ```
 
@@ -30,7 +36,8 @@ cmake --build . --target bench_turbo_script_mir
 
 ```bash
 cd build
-make test_turbo_script_mir
+make test_turbo_script_scientific
+make test_turbo_script_mir_core
 make bench_turbo_script_mir
 ```
 
@@ -38,7 +45,8 @@ make bench_turbo_script_mir
 
 ```powershell
 cd build
-msbuild turbo_script.sln /t:test_turbo_script_mir
+msbuild turbo_script.sln /t:test_turbo_script_scientific
+msbuild turbo_script.sln /t:test_turbo_script_mir_core
 msbuild turbo_script.sln /t:bench_turbo_script_mir
 ```
 
@@ -57,10 +65,13 @@ ctest -V
 
 ```bash
 # JIT 编译器测试
-ctest -R test_turbo_script_mir -V
+ctest -R "test_turbo_script_mir_(core|oop|advanced)" -V
 
-# 核心功能测试
-ctest -R test_turbo_script -V
+# 解释器拆分测试
+ctest -R "test_turbo_script_(basics|quant|scientific|io)" -V
+
+# regex 相关测试
+ctest -R test_turbo_script_scientific -V
 ```
 
 ### 直接运行可执行文件
@@ -69,7 +80,9 @@ ctest -R test_turbo_script -V
 cd build/bin
 
 # JIT 测试
-./test_turbo_script_mir
+./test_turbo_script_mir_core
+./test_turbo_script_mir_oop
+./test_turbo_script_mir_advanced
 
 # 性能基准
 ./bench_turbo_script_mir
@@ -117,7 +130,7 @@ Results:
 
 ```bash
 cd build/bin
-valgrind --leak-check=full --show-leak-kinds=all ./test_turbo_script_mir
+valgrind --leak-check=full --show-leak-kinds=all ./test_turbo_script_mir_core
 ```
 
 **预期输出**：
@@ -138,7 +151,7 @@ cmake .. -DCMAKE_BUILD_TYPE=Debug -DENABLE_ASAN=ON
 cmake --build .
 
 # 运行测试
-./bin/test_turbo_script_mir
+./bin/test_turbo_script_mir_core
 ```
 
 ---
@@ -229,17 +242,17 @@ open coverage_html/index.html
 
 ### 测试失败
 
-**问题**: `test_turbo_script_mir` 失败
+**问题**: `test_turbo_script_mir_core` 失败
 **解决方案**:
-1. 检查 MIR 库是否正确链接：`ldd ./test_turbo_script_mir`
+1. 检查 MIR 库是否正确链接：`ldd ./test_turbo_script_mir_core`
 2. 检查平台支持：MIR 仅支持 x86_64/aarch64/ppc64le/s390x/riscv64
-3. 查看错误日志：`./test_turbo_script_mir 2>&1 | tee test.log`
+3. 查看错误日志：`./test_turbo_script_mir_core 2>&1 | tee test.log`
 
 **问题**: 性能基准显示 JIT 比解释器慢
 **解决方案**:
 1. 检查是否首次运行（包含编译时间）
 2. 增加迭代次数以摊销编译开销
-3. 检查脚本是否包含 JIT 不支持特性（使用 `test_turbo_script_mir` 验证）
+3. 检查脚本是否包含 JIT 不支持特性（使用 MIR 拆分测试验证）
 
 **问题**: 内存泄漏
 **解决方案**:
@@ -253,7 +266,7 @@ open coverage_html/index.html
 
 ### 添加 JIT 测试
 
-1. 编辑 `test_turbo_script_mir.c`
+1. 按范围编辑 `test_turbo_script_mir_core.c`、`test_turbo_script_mir_oop.c` 或 `test_turbo_script_mir_advanced.c`
 2. 添加新的 `it()` 块：
    ```c
    it("should handle new feature") {

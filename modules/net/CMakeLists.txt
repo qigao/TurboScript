@@ -33,7 +33,6 @@ set_target_properties(
              PREFIX ""
              VERSION ${PROJECT_VERSION}
              SOVERSION ${PROJECT_VERSION_MAJOR})
-set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME "net")
 target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 

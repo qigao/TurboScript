@@ -105,15 +105,29 @@ static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
 
 void turbo_script_free(turbo_script_ctx_t *ctx) {
   if (!ctx) return;
-  /* expr is freed by compiled_asts[] loop below if expr_in_compiled_asts == 1;
-   * otherwise free it directly here. */
-  if (ctx->expr && !ctx->expr_in_compiled_asts) exprtk_free(ctx->expr);
-  free(ctx->expr_source);
 
   // Free JIT cache copied script strings
   for (int i = 0; i < TS_JIT_CACHE_SIZE; ++i) {
     free(ctx->jit_cache[i].script);
   }
+
+  /* MIR code stores pointers into compiled AST nodes. Finish MIR contexts before
+   * tearing down AST arenas that those contexts may reference. */
+  if (ctx->mir_ctx) {
+    if (ctx->mir_gen_initialized) MIR_gen_finish(ctx->mir_ctx);
+    MIR_finish(ctx->mir_ctx);
+  }
+  if (ctx->mir_interp_ctx) {
+    MIR_finish(ctx->mir_interp_ctx);
+  }
+  if (ctx->script_mir_ctx) {
+    MIR_finish(ctx->script_mir_ctx);
+  }
+
+  /* expr is freed by compiled_asts[] loop below if expr_in_compiled_asts == 1;
+   * otherwise free it directly here. */
+  if (ctx->expr && !ctx->expr_in_compiled_asts) exprtk_free(ctx->expr);
+  free(ctx->expr_source);
 
   // Free compiled ASTs
   if (ctx->compiled_asts) {
@@ -134,18 +148,6 @@ void turbo_script_free(turbo_script_ctx_t *ctx) {
     if (mod->has_exports && exprtk_value_is_object_like(&mod->exports)) exprtk_map_free(&mod->exports);
     free(mod);
     mod = next;
-  }
-
-  /* Phase 15: finish gen context if it was initialized */
-  if (ctx->mir_ctx) {
-    if (ctx->mir_gen_initialized) MIR_gen_finish(ctx->mir_ctx);
-    MIR_finish(ctx->mir_ctx);
-  }
-  if (ctx->mir_interp_ctx) {
-    MIR_finish(ctx->mir_interp_ctx);
-  }
-  if (ctx->script_mir_ctx) {
-    MIR_finish(ctx->script_mir_ctx);
   }
 
   exprtk_env_free(&ctx->env);

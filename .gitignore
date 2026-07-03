@@ -8,6 +8,11 @@ conan-cache/
 coverage.xml
 vcpkg_installed/
 
+# Agents
+.agents
+.codex
+.codegraph/
+
 # IDE files
 .vs/
 .idea/
@@ -20,7 +25,6 @@ vcpkg_installed/
 _ReSharper*
 *.log
 .cache/
-.codegraph/
 
 # Compiled Object files
 *.slo
@@ -68,18 +72,3 @@ Thumbs.db
 # User specific settings
 .env
  
-
-# Security - Entire projects directory (contains generated keys, licenses, and project-specific configs)
-# NEVER commit this directory - it contains:
-# - RSA private/public keys (private_key.rsa, public_key.rsa)
-# - Generated license files (.lic)
-# - Project-specific configuration headers (licensecc_properties.h, public_key.h)
-# - License encryption keys (license_encryption.key)
-projects/
-
-# Security - Additional protection for keys anywhere in the tree
-license_encryption.key
-*.key
-**/license_encryption.key
-**/*_key.rsa
-**/*.lic
