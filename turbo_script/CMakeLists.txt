@@ -10,26 +10,52 @@ set(SOURCE_FILES
   src/turbo_script_closure_analysis.c
   src/turbo_script_closure_analysis.h
   src/turbo_script_internal.h
-  src/turbo_script_mir.c
   src/turbo_script_registry.c
 )
 
+# MIR backend modules. turbo_script_mir.c still owns the main AST lowering path
+# while cohesive subsystems are moved into src/mir/*.c modules.
+set(MIR_BACKEND_FILES
+  src/turbo_script_mir.c
+  src/mir/turbo_script_mir_api.c
+  src/mir/turbo_script_mir_cache.c
+  src/mir/turbo_script_mir_compiler.c
+  src/mir/turbo_script_mir_constant.c
+  src/mir/turbo_script_mir_data.c
+  src/mir/turbo_script_mir_functions.c
+  src/mir/turbo_script_mir_oop.c
+  src/mir/turbo_script_mir_runtime.c
+  src/mir/turbo_script_mir_value_emit.c
+  src/mir/turbo_script_mir_value_runtime.c
+)
+
+# Combine all sources
+set(ALL_SOURCE_FILES ${SOURCE_FILES} ${MIR_BACKEND_FILES})
+
 # ── STATIC lib for testing ────────────────────────────────────────
-add_library(${TARGET_NAME_LIB} STATIC ${SOURCE_FILES})
+add_library(${TARGET_NAME_LIB} STATIC ${ALL_SOURCE_FILES})
 
 target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
-  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir)
+  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static
   PUBLIC TurboNet::Utils TurboNet::Parser)
 
+# Enable strict warnings for modularized code
+if(MSVC)
+  target_compile_options(${TARGET_NAME_LIB} PRIVATE /W4)
+else()
+  target_compile_options(${TARGET_NAME_LIB} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
+
 # ── SHARED library ────────────────────────────────────────────────
-add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
+add_library(${TARGET_NAME} SHARED ${ALL_SOURCE_FILES})
 
 cmake_config_target(
   ${TARGET_NAME}
@@ -44,7 +70,8 @@ target_include_directories(
   ${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
-  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir)
+  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
 target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
 
