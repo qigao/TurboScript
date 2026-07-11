@@ -1,0 +1,47 @@
+#ifndef TRE_INTERNAL_CONFIG_H
+#define TRE_INTERNAL_CONFIG_H 1
+
+#define HAVE_ISASCII 1
+#define HAVE_ISWCTYPE 1
+#define HAVE_ISWLOWER 1
+#define HAVE_ISWUPPER 1
+#define HAVE_LIMITS_H 1
+#define HAVE_MBRTOWC 1
+#define HAVE_MBSTATE_T 1
+#define HAVE_MBTOWC 1
+#define HAVE_STDINT_H 1
+#define HAVE_STDLIB_H 1
+#define HAVE_STRING_H 1
+#define HAVE_SYS_STAT_H 1
+#define HAVE_SYS_TYPES_H 1
+#define HAVE_TOWUPPER 1
+#define HAVE_WCHAR_H 1
+#define HAVE_WCHAR_T 1
+#define HAVE_WCSCHR 1
+#define HAVE_WCSCPY 1
+#define HAVE_WCSLEN 1
+#define HAVE_WCSNCPY 1
+#define HAVE_WCSRTOMBS 1
+#define HAVE_WCTYPE 1
+#define HAVE_WCTYPE_H 1
+#define STDC_HEADERS 1
+#define TRE_APPROX 1
+#define TRE_MULTIBYTE 1
+#define TRE_REGEX_T_FIELD value
+#define TRE_VERSION "@TRE_VERSION@"
+#define TRE_VERSION_1 @TRE_VERSION_1@
+#define TRE_VERSION_2 @TRE_VERSION_2@
+#define TRE_VERSION_3 @TRE_VERSION_3@
+#define TRE_WCHAR 1
+
+#if defined(_MSC_VER)
+#define HAVE_MALLOC_H 1
+#define inline __inline
+#if defined(_WIN64)
+typedef __int64 ssize_t;
+#else
+typedef int ssize_t;
+#endif
+#endif
+
+#endif

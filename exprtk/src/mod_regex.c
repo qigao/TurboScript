@@ -1,21 +1,23 @@
 /**
  * @file mod_regex.c
- * @brief Core regex builtins backed by libfsm.
+ * @brief Core regex builtins backed by the local tiny regex engine.
  */
 #include "exprtk_module.h"
-
-#include <fsm/fsm.h>
-#include <re/re.h>
+#include "re.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+#include <limits.h>
+#include <stdint.h>
 
 #define EXPRTK_REGEX_MAX_PATTERNS 32
+#define EXPRTK_REGEX_FLAG_IGNORE_CASE 1
+#define EXPRTK_REGEX_MAX_COUNTED_REPEAT 64
 
 typedef struct {
-    struct fsm *fsm;
     char *pattern;
+    char *compiled_pattern;
     int flags;
 } exprtk_regex_pattern_t;
 
@@ -65,13 +67,15 @@ static char *regex_arena_string(mem_pool_t *arena, tstr_v s) {
 static int regex_parse_flags(tstr_v flags) {
     int out = 0;
     for (size_t i = 0; i < flags.len; ++i) {
-        if (flags.data[i] == 'i' || flags.data[i] == 'I') out |= 1;
+        if (flags.data[i] == 'i' || flags.data[i] == 'I') {
+            out |= EXPRTK_REGEX_FLAG_IGNORE_CASE;
+        }
     }
     return out;
 }
 
 static char *regex_expand_flags(const char *pattern, int flags) {
-    if (!(flags & 1)) return regex_strdup_len(pattern, strlen(pattern));
+    if (!(flags & EXPRTK_REGEX_FLAG_IGNORE_CASE)) return regex_strdup_len(pattern, strlen(pattern));
     size_t len = strlen(pattern);
     char *out = (char *)malloc(len * 6 + 1);
     if (!out) return NULL;
@@ -130,6 +134,185 @@ static char *regex_expand_flags(const char *pattern, int flags) {
     return out;
 }
 
+static int regex_buf_reserve(char **buf, size_t *cap, size_t needed) {
+    if (needed <= *cap) return 1;
+    size_t next = *cap ? *cap : 64;
+    while (next < needed) {
+        if (next > (SIZE_MAX / 2)) return 0;
+        next *= 2;
+    }
+    char *grown = (char *)realloc(*buf, next);
+    if (!grown) return 0;
+    *buf = grown;
+    *cap = next;
+    return 1;
+}
+
+static int regex_buf_append(char **buf, size_t *len, size_t *cap,
+                            const char *data, size_t data_len) {
+    if (!regex_buf_reserve(buf, cap, *len + data_len + 1)) return 0;
+    if (data_len > 0) memcpy(*buf + *len, data, data_len);
+    *len += data_len;
+    (*buf)[*len] = '\0';
+    return 1;
+}
+
+static size_t regex_atom_end(const char *pattern, size_t start, size_t len) {
+    if (start >= len) return start;
+    if (pattern[start] == '\\') {
+        return start + ((start + 1 < len) ? 2 : 1);
+    }
+    if (pattern[start] == '[') {
+        size_t i = start + 1;
+        while (i < len) {
+            if (pattern[i] == '\\' && i + 1 < len) {
+                i += 2;
+                continue;
+            }
+            if (pattern[i] == ']') return i + 1;
+            ++i;
+        }
+        return len;
+    }
+    if (pattern[start] == '(') {
+        size_t i = start + 1;
+        int depth = 1;
+        while (i < len) {
+            if (pattern[i] == '\\' && i + 1 < len) {
+                i += 2;
+                continue;
+            }
+            if (pattern[i] == '[') {
+                i = regex_atom_end(pattern, i, len);
+                continue;
+            }
+            if (pattern[i] == '(') {
+                ++depth;
+            } else if (pattern[i] == ')') {
+                --depth;
+                if (depth == 0) return i + 1;
+            }
+            ++i;
+        }
+        return len;
+    }
+    return start + 1;
+}
+
+static int regex_parse_exact_repeat(const char *pattern, size_t open, size_t len,
+                                    size_t *close_out, int *count_out) {
+    size_t i = open + 1;
+    int count = 0;
+    if (i >= len || !isdigit((unsigned char)pattern[i])) return 0;
+    while (i < len && isdigit((unsigned char)pattern[i])) {
+        int digit = pattern[i] - '0';
+        if (count > (EXPRTK_REGEX_MAX_COUNTED_REPEAT - digit) / 10) return -1;
+        count = count * 10 + digit;
+        ++i;
+    }
+    if (i >= len || pattern[i] != '}') return 0;
+    *close_out = i;
+    *count_out = count;
+    return 1;
+}
+
+static char *regex_expand_counted_repeats(const char *pattern, exprtk_env_t *env) {
+    size_t len = strlen(pattern);
+    char *out = NULL;
+    size_t out_len = 0;
+    size_t out_cap = 0;
+    size_t i = 0;
+
+    while (i < len) {
+        size_t atom_start = out_len;
+        size_t atom_end = regex_atom_end(pattern, i, len);
+        size_t atom_len = atom_end - i;
+        if (!regex_buf_append(&out, &out_len, &out_cap, pattern + i, atom_len)) {
+            free(out);
+            regex_set_error(env, "regex: out of memory");
+            return NULL;
+        }
+        i = atom_end;
+
+        if (i < len && pattern[i] == '{') {
+            size_t repeat_close = 0;
+            int repeat_count = 0;
+            int repeat_status = regex_parse_exact_repeat(pattern, i, len,
+                                                         &repeat_close, &repeat_count);
+            if (repeat_status < 0) {
+                free(out);
+                regex_set_error(env, "regex: counted repeat is too large");
+                return NULL;
+            }
+            if (repeat_status > 0) {
+                if (repeat_count == 0) {
+                    out_len = atom_start;
+                    out[out_len] = '\0';
+                } else {
+                    size_t extra = atom_len * (size_t)(repeat_count - 1);
+                    if (atom_len != 0 && extra / atom_len != (size_t)(repeat_count - 1)) {
+                        free(out);
+                        regex_set_error(env, "regex: counted repeat is too large");
+                        return NULL;
+                    }
+                    if (!regex_buf_reserve(&out, &out_cap, out_len + extra + 1)) {
+                        free(out);
+                        regex_set_error(env, "regex: out of memory");
+                        return NULL;
+                    }
+                    for (int n = 1; n < repeat_count; ++n) {
+                        memcpy(out + out_len, out + atom_start, atom_len);
+                        out_len += atom_len;
+                        out[out_len] = '\0';
+                    }
+                }
+                i = repeat_close + 1;
+            }
+        }
+    }
+
+    if (!out) return regex_strdup_len("", 0);
+    return out;
+}
+
+static char *regex_prepare_pattern(const char *pattern, int flags, int anchored,
+                                   exprtk_env_t *env) {
+    if (!pattern) return NULL;
+    char *case_expanded = regex_expand_flags(pattern, flags);
+    if (!case_expanded) {
+        regex_set_error(env, "regex: out of memory");
+        return NULL;
+    }
+    char *expanded = regex_expand_counted_repeats(case_expanded, env);
+    free(case_expanded);
+    if (!expanded) return NULL;
+    if (!anchored) return expanded;
+
+    size_t pattern_len = strlen(expanded);
+    char *wrapped = (char *)malloc(pattern_len + 5);
+    if (!wrapped) {
+        free(expanded);
+        regex_set_error(env, "regex: out of memory");
+        return NULL;
+    }
+    wrapped[0] = '^';
+    wrapped[1] = '(';
+    memcpy(wrapped + 2, expanded, pattern_len);
+    wrapped[pattern_len + 2] = ')';
+    wrapped[pattern_len + 3] = '$';
+    wrapped[pattern_len + 4] = '\0';
+    free(expanded);
+    return wrapped;
+}
+
+static int regex_validate_prepared(const char *pattern, exprtk_env_t *env) {
+    if (!re_compile(pattern)) {
+        regex_set_error(env, "regex: pattern compilation failed");
+        return 0;
+    }
+    return 1;
+}
+
 static exprtk_value_t regex_copy_string(mem_pool_t *arena, const char *data, size_t len) {
     char *out = (char *)mem_alloc(arena, len + 1);
     if (!out) return regex_zero();
@@ -157,8 +340,8 @@ static exprtk_regex_ctx_t *regex_get_ctx(exprtk_env_t *env) {
 
 static void regex_free_pattern(exprtk_regex_pattern_t *pattern) {
     if (!pattern) return;
-    if (pattern->fsm) fsm_free(pattern->fsm);
     free(pattern->pattern);
+    free(pattern->compiled_pattern);
     free(pattern);
 }
 
@@ -170,47 +353,6 @@ void exprtk_regex_ctx_destroy(void *p) {
         ctx->patterns[i] = NULL;
     }
     free(ctx);
-}
-
-static struct fsm *regex_compile_fsm(const char *pattern, int flags, exprtk_env_t *env) {
-    if (!pattern) return NULL;
-    char *expanded = regex_expand_flags(pattern, flags);
-    if (!expanded) {
-        regex_set_error(env, "regex: out of memory");
-        return NULL;
-    }
-    size_t pattern_len = strlen(expanded);
-    char *anchored = (char *)malloc(pattern_len + 5);
-    if (!anchored) {
-        free(expanded);
-        regex_set_error(env, "regex: out of memory");
-        return NULL;
-    }
-    anchored[0] = '^';
-    anchored[1] = '(';
-    memcpy(anchored + 2, expanded, pattern_len);
-    anchored[pattern_len + 2] = ')';
-    anchored[pattern_len + 3] = '$';
-    anchored[pattern_len + 4] = '\0';
-    free(expanded);
-
-    char *cursor = anchored;
-    struct re_err err;
-    enum re_flags re_flags_value = 0;
-    struct fsm *fsm = re_comp(RE_PCRE, fsm_sgetc, &cursor, NULL, re_flags_value, &err);
-    if (!fsm) {
-        free(anchored);
-        regex_set_error(env, "regex: pattern compilation failed");
-        return NULL;
-    }
-    if (!fsm_determinise(fsm) || !fsm_minimise(fsm)) {
-        fsm_free(fsm);
-        free(anchored);
-        regex_set_error(env, "regex: pattern optimization failed");
-        return NULL;
-    }
-    free(anchored);
-    return fsm;
 }
 
 static int regex_alloc_handle(exprtk_regex_ctx_t *ctx, exprtk_regex_pattern_t *pattern) {
@@ -240,7 +382,7 @@ static exprtk_regex_pattern_t *regex_get_handle(exprtk_env_t *env, exprtk_value_
     return ctx->patterns[handle];
 }
 
-static struct fsm *regex_compile_arg(exprtk_value_t value, int flags, exprtk_env_t *env,
+static const char *regex_compile_arg(exprtk_value_t value, int flags, exprtk_env_t *env,
                                      mem_pool_t *arena, int *owned,
                                      exprtk_regex_pattern_t **stored) {
     *owned = 0;
@@ -252,44 +394,66 @@ static struct fsm *regex_compile_arg(exprtk_value_t value, int flags, exprtk_env
             return NULL;
         }
         *owned = 1;
-        return regex_compile_fsm(pattern, flags, env);
+        char *compiled_pattern = regex_prepare_pattern(pattern, flags, 0, env);
+        if (!compiled_pattern) return NULL;
+        if (!regex_validate_prepared(compiled_pattern, env)) {
+            free(compiled_pattern);
+            return NULL;
+        }
+        return compiled_pattern;
     }
     if (value.type == EXPRTK_VAL_INTEGER || value.type == EXPRTK_VAL_NUMBER) {
         *stored = regex_get_handle(env, value);
-        return *stored ? (*stored)->fsm : NULL;
+        return *stored ? (*stored)->compiled_pattern : NULL;
     }
     regex_set_error(env, "regex: expected pattern string or compiled handle");
     return NULL;
 }
 
-static int regex_accepts_span(struct fsm *fsm, const char *data, size_t len) {
+static int regex_accepts_span(const char *compiled_pattern, const char *data, size_t len,
+                              exprtk_env_t *env) {
+    if (len > (size_t)INT_MAX) {
+        regex_set_error(env, "regex: input is too large");
+        return 0;
+    }
+    char *anchored = regex_prepare_pattern(compiled_pattern, 0, 1, env);
+    if (!anchored) return 0;
+    re_t compiled = re_compile(anchored);
+    free(anchored);
+    if (!compiled) {
+        regex_set_error(env, "regex: pattern compilation failed");
+        return 0;
+    }
     char *buf = regex_strdup_len(data, len);
     if (!buf) return 0;
-    const char *cursor = buf;
-    fsm_state_t end_state;
-    int result = fsm_exec(fsm, fsm_sgetc, &cursor, &end_state, NULL);
-    int ok = result == 1 && cursor == buf + len;
+    int match_len = -1;
+    int idx = re_matchp(compiled, buf, &match_len);
+    int ok = idx == 0 && match_len == (int)len;
     free(buf);
     return ok;
 }
 
-static int regex_find(struct fsm *fsm, const char *data, size_t len,
-                      size_t start_at, size_t *start_out, size_t *end_out) {
-    if (start_at > len) return 0;
-    for (size_t i = start_at; i < len; ++i) {
-        size_t best_end = 0;
-        for (size_t j = i + 1; j <= len; ++j) {
-            if (regex_accepts_span(fsm, data + i, j - i)) {
-                best_end = j;
-            }
-        }
-        if (best_end > i) {
-            if (start_out) *start_out = i;
-            if (end_out) *end_out = best_end;
-            return 1;
-        }
+static int regex_find(const char *compiled_pattern, const char *data, size_t len,
+                      size_t start_at, size_t *start_out, size_t *end_out,
+                      exprtk_env_t *env) {
+    if (start_at >= len || len - start_at > (size_t)INT_MAX) return 0;
+    re_t compiled = re_compile(compiled_pattern);
+    if (!compiled) {
+        regex_set_error(env, "regex: pattern compilation failed");
+        return 0;
     }
-    return 0;
+    char *buf = regex_strdup_len(data + start_at, len - start_at);
+    if (!buf) {
+        regex_set_error(env, "regex: out of memory");
+        return 0;
+    }
+    int match_len = -1;
+    int idx = re_matchp(compiled, buf, &match_len);
+    free(buf);
+    if (idx < 0 || match_len <= 0) return 0;
+    if (start_out) *start_out = start_at + (size_t)idx;
+    if (end_out) *end_out = start_at + (size_t)idx + (size_t)match_len;
+    return 1;
 }
 
 static exprtk_value_t regex_match_map(mem_pool_t *arena, const char *data, size_t len,
@@ -317,7 +481,7 @@ static int regex_optional_flags(size_t argc, exprtk_value_t *args, size_t index,
 static exprtk_value_t regex_object_from_handle(int handle, exprtk_regex_pattern_t *pattern,
                                                mem_pool_t *arena) {
     exprtk_value_t object = exprtk_val_object();
-    const char *flags = (pattern && (pattern->flags & 1)) ? "i" : "";
+    const char *flags = (pattern && (pattern->flags & EXPRTK_REGEX_FLAG_IGNORE_CASE)) ? "i" : "";
     exprtk_map_set(&object, "__ts_method_provider", exprtk_val_str(tstr_v_from_cstr("RegExp")));
     exprtk_map_set(&object, "handle", exprtk_val_int(handle));
     exprtk_map_set(&object, "source",
@@ -379,18 +543,22 @@ static exprtk_value_t fn_regex_compile(size_t argc, exprtk_value_t *args,
         return regex_zero();
     }
 
-    struct fsm *fsm = regex_compile_fsm(pattern, flags, env);
-    if (!fsm) return regex_zero();
+    char *compiled_pattern = regex_prepare_pattern(pattern, flags, 0, env);
+    if (!compiled_pattern) return regex_zero();
+    if (!regex_validate_prepared(compiled_pattern, env)) {
+        free(compiled_pattern);
+        return regex_zero();
+    }
 
     exprtk_regex_pattern_t *compiled =
         (exprtk_regex_pattern_t *)calloc(1, sizeof(exprtk_regex_pattern_t));
     if (!compiled) {
-        fsm_free(fsm);
+        free(compiled_pattern);
         regex_set_error(env, "regex.compile: out of memory");
         return regex_zero();
     }
-    compiled->fsm = fsm;
     compiled->flags = flags;
+    compiled->compiled_pattern = compiled_pattern;
     compiled->pattern = regex_strdup_len(pattern, strlen(pattern));
     if (!compiled->pattern) {
         regex_free_pattern(compiled);
@@ -423,18 +591,22 @@ static exprtk_value_t fn_regexp_ctor(size_t argc, exprtk_value_t *args,
         return regex_null();
     }
 
-    struct fsm *fsm = regex_compile_fsm(pattern, flags, env);
-    if (!fsm) return regex_null();
+    char *compiled_pattern = regex_prepare_pattern(pattern, flags, 0, env);
+    if (!compiled_pattern) return regex_null();
+    if (!regex_validate_prepared(compiled_pattern, env)) {
+        free(compiled_pattern);
+        return regex_null();
+    }
 
     exprtk_regex_pattern_t *compiled =
         (exprtk_regex_pattern_t *)calloc(1, sizeof(exprtk_regex_pattern_t));
     if (!compiled) {
-        fsm_free(fsm);
+        free(compiled_pattern);
         regex_set_error(env, "RegExp: out of memory");
         return regex_null();
     }
-    compiled->fsm = fsm;
     compiled->flags = flags;
+    compiled->compiled_pattern = compiled_pattern;
     compiled->pattern = regex_strdup_len(pattern, strlen(pattern));
     if (!compiled->pattern) {
         regex_free_pattern(compiled);
@@ -473,13 +645,13 @@ static exprtk_value_t fn_regex_match(size_t argc, exprtk_value_t *args,
     if (!regex_optional_flags(argc, args, 2, &flags, env)) return regex_zero();
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
 
     tstr_v text = args[1].data.string;
-    int ok = regex_accepts_span(fsm, text.data, text.len);
-    if (owned) fsm_free(fsm);
+    int ok = regex_accepts_span(compiled_pattern, text.data, text.len, env);
+    if (owned) free((char *)compiled_pattern);
     return exprtk_val_num(ok ? 1.0 : 0.0);
 }
 
@@ -493,14 +665,14 @@ static exprtk_value_t fn_regex_search(size_t argc, exprtk_value_t *args,
     if (!regex_optional_flags(argc, args, 2, &flags, env)) return regex_zero();
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
 
     tstr_v text = args[1].data.string;
     size_t start = 0, end = 0;
-    int found = regex_find(fsm, text.data, text.len, 0, &start, &end);
-    if (owned) fsm_free(fsm);
+    int found = regex_find(compiled_pattern, text.data, text.len, 0, &start, &end, env);
+    if (owned) free((char *)compiled_pattern);
     return exprtk_val_num(found ? (double)start : -1.0);
 }
 
@@ -514,23 +686,23 @@ static exprtk_value_t fn_regex_find_all(size_t argc, exprtk_value_t *args,
     if (!regex_optional_flags(argc, args, 2, &flags, env)) return regex_zero();
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
 
     tstr_v text = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     size_t cursor = 0;
     while (cursor <= text.len) {
         size_t start = 0, end = 0;
-        if (!regex_find(fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_find(compiled_pattern, text.data, text.len, cursor, &start, &end, env)) break;
         if (!regex_list_push_string(&list, arena, text.data + start, end - start)) {
-            if (owned) fsm_free(fsm);
+            if (owned) free((char *)compiled_pattern);
             return regex_zero();
         }
         cursor = end > start ? end : start + 1;
     }
-    if (owned) fsm_free(fsm);
+    if (owned) free((char *)compiled_pattern);
     return list;
 }
 
@@ -562,9 +734,9 @@ static exprtk_value_t fn_regex_split(size_t argc, exprtk_value_t *args,
 
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
 
     tstr_v text = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
@@ -572,19 +744,19 @@ static exprtk_value_t fn_regex_split(size_t argc, exprtk_value_t *args,
     int splits = 0;
     while (cursor <= text.len && (limit <= 0 || splits < limit)) {
         size_t start = 0, end = 0;
-        if (!regex_find(fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_find(compiled_pattern, text.data, text.len, cursor, &start, &end, env)) break;
         if (!regex_list_push_string(&list, arena, text.data + cursor, start - cursor)) {
-            if (owned) fsm_free(fsm);
+            if (owned) free((char *)compiled_pattern);
             return regex_zero();
         }
         cursor = end > start ? end : start + 1;
         splits++;
     }
     if (!regex_list_push_string(&list, arena, text.data + cursor, text.len - cursor)) {
-        if (owned) fsm_free(fsm);
+        if (owned) free((char *)compiled_pattern);
         return regex_zero();
     }
-    if (owned) fsm_free(fsm);
+    if (owned) free((char *)compiled_pattern);
     return list;
 }
 
@@ -617,16 +789,16 @@ static exprtk_value_t fn_regex_replace(size_t argc, exprtk_value_t *args,
 
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
 
     tstr_v text = args[1].data.string;
     tstr_v replacement = args[2].data.string;
     size_t cap = text.len + 1;
     char *buf = (char *)mem_alloc(arena, cap);
     if (!buf) {
-        if (owned) fsm_free(fsm);
+        if (owned) free((char *)compiled_pattern);
         regex_set_error(env, "regex.replace: out of memory");
         return regex_zero();
     }
@@ -636,13 +808,13 @@ static exprtk_value_t fn_regex_replace(size_t argc, exprtk_value_t *args,
     int replacements = 0;
     while (cursor <= text.len && (limit <= 0 || replacements < limit)) {
         size_t start = 0, end = 0;
-        if (!regex_find(fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_find(compiled_pattern, text.data, text.len, cursor, &start, &end, env)) break;
         size_t extra = (start - cursor) + replacement.len;
         if (pos + extra + 1 > cap) {
             cap = (pos + extra + 1) * 2;
             char *grown = (char *)mem_alloc(arena, cap);
             if (!grown) {
-                if (owned) fsm_free(fsm);
+                if (owned) free((char *)compiled_pattern);
                 return regex_zero();
             }
             if (pos > 0) memcpy(grown, buf, pos);
@@ -666,7 +838,7 @@ static exprtk_value_t fn_regex_replace(size_t argc, exprtk_value_t *args,
             cap = pos + rest + 1;
             char *grown = (char *)mem_alloc(arena, cap);
             if (!grown) {
-                if (owned) fsm_free(fsm);
+                if (owned) free((char *)compiled_pattern);
                 return regex_zero();
             }
             if (pos > 0) memcpy(grown, buf, pos);
@@ -676,7 +848,7 @@ static exprtk_value_t fn_regex_replace(size_t argc, exprtk_value_t *args,
         pos += rest;
     }
     buf[pos] = '\0';
-    if (owned) fsm_free(fsm);
+    if (owned) free((char *)compiled_pattern);
     return exprtk_val_str(tstr_v_from_buf(buf, pos));
 }
 
@@ -690,13 +862,13 @@ static exprtk_value_t fn_regex_match_info(size_t argc, exprtk_value_t *args,
     if (!regex_optional_flags(argc, args, 2, &flags, env)) return regex_zero();
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
     tstr_v text = args[1].data.string;
     size_t start = 0, end = 0;
-    int found = regex_find(fsm, text.data, text.len, 0, &start, &end);
-    if (owned) fsm_free(fsm);
+    int found = regex_find(compiled_pattern, text.data, text.len, 0, &start, &end, env);
+    if (owned) free((char *)compiled_pattern);
     return regex_match_map(arena, text.data, text.len, found, start, end);
 }
 
@@ -710,19 +882,19 @@ static exprtk_value_t fn_regex_find_iter(size_t argc, exprtk_value_t *args,
     if (!regex_optional_flags(argc, args, 2, &flags, env)) return regex_zero();
     int owned = 0;
     exprtk_regex_pattern_t *stored = NULL;
-    struct fsm *fsm = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
+    const char *compiled_pattern = regex_compile_arg(args[0], flags, env, arena, &owned, &stored);
     (void)stored;
-    if (!fsm) return regex_zero();
+    if (!compiled_pattern) return regex_zero();
     tstr_v text = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     size_t cursor = 0;
     while (cursor <= text.len) {
         size_t start = 0, end = 0;
-        if (!regex_find(fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_find(compiled_pattern, text.data, text.len, cursor, &start, &end, env)) break;
         exprtk_list_push(&list, regex_match_map(arena, text.data, text.len, 1, start, end));
         cursor = end > start ? end : start + 1;
     }
-    if (owned) fsm_free(fsm);
+    if (owned) free((char *)compiled_pattern);
     return list;
 }
 
@@ -738,7 +910,7 @@ static exprtk_value_t fn_regexp_test(size_t argc, exprtk_value_t *args,
 
     tstr_v text = args[1].data.string;
     size_t start = 0, end = 0;
-    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    int found = regex_find(pattern->compiled_pattern, text.data, text.len, 0, &start, &end, env);
     return exprtk_val_num(found ? 1.0 : 0.0);
 }
 
@@ -752,7 +924,7 @@ static exprtk_value_t fn_regexp_match(size_t argc, exprtk_value_t *args,
     exprtk_regex_pattern_t *pattern = regex_object_pattern(args[0], env);
     if (!pattern) return regex_zero();
     tstr_v text = args[1].data.string;
-    return exprtk_val_num(regex_accepts_span(pattern->fsm, text.data, text.len) ? 1.0 : 0.0);
+    return exprtk_val_num(regex_accepts_span(pattern->compiled_pattern, text.data, text.len, env) ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_regexp_search(size_t argc, exprtk_value_t *args,
@@ -766,7 +938,7 @@ static exprtk_value_t fn_regexp_search(size_t argc, exprtk_value_t *args,
     if (!pattern) return regex_zero();
     tstr_v text = args[1].data.string;
     size_t start = 0, end = 0;
-    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    int found = regex_find(pattern->compiled_pattern, text.data, text.len, 0, &start, &end, env);
     return exprtk_val_num(found ? (double)start : -1.0);
 }
 
@@ -780,7 +952,7 @@ static exprtk_value_t fn_regexp_exec(size_t argc, exprtk_value_t *args,
     if (!pattern) return regex_null();
     tstr_v text = args[1].data.string;
     size_t start = 0, end = 0;
-    int found = regex_find(pattern->fsm, text.data, text.len, 0, &start, &end);
+    int found = regex_find(pattern->compiled_pattern, text.data, text.len, 0, &start, &end, env);
     if (!found) return regex_null();
     return regex_match_map(arena, text.data, text.len, 1, start, end);
 }
@@ -798,7 +970,7 @@ static exprtk_value_t fn_regexp_find_all(size_t argc, exprtk_value_t *args,
     size_t cursor = 0;
     while (cursor <= text.len) {
         size_t start = 0, end = 0;
-        if (!regex_find(pattern->fsm, text.data, text.len, cursor, &start, &end)) break;
+        if (!regex_find(pattern->compiled_pattern, text.data, text.len, cursor, &start, &end, env)) break;
         if (!regex_list_push_string(&list, arena, text.data + start, end - start)) {
             return regex_zero();
         }

@@ -512,7 +512,7 @@ ctest -R parser_module -V
 ## 实现细节
 
 - **静态库**: `parser` - 用于单元测试
-- **动态库**: `parser_plugin.dll` - 用于 TurboScript 运行时加载
+- **动态库**: `tbs_parser.dll` - 用于 TurboScript 运行时加载
 - **依赖项**: 
   - `exprtk` - TurboScript 核心
   - `TurboUtils::Core` - 内存池和字符串工具

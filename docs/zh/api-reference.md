@@ -229,6 +229,35 @@
 | `hash.xxh3_64_hex(s)` | XXH3 64 位哈希，返回 16 位小写十六进制字符串 | `hash.xxh3_64_hex("abc")` |
 | `hash.xxh3_64_hex(s, seed)` | 带 seed 的 XXH3 64 位十六进制结果 | `hash.xxh3_64_hex("abc", 7)` |
 
+### Fuzzy 插件
+
+使用 `import("fuzzy")` 加载。搜索函数返回 map，包含 `matched`、
+`start`、`end`、`utf8_start`、`utf8_end` 和 `text`；fuzzy 函数还会返回
+`cost`、`insertions`、`deletions` 与 `substitutions`。`start`/`end` 是字节
+偏移，`utf8_start`/`utf8_end` 是 UTF-8 codepoint 偏移。
+
+Automaton 辅助函数返回 match map 列表。`fuzzy.levenshtein` 与
+`fuzzy.agrep` 使用 TurboUtils Levenshtein automaton；`fuzzy.ac` 使用
+TurboUtils Aho-Corasick 多模式匹配。可选 `mode` 默认为 `"utf8"`，也可传
+`"byte"` 做原始字节匹配。
+
+flags 为字符串：`i` 表示忽略大小写，`n` 表示 newline 模式，`l` 表示字面量
+模式，`r` 表示正则模式。`fuzzy.search` 默认按字面量匹配；近似正则匹配请用
+`fuzzy.fuzzy_regex_search`。
+
+| 函数 | 说明 | 示例 |
+|----------|-------------|---------|
+| `fuzzy.search(pattern, text [, max_cost [, flags]])` | UTF-8 字面量 fuzzy 搜索 | `fuzzy.search("cafe", "xx cafe yy", 1)` |
+| `fuzzy.fuzzy_search(pattern, text [, max_cost [, flags]])` | `fuzzy.search` 的别名 | `fuzzy.fuzzy_search("cafe", "xx cafe yy", 1)` |
+| `fuzzy.regex(pattern, text [, flags])` | UTF-8 精确正则搜索 | `fuzzy.regex("caf.", "xx cafe yy")` |
+| `fuzzy.regex_search(pattern, text [, flags])` | `fuzzy.regex` 的别名 | `fuzzy.regex_search("caf.", "xx cafe yy")` |
+| `fuzzy.fuzzy_regex_search(pattern, text [, max_cost [, flags]])` | UTF-8 近似正则搜索 | `fuzzy.fuzzy_regex_search("br.ve", "brave", 0)` |
+| `fuzzy.levenshtein(pattern, text, max_distance [, mode])` | 列出 Levenshtein automaton 命中 | `fuzzy.levenshtein("cafe", text, 1)` |
+| `fuzzy.lev(...)` / `fuzzy.agrep(...)` | `fuzzy.levenshtein` 的别名 | `fuzzy.agrep("optimise", text, 2)` |
+| `fuzzy.ac(patterns, text [, mode])` | Aho-Corasick 多模式搜索；`patterns` 为字符串或字符串列表 | `fuzzy.ac(["err","warn"], log)` |
+| `fuzzy.multi_search(...)` | `fuzzy.ac` 的别名 | `fuzzy.multi_search(["foo","bar"], text)` |
+| `fuzzy.tre_version()` | TRE 运行时版本 | `fuzzy.tre_version()` |
+
 ### Crypto 插件
 
 使用 `import("crypto")` 加载。哈希输出均为小写十六进制字符串。二进制输入可以使用
@@ -592,7 +621,7 @@ schema 字符串字段也可以使用字段格式，例如 `[format(ipaddr)] str
 绑定结果仍是普通字符串。支持的格式包括 `ipaddr`、`ip`、`cidr`、`hostname`、
 `domain`、`email`、`url`、`uri`、`macaddr`、`mac`、`semver`、`hex`、`base64`、
 `base64url`、`currency`、`json_pointer`、`jsonpath`、`xpath`、`cron`、`color`、
-`mime` 和 `regex`；`regex` 通过 libfsm/libre 编译校验。`schema.fields(...)` 会在字段存在格式时返回
+`mime` 和 `regex`；`regex` 通过内置正则引擎编译校验。`schema.fields(...)` 会在字段存在格式时返回
 `format`。
 
 ---

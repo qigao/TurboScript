@@ -12,11 +12,12 @@
 
 #ifdef _WIN32
 #include <io.h>
-#include <direct.h>
 #else
 #include <dirent.h>
 #include <fnmatch.h>
 #endif
+
+enum { IO_MAX_DIRECTORY_ENTRIES = 10000 };
 
 /*
  * IO failure contract:
@@ -450,84 +451,44 @@ static int io_mkdir_recursive_path(const char *path, int mode) {
 
 static int io_rmdir_recursive_path(const char *path) {
   turbo_fs_stat_t st;
+  turbo_fs_dir_t *dir = NULL;
+  int result = 0;
 
-  if (!path || turbo_fs_stat(path, &st) != 0 || !st.is_directory || st.is_symlink)
+  if (!path || turbo_fs_lstat(path, &st) != 0 || !st.is_directory || st.is_symlink)
     return -1;
 
-#ifdef _WIN32
-  char search_path[TURBO_FS_MAX_PATH * 2 + 3];
-  struct _finddata_t fileinfo;
-  intptr_t handle;
-  size_t path_len = strlen(path);
-
-  if (path_len + 3 >= sizeof(search_path))
+  if (turbo_fs_opendir(path, &dir) != 0)
     return -1;
-  memcpy(search_path, path, path_len);
-  if (path_len > 0 && !io_path_sep(path[path_len - 1]))
-    search_path[path_len++] = '\\';
-  search_path[path_len++] = '*';
-  search_path[path_len] = '\0';
 
-  handle = _findfirst(search_path, &fileinfo);
-  if (handle != -1) {
-    do {
-      char child[TURBO_FS_MAX_PATH * 2];
-      turbo_fs_stat_t child_st;
-      if (strcmp(fileinfo.name, ".") == 0 || strcmp(fileinfo.name, "..") == 0)
-        continue;
-      if (turbo_fs_path_join(child, sizeof(child), path, fileinfo.name) != 0) {
-        _findclose(handle);
-        return -1;
-      }
-      if (turbo_fs_stat(child, &child_st) != 0) {
-        _findclose(handle);
-        return -1;
-      }
-      if (child_st.is_directory && !child_st.is_symlink) {
-        if (io_rmdir_recursive_path(child) != 0) {
-          _findclose(handle);
-          return -1;
-        }
-      } else if (turbo_fs_unlink(child) != 0) {
-        _findclose(handle);
-        return -1;
-      }
-    } while (_findnext(handle, &fileinfo) == 0);
-    _findclose(handle);
-  }
-#else
-  DIR *dir = opendir(path);
-  struct dirent *entry;
-
-  if (!dir)
-    return -1;
-  while ((entry = readdir(dir)) != NULL) {
+  for (;;) {
     char child[TURBO_FS_MAX_PATH * 2];
     turbo_fs_stat_t child_st;
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-      continue;
-    if (turbo_fs_path_join(child, sizeof(child), path, entry->d_name) != 0) {
-      closedir(dir);
-      return -1;
-    }
-    if (turbo_fs_stat(child, &child_st) != 0) {
-      closedir(dir);
-      return -1;
+    turbo_fs_dirent_t entry;
+    int read_result = turbo_fs_readdir(dir, &entry);
+
+    if (read_result == 0)
+      break;
+    if (read_result < 0 ||
+        turbo_fs_path_join(child, sizeof(child), path, entry.name) != 0 ||
+        turbo_fs_lstat(child, &child_st) != 0) {
+      result = -1;
+      break;
     }
     if (child_st.is_directory && !child_st.is_symlink) {
       if (io_rmdir_recursive_path(child) != 0) {
-        closedir(dir);
-        return -1;
+        result = -1;
+        break;
       }
     } else if (turbo_fs_unlink(child) != 0) {
-      closedir(dir);
-      return -1;
+      result = -1;
+      break;
     }
   }
-  closedir(dir);
-#endif
 
-  return turbo_fs_rmdir(path);
+  if (turbo_fs_closedir(dir) != 0)
+    result = -1;
+
+  return result == 0 ? turbo_fs_rmdir(path) : result;
 }
 
 /** mkdir_recursive(path [, mode]) → 0 on success */
@@ -573,7 +534,7 @@ static exprtk_value_t fn_tmpdir(size_t argc, exprtk_value_t *args, exprtk_env_t 
 static exprtk_value_t fn_listdir(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                  mem_pool_t *arena) {
   (void)env;
-  
+
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
     return io_fail_empty();
 
@@ -581,84 +542,31 @@ static exprtk_value_t fn_listdir(size_t argc, exprtk_value_t *args, exprtk_env_t
   if (!path)
     return io_fail_empty();
 
-#ifdef _WIN32
-  /* Windows implementation using _findfirst/_findnext */
-  char search_path[TURBO_FS_MAX_PATH + 3];
-  struct _finddata_t fileinfo;
-  intptr_t handle;
-  size_t path_len = strlen(path);
-  
-  if (path_len + 3 >= sizeof(search_path))
+  turbo_fs_dir_t *dir = NULL;
+  if (turbo_fs_opendir(path, &dir) != 0)
     return io_fail_empty();
-  
-  /* Construct "path\*" or "path\*" depending on trailing separator */
-  memcpy(search_path, path, path_len);
-  if (path_len > 0 && path[path_len - 1] != '\\' && path[path_len - 1] != '/')
-    search_path[path_len++] = '\\';
-  search_path[path_len++] = '*';
-  search_path[path_len] = '\0';
-  
-  handle = _findfirst(search_path, &fileinfo);
-  if (handle == -1)
-    return io_fail_empty();
-  
-  /* Collect entries (max 10000 to avoid excessive memory) */
-  exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, 10000);
-  if (!entries) {
-    _findclose(handle);
-    return io_fail_empty();
-  }
-  
-  size_t count = 0;
-  do {
-    /* Skip . and .. */
-    if (strcmp(fileinfo.name, ".") == 0 || strcmp(fileinfo.name, "..") == 0)
-      continue;
-    
-    if (count >= 10000)
-      break;
-    
-    size_t name_len = strlen(fileinfo.name);
-    entries[count++] = io_make_string_value(arena, fileinfo.name, name_len);
-  } while (_findnext(handle, &fileinfo) == 0);
-  
-  _findclose(handle);
-  
-  /* Return as list (arena-allocated, heap_owned=0) */
-  return exprtk_val_list_ex(entries, count, 0);
 
-#else
-  /* Unix implementation using opendir/readdir */
-  DIR *dir = opendir(path);
-  if (!dir)
-    return io_fail_empty();
-  
-  /* Collect entries (max 10000 to avoid excessive memory) */
-  exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, 10000);
+  exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, IO_MAX_DIRECTORY_ENTRIES);
   if (!entries) {
-    closedir(dir);
+    turbo_fs_closedir(dir);
     return io_fail_empty();
   }
-  
+
   size_t count = 0;
-  struct dirent *entry;
-  while ((entry = readdir(dir)) != NULL) {
-    /* Skip . and .. */
-    if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
-      continue;
-    
-    if (count >= 10000)
+  int read_result = 0;
+  while (count < IO_MAX_DIRECTORY_ENTRIES) {
+    turbo_fs_dirent_t entry;
+    read_result = turbo_fs_readdir(dir, &entry);
+    if (read_result <= 0)
       break;
-    
-    size_t name_len = strlen(entry->d_name);
-    entries[count++] = io_make_string_value(arena, entry->d_name, name_len);
+    entries[count++] = io_make_string_value(arena, entry.name, strlen(entry.name));
   }
-  
-  closedir(dir);
-  
-  /* Return as list (arena-allocated, heap_owned=0) */
+
+  int close_result = turbo_fs_closedir(dir);
+  if (read_result < 0 || close_result != 0)
+    return io_fail_empty();
+
   return exprtk_val_list_ex(entries, count, 0);
-#endif
 }
 
 static size_t io_glob_dir_prefix_len(const char *pattern) {
@@ -701,7 +609,7 @@ static exprtk_value_t fn_glob(size_t argc, exprtk_value_t *args, exprtk_env_t *e
   if (!pattern)
     return io_fail_empty();
 
-  exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, 10000);
+  exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, IO_MAX_DIRECTORY_ENTRIES);
   if (!entries)
     return io_fail_empty();
 
@@ -717,7 +625,7 @@ static exprtk_value_t fn_glob(size_t argc, exprtk_value_t *args, exprtk_env_t *e
   do {
     if (strcmp(fileinfo.name, ".") == 0 || strcmp(fileinfo.name, "..") == 0)
       continue;
-    if (count >= 10000)
+    if (count >= IO_MAX_DIRECTORY_ENTRIES)
       break;
     entries[count++] = io_glob_make_path(arena, pattern, prefix_len, fileinfo.name);
   } while (_findnext(handle, &fileinfo) == 0);
@@ -747,7 +655,7 @@ static exprtk_value_t fn_glob(size_t argc, exprtk_value_t *args, exprtk_env_t *e
       continue;
     if (fnmatch(mask, entry->d_name, 0) != 0)
       continue;
-    if (count >= 10000)
+    if (count >= IO_MAX_DIRECTORY_ENTRIES)
       break;
     entries[count++] = io_glob_make_path(arena, pattern, prefix_len, entry->d_name);
   }

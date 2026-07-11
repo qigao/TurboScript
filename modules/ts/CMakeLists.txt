@@ -1,4 +1,4 @@
-# ts_tbs — import("ts")
+# tbs_ts plugin output — import("ts")
 set(TARGET_NAME ts)
 set(TARGET_NAME_PLUGIN ts_tbs)
 

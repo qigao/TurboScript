@@ -11,7 +11,6 @@
                 "TURBONET_ROOT": "c:/projects/cpp/external/pkgs/turbonet",
                 "TURBOHTTP_ROOT": "c:/projects/cpp/external/pkgs/turbohttp",
                 "RulesForge_ROOT": "c:/projects/cpp/external/pkgs/rules_forge",
-                "FSM_ROOT": "c:/projects/cpp/external/pkgs/libfsm",
                 "TURBO_UTILS_ROOT": "C:/projects/cpp/external/pkgs/turboutils",
                 "CMAKE_INSTALL_PREFIX": "C:/projects/cpp/external/pkgs/turbo_script",
                 "CMAKE_MAKE_PROGRAM": "C:/Users/lockg/scoop/shims/ninja.exe",

@@ -1,4 +1,4 @@
-# sqlite_tbs — import("sqlite")
+# tbs_sqlite plugin output — import("sqlite")
 set(TARGET_NAME sqlite_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 

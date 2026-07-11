@@ -33,6 +33,15 @@ function(cmake_config_target target_name)
     endif()
 
     get_target_property(target_type ${target_name} TYPE)
+    if(ARG_PLUGIN)
+        string(REGEX REPLACE "_tbs$" "" plugin_name "${target_name}")
+        if(NOT plugin_name STREQUAL target_name)
+            set_target_properties(${target_name}
+                PROPERTIES OUTPUT_NAME "tbs_${plugin_name}"
+                           PREFIX "")
+        endif()
+    endif()
+
     if(target_type STREQUAL "SHARED_LIBRARY" OR target_type STREQUAL "STATIC_LIBRARY")
         if(NOT ARG_VERSION AND PROJECT_VERSION)
             set(ARG_VERSION ${PROJECT_VERSION})

@@ -127,3 +127,19 @@ set_target_properties(
                                              ${CMAKE_BINARY_DIR}/bin)
 
 add_test(NAME ${TEST_OOP_NAME} COMMAND ${TEST_OOP_NAME})
+
+# Tiny Regex Unit Tests
+set(TEST_RE_NAME test_tiny_regex)
+
+add_executable(${TEST_RE_NAME} test_re.c)
+
+target_link_libraries(${TEST_RE_NAME} PRIVATE exprtk TurboUtils::TinyTest)
+
+target_include_directories(${TEST_RE_NAME}
+                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
+
+set_target_properties(
+  ${TEST_RE_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
+                                           ${CMAKE_BINARY_DIR}/bin)
+
+add_test(NAME ${TEST_RE_NAME} COMMAND ${TEST_RE_NAME})

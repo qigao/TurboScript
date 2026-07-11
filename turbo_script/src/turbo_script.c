@@ -363,18 +363,18 @@ static int ts_plugin_already_loaded(turbo_script_ctx_t *ctx, const char *name) {
 
 /* Build plugin filename from logical name and platform suffix. */
 static const char *ts_plugin_file_name(mem_pool_t *a, const char *name, const char *suffix,
-                                       int use_target_suffix) {
-  size_t name_len, suffix_len, target_suffix_len;
+                                       int use_tbs_prefix) {
+  size_t name_len, suffix_len, prefix_len;
   char *buf;
-  const char target_suffix[] = "_tbs";
+  const char tbs_prefix[] = "tbs_";
 
   if (!a || !name || !suffix) return NULL;
 
   name_len = strlen(name);
   suffix_len = strlen(suffix);
-  target_suffix_len = use_target_suffix ? strlen(target_suffix) : 0;
-  buf = mem_alloc(a, name_len + target_suffix_len + suffix_len + 1);
-  if (buf) sprintf(buf, "%s%s%s", name, use_target_suffix ? target_suffix : "", suffix);
+  prefix_len = use_tbs_prefix ? strlen(tbs_prefix) : 0;
+  buf = mem_alloc(a, prefix_len + name_len + suffix_len + 1);
+  if (buf) sprintf(buf, "%s%s%s", use_tbs_prefix ? tbs_prefix : "", name, suffix);
   return buf;
 }
 
@@ -398,12 +398,12 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
   if (ctx->plugin_count >= TS_MAX_PLUGINS) return -1;
 
   for (size_t i = 0; suffixes[i] != NULL; ++i) {
-    const char *dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 0);
+    const char *dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 1);
     if (!dll) continue;
     h = ts_plugin_load(dll);
     if (h) break;
 
-    dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 1);
+    dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 0);
     if (!dll) continue;
     h = ts_plugin_load(dll);
     if (h) break;

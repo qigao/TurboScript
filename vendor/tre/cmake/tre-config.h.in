@@ -1,0 +1,12 @@
+#ifndef TRE_CONFIG_H
+#define TRE_CONFIG_H 1
+
+#define TRE_APPROX 1
+#define TRE_MULTIBYTE 1
+#define TRE_VERSION "@TRE_VERSION@"
+#define TRE_VERSION_1 @TRE_VERSION_1@
+#define TRE_VERSION_2 @TRE_VERSION_2@
+#define TRE_VERSION_3 @TRE_VERSION_3@
+#define TRE_WCHAR 1
+
+#endif

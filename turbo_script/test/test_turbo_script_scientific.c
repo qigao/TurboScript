@@ -947,7 +947,7 @@ spec("turbo_script_scientific") {
       turbo_script_free(ctx);
     }
 
-    it("should not expose capture groups in core libfsm regex") {
+    it("should not expose capture groups in core regex") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var info = regex.match_info(\"([0-9]+)\", \"a12b\"); "
                            "var has_groups = info.has(\"groups\"); "

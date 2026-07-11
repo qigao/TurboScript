@@ -79,7 +79,7 @@ target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 target_link_libraries(
   ${TARGET_NAME}
   PUBLIC TurboUtils::Core TurboUtils::Parser uuid
-  PRIVATE TurboUtils::Mustache mir_static libfsm::libre libfsm::libfsm miniblas_linalg)
+  PRIVATE TurboUtils::Mustache mir_static miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
 if(MSVC)

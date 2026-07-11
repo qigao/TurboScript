@@ -1,4 +1,4 @@
-# data_bind_tbs — import("data_bind")
+# tbs_data_bind plugin output — import("data_bind")
 #
 # Provides binary-to-script-object parsing using JIT-compiled TBE schemas.
 # Depends on:TurboUtils::DataBind (the tbe/data_bind library) and exprtk.

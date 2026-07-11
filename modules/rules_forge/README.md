@@ -20,7 +20,7 @@ import("rules_forge");
 ```
 
 On Windows the plugin build copies `rule_forge.dll` and `data_bind.dll` beside
-`rules_forge_plugin.dll`.
+`tbs_rules_forge.dll`.
 
 ## Knowledge Base
 

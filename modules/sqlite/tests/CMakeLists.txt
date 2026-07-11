@@ -1,4 +1,4 @@
-# DLL-based integration test — loads sqlite_tbs at runtime
+# DLL-based integration test — loads tbs_sqlite at runtime
 add_executable(test_sqlite_module test_sqlite.c)
 target_link_libraries(test_sqlite_module PRIVATE   exprtk
                                               TurboUtils::TinyTest)

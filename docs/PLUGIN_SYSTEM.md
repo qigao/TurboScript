@@ -26,11 +26,11 @@ TurboScript uses a **two-tier module system**:
 │  │   Built-in Modules   │      │   Plugin Modules     │   │
 │  │  (Compile-time)      │      │  (Runtime-loaded)    │   │
 │  ├──────────────────────┤      ├──────────────────────┤   │
-│  │ • math               │      │ • ta_plugin.dll      │   │
-│  │ • string             │      │ • fin_plugin.dll     │   │
-│  │ • stats              │      │ • net_plugin.dll     │   │
-│  │ • io                 │      │ • sqlite_plugin.dll  │   │
-│  │ • core               │      │ • custom_plugin.dll  │   │
+│  │ • math               │      │ • tbs_ta.dll         │   │
+│  │ • string             │      │ • tbs_fin.dll        │   │
+│  │ • stats              │      │ • tbs_net.dll        │   │
+│  │ • io                 │      │ • tbs_sqlite.dll     │   │
+│  │ • core               │      │ • tbs_custom.dll     │   │
 │  └──────────────────────┘      └──────────────────────┘   │
 │           ↓                              ↓                  │
 │  Global Registry                  Per-Context Env          │
@@ -85,9 +85,9 @@ User Script: import("ta")
     ↓
 turbo_script_load_plugin("ta")
     ↓
-Search for "ta_plugin.dll" in plugin paths
+Search for "tbs_ta.dll" in plugin paths
     ↓
-ts_plugin_load("ta_plugin.dll")
+ts_plugin_load("tbs_ta.dll")
     ↓
 dlopen/LoadLibrary (OS-level DLL load)
     ↓
@@ -302,7 +302,7 @@ TS_PLUGIN_STATEFUL(sqlite, sqlite_create, sqlite_register, sqlite_destroy)
 cl /LD my_math_plugin.c ^
    /I"C:\turbonet\tScript\ts_loader\include" ^
    /I"C:\turbonet\tScript\exprtk\include" ^
-   /Fe:my_math_plugin.dll
+   /Fe:tbs_my_math.dll
 ```
 
 ### Linux (GCC)
@@ -311,7 +311,7 @@ cl /LD my_math_plugin.c ^
 gcc -shared -fPIC my_math_plugin.c \
     -I/path/to/tScript/ts_loader/include \
     -I/path/to/tScript/exprtk/include \
-    -o my_math_plugin.so
+    -o tbs_my_math.so
 ```
 
 ### CMake
@@ -336,21 +336,21 @@ set_target_properties(my_math_plugin PROPERTIES
 
 TurboScript searches for plugins in these locations (in order):
 
-1. **Current directory**: `./my_plugin.dll`
-2. **Plugins subdirectory**: `./plugins/my_plugin.dll`
-3. **System plugin directory**: `<install_dir>/plugins/my_plugin.dll`
+1. **Current directory**: `./tbs_my_plugin.dll`
+2. **Plugins subdirectory**: `./plugins/tbs_my_plugin.dll`
+3. **System plugin directory**: `<install_dir>/plugins/tbs_my_plugin.dll`
 
 ### Plugin Naming Convention
 
 ```
-<name>_plugin.dll    (Windows)
-<name>_plugin.so     (Linux)
+Windows: tbs_<name>.dll
+Linux:   tbs_<name>.so
 <name>_plugin.dylib  (macOS)
 ```
 
 **Examples:**
-- `import("ta")` → searches for `ta_plugin.dll`
-- `import("my_math")` → searches for `my_math_plugin.dll`
+- `import("ta")` → searches for `tbs_ta.dll`
+- `import("my_math")` → searches for `tbs_my_math.dll`
 
 ---
 
@@ -394,7 +394,7 @@ turbo_script_register_plugin(ctx, "C:/custom/my_plugin.dll");
 │                                                          │
 │  1. import("plugin_name")                               │
 │     ↓                                                    │
-│  2. Search for plugin_name_plugin.dll                   │
+│  2. Search for tbs_plugin_name.dll                      │
 │     ↓                                                    │
 │  3. dlopen/LoadLibrary                                  │
 │     ↓                                                    │
@@ -560,7 +560,7 @@ Error: Failed to load plugin 'my_plugin'
 ```
 
 **Solutions:**
-1. Check plugin file exists: `my_plugin_plugin.dll`
+1. Check plugin file exists: `tbs_my_plugin.dll`
 2. Verify plugin is in search path
 3. Use absolute path: `turbo_script_register_plugin(ctx, "C:/full/path/my_plugin.dll")`
 
@@ -569,12 +569,12 @@ Error: Failed to load plugin 'my_plugin'
 ### Symbol Not Found
 
 ```
-Error: ts_api_create not found in my_plugin.dll
+Error: ts_api_create not found in tbs_my_plugin.dll
 ```
 
 **Solutions:**
 1. Ensure `TS_PLUGIN_MODULE` or `TS_PLUGIN_STATEFUL` macro is used
-2. Check DLL exports: `dumpbin /EXPORTS my_plugin.dll` (Windows)
+2. Check DLL exports: `dumpbin /EXPORTS tbs_my_plugin.dll` (Windows)
 3. Verify `TS_EXPORT` is defined correctly
 
 ---

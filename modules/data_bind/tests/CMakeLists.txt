@@ -1,4 +1,4 @@
-# DLL-based integration test — loads data_bind_tbs at runtime
+# DLL-based integration test — loads tbs_data_bind at runtime
 add_executable(test_data_bind_module test_data_bind.c)
 target_link_libraries(test_data_bind_module PRIVATE
   exprtk

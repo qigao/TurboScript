@@ -15,3 +15,11 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>
           $<TARGET_FILE_DIR:test_net_module>)
+
+if(TARGET TurboNet::CoroNet)
+  add_custom_command(
+    TARGET test_net_module
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:TurboNet::CoroNet>
+            $<TARGET_FILE_DIR:test_net_module>)
+endif()
