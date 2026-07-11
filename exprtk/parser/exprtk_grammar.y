@@ -204,6 +204,102 @@ static exprtk_node_t *exprtk_make_unary_call(exprtk_parse_ctx_t *ctx, const char
     return node;
 }
 
+static exprtk_node_t *exprtk_make_raw_string_node(exprtk_parse_ctx_t *ctx, const char *data,
+                                                  size_t len, const exprtk_token_t *token) {
+    exprtk_node_t *node = exprtk_node_new(ctx, EXPRTK_NODE_STRING);
+    char *buf;
+    if (!node) return NULL;
+    buf = (char*)mem_alloc(ctx->arena, len + 1);
+    if (!buf) return NULL;
+    if (len > 0 && data) memcpy(buf, data, len);
+    buf[len] = '\0';
+    node->data.string.value = tstr_v_from_buf(buf, len);
+    exprtk_node_set_pos(node, token);
+    return node;
+}
+
+static exprtk_node_t *exprtk_make_regex_literal(exprtk_parse_ctx_t *ctx,
+                                                const exprtk_token_t *token) {
+    const char *p;
+    const char *body_start;
+    const char *body_end = NULL;
+    char *pattern = NULL;
+    size_t pattern_len = 0;
+    size_t pattern_cap;
+    exprtk_node_t *call;
+    exprtk_node_t *pattern_arg;
+    exprtk_node_t *flags_arg;
+    size_t argc = 1;
+    int in_class = 0;
+
+    if (!ctx || !token || !token->start || token->length < 2) return NULL;
+
+    body_start = token->start + 1;
+    p = body_start;
+    pattern_cap = token->length + 1;
+    pattern = (char*)mem_alloc(ctx->arena, pattern_cap);
+    if (!pattern) return NULL;
+
+    while (p < token->start + token->length) {
+        char c = *p;
+        if (c == '\\' && p + 1 < token->start + token->length) {
+            if (p[1] == '/') {
+                pattern[pattern_len++] = '/';
+                p += 2;
+                continue;
+            }
+            pattern[pattern_len++] = *p++;
+            pattern[pattern_len++] = *p++;
+            continue;
+        }
+        if (c == '[') {
+            in_class = 1;
+            pattern[pattern_len++] = *p++;
+            continue;
+        }
+        if (c == ']' && in_class) {
+            in_class = 0;
+            pattern[pattern_len++] = *p++;
+            continue;
+        }
+        if (c == '/' && !in_class) {
+            body_end = p;
+            ++p;
+            break;
+        }
+        pattern[pattern_len++] = *p++;
+    }
+    if (!body_end) {
+        exprtk_record_parse_error(ctx, 1, "Invalid regex literal");
+        return NULL;
+    }
+    pattern[pattern_len] = '\0';
+
+    pattern_arg = exprtk_make_raw_string_node(ctx, pattern, pattern_len, token);
+    if (!pattern_arg) return NULL;
+
+    call = exprtk_node_new(ctx, EXPRTK_NODE_FUNCTION_CALL);
+    if (!call) return NULL;
+    call->data.function.name = exprtk_strdup(ctx, "RegExp", 6);
+
+    if ((size_t)(token->start + token->length - p) > 0) argc = 2;
+    call->data.function.arg_count = argc;
+    call->data.function.args =
+        (exprtk_node_t**)mem_alloc(ctx->arena, argc * sizeof(exprtk_node_t*));
+    if (!call->data.function.args) return NULL;
+    call->data.function.args[0] = pattern_arg;
+
+    if (argc == 2) {
+        flags_arg = exprtk_make_raw_string_node(ctx, p,
+            (size_t)(token->start + token->length - p), token);
+        if (!flags_arg) return NULL;
+        call->data.function.args[1] = flags_arg;
+    }
+
+    exprtk_node_set_pos(call, token);
+    return call;
+}
+
 static exprtk_node_t *exprtk_copy_variable(exprtk_parse_ctx_t *ctx, const exprtk_node_t *node) {
     exprtk_node_t *copy = exprtk_node_new(ctx, EXPRTK_NODE_VARIABLE);
     if (!copy || !node || !node->data.variable.name) return NULL;
@@ -286,6 +382,7 @@ static void exprtk_set_class_interfaces(exprtk_parse_ctx_t *ctx,
 %token SPREAD.
 %token ASYNC.
 %token AWAIT.
+%token REGEX.
 // TODO: 协程语法暂时禁用，存在 16 个解析冲突
 // %token YIELD.
 // %token FUNC_GENERATOR.
@@ -982,6 +1079,10 @@ expr(A) ::= STRING(S). {
         A->data.string.value = exprtk_unescape_to_arena(ctx, S.start + 1, S.length - 2);
         exprtk_node_set_pos(A, &S);
     }
+}
+
+expr(A) ::= REGEX(R). {
+    A = exprtk_make_regex_literal(ctx, &R);
 }
 
 expr(A) ::= TEMPLATE(S). {

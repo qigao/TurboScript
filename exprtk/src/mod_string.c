@@ -10,7 +10,6 @@
 #include "mustache.h"
 #include "turbo_str.h"
 #include "turbo_str_view.h"
-#include "utf8h/utf8.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -18,6 +17,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <math.h>
+#include <stdint.h>
 
 /* ========================================================================= */
 /* String-view tokenization and conversion                                    */
@@ -146,30 +146,18 @@ static char *mod_view_to_arena_cstr(tstr_v s, mem_pool_t *arena) {
 }
 
 static int mod_utf8_valid_view(tstr_v s) {
-    if (s.len == 0) return 1;
-    if (!s.data) return 0;
-    return utf8nvalid((const utf8_int8_t *)s.data, s.len) == NULL;
+    return tstr_v_utf8_valid(s);
 }
 
 static size_t mod_utf8_byte_offset(tstr_v s, size_t codepoint_index) {
-    size_t offset = 0;
-    size_t index = 0;
-    while (offset < s.len && index < codepoint_index) {
-        offset += utf8codepointcalcsize((const utf8_int8_t *)(s.data + offset));
-        index++;
-    }
-    return offset > s.len ? s.len : offset;
+    size_t offset = tstr_v_utf8_byte_offset(s, codepoint_index);
+    return offset == TSTR_V_NPOS ? s.len : offset;
 }
 
 static size_t mod_utf8_codepoint_count_before(tstr_v s, size_t byte_offset) {
-    size_t offset = 0;
-    size_t count = 0;
     if (byte_offset > s.len) byte_offset = s.len;
-    while (offset < byte_offset) {
-        offset += utf8codepointcalcsize((const utf8_int8_t *)(s.data + offset));
-        count++;
-    }
-    return count;
+    size_t count = tstr_v_utf8_len(tstr_v_from_buf(s.data, byte_offset));
+    return count == TSTR_V_NPOS ? 0 : count;
 }
 
 static int mod_utf8_is_boundary(tstr_v s, size_t byte_offset) {
@@ -193,11 +181,29 @@ static int mod_list_append_string(exprtk_value_t *list, mem_pool_t *arena,
     return 1;
 }
 
+static exprtk_value_t mod_copy_tstr(mem_pool_t *arena, tstr_t s) {
+    exprtk_value_t value;
+    if (!s) return exprtk_val_num(0);
+    value = mod_copy_string(arena, s, tstr_len(s));
+    tstr_free(s);
+    return value;
+}
+
+static size_t mod_utf8_next_width(tstr_v s, size_t offset, uint32_t *codepoint) {
+    tstr_v rest;
+    size_t before;
+    if (offset >= s.len) return 0;
+    rest = tstr_v_from_buf(s.data + offset, s.len - offset);
+    before = rest.len;
+    if (!tstr_v_utf8_next(&rest, codepoint)) return 0;
+    return before - rest.len;
+}
+
 static size_t mod_first_utf8_char_len(tstr_v s) {
+    size_t n;
     if (s.len == 0 || !s.data) return 0;
-    if (!mod_utf8_valid_view(s)) return 1;
-    size_t n = utf8codepointcalcsize((const utf8_int8_t *)s.data);
-    return n > s.len ? s.len : n;
+    n = mod_utf8_next_width(s, 0, NULL);
+    return n == 0 ? 1 : n;
 }
 
 static int mod_view_contains_span(tstr_v haystack, const char *data, size_t len) {
@@ -205,9 +211,7 @@ static int mod_view_contains_span(tstr_v haystack, const char *data, size_t len)
     if (haystack.len < len) return 0;
     size_t pos = 0;
     while (pos < haystack.len) {
-        size_t n = mod_utf8_valid_view(tstr_v_from_buf(haystack.data + pos, haystack.len - pos))
-                       ? utf8codepointcalcsize((const utf8_int8_t *)(haystack.data + pos))
-                       : 1;
+        size_t n = mod_utf8_next_width(haystack, pos, NULL);
         if (n == 0 || pos + n > haystack.len) n = 1;
         if (n == len && memcmp(haystack.data + pos, data, len) == 0) return 1;
         pos += n;
@@ -224,7 +228,8 @@ static int mod_is_unreserved_url_char(unsigned char c) {
 }
 
 static size_t mod_string_unit_count(tstr_v s) {
-    return mod_utf8_valid_view(s) ? utf8nlen((const utf8_int8_t *)s.data, s.len) : s.len;
+    size_t len = tstr_v_utf8_len(s);
+    return len == TSTR_V_NPOS ? s.len : len;
 }
 
 static size_t mod_string_byte_offset(tstr_v s, size_t units) {
@@ -255,12 +260,90 @@ static int mod_hex4_value(const char *data) {
     return (a << 12) | (b << 8) | (c << 4) | d;
 }
 
-static size_t mod_utf8_write_codepoint(char *out, size_t cap, int cp) {
-    if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF)) return 0;
-    size_t n = utf8codepointsize((utf8_int32_t)cp);
-    if (n == 0 || n > cap) return 0;
-    utf8catcodepoint((utf8_int8_t *)out, (utf8_int32_t)cp, n);
-    return n;
+static uint32_t mod_utf8_lower_cp(uint32_t cp) {
+    if (cp >= 'A' && cp <= 'Z') return cp + 32u;
+    if (cp >= 0x00C0u && cp <= 0x00D6u) return cp + 32u;
+    if (cp >= 0x00D8u && cp <= 0x00DEu) return cp + 32u;
+    return cp;
+}
+
+static uint32_t mod_utf8_upper_cp(uint32_t cp) {
+    if (cp >= 'a' && cp <= 'z') return cp - 32u;
+    if (cp >= 0x00E0u && cp <= 0x00F6u) return cp - 32u;
+    if (cp >= 0x00F8u && cp <= 0x00FEu) return cp - 32u;
+    return cp;
+}
+
+static uint32_t mod_utf8_fold_cp(uint32_t cp) {
+    return mod_utf8_lower_cp(cp);
+}
+
+static size_t mod_utf8_write_codepoint(char *out, size_t cap, uint32_t cp) {
+    tstr_t encoded;
+    size_t len;
+    if (!out) return 0;
+    encoded = tstr_utf8_from_cp(cp);
+    if (!encoded) return 0;
+    len = tstr_len(encoded);
+    if (len > cap) {
+        tstr_free(encoded);
+        return 0;
+    }
+    if (len > 0) memcpy(out, encoded, len);
+    tstr_free(encoded);
+    return len;
+}
+
+static int mod_utf8_ieq_view(tstr_v lhs, tstr_v rhs) {
+    tstr_v l = lhs;
+    tstr_v r = rhs;
+    uint32_t lcp;
+    uint32_t rcp;
+    while (l.len > 0 && r.len > 0) {
+        if (!tstr_v_utf8_next(&l, &lcp) || !tstr_v_utf8_next(&r, &rcp)) return 0;
+        if (mod_utf8_fold_cp(lcp) != mod_utf8_fold_cp(rcp)) return 0;
+    }
+    return l.len == 0 && r.len == 0;
+}
+
+static int mod_utf8_starts_with_ci(tstr_v s, tstr_v prefix) {
+    if (prefix.len > s.len || !mod_utf8_valid_view(s) || !mod_utf8_valid_view(prefix))
+        return 0;
+    if (!mod_utf8_is_boundary(s, prefix.len)) return 0;
+    return mod_utf8_ieq_view(tstr_v_from_buf(s.data, prefix.len), prefix);
+}
+
+static int mod_utf8_contains_ci(tstr_v haystack, tstr_v needle) {
+    size_t offset = 0;
+    if (!mod_utf8_valid_view(haystack) || !mod_utf8_valid_view(needle)) return 0;
+    if (needle.len == 0) return 1;
+    if (needle.len > haystack.len) return 0;
+    while (offset <= haystack.len - needle.len) {
+        if (mod_utf8_is_boundary(haystack, offset + needle.len) &&
+            mod_utf8_ieq_view(tstr_v_from_buf(haystack.data + offset, needle.len), needle)) {
+            return 1;
+        }
+        size_t width = mod_utf8_next_width(haystack, offset, NULL);
+        if (width == 0) return 0;
+        offset += width;
+    }
+    return 0;
+}
+
+static exprtk_value_t mod_utf8_map_case(mem_pool_t *arena, tstr_v s, int to_upper) {
+    tstr_v rest = s;
+    tstr_t out = tstr_new();
+    uint32_t cp;
+    if (!out) return exprtk_val_num(0);
+    while (rest.len > 0) {
+        if (!tstr_v_utf8_next(&rest, &cp)) {
+            tstr_free(out);
+            return exprtk_val_num(0);
+        }
+        out = tstr_utf8_append_cp(out, to_upper ? mod_utf8_upper_cp(cp) : mod_utf8_lower_cp(cp));
+        if (!out) return exprtk_val_num(0);
+    }
+    return mod_copy_tstr(arena, out);
 }
 
 static exprtk_value_t fn_size(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -653,7 +736,7 @@ static exprtk_value_t fn_utf8_len(size_t argc, exprtk_value_t *args, exprtk_env_
         return exprtk_val_num(0);
     tstr_v s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(-1.0);
-    return exprtk_val_num((double)utf8nlen((const utf8_int8_t *)s.data, s.len));
+    return exprtk_val_num((double)tstr_v_utf8_len(s));
 }
 
 /* utf8_index_of(str, needle) -> number: codepoint index, -1 if not found */
@@ -697,7 +780,7 @@ static exprtk_value_t fn_utf8_slice(size_t argc, exprtk_value_t *args, exprtk_en
 
     tstr_v s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
-    size_t units = utf8nlen((const utf8_int8_t *)s.data, s.len);
+    size_t units = tstr_v_utf8_len(s);
     size_t start = mod_normalize_unit_index(units, args[1]);
     size_t end = argc == 3 ? mod_normalize_unit_index(units, args[2]) : units;
     if (end < start) end = start;
@@ -708,25 +791,22 @@ static exprtk_value_t fn_utf8_slice(size_t argc, exprtk_value_t *args, exprtk_en
 
 static exprtk_value_t fn_from_codepoint(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
-    size_t len = 0;
+    tstr_t out = tstr_new();
+    if (!out) return exprtk_val_num(0);
     for (size_t i = 0; i < argc; ++i) {
-        if (!mod_is_number(args[i])) return exprtk_val_num(0);
-        long long cp = mod_number_to_signed(args[i]);
-        if (cp < 0 || cp > 0x10FFFF || (cp >= 0xD800 && cp <= 0xDFFF))
+        if (!mod_is_number(args[i])) {
+            tstr_free(out);
             return exprtk_val_num(0);
-        len += utf8codepointsize((utf8_int32_t)cp);
-    }
-    char *buf = (char *)mem_alloc(arena, len + 1);
-    if (!buf) return exprtk_val_num(0);
-    size_t pos = 0;
-    for (size_t i = 0; i < argc; ++i) {
+        }
         long long cp = mod_number_to_signed(args[i]);
-        size_t n = mod_utf8_write_codepoint(buf + pos, len + 1 - pos, (int)cp);
-        if (n == 0) return exprtk_val_num(0);
-        pos += n;
+        if (cp < 0 || tstr_utf8_codepoint_size((uint32_t)cp) == 0) {
+            tstr_free(out);
+            return exprtk_val_num(0);
+        }
+        out = tstr_utf8_append_cp(out, (uint32_t)cp);
+        if (!out) return exprtk_val_num(0);
     }
-    buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return mod_copy_tstr(arena, out);
 }
 
 static exprtk_value_t fn_chr(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -743,8 +823,8 @@ static exprtk_value_t fn_ord(size_t argc, exprtk_value_t *args, exprtk_env_t *en
     size_t index = argc == 2 ? mod_number_to_index(args[1]) : 0;
     size_t start = mod_utf8_byte_offset(s, index);
     if (start >= s.len) return exprtk_val_num(-1.0);
-    utf8_int32_t cp = 0;
-    utf8codepoint((const utf8_int8_t *)(s.data + start), &cp);
+    uint32_t cp = 0;
+    if (mod_utf8_next_width(s, start, &cp) == 0) return exprtk_val_num(-1.0);
     return exprtk_val_num((double)cp);
 }
 
@@ -764,10 +844,7 @@ static exprtk_value_t fn_utf8_lower(size_t argc, exprtk_value_t *args, exprtk_en
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     if (!mod_utf8_valid_view(args[0].data.string)) return exprtk_val_num(0);
-    char *buf = mod_view_to_arena_cstr(args[0].data.string, arena);
-    if (!buf) return exprtk_val_num(0);
-    utf8lwr((utf8_int8_t *)buf);
-    return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
+    return mod_utf8_map_case(arena, args[0].data.string, 0);
 }
 
 static exprtk_value_t fn_utf8_upper(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -775,10 +852,7 @@ static exprtk_value_t fn_utf8_upper(size_t argc, exprtk_value_t *args, exprtk_en
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     if (!mod_utf8_valid_view(args[0].data.string)) return exprtk_val_num(0);
-    char *buf = mod_view_to_arena_cstr(args[0].data.string, arena);
-    if (!buf) return exprtk_val_num(0);
-    utf8upr((utf8_int8_t *)buf);
-    return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
+    return mod_utf8_map_case(arena, args[0].data.string, 1);
 }
 
 /* str_split(str, sep) -> list<string>: Python/JS-style substring separator */
@@ -795,7 +869,7 @@ static exprtk_value_t fn_str_split(size_t argc, exprtk_value_t *args, exprtk_env
         if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
         size_t offset = 0;
         while (offset < s.len) {
-            size_t n = utf8codepointcalcsize((const utf8_int8_t *)(s.data + offset));
+            size_t n = mod_utf8_next_width(s, offset, NULL);
             if (!mod_list_append_string(&list, arena, s.data + offset, n)) return exprtk_val_num(0);
             offset += n;
         }
@@ -835,7 +909,7 @@ static exprtk_value_t fn_split_limit(size_t argc, exprtk_value_t *args, exprtk_e
         size_t offset = 0;
         size_t splits = 0;
         while (offset < s.len && splits < maxsplit) {
-            size_t n = utf8codepointcalcsize((const utf8_int8_t *)(s.data + offset));
+            size_t n = mod_utf8_next_width(s, offset, NULL);
             if (!mod_list_append_string(&list, arena, s.data + offset, n)) return exprtk_val_num(0);
             offset += n;
             splits++;
@@ -1026,8 +1100,8 @@ static exprtk_value_t fn_utf8_codepoint_at(size_t argc, exprtk_value_t *args, ex
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(-1.0);
     size_t start = mod_utf8_byte_offset(s, mod_number_to_index(args[1]));
     if (start >= s.len) return exprtk_val_num(-1.0);
-    utf8_int32_t cp = 0;
-    utf8codepoint((const utf8_int8_t *)(s.data + start), &cp);
+    uint32_t cp = 0;
+    if (mod_utf8_next_width(s, start, &cp) == 0) return exprtk_val_num(-1.0);
     return exprtk_val_num((double)cp);
 }
 
@@ -1176,7 +1250,7 @@ static exprtk_value_t fn_expand_tabs(size_t argc, exprtk_value_t *args, exprtk_e
             col += spaces;
             i++;
         } else {
-            size_t n = valid ? utf8codepointcalcsize((const utf8_int8_t *)(s.data + i)) : 1;
+            size_t n = valid ? mod_utf8_next_width(s, i, NULL) : 1;
             if (n == 0 || i + n > s.len) n = 1;
             len += n;
             i += n;
@@ -1195,7 +1269,7 @@ static exprtk_value_t fn_expand_tabs(size_t argc, exprtk_value_t *args, exprtk_e
             col += spaces;
             i++;
         } else {
-            size_t n = valid ? utf8codepointcalcsize((const utf8_int8_t *)(s.data + i)) : 1;
+            size_t n = valid ? mod_utf8_next_width(s, i, NULL) : 1;
             if (n == 0 || i + n > s.len) n = 1;
             memcpy(buf + pos, s.data + i, n);
             pos += n;
@@ -1375,28 +1449,19 @@ static exprtk_value_t fn_rtrim_chars(size_t argc, exprtk_value_t *args, exprtk_e
 }
 
 static exprtk_value_t fn_str_eq_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env;
+    (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     if (!mod_utf8_valid_view(args[0].data.string) || !mod_utf8_valid_view(args[1].data.string))
         return exprtk_val_num(0);
-    char *lhs = mod_view_to_arena_cstr(args[0].data.string, arena);
-    char *rhs = mod_view_to_arena_cstr(args[1].data.string, arena);
-    if (!lhs || !rhs) return exprtk_val_num(0);
-    return exprtk_val_num(utf8casecmp((const utf8_int8_t *)lhs, (const utf8_int8_t *)rhs) == 0 ? 1.0 : 0.0);
+    return exprtk_val_num(mod_utf8_ieq_view(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_str_contains_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env;
+    (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    if (!mod_utf8_valid_view(args[0].data.string) || !mod_utf8_valid_view(args[1].data.string))
-        return exprtk_val_num(0);
-    char *haystack = mod_view_to_arena_cstr(args[0].data.string, arena);
-    char *needle = mod_view_to_arena_cstr(args[1].data.string, arena);
-    if (!haystack || !needle) return exprtk_val_num(0);
-    return exprtk_val_num(utf8casestr((const utf8_int8_t *)haystack,
-                                      (const utf8_int8_t *)needle) ? 1.0 : 0.0);
+    return exprtk_val_num(mod_utf8_contains_ci(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_replace_once(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1668,7 +1733,7 @@ static exprtk_value_t fn_pad_left(size_t argc, exprtk_value_t *args, exprtk_env_
     size_t fill_len = mod_first_utf8_char_len(fill);
     if (fill_len == 0) fill = tstr_v_from_cstr(" "), fill_len = 1;
     size_t width = mod_number_to_index(args[1]);
-    size_t current = mod_utf8_valid_view(s) ? utf8nlen((const utf8_int8_t *)s.data, s.len) : s.len;
+    size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
     size_t pad_count = width - current;
     size_t len = s.len + pad_count * fill_len;
@@ -1694,7 +1759,7 @@ static exprtk_value_t fn_pad_right(size_t argc, exprtk_value_t *args, exprtk_env
     size_t fill_len = mod_first_utf8_char_len(fill);
     if (fill_len == 0) fill = tstr_v_from_cstr(" "), fill_len = 1;
     size_t width = mod_number_to_index(args[1]);
-    size_t current = mod_utf8_valid_view(s) ? utf8nlen((const utf8_int8_t *)s.data, s.len) : s.len;
+    size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
     size_t pad_count = width - current;
     size_t len = s.len + pad_count * fill_len;
@@ -1711,23 +1776,16 @@ static exprtk_value_t fn_pad_right(size_t argc, exprtk_value_t *args, exprtk_env
 }
 
 static exprtk_value_t fn_starts_with_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env;
+    (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     tstr_v s = args[0].data.string;
     tstr_v prefix = args[1].data.string;
-    if (prefix.len > s.len || !mod_utf8_valid_view(s) || !mod_utf8_valid_view(prefix))
-        return exprtk_val_num(0);
-    if (!mod_utf8_is_boundary(s, prefix.len))
-        return exprtk_val_num(0);
-    char *lhs = mod_view_to_arena_cstr(tstr_v_from_buf(s.data, prefix.len), arena);
-    char *rhs = mod_view_to_arena_cstr(prefix, arena);
-    if (!lhs || !rhs) return exprtk_val_num(0);
-    return exprtk_val_num(utf8casecmp((const utf8_int8_t *)lhs, (const utf8_int8_t *)rhs) == 0 ? 1.0 : 0.0);
+    return exprtk_val_num(mod_utf8_starts_with_ci(s, prefix) ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_ends_with_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
-    (void)env;
+    (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     tstr_v s = args[0].data.string;
@@ -1737,10 +1795,7 @@ static exprtk_value_t fn_ends_with_ci(size_t argc, exprtk_value_t *args, exprtk_
     size_t start = s.len - suffix.len;
     if (!mod_utf8_is_boundary(s, start))
         return exprtk_val_num(0);
-    char *lhs = mod_view_to_arena_cstr(tstr_v_from_buf(s.data + start, suffix.len), arena);
-    char *rhs = mod_view_to_arena_cstr(suffix, arena);
-    if (!lhs || !rhs) return exprtk_val_num(0);
-    return exprtk_val_num(utf8casecmp((const utf8_int8_t *)lhs, (const utf8_int8_t *)rhs) == 0 ? 1.0 : 0.0);
+    return exprtk_val_num(mod_utf8_ieq_view(tstr_v_from_buf(s.data + start, suffix.len), suffix) ? 1.0 : 0.0);
 }
 
 static exprtk_value_t mod_partition_result(mem_pool_t *arena, tstr_v s, tstr_v sep, size_t pos, int found) {
@@ -2387,7 +2442,8 @@ static exprtk_value_t fn_template_render(size_t argc, exprtk_value_t *args,
     char *rendered = rc == 0 ? mustache_string_renderer_get_arena(&renderer) : NULL;
     exprtk_value_t result = exprtk_val_num(0);
     if (rendered) {
-        result = mod_copy_string(arena, rendered, strlen(rendered));
+        tstr_v rendered_view = tstr_v_from_cstr(rendered);
+        result = mod_copy_string(arena, rendered_view.data, rendered_view.len);
     }
 
     mod_mustache_provider_free(&provider_data);
@@ -2484,7 +2540,7 @@ static exprtk_value_t fn_grapheme_split(size_t argc, exprtk_value_t *args, exprt
     exprtk_value_t list = exprtk_val_list_empty();
     size_t offset = 0;
     while (offset < s.len) {
-        size_t n = utf8codepointcalcsize((const utf8_int8_t *)(s.data + offset));
+        size_t n = mod_utf8_next_width(s, offset, NULL);
         if (n == 0 || offset + n > s.len) n = 1;
         if (!mod_list_append_string(&list, arena, s.data + offset, n)) return exprtk_val_num(0);
         offset += n;
@@ -2729,7 +2785,7 @@ static exprtk_value_t fn_remove_chars(size_t argc, exprtk_value_t *args, exprtk_
     size_t i = 0;
     int valid = mod_utf8_valid_view(s) && mod_utf8_valid_view(chars);
     while (i < s.len) {
-        size_t n = valid ? utf8codepointcalcsize((const utf8_int8_t *)(s.data + i)) : 1;
+        size_t n = valid ? mod_utf8_next_width(s, i, NULL) : 1;
         if (n == 0 || i + n > s.len) n = 1;
         if (!mod_view_contains_span(chars, s.data + i, n)) {
             memcpy(buf + pos, s.data + i, n);
@@ -2753,7 +2809,7 @@ static exprtk_value_t fn_keep_chars(size_t argc, exprtk_value_t *args, exprtk_en
     size_t i = 0;
     int valid = mod_utf8_valid_view(s) && mod_utf8_valid_view(chars);
     while (i < s.len) {
-        size_t n = valid ? utf8codepointcalcsize((const utf8_int8_t *)(s.data + i)) : 1;
+        size_t n = valid ? mod_utf8_next_width(s, i, NULL) : 1;
         if (n == 0 || i + n > s.len) n = 1;
         if (mod_view_contains_span(chars, s.data + i, n)) {
             memcpy(buf + pos, s.data + i, n);
@@ -3018,7 +3074,8 @@ static exprtk_value_t fn_base64_encode(size_t argc, exprtk_value_t *args, exprtk
     char *encoded = NULL;
     if (tn_base64_encode((const uint8_t *)s.data, s.len, &encoded) != 0 || !encoded)
         return exprtk_val_num(0);
-    exprtk_value_t result = mod_copy_string(arena, encoded, strlen(encoded));
+    tstr_v encoded_view = tstr_v_from_cstr(encoded);
+    exprtk_value_t result = mod_copy_string(arena, encoded_view.data, encoded_view.len);
     free(encoded);
     return result;
 }
@@ -3048,7 +3105,8 @@ static exprtk_value_t fn_base64url_encode(size_t argc, exprtk_value_t *args, exp
     if (tn_base64_encode((const uint8_t *)s.data, s.len, &encoded) != 0 || !encoded)
         return exprtk_val_num(0);
 
-    size_t len = strlen(encoded);
+    tstr_v encoded_view = tstr_v_from_cstr(encoded);
+    size_t len = encoded_view.len;
     while (len > 0 && encoded[len - 1] == '=') len--;
     char *buf = (char *)mem_alloc(arena, len + 1);
     if (!buf) {

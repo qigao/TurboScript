@@ -1455,7 +1455,7 @@ static exprtk_value_t parser_data_bind_bytes_value(exprtk_env_t *env,
 
 static exprtk_value_t parser_data_bind_uuid_value(const DataBindValue *value) {
     uuid_t uuid;
-    if (!data_bind_value_as_uuid(value, &uuid)) return PARSER_ZERO;
+    if (!data_bind_value_as_uuid(value, uuid.bytes)) return PARSER_ZERO;
     return exprtk_val_uuid(uuid);
 }
 

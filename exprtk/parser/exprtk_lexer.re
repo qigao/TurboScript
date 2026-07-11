@@ -9,6 +9,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
+#include <ctype.h>
 
 static double parse_number(const char *start, const char *end) {
     char buf[64];
@@ -17,6 +18,90 @@ static double parse_number(const char *start, const char *end) {
     memcpy(buf, start, len);
     buf[len] = '\0';
     return strtod(buf, NULL);
+}
+
+static int regex_can_start_after(int token_type) {
+    switch (token_type) {
+        case 0:
+        case exprtk_TOKEN_EQUAL:
+        case exprtk_TOKEN_ASSIGN_ADD:
+        case exprtk_TOKEN_ASSIGN_SUB:
+        case exprtk_TOKEN_ASSIGN_MUL:
+        case exprtk_TOKEN_ASSIGN_DIV:
+        case exprtk_TOKEN_LPAREN:
+        case exprtk_TOKEN_LBRACKET:
+        case exprtk_TOKEN_LBRACE:
+        case exprtk_TOKEN_COMMA:
+        case exprtk_TOKEN_COLON:
+        case exprtk_TOKEN_SEMICOLON:
+        case exprtk_TOKEN_RETURN:
+        case exprtk_TOKEN_THROW:
+        case exprtk_TOKEN_CASE:
+        case exprtk_TOKEN_QUESTION:
+        case exprtk_TOKEN_ARROW:
+        case exprtk_TOKEN_PLUS:
+        case exprtk_TOKEN_MINUS:
+        case exprtk_TOKEN_MULTIPLY:
+        case exprtk_TOKEN_DIVIDE:
+        case exprtk_TOKEN_MOD:
+        case exprtk_TOKEN_POWER:
+        case exprtk_TOKEN_EQ:
+        case exprtk_TOKEN_NE:
+        case exprtk_TOKEN_LT:
+        case exprtk_TOKEN_LE:
+        case exprtk_TOKEN_GT:
+        case exprtk_TOKEN_GE:
+        case exprtk_TOKEN_AND:
+        case exprtk_TOKEN_OR:
+        case exprtk_TOKEN_NOT:
+        case exprtk_TOKEN_PIPE:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static int scan_regex_literal(const char *start, const char *limit, const char **end) {
+    const char *p = start + 1;
+    int escaped = 0;
+    int in_class = 0;
+
+    while (p < limit) {
+        unsigned char c = (unsigned char)*p;
+        if (c == '\n' || c == '\r') return -1;
+        if (escaped) {
+            escaped = 0;
+            ++p;
+            continue;
+        }
+        if (c == '\\') {
+            escaped = 1;
+            ++p;
+            continue;
+        }
+        if (c == '[') {
+            in_class = 1;
+            ++p;
+            continue;
+        }
+        if (c == ']' && in_class) {
+            in_class = 0;
+            ++p;
+            continue;
+        }
+        if (c == '/' && !in_class) {
+            ++p;
+            while (p < limit && isalpha((unsigned char)*p)) ++p;
+            *end = p;
+            return 1;
+        }
+        ++p;
+    }
+    return -1;
+}
+
+static void lexer_note_token(exprtk_lexer_t *lexer, int token_type) {
+    lexer->last_token = token_type;
 }
 
 int exprtk_lexer_next(exprtk_lexer_t *lexer, exprtk_token_t *token) {
@@ -35,6 +120,7 @@ int exprtk_lexer_next(exprtk_lexer_t *lexer, exprtk_token_t *token) {
         token->length = (size_t)(YYCURSOR - token_start); \
         lexer->cursor = YYCURSOR; \
         lexer->column += (int)(YYCURSOR - token_start); \
+        lexer_note_token(lexer, t); \
         return t; \
     } while(0)
 
@@ -69,7 +155,22 @@ lex_start:
         "+" { RET(exprtk_TOKEN_PLUS); }
         "-" { RET(exprtk_TOKEN_MINUS); }
         "*" { RET(exprtk_TOKEN_MULTIPLY); }
-        "/" { RET(exprtk_TOKEN_DIVIDE); }
+        "/" {
+            if (regex_can_start_after(lexer->last_token)) {
+                const char *regex_end = NULL;
+                int regex_scan = scan_regex_literal(token_start, YYLIMIT, &regex_end);
+                if (regex_scan > 0) {
+                    YYCURSOR = regex_end;
+                    RET(exprtk_TOKEN_REGEX);
+                }
+                if (regex_scan < 0) {
+                    snprintf(lexer->error, sizeof(lexer->error),
+                             "Unterminated regex literal at line %d", lexer->line);
+                    return -1;
+                }
+            }
+            RET(exprtk_TOKEN_DIVIDE);
+        }
         "%" { RET(exprtk_TOKEN_MOD); }
         "^" { RET(exprtk_TOKEN_POWER); }
         "..." { RET(exprtk_TOKEN_SPREAD); }
@@ -244,6 +345,7 @@ lex_start:
             
             lexer->column += (int)token->length;
             lexer->cursor = YYCURSOR;
+            lexer_note_token(lexer, token->type);
             return token->type;
         }
 
@@ -255,6 +357,7 @@ lex_start:
             token->column = lexer->column;
             lexer->column += (int)token->length;
             lexer->cursor = YYCURSOR;
+            lexer_note_token(lexer, exprtk_TOKEN_VARIABLE);
             return exprtk_TOKEN_VARIABLE;
         }
 
@@ -277,5 +380,7 @@ void exprtk_lexer_init(exprtk_lexer_t *lexer, const char *input, size_t length) 
     lexer->limit = input + length;
     lexer->line = 1;
     lexer->column = 1;
+    lexer->last_token = 0;
+    lexer->error[0] = '\0';
 }
 

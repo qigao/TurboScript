@@ -8,23 +8,13 @@
     },
     {
       "name": "tiny-aes-c"
-    },
-    {
-      "name": "aklomp-base64"
-    },
+    }, 
     {
       "name": "openssl"
-    },
-    {
-      "name": "c-ares"
-    },
+    }, 
     {
       "name": "stb"
-    },
-    {
-      "name": "stc",
-      "version>=": "5.0"
-    },
+    }, 
     {
       "name": "pkgconf"
     },
@@ -33,10 +23,7 @@
     },
     {
       "name": "simde"
-    },
-    {
-      "name": "utf8h"
-    },
+    }, 
     {
       "name": "sqlite3",
       "version>=": "3.49.0",

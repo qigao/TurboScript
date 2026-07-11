@@ -2,7 +2,7 @@ set(TEST_NAME test_fin)
 
 add_executable(${TEST_NAME} test_fin.c)
 
-target_link_libraries(${TEST_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -18,7 +18,7 @@ set(TEST_FACTOR_NAME test_factor)
 
 add_executable(${TEST_FACTOR_NAME} test_factor.c)
 
-target_link_libraries(${TEST_FACTOR_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_FACTOR_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_FACTOR_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -34,7 +34,7 @@ set(TEST_PORTFOLIO_NAME test_portfolio)
 
 add_executable(${TEST_PORTFOLIO_NAME} test_portfolio.c)
 
-target_link_libraries(${TEST_PORTFOLIO_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_PORTFOLIO_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_PORTFOLIO_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -50,7 +50,7 @@ set(TEST_BACKTEST_RISK_NAME test_backtest_risk)
 
 add_executable(${TEST_BACKTEST_RISK_NAME} test_backtest_risk.c)
 
-target_link_libraries(${TEST_BACKTEST_RISK_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_BACKTEST_RISK_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_BACKTEST_RISK_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -66,7 +66,7 @@ set(TEST_GRAPH_NAME test_graph)
 
 add_executable(${TEST_GRAPH_NAME} test_graph.c)
 
-target_link_libraries(${TEST_GRAPH_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_GRAPH_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_GRAPH_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -82,7 +82,7 @@ set(TEST_NASH_NAME test_nash)
 
 add_executable(${TEST_NASH_NAME} test_nash.c)
 
-target_link_libraries(${TEST_NASH_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_NASH_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_NASH_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
@@ -98,7 +98,7 @@ set(TEST_UNIVERSE_NAME test_universe)
 
 add_executable(${TEST_UNIVERSE_NAME} test_universe.c)
 
-target_link_libraries(${TEST_UNIVERSE_NAME} PRIVATE fin TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(${TEST_UNIVERSE_NAME} PRIVATE fin TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(${TEST_UNIVERSE_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)

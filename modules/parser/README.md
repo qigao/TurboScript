@@ -1,6 +1,6 @@
 # Parser 模块
 
-基于 TurboNet::Parser 的 CSV/JSON/XML/Datetime 解析模块。
+基于 TurboUtils::Parser 的 CSV/JSON/XML/Datetime 解析模块。
 
 ## 功能概述
 
@@ -230,7 +230,7 @@ let qty = parser.json_query_num(json, "$.orders[0].qty", 0);
 
 ### XML 函数
 
-XML API 通过 TurboNet::Parser 的 opaque XPath node 接口实现，脚本层和外部模块不需要包含 cxml 头文件。
+XML API 通过 TurboUtils::Parser 的 opaque XPath node 接口实现，脚本层和外部模块不需要包含 cxml 头文件。
 
 #### `xml.query(xml: string, xpath: string) -> list<object>`
 使用 XPath 1.0 查询 XML，返回节点列表。每个节点是 plain object，字段包括：
@@ -515,11 +515,11 @@ ctest -R parser_module -V
 - **动态库**: `parser_plugin.dll` - 用于 TurboScript 运行时加载
 - **依赖项**: 
   - `exprtk` - TurboScript 核心
-  - `TurboNet::Utils` - 内存池和字符串工具
-  - `TurboNet::Parser` - CSV/JSON/XML/Datetime 解析引擎
+  - `TurboUtils::Core` - 内存池和字符串工具
+  - `TurboUtils::Parser` - CSV/JSON/XML/Datetime 解析引擎
 
 ## 参考
 
-- [TurboNet::Parser 文档](https://github.com/your-org/turbonet)
+- [TurboUtils::Parser 文档](https://github.com/your-org/turbonet)
 - [TurboScript 插件开发指南](../../docs/PLUGIN_SYSTEM.md)
 - [模块开发规范](../README.md)

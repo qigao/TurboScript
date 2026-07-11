@@ -917,6 +917,25 @@ spec("turbo_script_scientific") {
       turbo_script_free(ctx);
     }
 
+    it("should support regex literal syntax") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "var pattern = /\\d{3}-\\d{4}/; "
+                           "var ok = pattern.test(\"555-1234\"); "
+                           "var bad = pattern.test(\"55-1234\"); "
+                           "var pos = pattern.search(\"call 555-1234\"); "
+                           "var ci = /abc/i.test(\"ABC\"); "
+                           "var div = 10 / 2; "
+                           "var source = pattern.toString(); "
+                           "var score = ok + bad + pos + ci + div;";
+      int res = turbo_script_run(ctx, script);
+      if (res != 0) printf("Regex literal Error: %s\n", turbo_script_get_error(ctx));
+      check_int_eq(res, 0);
+
+      check_float_eq(ts_get_num(ctx, "score"), 12.0, 0.001);
+      check_str_eq(ts_get_str(ctx, "source"), "\\d{3}-\\d{4}");
+      turbo_script_free(ctx);
+    }
+
     it("should tear down JIT regex handles safely") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var h = regex.compile(\"[0-9]+\"); "

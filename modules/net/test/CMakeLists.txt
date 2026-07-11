@@ -1,12 +1,12 @@
 add_executable(test_net_ctx test_net_ctx.c)
-target_link_libraries(test_net_ctx PRIVATE TurboNet::TinyTest exprtk
+target_link_libraries(test_net_ctx PRIVATE TurboUtils::TinyTest exprtk
                                            ${TARGET_NAME_LIB}
-                                           PUBLIC TurboNet::Utils)
+                                           PUBLIC TurboUtils::Core)
 add_test(NAME test_net_ctx COMMAND test_net_ctx)
 set_target_properties(test_net_ctx PROPERTIES FOLDER modules/net)
 
 add_executable(test_net_module test_net_plugin.c)
-target_link_libraries(test_net_module PRIVATE exprtk TurboNet::TinyTest)
+target_link_libraries(test_net_module PRIVATE exprtk TurboUtils::TinyTest)
 add_test(NAME test_net_module COMMAND test_net_module)
 set_target_properties(test_net_module PROPERTIES FOLDER modules/net)
 

@@ -67,7 +67,26 @@ Lookup priority:
 12. **Map**: Explicit script key-value container (e.g., `map{name: "Alice", age: 30}`).
 13. **Object**: Host/parser/data_bind plain record object with field access.
 14. **List**: Heterogeneous array of any values (e.g., `list("hello", 42, [1,2])`).
-15. **Null**: Absence of a value (`null` or `nil`).
+15. **RegExp Object**: Regular expression object created with `RegExp("...")` or `/.../flags`.
+16. **Null**: Absence of a value (`null` or `nil`).
+
+### Regular Expression Literals
+
+Regex literals are syntax sugar for the existing core `RegExp` object API:
+
+```js
+let pattern = /\d{3}-\d{4}/;
+let ok = pattern.test("555-1234");     // → 1
+let pos = pattern.search("call 555-1234"); // → 5
+let info = pattern.exec("call 555-1234");
+let ci = /abc/i.test("ABC");           // → 1
+```
+
+`/pattern/flags` is lowered by the parser to `RegExp("pattern", "flags")`.
+The literal shares the same runtime behavior and limitations as `RegExp(...)`;
+the currently supported flag is `i` for case-insensitive matching. Escape a
+literal slash inside the pattern as `\/`. Division expressions such as `10 / 2`
+continue to parse as arithmetic division.
 
 ### Built-in Constants
 

@@ -44,7 +44,7 @@ modules/img/
 
 ### 编译时依赖
 - `exprtk` (TurboScript 核心)
-- `TurboNet::Utils` (工具库)
+- `TurboUtils::Core` (工具库)
 - `stb` (通过 vcpkg)
 
 ### 运行时依赖

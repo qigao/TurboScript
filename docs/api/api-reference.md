@@ -814,7 +814,7 @@ nodes, schema reflection records, and schema-bound records/unions. Script
 by the script parser module and use TurboNet's datetime parser/format helpers.
 TBE schema scalars `datetime`, `date`, `time`, `duration`, `decimal`, `bigint`,
 and `money` are implemented in
-`tbe/data_bind`; DataBind uses TurboNet::Parser directly and binds JSON/XML/CSV
+`tbe/data_bind`; DataBind uses TurboUtils::Parser directly and binds JSON/XML/CSV
 text to native runtime values. Schema emit writes them back as strings.
 
 Schema string fields can also use field formats, for example

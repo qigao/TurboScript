@@ -2,7 +2,7 @@
 # Each binary gets the plugin .tbs files copied to its output directory.
 macro(add_ts_test TARGET_NAME SOURCE_FILE)
   add_executable(${TARGET_NAME} ${SOURCE_FILE})
-  target_link_libraries(${TARGET_NAME} PRIVATE turbo_script TurboNet::TinyTest
+  target_link_libraries(${TARGET_NAME} PRIVATE turbo_script TurboUtils::TinyTest
                                                exprtk ta mir_static)
   add_dependencies(${TARGET_NAME} fin_tbs ta_tbs ts_tbs parser_tbs net_tbs)
   add_custom_command(
@@ -25,7 +25,7 @@ add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 
 add_executable(bench_turbo_script bench_turbo_script.c)
 target_link_libraries(
-  bench_turbo_script PRIVATE turbo_script_lib TurboNet::TinyTest exprtk
+  bench_turbo_script PRIVATE turbo_script_lib TurboUtils::TinyTest exprtk
                              mir_static)
 target_include_directories(bench_turbo_script
                            PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir)
@@ -36,7 +36,7 @@ set_target_properties(bench_turbo_script PROPERTIES FOLDER turbo_script)
 macro(add_mir_test TARGET_NAME SOURCE_FILE)
   add_executable(${TARGET_NAME} ${SOURCE_FILE})
   target_include_directories(${TARGET_NAME} PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir)
-  target_link_libraries(${TARGET_NAME} PRIVATE turbo_script TurboNet::TinyTest exprtk mir_static)
+  target_link_libraries(${TARGET_NAME} PRIVATE turbo_script TurboUtils::TinyTest exprtk mir_static)
   add_test(NAME ${TARGET_NAME} COMMAND ${TARGET_NAME})
   set_target_properties(${TARGET_NAME} PROPERTIES FOLDER turbo_script)
 endmacro()

@@ -424,7 +424,11 @@ exprtk_node_t *exprtk_parse_ext(const char *input, size_t length,
         ctx.error = 1;
         ctx.fatal_error = 1;
         if (ctx.error_msg[0] == '\0') {
-            snprintf(ctx.error_msg, sizeof(ctx.error_msg), "Lexer error at line %d", lexer.line);
+            if (lexer.error[0] != '\0') {
+                snprintf(ctx.error_msg, sizeof(ctx.error_msg), "%s", lexer.error);
+            } else {
+                snprintf(ctx.error_msg, sizeof(ctx.error_msg), "Lexer error at line %d", lexer.line);
+            }
         }
     } else if (!ctx.fatal_error) {
         exprtk_token_t end_token;

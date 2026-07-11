@@ -55,6 +55,24 @@ var message = 'Single quotes work too';
 var template = `Template strings`;
 ```
 
+### Regular Expression
+
+Use `regex.*` functions, `RegExp(...)`, or `/pattern/flags` literals for regular
+expression matching:
+
+```javascript
+var phone = /\d{3}-\d{4}/;
+var ok = phone.test("555-1234");          // 1
+var pos = phone.search("call 555-1234");  // 5
+var info = phone.exec("call 555-1234");   // map/object with matched span
+var ci = /abc/i.test("ABC");              // 1
+```
+
+A regex literal is parsed as `RegExp("pattern", "flags")`, so it has the same
+methods and limits as the existing `RegExp` object API. The `i` flag enables
+case-insensitive matching. Use `\/` for a literal slash inside the pattern.
+Arithmetic division remains `10 / 2`.
+
 ### Vector
 
 Homogeneous arrays of numbers:

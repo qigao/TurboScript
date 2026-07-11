@@ -1,7 +1,7 @@
 # data_bind_tbs — import("data_bind")
 #
 # Provides binary-to-script-object parsing using JIT-compiled TBE schemas.
-# Depends on: TurboScript::DataBind (the tbe/data_bind library) and exprtk.
+# Depends on:TurboUtils::DataBind (the tbe/data_bind library) and exprtk.
 
 set(TARGET_NAME data_bind_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
@@ -25,7 +25,7 @@ target_include_directories(${TARGET_NAME_LIB}
 target_link_libraries(${TARGET_NAME_LIB}
   PRIVATE
     exprtk
-    TurboScript::DataBind)
+   TurboUtils::DataBind)
 
 # ── Shared plugin DLL ────────────────────────────────────────────────────────
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
@@ -42,7 +42,7 @@ target_include_directories(${TARGET_NAME}
 target_link_libraries(${TARGET_NAME}
   PRIVATE
     exprtk
-    TurboScript::DataBind)
+   TurboUtils::DataBind)
 
 set_target_properties(${TARGET_NAME}
   PROPERTIES

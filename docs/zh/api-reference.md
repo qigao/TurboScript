@@ -585,7 +585,7 @@ JSON object、XML 查询节点、schema reflection 记录和 schema-bound record
 `datetime.parse`、`datetime.to_time`、`datetime.format_rfc822` 由脚本 parser 模块导出，
 底层使用 TurboNet 的 datetime parser/format helper。TBE schema 标量
 `datetime`、`date`、`time`、`duration`、`decimal`、`bigint`、`money` 在 `tbe/data_bind` 中实现；DataBind 直接使用
-TurboNet::Parser，把 JSON/XML/CSV 文本绑定为原生运行时值。schema emit 会把它们写回字符串。
+TurboUtils::Parser，把 JSON/XML/CSV 文本绑定为原生运行时值。schema emit 会把它们写回字符串。
 
 schema 字符串字段也可以使用字段格式，例如 `[format(ipaddr)] string ip;` 或
 `[format(url)] string href;`。这些格式只做 JSON/CSV/XML/default 文本校验，

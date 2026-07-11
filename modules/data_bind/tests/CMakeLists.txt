@@ -2,7 +2,7 @@
 add_executable(test_data_bind_module test_data_bind.c)
 target_link_libraries(test_data_bind_module PRIVATE
   exprtk
-  TurboNet::TinyTest
+  TurboUtils::TinyTest
 )
 add_test(NAME test_data_bind_module COMMAND test_data_bind_module)
 set_target_properties(test_data_bind_module PROPERTIES FOLDER modules/data_bind)

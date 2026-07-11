@@ -1,7 +1,6 @@
 add_subdirectory(croar) 
 add_subdirectory(monocypher)
-add_subdirectory(sha2)
-add_subdirectory(sds) 
+add_subdirectory(sha2) 
 add_subdirectory(mir)
 add_subdirectory(uuid) 
 add_subdirectory(miniblas)

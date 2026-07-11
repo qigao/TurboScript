@@ -2,7 +2,7 @@ set(TEST_NAME test_exprtk)
 
 add_executable(${TEST_NAME} test_exprtk.c)
 
-target_link_libraries(${TEST_NAME} PRIVATE exprtk TurboNet::TinyTest)
+target_link_libraries(${TEST_NAME} PRIVATE exprtk TurboUtils::TinyTest)
 
 target_include_directories(${TEST_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -66,7 +66,7 @@ set(TEST_MOD_MATH_NAME test_mod_math)
 
 add_executable(${TEST_MOD_MATH_NAME} test_mod_math.c)
 
-target_link_libraries(${TEST_MOD_MATH_NAME} PRIVATE exprtk TurboNet::TinyTest)
+target_link_libraries(${TEST_MOD_MATH_NAME} PRIVATE exprtk TurboUtils::TinyTest)
 if(UNIX)
   target_link_libraries(${TEST_MOD_MATH_NAME} PRIVATE m)
 endif()
@@ -85,7 +85,7 @@ set(TEST_SIMD_HELPERS_NAME test_simd_helpers)
 add_executable(${TEST_SIMD_HELPERS_NAME} test_simd_helpers.c)
 
 target_link_libraries(${TEST_SIMD_HELPERS_NAME} PRIVATE exprtk
-                                                        TurboNet::TinyTest)
+                                                        TurboUtils::TinyTest)
 
 target_include_directories(${TEST_SIMD_HELPERS_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -101,7 +101,7 @@ set(TEST_MOD_IO_NAME test_mod_io)
 
 add_executable(${TEST_MOD_IO_NAME} test_mod_io.c)
 
-target_link_libraries(${TEST_MOD_IO_NAME} PRIVATE exprtk TurboNet::TinyTest)
+target_link_libraries(${TEST_MOD_IO_NAME} PRIVATE exprtk TurboUtils::TinyTest)
 
 target_include_directories(${TEST_MOD_IO_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -117,7 +117,7 @@ set(TEST_OOP_NAME test_oop)
 
 add_executable(${TEST_OOP_NAME} test_oop.c)
 
-target_link_libraries(${TEST_OOP_NAME} PRIVATE exprtk TurboNet::TinyTest)
+target_link_libraries(${TEST_OOP_NAME} PRIVATE exprtk TurboUtils::TinyTest)
 
 target_include_directories(${TEST_OOP_NAME}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

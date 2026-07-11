@@ -45,7 +45,7 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static
-  PUBLIC TurboNet::Utils TurboNet::Parser)
+  PUBLIC TurboUtils::Core TurboUtils::Parser)
 
 # Enable strict warnings for modularized code
 if(MSVC)
@@ -78,7 +78,7 @@ target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE mir_static
-  PUBLIC TurboNet::Utils exprtk)
+  PUBLIC TurboUtils::Core exprtk)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  

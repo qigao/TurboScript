@@ -243,7 +243,7 @@ ls build/bin/img_plugin.*
 
 **A**: 确保链接了必要的库：
 ```cmake
-target_link_libraries(img PUBLIC exprtk TurboNet::Utils)
+target_link_libraries(img PUBLIC exprtk TurboUtils::Core)
 ```
 
 ## 10. 下一步

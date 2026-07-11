@@ -1,6 +1,6 @@
 /**
  * @file parser_ctx.h
- * @brief Parser module context - CSV/JSON/XML parsing via TurboNet::Parser
+ * @brief Parser module context - CSV/JSON/XML parsing via TurboUtils::Parser
  */
 #ifndef PARSER_CTX_H
 #define PARSER_CTX_H

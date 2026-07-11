@@ -275,59 +275,21 @@ vec.range(0, 10);
 
 ---
 
-## ❌ 关键缺失
-
-### 1. 文件权限、符号链接与锁
+## ✅ 正则表达式能力
 
 ```javascript
-// 当前无法实现
-chmod("script.tbs", 0755);             // ❌ 不存在
-let target = readlink("latest");      // ❌ 不存在
-flock("data.lock");                   // ❌ 不存在
-```
-
-**影响**: 权限管理、软链接工作流和跨进程锁仍需宿主侧处理
-
-**实施**: 需要先在 `turbo_fs.h` 暴露跨平台 chmod/readlink/symlink/flock 语义
-
-**预计工作量**: 2-4 周
-
----
-
-### 2. 正则表达式语法糖
-
-```javascript
-// 当前已有 core regex 函数和 RegExp 对象 API；还没有 /.../ 字面量
 let h = regex.compile("\\d{3}-\\d{4}");
-let ok = regex.match(h, "555-1234");  // ✅ 已支持
-let pattern = /\d{3}-\d{4}/;          // ❌ 语法糖未支持
+let ok = regex.match(h, "555-1234");
 let re = RegExp("\\d{3}-\\d{4}");
-let match = re.exec("555-1234");       // ✅ 已支持
+let match = re.exec("555-1234");
+let pattern = /\d{3}-\d{4}/;          // 等价于 RegExp("\\d{3}-\\d{4}")
+let found = pattern.test("555-1234");
 regex.free(h);
 ```
 
-**影响**: 复杂文本解析已有函数式 API 和 JavaScript 风格对象 API，剩余差距是 regex literal 语法糖
+**现状**: 复杂文本解析已有函数式 API、JavaScript 风格 `RegExp` 对象 API，以及 `/pattern/flags` 字面量语法糖。
 
-**实施**: 在语法层新增 regex literal，并将其映射到 core `RegExp`/`regex` API
-
-**预计工作量**: 1-2 周
-
----
-
-### 3. 高级密码学 API
-
-```javascript
-let digest = crypto.sha256("hello");      // ✅ SHA-256
-let keyed = crypto.blake2b_keyed(data, k); // ✅ keyed BLAKE2b
-let cipher = crypto.aes_encrypt(data, key, iv); // ✅ AES-CTR
-let box = crypto.aead_lock(data, key32, nonce24, ad); // ✅ XChaCha20-Poly1305 AEAD
-let dk = crypto.argon2(password, salt, 32, 65536, 3, 2); // ✅ Argon2id
-let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
-```
-
-**现状**: 摘要、快速哈希、常量时间比较、AES-CTR、Monocypher AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305 和 Elligator 已可用。
-
-**剩余**: Monocypher 的增量 BLAKE2b/AEAD/Poly1305 context 仍未暴露为脚本可变对象；脚本层当前使用一次性函数 API。
+**限制**: 字面量在语法层映射为 `RegExp(pattern, flags)`；当前 flags 复用现有 `RegExp` 行为，主要支持 `i` 大小写不敏感匹配。
 
 ---
 
@@ -342,7 +304,7 @@ let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 | Date/Time | ✅ 97% | 16 | 原生 datetime/date/time/duration 已支持；高级时区数据库未接入 |
 | Vector | ✅ 100% | 30+ | 生产就绪 |
 | Parser / Schema Binding | ✅ 100% | 40+ | JSON/CSV/XML schema binding 生产就绪 |
-| Regex | ✅ 90% | 14 | core `regex.*` 与 `RegExp` 对象 API 已实现；缺 regex literal |
+| Regex | ✅ 100% | 14 | core `regex.*`、`RegExp` 对象 API 与 `/.../flags` 字面量已实现 |
 | Hash | ✅ 100% | 3 | `xxh32`、`xxh64_hex`、`xxh3_64_hex` |
 | Crypto | ✅ 95% | 34 | SHA-256、BLAKE2b、AES-CTR、XChaCha20-Poly1305 AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305、Elligator、常量时间比较；剩余增量 context 对象 |
 
@@ -361,7 +323,7 @@ let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 | 统计 | `statistics` (15 函数) | 16 函数 | ✅ 持平 |
 | 文件 I/O | `pathlib` + `os` | 32 函数 | ⚠️ 缺 chmod/symlink/flock 等增强 |
 | 日期时间 | `datetime` | 16 函数 + 原生 `datetime`/`date`/`time`/`duration` 值 | ⚠️ 基础解析/格式化已覆盖，缺时区数据库 |
-| 正则 | `re` 模块 | core `regex.*` + `RegExp` | ⚠️ 函数式/对象 API 已有，缺字面量 |
+| 正则 | `re` 模块 | core `regex.*` + `RegExp` + `/.../` 字面量 | ✅ 常用函数式/对象/字面量入口已覆盖 |
 | 加密 | `hashlib` | `crypto.sha256` + `crypto.blake2b` + `crypto.aes_*` + `crypto.aead_*` + `crypto.argon2` + `crypto.x25519` + `crypto.eddsa_*` + `hash.xxhash` | ⚠️ 常用摘要、KDF、对称加密、AEAD、签名和密钥交换已覆盖；缺增量 context 对象 |
 
 ### JavaScript 对比
@@ -373,7 +335,7 @@ let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 | 数组 | `Array` 类 (40 方法) | 30+ 函数 | ⚠️ 约 75% |
 | 文件 I/O | Node.js `fs` | 32 函数 | ⚠️ 缺 chmod/symlink/flock 等增强 |
 | 日期时间 | `Date` 类 | 16 函数 + 原生 temporal 值 | ✅ 基础能力对齐；缺时区数据库 |
-| 正则 | `RegExp` 类 | core `RegExp` 对象 API | ⚠️ 缺 `/.../` 字面量 |
+| 正则 | `RegExp` 类 | core `RegExp` 对象 API + `/.../` 字面量 | ✅ 基础能力对齐 |
 
 ---
 
@@ -384,17 +346,12 @@ let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 - **工作量**: 2-4 周
 - **依赖**: `turbo_fs.h` 增加跨平台 API
 
-### 2. Regex literal - **中优先级**
-- **影响**: 在已有 core regex / RegExp 能力上补齐更自然的脚本语法
-- **工作量**: 1-2 周
-- **依赖**: 现有 libfsm/libre 正则后端与 core `RegExp` 对象 API
-
-### 3. Crypto 增量 context 对象 - **中优先级**
+### 2. Crypto 增量 context 对象 - **中优先级**
 - **影响**: 对大文件或长消息暴露 BLAKE2b/AEAD/Poly1305 streaming API，减少一次性缓冲需求
 - **工作量**: 1-2 周
 - **依赖**: monocypher（项目已有）
 
-### 4. 时区数据库 - **低优先级**
+### 3. 时区数据库 - **低优先级**
 - **影响**: 增强时间处理
 - **工作量**: 3-4 周
 - **依赖**: tzdata 或 C++20 `<chrono>`
@@ -417,7 +374,7 @@ let kp = crypto.eddsa_key_pair(seed32); // ✅ EdDSA/Curve25519 + BLAKE2b
 
 **战略建议**：
 - 待 `turbo_fs.h` 暴露 chmod/symlink/readlink/flock 后再桥接脚本 API
-- 然后在现有 core `RegExp` 上补 regex literal
+- Regex literal 已在现有 core `RegExp` 上补齐；后续正则工作应聚焦更完整的 flags/capture 语义
 - 加密扩展已有 SHA-256、BLAKE2b、AES-CTR、XChaCha20-Poly1305 AEAD、Argon2、X25519、EdDSA、ChaCha20、Poly1305 和 Elligator；下一步补增量 context 对象
 
 完成这些增强后，TurboScript 的标准库将达到 **95%+ 完备度**，足以支撑生产环境使用。

@@ -1,7 +1,7 @@
 add_executable(turbo_script_repl main.c)
 
 target_link_libraries(turbo_script_repl
-  PRIVATE turbo_script TurboNet::Parser exprtk)
+  PRIVATE turbo_script TurboUtils::Parser exprtk)
 
 set_target_properties(turbo_script_repl PROPERTIES FOLDER turbo_script)
 

@@ -36,7 +36,7 @@ target_include_directories(${TARGET_NAME}
 )
 
 target_link_libraries(${TARGET_NAME} 
-    PUBLIC exprtk TurboNet::Utils
+    PUBLIC exprtk TurboUtils::Core
 )
 
 # Set C standard
@@ -55,7 +55,7 @@ cmake_config_target(
 
 target_link_libraries(${TARGET_NAME_PLUGIN}
     PRIVATE ${TARGET_NAME}
-    PUBLIC exprtk TurboNet::Utils
+    PUBLIC exprtk TurboUtils::Core
 )
 
 target_include_directories(${TARGET_NAME_PLUGIN}

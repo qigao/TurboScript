@@ -45,9 +45,10 @@ include(CmakeUtils)
  
 
 find_package(Threads REQUIRED)
-find_package(TurboNet CONFIG REQUIRED PATHS "${TURBONET_ROOT}")
-find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}")
-find_package(libfsm CONFIG REQUIRED PATHS "${FSM_ROOT}")
+find_package(TurboUtils CONFIG REQUIRED PATHS "${TURBO_UTILS_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboNet CONFIG REQUIRED PATHS "${TURBONET_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}" NO_DEFAULT_PATH)
+find_package(libfsm CONFIG REQUIRED PATHS "${FSM_ROOT}" NO_DEFAULT_PATH)
 find_package(base64 CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED) 
@@ -60,8 +61,7 @@ include(FindTools)
 add_subdirectory(vendor) 
 
 add_subdirectory(exprtk) 
-add_subdirectory(turbo_script) 
-add_subdirectory(tbe)
+add_subdirectory(turbo_script)  
 add_subdirectory(modules) 
  
 

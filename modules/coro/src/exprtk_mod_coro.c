@@ -7,7 +7,6 @@
 #include "turbo_str.h"
 #include "../src/minicoro.h"
 #include <string.h>
-#include <stdio.h>
 
 /* Module user data */
 typedef struct {
@@ -19,21 +18,36 @@ typedef struct {
 /* Helper: create result map */
 static exprtk_value_t make_result_map(mem_pool_t *scratch, const char *status, exprtk_value_t value) {
     exprtk_value_t map = exprtk_val_map();
-    
-    /* Status string - allocate in scratch pool */
-    size_t status_len = strlen(status);
-    char *status_buf = (char *)mem_alloc(scratch, status_len + 1);
-    if (status_buf) {
-        memcpy(status_buf, status, status_len);
-        status_buf[status_len] = '\0';
-        exprtk_value_t status_val = exprtk_val_str(tstr_v_from_buf(status_buf, status_len));
-        exprtk_map_set(&map, "status", status_val);
-    }
-    
+
+    (void)scratch;
+    exprtk_map_set(&map, "status", exprtk_val_str(tstr_v_from_cstr(status)));
+
     /* Value */
     exprtk_map_set(&map, "value", value);
     
     return map;
+}
+
+static exprtk_value_t coro_str(const char *text) {
+    return exprtk_val_str(tstr_v_from_cstr(text));
+}
+
+static exprtk_value_t coro_tstr_to_arena(mem_pool_t *arena, tstr_t text) {
+    size_t len;
+    char *buf;
+    exprtk_value_t value;
+    if (!text) return exprtk_val_num(0);
+    len = tstr_len(text);
+    buf = (char *)mem_alloc(arena, len + 1);
+    if (!buf) {
+        tstr_free(text);
+        return exprtk_val_num(0);
+    }
+    if (len > 0) memcpy(buf, text, len);
+    buf[len] = '\0';
+    value = exprtk_val_str(tstr_v_from_buf(buf, len));
+    tstr_free(text);
+    return value;
 }
 
 /* ========================================================================
@@ -86,13 +100,7 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
     
     /* Validate arguments - accept both INTEGER and NUMBER */
     if (argc < 1) {
-        const char *err = "missing coroutine ID argument";
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(err) + 1);
-        if (err_buf) {
-            strcpy(err_buf, err);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        return make_result_map(mod->scratch, "error", coro_str("missing coroutine ID argument"));
     }
     
     int co_id = 0;
@@ -101,25 +109,13 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
     } else if (args[0].type == EXPRTK_VAL_NUMBER) {
         co_id = (int)args[0].data.number;
     } else {
-        const char *err = "invalid coroutine ID type";
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(err) + 1);
-        if (err_buf) {
-            strcpy(err_buf, err);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        return make_result_map(mod->scratch, "error", coro_str("invalid coroutine ID type"));
     }
     
     coro_ctx_t *ctx = coro_registry_find(mod->registry, co_id);
     
     if (!ctx) {
-        const char *err = "coroutine not found";
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(err) + 1);
-        if (err_buf) {
-            strcpy(err_buf, err);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        return make_result_map(mod->scratch, "error", coro_str("coroutine not found"));
     }
     
     if (ctx->status == 2) { /* dead */
@@ -127,13 +123,7 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
     }
     
     if (ctx->status == 1) { /* running */
-        const char *err = "coroutine is already running";
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(err) + 1);
-        if (err_buf) {
-            strcpy(err_buf, err);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        return make_result_map(mod->scratch, "error", coro_str("coroutine is already running"));
     }
     
     /* Save resume arguments (for Phase 2) */
@@ -147,14 +137,10 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
     if (res != MCO_SUCCESS) {
         ctx->status = 2; /* dead on error */
         const char *err_desc = mco_result_description(res);
-        char error_buf[256];
-        snprintf(error_buf, sizeof(error_buf), "resume failed: %s", err_desc);
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(error_buf) + 1);
-        if (err_buf) {
-            strcpy(err_buf, error_buf);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        tstr_t error = tstr_new();
+        if (!error) return exprtk_val_map();
+        error = tstr_cat_fmt(error, "resume failed: %s", err_desc ? err_desc : "");
+        return make_result_map(mod->scratch, "error", coro_tstr_to_arena(mod->scratch, error));
     }
     
     /* Check status after resume */
@@ -168,13 +154,7 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
         return make_result_map(mod->scratch, "dead", ctx->return_value);
     } else {
         ctx->status = 2; /* dead on unexpected state */
-        const char *err = "unexpected coroutine state";
-        char *err_buf = (char *)mem_alloc(mod->scratch, strlen(err) + 1);
-        if (err_buf) {
-            strcpy(err_buf, err);
-            return make_result_map(mod->scratch, "error", exprtk_val_str(tstr_v_from_buf(err_buf, strlen(err_buf))));
-        }
-        return exprtk_val_map();
+        return make_result_map(mod->scratch, "error", coro_str("unexpected coroutine state"));
     }
 }
 
@@ -236,13 +216,7 @@ static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *us
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     if (argc < 1) {
-        const char *str = "invalid";
-        char *buf = (char *)mem_alloc(mod->scratch, strlen(str) + 1);
-        if (buf) {
-            strcpy(buf, str);
-            return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
-        }
-        return exprtk_val_num(0);
+        return coro_str("invalid");
     }
     
     int co_id = 0;
@@ -251,25 +225,13 @@ static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *us
     } else if (args[0].type == EXPRTK_VAL_NUMBER) {
         co_id = (int)args[0].data.number;
     } else {
-        const char *str = "invalid";
-        char *buf = (char *)mem_alloc(mod->scratch, strlen(str) + 1);
-        if (buf) {
-            strcpy(buf, str);
-            return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
-        }
-        return exprtk_val_num(0);
+        return coro_str("invalid");
     }
     
     coro_ctx_t *ctx = coro_registry_find(mod->registry, co_id);
     
     if (!ctx) {
-        const char *str = "invalid";
-        char *buf = (char *)mem_alloc(mod->scratch, strlen(str) + 1);
-        if (buf) {
-            strcpy(buf, str);
-            return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
-        }
-        return exprtk_val_num(0);
+        return coro_str("invalid");
     }
     
     const char *status_str;
@@ -280,12 +242,7 @@ static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *us
         default: status_str = "unknown"; break;
     }
     
-    char *buf = (char *)mem_alloc(mod->scratch, strlen(status_str) + 1);
-    if (buf) {
-        strcpy(buf, status_str);
-        return exprtk_val_str(tstr_v_from_buf(buf, strlen(buf)));
-    }
-    return exprtk_val_num(0);
+    return coro_str(status_str);
 }
 
 /* ========================================================================

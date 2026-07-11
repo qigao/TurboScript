@@ -74,20 +74,12 @@ else()
   message(FATAL_ERROR "SIMDe not found. Please install it (e.g., via vcpkg).")
 endif()
 
-find_path(UTF8H_INCLUDE_DIRS "utf8h/utf8.h")
-if(UTF8H_INCLUDE_DIRS)
-  message(STATUS "Found utf8h: ${UTF8H_INCLUDE_DIRS}")
-else()
-  message(FATAL_ERROR "utf8h not found. Please install it (e.g., via vcpkg).")
-endif()
-
-target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS}
-                                                  ${UTF8H_INCLUDE_DIRS})
+target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC TurboNet::Utils TurboNet::Parser uuid
-  PRIVATE TurboNet::Mustache mir_static libfsm::libre libfsm::libfsm miniblas_linalg)
+  PUBLIC TurboUtils::Core TurboUtils::Parser uuid
+  PRIVATE TurboUtils::Mustache mir_static libfsm::libre libfsm::libfsm miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
 if(MSVC)

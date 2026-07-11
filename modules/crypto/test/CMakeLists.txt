@@ -1,6 +1,6 @@
 add_executable(test_crypto test_crypto.c)
 
-target_link_libraries(test_crypto PRIVATE crypto TurboNet::TinyTest TurboNet::Utils)
+target_link_libraries(test_crypto PRIVATE crypto TurboUtils::TinyTest TurboUtils::Core)
 
 target_include_directories(test_crypto
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)

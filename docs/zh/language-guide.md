@@ -45,6 +45,24 @@ var message = '单引号也可以';
 var template = `模板字符串`;
 ```
 
+### 正则表达式（RegExp）
+
+正则可以使用 `regex.*` 函数、`RegExp(...)` 对象 API，或 `/pattern/flags`
+字面量：
+
+```javascript
+var phone = /\d{3}-\d{4}/;
+var ok = phone.test("555-1234");          // 1
+var pos = phone.search("call 555-1234");  // 5
+var info = phone.exec("call 555-1234");   // 返回匹配区间信息
+var ci = /abc/i.test("ABC");              // 1
+```
+
+正则字面量在语法层映射为 `RegExp("pattern", "flags")`，因此与现有
+`RegExp` 对象 API 共享同一运行时行为和限制。当前主要支持 `i` 标志用于
+大小写不敏感匹配；模式内的字面量 `/` 需要写成 `\/`。普通除法表达式
+仍写作 `10 / 2`。
+
 ### UUID
 
 128 位 UUID 值，可由标准 UUID 字符串或生成函数得到：

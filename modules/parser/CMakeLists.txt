@@ -34,8 +34,8 @@ target_include_directories(${TARGET_NAME}
 )
 
 target_link_libraries(${TARGET_NAME}
-    PUBLIC exprtk TurboNet::Utils TurboNet::Parser
-    PRIVATE TurboScript::SchemaBE TurboScript::DataBind
+    PUBLIC exprtk TurboUtils::Core TurboUtils::Parser
+    PRIVATE TurboUtils::SchemaBE TurboUtils::DataBind
 )
 
 set_target_properties(${TARGET_NAME} PROPERTIES
@@ -53,7 +53,7 @@ cmake_config_target(
 
 target_link_libraries(${TARGET_NAME_PLUGIN}
     PRIVATE ${TARGET_NAME}
-    PUBLIC exprtk TurboNet::Utils TurboNet::Parser
+    PUBLIC exprtk TurboUtils::Core TurboUtils::Parser
 )
 
 target_include_directories(${TARGET_NAME_PLUGIN}

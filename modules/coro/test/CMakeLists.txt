@@ -7,8 +7,8 @@ target_link_libraries(
   test_coro
   PRIVATE coro
   PRIVATE exprtk
-  PRIVATE TurboNet::TinyTest
-  PRIVATE TurboNet::Utils)
+  PRIVATE TurboUtils::TinyTest
+  PRIVATE TurboUtils::Core)
 
 # Enable testing
 add_test(NAME coro_unit_tests COMMAND test_coro)

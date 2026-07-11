@@ -1,6 +1,6 @@
 add_executable(test_hash test_hash.c)
 
-target_link_libraries(test_hash PRIVATE hash TurboNet::TinyTest TurboNet::Utils xxHash::xxhash)
+target_link_libraries(test_hash PRIVATE hash TurboUtils::TinyTest TurboUtils::Core xxHash::xxhash)
 
 target_include_directories(test_hash
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)

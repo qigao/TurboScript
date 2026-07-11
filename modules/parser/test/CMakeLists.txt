@@ -6,9 +6,9 @@ cmake_config_target(test_parser FOLDER modules/parser/tests NO_INSTALL)
 target_link_libraries(test_parser PRIVATE 
     parser
     exprtk 
-    TurboNet::Utils
-    TurboNet::Parser
-    TurboNet::TinyTest
+    TurboUtils::Core
+    TurboUtils::Parser
+    TurboUtils::TinyTest
 )
 
 add_test(NAME parser_module COMMAND test_parser)

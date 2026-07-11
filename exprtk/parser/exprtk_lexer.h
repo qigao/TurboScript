@@ -19,6 +19,7 @@ typedef struct {
     const char *limit;
     int line;
     int column;
+    int last_token;
     char error[256];
 } exprtk_lexer_t;
 
