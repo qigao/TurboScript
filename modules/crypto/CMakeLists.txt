@@ -13,8 +13,7 @@ cmake_config_target(
   ${TARGET_NAME}
   ALIAS TurboScript::Crypto
   FOLDER modules/crypto
-  EXPORT_NAME Crypto
-  NO_INSTALL)
+  EXPORT_NAME Crypto)
 
 target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -31,6 +30,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${CRYPTO_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/crypto
+  OUTPUT_NAME tbs_crypto
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME})

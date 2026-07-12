@@ -9,24 +9,24 @@ add_library(${TARGET_NAME} STATIC ${FUZZY_SOURCES} ${FUZZY_HEADERS})
 
 cmake_config_target(
   ${TARGET_NAME}
-  ALIAS TurboScript::Fuzzy
-  FOLDER modules/fuzzy
-  EXPORT_NAME Fuzzy
-  NO_INSTALL)
+  ALIAS
+  TurboScript::Fuzzy
+  FOLDER
+  modules/fuzzy
+  EXPORT_NAME
+  Fuzzy)
 
 target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-                         $<INSTALL_INTERFACE:include>)
+                        $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core
                                             TurboScript::Tre)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${FUZZY_PLUGIN_SOURCES})
 
-cmake_config_target(
-  ${TARGET_NAME_PLUGIN}
-  FOLDER modules/fuzzy
-  PLUGIN)
+cmake_config_target(${TARGET_NAME_PLUGIN} FOLDER modules/fuzzy OUTPUT_NAME
+                    tbs_fuzzy PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME})
 
@@ -40,7 +40,7 @@ set_target_properties(
              SOVERSION ${PROJECT_VERSION_MAJOR})
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
-                     DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fuzzy)
+                      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/fuzzy)
 
 if(BUILD_TESTING)
   add_subdirectory(test)

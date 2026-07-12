@@ -34,6 +34,7 @@ set(ALL_SOURCE_FILES ${SOURCE_FILES} ${MIR_BACKEND_FILES})
 
 # ── STATIC lib for testing ────────────────────────────────────────
 add_library(${TARGET_NAME_LIB} STATIC ${ALL_SOURCE_FILES})
+cmake_config_target(${TARGET_NAME_LIB} FOLDER turbo_script)
 
 target_include_directories(
   ${TARGET_NAME_LIB}

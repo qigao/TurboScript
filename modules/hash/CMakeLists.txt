@@ -11,8 +11,7 @@ cmake_config_target(
   ${TARGET_NAME}
   ALIAS TurboScript::Hash
   FOLDER modules/hash
-  EXPORT_NAME Hash
-  NO_INSTALL)
+  EXPORT_NAME Hash)
 
 target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -25,6 +24,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${HASH_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/hash
+  OUTPUT_NAME tbs_hash
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME})

@@ -1,11 +1,4 @@
-add_executable(test_timeseries test_timeseries.c)
-target_link_libraries(test_timeseries PRIVATE TurboUtils::TinyTest ${TARGET_NAME}
-                                              TurboUtils::Core)
-add_test(NAME test_timeseries COMMAND test_timeseries)
-set_target_properties(test_timeseries PROPERTIES FOLDER modules/ts)
-
-add_executable(test_ts_rolling test_ts_rolling.c)
-target_link_libraries(test_ts_rolling PRIVATE TurboUtils::TinyTest ${TARGET_NAME}
-                                              TurboUtils::Core)
-add_test(NAME test_ts_rolling COMMAND test_ts_rolling)
-set_target_properties(test_ts_rolling PROPERTIES FOLDER modules/ts)
+cmake_add_test(
+  SOURCES test_timeseries.c test_ts_rolling.c
+  LIBS TurboUtils::TinyTest ${TARGET_NAME} TurboUtils::Core
+  FOLDER modules/ts)

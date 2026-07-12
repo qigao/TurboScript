@@ -701,7 +701,13 @@ static void exprtk_release_list_value(exprtk_value_t *list, exprtk_release_state
     }
 
     if (list->data.list.heap_owned) {
-        free(list->data.list.items);
+        turbo_vec_t vec = {
+            list->data.list.items,
+            list->data.list.count,
+            list->data.list.capacity,
+            sizeof(exprtk_value_t)
+        };
+        turbo_vec_destroy(&vec);
     }
     list->data.list.items = NULL;
     list->data.list.count = 0;

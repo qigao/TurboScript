@@ -1,11 +1,10 @@
 # DLL-based integration test — loads tbs_data_bind at runtime
-add_executable(test_data_bind_module test_data_bind.c)
-target_link_libraries(test_data_bind_module PRIVATE
-  exprtk
-  TurboUtils::TinyTest
-)
-add_test(NAME test_data_bind_module COMMAND test_data_bind_module)
-set_target_properties(test_data_bind_module PROPERTIES FOLDER modules/data_bind)
+cmake_add_test(
+  TARGET test_data_bind_module
+  SOURCES test_data_bind.c
+  LIBS exprtk TurboUtils::TinyTest
+  DEPENDS data_bind_tbs
+  FOLDER modules/data_bind)
 
 # Copy plugin DLL next to test executable so it can be found at runtime
 add_custom_command(

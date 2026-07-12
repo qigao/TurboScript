@@ -1,8 +1,7 @@
 set(TARGET_NAME img)
 set(TARGET_NAME_PLUGIN img_tbs)
 
-file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*
-     ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h*)
+cmake_add_source(SOURCE_FILES RECURSE PATTERNS "*.c*" "*.h*")
 
 # ── STATIC lib (for unit tests — direct linking) ─────────────────
 add_library(${TARGET_NAME} STATIC ${SOURCE_FILES})
@@ -11,8 +10,7 @@ cmake_config_target(
   ${TARGET_NAME}
   ALIAS TurboScript::IMG
   FOLDER modules/img
-  EXPORT_NAME IMG
-  NO_INSTALL)
+  EXPORT_NAME IMG)
 
 target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -33,6 +31,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/img
+  OUTPUT_NAME tbs_img
   PLUGIN) # Plugins are runtime-loaded, not exported for linking
 
 target_link_libraries(

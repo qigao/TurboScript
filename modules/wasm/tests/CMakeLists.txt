@@ -1,9 +1,11 @@
 # DLL-based integration test — loads tbs_wasm at runtime
-add_executable(test_wasm_module test_wasm.c)
-target_link_libraries(test_wasm_module PRIVATE   exprtk TurboUtils::TinyTest)
-target_include_directories(test_wasm_module PRIVATE ${CMAKE_SOURCE_DIR}/vendor/wasm3/source/extra)
-add_test(NAME test_wasm_module COMMAND test_wasm_module)
-set_target_properties(test_wasm_module PROPERTIES FOLDER modules/wasm)
+cmake_add_test(
+  TARGET test_wasm_module
+  SOURCES test_wasm.c
+  LIBS exprtk TurboUtils::TinyTest
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/wasm3/source/extra
+  DEPENDS wasm_tbs
+  FOLDER modules/wasm)
 
 # Copy plugin DLL next to test executable so it can be found at runtime
 add_custom_command(

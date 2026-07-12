@@ -1,6 +1,15 @@
-add_executable(test_rules_forge_plugin test_rules_forge_plugin.c)
-
-target_link_libraries(test_rules_forge_plugin PRIVATE exprtk TurboUtils::TinyTest)
-
-add_test(NAME test_rules_forge_plugin COMMAND test_rules_forge_plugin)
-set_target_properties(test_rules_forge_plugin PROPERTIES FOLDER modules/rules_forge)
+cmake_add_test(
+  TARGET test_rules_forge_plugin
+  SOURCES test_rules_forge_plugin.c
+  LIBS exprtk TurboUtils::TinyTest
+  DEPENDS rules_forge_tbs
+  FOLDER modules/rules_forge)
+if(WIN32)
+  get_filename_component(RULES_FORGE_DEPS_ROOT "${RulesForge_ROOT}/../turboutils/bin" ABSOLUTE)
+  if(NOT IS_DIRECTORY "${RULES_FORGE_DEPS_ROOT}")
+    message(FATAL_ERROR "RulesForge runtime dependency directory not found: ${RULES_FORGE_DEPS_ROOT}")
+  endif()
+  set_tests_properties(test_rules_forge_plugin PROPERTIES
+    ENVIRONMENT_MODIFICATION
+      "PATH=path_list_prepend:${RulesForge_ROOT}/bin;PATH=path_list_prepend:${RULES_FORGE_DEPS_ROOT}")
+endif()

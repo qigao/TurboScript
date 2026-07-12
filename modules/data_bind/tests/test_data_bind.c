@@ -11,6 +11,8 @@
   #define DATA_BIND_PLUGIN_DLL "tbs_data_bind.so"
 #endif
 
+enum { DATA_BIND_TEST_MAX_HANDLES = 32 };
+
 typedef struct {
   ts_plugin_handle_t *db_plugin;
   exprtk_env_t env;
@@ -112,6 +114,47 @@ spec("data_bind_module") {
       remove("test_create_plugin.tbe");
       test_env_free(&t);
     }
+
+    it("should create a codec from schema text and validate structured data") {
+      test_env_t t;
+      exprtk_value_t schema_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t json_args[3];
+      exprtk_value_t csv_args[3];
+      exprtk_value_t xml_args[3];
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+
+      schema_args[0] = make_str(&t, "message Trade { double price; uint32 qty; string symbol; }");
+      handle = call_fn(&t, "data_bind.create_from_text", 1, schema_args);
+      check_int_eq(handle.type, EXPRTK_VAL_NUMBER);
+      check(handle.data.number >= 0.0);
+
+      json_args[0] = handle;
+      json_args[1] = make_str(&t, "Trade");
+      json_args[2] = make_str(&t, "{\"price\":10.5,\"qty\":2,\"symbol\":\"AAPL\"}");
+      check_true(call_fn(&t, "data_bind.validate_json", 3, json_args).data.boolean);
+      json_args[2] = make_str(&t, "{\"price\":\"bad\",\"qty\":2,\"symbol\":\"AAPL\"}");
+      check_false(call_fn(&t, "data_bind.validate_json", 3, json_args).data.boolean);
+
+      csv_args[0] = handle;
+      csv_args[1] = make_str(&t, "Trade");
+      csv_args[2] = make_str(&t, "symbol,price,qty\nAAPL,10.5,2\n");
+      check_true(call_fn(&t, "data_bind.validate_csv", 3, csv_args).data.boolean);
+      csv_args[2] = make_str(&t, "symbol,price,qty\nAAPL,bad,2\n");
+      check_false(call_fn(&t, "data_bind.validate_csv", 3, csv_args).data.boolean);
+
+      xml_args[0] = handle;
+      xml_args[1] = make_str(&t, "Trade");
+      xml_args[2] = make_str(&t, "<trade><price>10.5</price><qty>2</qty><symbol>AAPL</symbol></trade>");
+      check_true(call_fn(&t, "data_bind.validate_xml", 3, xml_args).data.boolean);
+      xml_args[2] = make_str(&t, "<trade><price>bad</price><qty>2</qty><symbol>AAPL</symbol></trade>");
+      check_false(call_fn(&t, "data_bind.validate_xml", 3, xml_args).data.boolean);
+
+      call_fn(&t, "data_bind.close", 1, &handle);
+      test_env_free(&t);
+    }
   }
 
   describe("data_bind.parse") {
@@ -173,8 +216,8 @@ spec("data_bind_module") {
     }
   }
 
-  describe("data_bind.json / data_bind.csv / data_bind.xml") {
-    it("should bind JSON CSV and XML through the plugin API") {
+  describe("data_bind.json / data_bind.csv / data_bind.xml and path variants") {
+    it("should bind JSON CSV XML through the plugin API (inline and path)") {
       test_env_t t;
       test_env_init(&t);
       check_not_null(t.db_plugin);
@@ -190,6 +233,15 @@ spec("data_bind_module") {
         "  map<string,int32> attrs;\n"
         "}\n"
       );
+
+      write_schema("test_order.json", "{\"id\":7,\"side\":\"Buy\",\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"active\":true,\"qtys\":[10,20],\"attrs\":{\"x\":30}}");
+      write_schema("test_orders.json", "[{\"id\":7,\"side\":\"Buy\",\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"active\":true,\"qtys\":[10,20],\"attrs\":{\"x\":30}},"
+                                  "{\"id\":8,\"side\":\"Sell\",\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"active\":false,\"qtys\":[11,22],\"attrs\":{\"x\":44}}]");
+      write_schema("test_orders.csv", "id,side,at,active,qtys[0],qtys[1],attrs.x\n8,Sell,\"Sat, 04 Mar 2006 13:27:54 GMT\",false,11,22,44\n");
+      write_schema("test_orders_all.csv", "id,side,at,active,qtys[0],attrs.x\n1,Buy,\"Sat, 04 Mar 2006 13:27:54 GMT\",true,10,30\n2,Sell,\"Sat, 04 Mar 2006 13:27:54 GMT\",false,20,40\n");
+      write_schema("test_order.xml", "<order id=\"9\" active=\"true\"><side>Buy</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><qtys>12</qtys><qtys>24</qtys><attrs><x>48</x></attrs></order>");
+      write_schema("test_orders.xml", "<orders><order><id>1</id><side>Buy</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><active>true</active><qtys>10</qtys><attrs><x>30</x></attrs></order>"
+                                 "<order><id>2</id><side>Sell</side><at>Sat, 04 Mar 2006 13:27:54 GMT</at><active>false</active><qtys>20</qtys><attrs><x>40</x></attrs></order></orders>");
 
       exprtk_value_t create_args[1] = {make_str(&t, "test_dynamic_plugin.tbe")};
       exprtk_value_t handle = call_fn(&t, "data_bind.create", 1, create_args);
@@ -299,10 +351,227 @@ spec("data_bind_module") {
         check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
       }
 
+      {
+        exprtk_value_t json_path_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_order.json")
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.json_path", 3, json_path_args);
+        exprtk_value_t attrs;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 7.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 30.0, 0.01);
+      }
+
+      {
+        exprtk_value_t json_all_path_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_orders.json")
+        };
+        exprtk_value_t rows = call_fn(&t, "data_bind.json_all_path", 3, json_all_path_args);
+        check_int_eq(rows.type, EXPRTK_VAL_LIST);
+        check_size_eq(rows.data.list.count, 2);
+        check_int_eq(rows.data.list.items[0].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[0], "id").data.number, 7.0, 0.01);
+        check_int_eq(rows.data.list.items[1].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 8.0, 0.01);
+      }
+
+      {
+        exprtk_value_t csv_path_args[4] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_orders.csv"),
+          exprtk_val_num(0.0)
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.csv_path", 4, csv_path_args);
+        exprtk_value_t attrs;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 8.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 44.0, 0.01);
+      }
+
+      {
+        exprtk_value_t csv_all_path_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_orders_all.csv")
+        };
+        exprtk_value_t rows = call_fn(&t, "data_bind.csv_all_path", 3, csv_all_path_args);
+        check_int_eq(rows.type, EXPRTK_VAL_LIST);
+        check_size_eq(rows.data.list.count, 2);
+        check_int_eq(rows.data.list.items[1].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
+      }
+
+      {
+        exprtk_value_t xml_path_args[3] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_order.xml")
+        };
+        exprtk_value_t order = call_fn(&t, "data_bind.xml_path", 3, xml_path_args);
+        exprtk_value_t attrs;
+        check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&order, "id").data.number, 9.0, 0.01);
+        attrs = exprtk_map_get(&order, "attrs");
+        check_int_eq(attrs.type, EXPRTK_VAL_MAP);
+        check_float_eq(exprtk_map_get(&attrs, "x").data.number, 48.0, 0.01);
+      }
+
+      {
+        exprtk_value_t xml_all_path_args[4] = {
+          handle,
+          make_str(&t, "Order"),
+          make_str(&t, "test_orders.xml"),
+          make_str(&t, "//order")
+        };
+        exprtk_value_t rows = call_fn(&t, "data_bind.xml_all_path", 4, xml_all_path_args);
+        check_int_eq(rows.type, EXPRTK_VAL_LIST);
+        check_size_eq(rows.data.list.count, 2);
+        check_int_eq(rows.data.list.items[1].type, EXPRTK_VAL_OBJECT);
+        check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
+      }
+
       exprtk_value_t close_args[1] = {handle};
       call_fn(&t, "data_bind.close", 1, close_args);
 
+      remove("test_order.json");
+      remove("test_orders.json");
+      remove("test_orders.csv");
+      remove("test_orders_all.csv");
+      remove("test_order.xml");
+      remove("test_orders.xml");
       remove("test_dynamic_plugin.tbe");
+      test_env_free(&t);
+    }
+  }
+
+  describe("data_bind SAX streams") {
+    it("should bind inline JSON through the stream API") {
+      test_env_t t;
+      exprtk_value_t create_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t stream_args[3];
+      exprtk_value_t order;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      write_schema("test_stream_plugin.tbe",
+        "enum Side <uint8> { Buy = 1; Sell = 2; }\n"
+        "message Order { uint32 id; Side side; string symbol; }\n");
+
+      create_args[0] = make_str(&t, "test_stream_plugin.tbe");
+      handle = call_fn(&t, "data_bind.create", 1, create_args);
+      check(handle.data.number >= 0.0);
+
+      stream_args[0] = handle;
+      stream_args[1] = make_str(&t, "Order");
+      stream_args[2] = make_str(&t, "{\"id\":7,\"side\":\"Buy\",\"symbol\":\"ABCD\"}");
+      order = call_fn(&t, "data_bind.sax.json", 3, stream_args);
+      check_int_eq(order.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&order, "id").data.number, 7.0, 0.01);
+      check_str_eq(exprtk_map_get(&order, "symbol").data.string.data, "ABCD");
+
+      call_fn(&t, "data_bind.close", 1, &handle);
+      remove("test_stream_plugin.tbe");
+      test_env_free(&t);
+    }
+
+    it("should finish chunked and file-fed streams") {
+      test_env_t t;
+      exprtk_value_t create_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t sax_create_args[3];
+      exprtk_value_t stream_handle;
+      exprtk_value_t feed_args[2];
+      exprtk_value_t rows;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      write_schema("test_stream_plugin.tbe",
+        "enum Side <uint8> { Buy = 1; Sell = 2; }\n"
+        "message Order { uint32 id; Side side; string symbol; }\n");
+      write_schema("test_stream_orders.csv",
+        "id,side,symbol\n10,Buy,ABCD\n11,Sell,WXYZ\n");
+
+      create_args[0] = make_str(&t, "test_stream_plugin.tbe");
+      handle = call_fn(&t, "data_bind.create", 1, create_args);
+      check(handle.data.number >= 0.0);
+
+      sax_create_args[0] = handle;
+      sax_create_args[1] = make_str(&t, "Order");
+      sax_create_args[2] = make_str(&t, "$[*]");
+      stream_handle = call_fn(&t, "data_bind.sax.json_path_all_create", 3, sax_create_args);
+      check(stream_handle.data.number >= 0.0);
+
+      feed_args[0] = stream_handle;
+      feed_args[1] = make_str(&t, "[{\"id\":1,\"side\":\"Buy\",\"symbol\":\"AB");
+      call_fn(&t, "data_bind.sax.feed", 2, feed_args);
+      feed_args[1] = make_str(&t, "CD\"},{\"id\":2,\"side\":\"Sell\",\"symbol\":\"WXYZ\"}]");
+      call_fn(&t, "data_bind.sax.feed", 2, feed_args);
+      rows = call_fn(&t, "data_bind.sax.finish", 1, &stream_handle);
+      check_int_eq(rows.type, EXPRTK_VAL_LIST);
+      check_size_eq(rows.data.list.count, 2);
+      check_float_eq(exprtk_map_get(&rows.data.list.items[1], "id").data.number, 2.0, 0.01);
+
+      sax_create_args[2] = make_str(&t, "side == \"Sell\"");
+      stream_handle = call_fn(&t, "data_bind.sax.csv_path_create", 3, sax_create_args);
+      check(stream_handle.data.number >= 0.0);
+      feed_args[0] = stream_handle;
+      feed_args[1] = make_str(&t, "test_stream_orders.csv");
+      call_fn(&t, "data_bind.sax.feed_path", 2, feed_args);
+      rows = call_fn(&t, "data_bind.sax.finish", 1, &stream_handle);
+      check_int_eq(rows.type, EXPRTK_VAL_LIST);
+      check_size_eq(rows.data.list.count, 1);
+      check_float_eq(exprtk_map_get(&rows.data.list.items[0], "id").data.number, 11.0, 0.01);
+
+      stream_handle = call_fn(&t, "data_bind.sax.json_create", 2, sax_create_args);
+      check(stream_handle.data.number >= 0.0);
+      call_fn(&t, "data_bind.close", 1, &handle);
+      t.env.aborted = 0;
+      call_fn(&t, "data_bind.sax.finish", 1, &stream_handle);
+      check_int_eq(t.env.aborted, 1);
+
+      remove("test_stream_orders.csv");
+      remove("test_stream_plugin.tbe");
+      test_env_free(&t);
+    }
+
+    it("should reject streams beyond the handle limit") {
+      test_env_t t;
+      exprtk_value_t create_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t stream_args[2];
+      exprtk_value_t streams[DATA_BIND_TEST_MAX_HANDLES];
+      exprtk_value_t overflow;
+      size_t i;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      write_schema("test_stream_limit.tbe", "message Order { uint32 id; }\n");
+      create_args[0] = make_str(&t, "test_stream_limit.tbe");
+      handle = call_fn(&t, "data_bind.create", 1, create_args);
+      check(handle.data.number >= 0.0);
+
+      stream_args[0] = handle;
+      stream_args[1] = make_str(&t, "Order");
+      for (i = 0; i < DATA_BIND_TEST_MAX_HANDLES; ++i) {
+        streams[i] = call_fn(&t, "data_bind.sax.json_create", 2, stream_args);
+        check(streams[i].data.number >= 0.0);
+      }
+      overflow = call_fn(&t, "data_bind.sax.json_create", 2, stream_args);
+      check_float_eq(overflow.data.number, -1.0, 0.01);
+      check_int_eq(t.env.aborted, 1);
+
+      call_fn(&t, "data_bind.close", 1, &handle);
+      remove("test_stream_limit.tbe");
       test_env_free(&t);
     }
   }

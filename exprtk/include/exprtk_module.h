@@ -11,6 +11,7 @@
 
 #include "exprtk_types.h"
 #include "turbo_buffer.h"
+#include "turbo_vec.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -252,21 +253,39 @@ static inline void exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
     if (list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) return;
     if (list->data.list.count >= list->data.list.capacity) {
         size_t new_cap = list->data.list.capacity ? list->data.list.capacity * 2 : 4;
-        exprtk_value_t *new_items = NULL;
+        turbo_vec_t vec;
+        int rc;
+
         if (list->data.list.heap_owned) {
-            new_items = (exprtk_value_t*)realloc(
-                list->data.list.items, new_cap * sizeof(exprtk_value_t));
+            vec.data = list->data.list.items;
+            vec.size = list->data.list.count;
+            vec.capacity = list->data.list.capacity;
+            vec.elem_size = sizeof(exprtk_value_t);
         } else {
-            new_items = (exprtk_value_t*)malloc(new_cap * sizeof(exprtk_value_t));
-            if (new_items && list->data.list.items && list->data.list.count > 0) {
-                memcpy(new_items, list->data.list.items,
+            if (turbo_vec_init(&vec, sizeof(exprtk_value_t)) != TURBO_OK) return;
+            rc = turbo_vec_reserve(&vec, new_cap);
+            if (rc != TURBO_OK) {
+                turbo_vec_destroy(&vec);
+                return;
+            }
+            if (list->data.list.items && list->data.list.count > 0) {
+                memcpy(vec.data, list->data.list.items,
                        list->data.list.count * sizeof(exprtk_value_t));
+                vec.size = list->data.list.count;
             }
         }
-        if (!new_items) return;
-        list->data.list.items = new_items;
-        list->data.list.capacity = new_cap;
+
+        if (turbo_vec_reserve(&vec, new_cap) != TURBO_OK ||
+            turbo_vec_push(&vec, &item) != TURBO_OK) {
+            if (!list->data.list.heap_owned) turbo_vec_destroy(&vec);
+            return;
+        }
+
+        list->data.list.items = (exprtk_value_t *)vec.data;
+        list->data.list.count = vec.size;
+        list->data.list.capacity = vec.capacity;
         list->data.list.heap_owned = 1;
+        return;
     }
     list->data.list.items[list->data.list.count++] = item;
 }

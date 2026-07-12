@@ -38,7 +38,6 @@ modules/img/
 ### 动态插件 (运行时加载)
 - **名称**: `tbs_img.dll` / `tbs_img.so`
 - **用途**: TurboScript 运行时通过 `import("img")` 加载
-- **安装位置**: `${TURBOSCRIPT_INSTALL_PLUGINDIR}/`
 
 ## 依赖关系
 

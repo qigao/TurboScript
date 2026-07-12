@@ -30,8 +30,28 @@ typedef struct {
 } rfg_query_slot_t;
 
 typedef struct {
+    ruleforge_data_bind_stream_t ptr;
+    int session_handle;
+} rfg_stream_slot_t;
+
+typedef struct {
+    ruleforge_continuous_session_t ptr;
+    int kb_handle;
+} rfg_continuous_slot_t;
+
+typedef struct {
+    ruleforge_continuous_result_t ptr;
+    int continuous_handle;
+} rfg_continuous_result_slot_t;
+
+typedef struct {
+    ruleforge_continuous_data_bind_stream_t ptr;
+    int continuous_handle;
+} rfg_continuous_stream_slot_t;
+
+typedef struct {
     ruleforge_fact_t ptr;
-    int owner_kind;   /* 1=session, 2=query */
+    int owner_kind;   /* 1=session, 2=query, 3=continuous result */
     int owner_handle;
 } rfg_fact_slot_t;
 
@@ -39,6 +59,10 @@ typedef struct {
     rfg_kb_slot_t kb[RFG_MAX_HANDLES];
     rfg_session_slot_t sessions[RFG_MAX_HANDLES];
     rfg_query_slot_t queries[RFG_MAX_HANDLES];
+    rfg_stream_slot_t streams[RFG_MAX_HANDLES];
+    rfg_continuous_slot_t continuous[RFG_MAX_HANDLES];
+    rfg_continuous_result_slot_t continuous_results[RFG_MAX_HANDLES];
+    rfg_continuous_stream_slot_t continuous_streams[RFG_MAX_HANDLES];
     rfg_fact_slot_t facts[RFG_MAX_HANDLES];
     int initialized;
     char error_msg[512];

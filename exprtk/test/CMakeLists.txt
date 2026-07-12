@@ -1,145 +1,58 @@
-set(TEST_NAME test_exprtk)
+set(EXPRTK_TEST_LIBS exprtk TurboUtils::TinyTest)
+set(EXPRTK_TEST_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-add_executable(${TEST_NAME} test_exprtk.c)
+cmake_add_test(
+  SOURCES test_exprtk.c
+  LIBS ${EXPRTK_TEST_LIBS}
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-target_link_libraries(${TEST_NAME} PRIVATE exprtk TurboUtils::TinyTest)
+cmake_add_test(
+  SOURCES test_simple_opt.c
+  LIBS exprtk
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-target_include_directories(${TEST_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+cmake_add_test(
+  TARGET test_exprtk_optimizations
+  SOURCES test_optimizations.c
+  LIBS exprtk
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-set_target_properties(
-  ${TEST_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                         ${CMAKE_BINARY_DIR}/bin)
+cmake_add_benchmark(
+  SOURCES test_simd_perf.c
+  LIBS exprtk
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
+cmake_add_test(
+  SOURCES test_mod_math.c
+  LIBS ${EXPRTK_TEST_LIBS}
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Simple optimization tests
-set(TEST_SIMPLE_NAME test_simple_opt)
-
-add_executable(${TEST_SIMPLE_NAME} test_simple_opt.c)
-
-target_link_libraries(${TEST_SIMPLE_NAME} PRIVATE exprtk)
-
-target_include_directories(${TEST_SIMPLE_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_SIMPLE_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                                ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_SIMPLE_NAME} COMMAND ${TEST_SIMPLE_NAME})
-
-# SIMD performance benchmarks
-set(TEST_SIMD_NAME test_simd_perf)
-
-add_executable(${TEST_SIMD_NAME} test_simd_perf.c)
-
-target_link_libraries(${TEST_SIMD_NAME} PRIVATE exprtk)
 if(UNIX)
-  target_link_libraries(${TEST_SIMD_NAME} PRIVATE m)
+  target_link_libraries(test_simd_perf PRIVATE m)
+  target_link_libraries(test_mod_math PRIVATE m)
 endif()
-target_include_directories(${TEST_SIMD_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-set_target_properties(
-  ${TEST_SIMD_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                              ${CMAKE_BINARY_DIR}/bin)
+cmake_add_test(
+  SOURCES test_simd_helpers.c test_mod_io.c test_oop.c
+  LIBS ${EXPRTK_TEST_LIBS}
+  INCLUDES ${EXPRTK_TEST_INCLUDES}
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 
-# Optimization tests
-set(TEST_OPT_NAME test_exprtk_optimizations)
-
-add_executable(${TEST_OPT_NAME} test_optimizations.c)
-
-target_link_libraries(${TEST_OPT_NAME} PRIVATE exprtk)
-
-target_include_directories(${TEST_OPT_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_OPT_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                             ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_OPT_NAME} COMMAND ${TEST_OPT_NAME})
-
-# SIMD Math Module Tests
-set(TEST_MOD_MATH_NAME test_mod_math)
-
-add_executable(${TEST_MOD_MATH_NAME} test_mod_math.c)
-
-target_link_libraries(${TEST_MOD_MATH_NAME} PRIVATE exprtk TurboUtils::TinyTest)
-if(UNIX)
-  target_link_libraries(${TEST_MOD_MATH_NAME} PRIVATE m)
-endif()
-target_include_directories(${TEST_MOD_MATH_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_MOD_MATH_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                                  ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_MOD_MATH_NAME} COMMAND ${TEST_MOD_MATH_NAME})
-
-# SIMD Helpers Unit Tests
-set(TEST_SIMD_HELPERS_NAME test_simd_helpers)
-
-add_executable(${TEST_SIMD_HELPERS_NAME} test_simd_helpers.c)
-
-target_link_libraries(${TEST_SIMD_HELPERS_NAME} PRIVATE exprtk
-                                                        TurboUtils::TinyTest)
-
-target_include_directories(${TEST_SIMD_HELPERS_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_SIMD_HELPERS_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                                      ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_SIMD_HELPERS_NAME} COMMAND ${TEST_SIMD_HELPERS_NAME})
-
-# IO Module Unit Tests
-set(TEST_MOD_IO_NAME test_mod_io)
-
-add_executable(${TEST_MOD_IO_NAME} test_mod_io.c)
-
-target_link_libraries(${TEST_MOD_IO_NAME} PRIVATE exprtk TurboUtils::TinyTest)
-
-target_include_directories(${TEST_MOD_IO_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_MOD_IO_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                                ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_MOD_IO_NAME} COMMAND ${TEST_MOD_IO_NAME})
-
-# OOP Runtime Unit Tests
-set(TEST_OOP_NAME test_oop)
-
-add_executable(${TEST_OOP_NAME} test_oop.c)
-
-target_link_libraries(${TEST_OOP_NAME} PRIVATE exprtk TurboUtils::TinyTest)
-
-target_include_directories(${TEST_OOP_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
-
-set_target_properties(
-  ${TEST_OOP_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                             ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_OOP_NAME} COMMAND ${TEST_OOP_NAME})
-
-# Tiny Regex Unit Tests
-set(TEST_RE_NAME test_tiny_regex)
-
-add_executable(${TEST_RE_NAME} test_re.c)
-
-target_link_libraries(${TEST_RE_NAME} PRIVATE exprtk TurboUtils::TinyTest)
-
-target_include_directories(${TEST_RE_NAME}
-                           PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../src)
-
-set_target_properties(
-  ${TEST_RE_NAME} PROPERTIES FOLDER exprtk/ RUNTIME_OUTPUT_DIRECTORY
-                                           ${CMAKE_BINARY_DIR}/bin)
-
-add_test(NAME ${TEST_RE_NAME} COMMAND ${TEST_RE_NAME})
+cmake_add_test(
+  TARGET test_tiny_regex
+  SOURCES test_re.c
+  LIBS ${EXPRTK_TEST_LIBS}
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)

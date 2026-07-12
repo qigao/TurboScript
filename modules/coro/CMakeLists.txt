@@ -26,8 +26,7 @@ cmake_config_target(
   ${TARGET_NAME}
   ALIAS TurboScript::CORO
   FOLDER modules/coro
-  EXPORT_NAME CORO
-  NO_INSTALL)
+  EXPORT_NAME CORO)
 
 target_include_directories(${TARGET_NAME} 
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -51,6 +50,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${CORO_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/coro
+  OUTPUT_NAME tbs_coro
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN}

@@ -39,62 +39,77 @@ include(CTest)
 enable_testing()
 
 include(CMakeOptions.cmake)
-include(Sanitizers) 
+include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
- 
 
 find_package(Threads REQUIRED)
-find_package(TurboUtils CONFIG REQUIRED PATHS "${TURBO_UTILS_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboUtils CONFIG REQUIRED PATHS "${TURBO_UTILS_ROOT}"
+             NO_DEFAULT_PATH)
 find_package(TurboNet CONFIG REQUIRED PATHS "${TURBONET_ROOT}" NO_DEFAULT_PATH)
-find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}" NO_DEFAULT_PATH)
-find_package(base64 CONFIG REQUIRED)
+find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}"
+             NO_DEFAULT_PATH)
+
 find_package(xxHash CONFIG REQUIRED)
-find_package(PkgConfig REQUIRED) 
-pkg_check_modules(STC REQUIRED IMPORTED_TARGET stc)
+find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
 
 # Additional components
 add_subdirectory(tools)
 include(FindTools)
-add_subdirectory(vendor) 
+add_subdirectory(vendor)
 
-add_subdirectory(exprtk) 
-add_subdirectory(turbo_script)  
-add_subdirectory(modules) 
- 
+add_subdirectory(exprtk)
+add_subdirectory(turbo_script)
+add_subdirectory(modules)
 
 # Package Configuration
 include(CMakePackageConfigHelpers)
 
-# Install targets and export
-install(EXPORT TurboScriptTargets
-    FILE TurboScriptTargets.cmake
-    NAMESPACE TurboScript::
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript
-)
+# Project-owned installation policy
+install(
+  TARGETS exprtk turbo_script uuid
+  EXPORT TurboScriptTargets
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(
+  TARGETS net_tbs
+          ta_tbs
+          fin_tbs
+          ts_tbs
+          sqlite_tbs
+          data_bind_tbs
+          img_tbs
+          coro_tbs
+          parser_tbs
+          crypto_tbs
+          hash_tbs
+          fuzzy_tbs
+          rules_forge_tbs
+  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+install(
+  EXPORT TurboScriptTargets
+  FILE TurboScriptTargets.cmake
+  NAMESPACE TurboScript::
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript)
 
 # Generate project config
 configure_package_config_file(
-    cmake/TurboScriptConfig.cmake.in
-    ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
-    INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript
-    PATH_VARS
-        CMAKE_INSTALL_BINDIR
-        CMAKE_INSTALL_INCLUDEDIR
-        CMAKE_INSTALL_LIBDIR
-        TURBOSCRIPT_INSTALL_PLUGINDIR
-)
+  cmake/TurboScriptConfig.cmake.in
+  ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
+  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript
+  PATH_VARS CMAKE_INSTALL_BINDIR CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_LIBDIR)
 
 write_basic_config_version_file(
-    ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfigVersion.cmake
-    VERSION ${PROJECT_VERSION}
-    COMPATIBILITY AnyNewerVersion
-)
+  ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfigVersion.cmake
+  VERSION ${PROJECT_VERSION}
+  COMPATIBILITY AnyNewerVersion)
 
-install(FILES
-    ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
-    ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfigVersion.cmake
-    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript
-)
- 
+install(FILES ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
+              ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfigVersion.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript)

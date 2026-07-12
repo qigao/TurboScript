@@ -15,13 +15,45 @@
  *   data_bind.csv_all_path(handle, type, path)-> object (all CSV objects from file)
  *   data_bind.xml_path(handle, type, path)    -> object (schema-bound XML document from file)
  *   data_bind.xml_all_path(handle, type, path, xpath) -> object (all XML objects from file)
+ *   data_bind.json_stream(handle, type, json) -> object (stream-bound JSON object)
+ *   data_bind.json_all_stream(handle, type, json) -> object (stream-bound JSON array)
+ *   data_bind.json_path_stream(handle, type, json, jsonpath) -> object
+ *   data_bind.json_path_all_stream(handle, type, json, jsonpath) -> object
+ *   data_bind.csv_all_stream(handle, type, csv) -> object (stream-bound CSV rows)
+ *   data_bind.csv_path_stream(handle, type, csv, csvpath) -> object
+ *   data_bind.xml_stream(handle, type, xml) -> object (stream-bound XML document)
+ *   data_bind.xml_path_all_stream(handle, type, xml, xpath) -> object
+ *   data_bind.json_stream_path(handle, type, path) -> object (stream-bound JSON file)
+ *   data_bind.json_all_stream_path(handle, type, path) -> object
+ *   data_bind.json_path_stream_path(handle, type, path, jsonpath) -> object
+ *   data_bind.json_path_all_stream_path(handle, type, path, jsonpath) -> object
+ *   data_bind.csv_all_stream_path(handle, type, path) -> object
+ *   data_bind.csv_path_stream_path(handle, type, path, csvpath) -> object
+ *   data_bind.xml_stream_path(handle, type, path) -> object
+ *   data_bind.xml_path_all_stream_path(handle, type, path, xpath) -> object
+ *   data_bind.sax.json_create(handle, type) -> number (stream handle)
+ *   data_bind.sax.json_all_create(handle, type) -> number (stream handle)
+ *   data_bind.sax.json_path_create(handle, type, jsonpath) -> number (stream handle)
+ *   data_bind.sax.json_path_all_create(handle, type, jsonpath) -> number (stream handle)
+ *   data_bind.sax.csv_all_create(handle, type) -> number (stream handle)
+ *   data_bind.sax.csv_path_create(handle, type, csvpath) -> number (stream handle)
+ *   data_bind.sax.xml_create(handle, type) -> number (stream handle)
+ *   data_bind.sax.xml_path_all_create(handle, type, xpath) -> number (stream handle)
+ *   data_bind.sax.feed(stream_handle, chunk) -> number (0)
+ *   data_bind.sax.feed_path(stream_handle, path) -> number (0)
+ *   data_bind.sax.finish(stream_handle) -> object
+ *   data_bind.sax.close(stream_handle) -> number (0)
+ *   data_bind.dom.* aliases use the DOM parse APIs.
+ *   data_bind.sax.* aliases use the SAX/streaming APIs.
  *   data_bind.close(handle)               -> number (0)
  *
  * `bytes` is a TurboScript string carrying raw bytes.  The plugin passes
  * the string buffer directly to the JIT-compiled parser.
  *
- * The core data_bind library owns dynamic parsing and returns a DataBindValue
- * tree.  This module only adapts that tree into native exprtk containers at
+ * The core data_bind library owns both parse models. DOM APIs parse and
+ * materialize a complete DataBindValue tree. SAX APIs accept chunks through a
+ * stateful stream parser and materialize or collect bound values at finish.
+ * This module only adapts DataBindValue trees into native exprtk containers at
  * the scripting boundary.
  */
 #include "data_bind_ctx.h"
@@ -29,43 +61,132 @@
 /* ── Lifecycle ────────────────────────────────────────────────────────────── */
 
 void *db_ctx_create(void) {
-    return calloc(1, sizeof(db_ctx_t));
+    db_ctx_t *ctx = (db_ctx_t *)calloc(1, sizeof(db_ctx_t));
+    if (!ctx) return NULL;
+
+    if (db_handle_map_t_init(&ctx->handles) != 0) {
+        free(ctx);
+        return NULL;
+    }
+    if (db_stream_map_t_init(&ctx->streams) != 0) {
+        db_handle_map_t_destroy(&ctx->handles);
+        free(ctx);
+        return NULL;
+    }
+    if (turbo_hash_map_reserve(&ctx->handles.raw, DB_MAX_HANDLES) != 0 ||
+        turbo_hash_map_reserve(&ctx->streams.raw, DB_MAX_HANDLES) != 0) {
+        db_stream_map_t_destroy(&ctx->streams);
+        db_handle_map_t_destroy(&ctx->handles);
+        free(ctx);
+        return NULL;
+    }
+    ctx->next_handle = 0;
+    ctx->next_stream_handle = 0;
+    return ctx;
 }
 
 void db_ctx_destroy(void *p) {
     db_ctx_t *ctx = (db_ctx_t *)p;
     if (!ctx) return;
-    for (int i = 0; i < DB_MAX_HANDLES; i++) {
-        if (ctx->handles[i].codec) {
-            data_bind_free(ctx->handles[i].codec);
-            ctx->handles[i].codec = NULL;
+    for (int i = 0; i < DB_MAX_HANDLES; ++i) {
+        db_stream_entry_t **entry_ptr = db_stream_map_t_get(&ctx->streams, i);
+        if (entry_ptr && *entry_ptr) {
+            if ((*entry_ptr)->stream) data_bind_stream_destroy((*entry_ptr)->stream);
+            if ((*entry_ptr)->result) data_bind_value_free((*entry_ptr)->result);
+            free(*entry_ptr);
         }
     }
+    for (int i = 0; i < DB_MAX_HANDLES; ++i) {
+        DataBind **codec_ptr = db_handle_map_t_get(&ctx->handles, i);
+        if (codec_ptr && *codec_ptr) {
+            data_bind_free(*codec_ptr);
+        }
+    }
+    db_stream_map_t_destroy(&ctx->streams);
+    db_handle_map_t_destroy(&ctx->handles);
     free(ctx);
 }
 
 /* ── Handle management ────────────────────────────────────────────────────── */
 
 static int db_handle_alloc(db_ctx_t *ctx, DataBind *codec) {
+    if (!ctx || !codec) return -1;
+
     for (int i = 0; i < DB_MAX_HANDLES; i++) {
-        if (!ctx->handles[i].codec) {
-            ctx->handles[i].codec = codec;
-            return i;
-        }
+        int handle = (ctx->next_handle + i) % DB_MAX_HANDLES;
+        if (db_handle_map_t_contains(&ctx->handles, handle)) continue;
+        if (db_handle_map_t_put(&ctx->handles, handle, codec) != TURBO_OK) return -1;
+        ctx->next_handle = (handle + 1) % DB_MAX_HANDLES;
+        return handle;
+    }
+    return -1; /* no free slot */
+}
+
+static DataBind *db_handle_get(db_ctx_t *ctx, int h) {
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return NULL;
+    DataBind **codec = db_handle_map_t_get(&ctx->handles, h);
+    return codec ? *codec : NULL;
+}
+
+static void db_stream_close_for_codec(db_ctx_t *ctx, DataBind *codec);
+
+static void db_handle_free(db_ctx_t *ctx, int h) {
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return;
+
+    DataBind *codec = NULL;
+    if (db_handle_map_t_remove(&ctx->handles, h, &codec)) {
+        db_stream_close_for_codec(ctx, codec);
+        data_bind_free(codec);
+    }
+}
+
+static int db_stream_handle_alloc(db_ctx_t *ctx, db_stream_entry_t *entry) {
+    if (!ctx || !entry || !entry->codec || !entry->stream) return -1;
+
+    for (int i = 0; i < DB_MAX_HANDLES; i++) {
+        int handle = (ctx->next_stream_handle + i) % DB_MAX_HANDLES;
+        if (db_stream_map_t_contains(&ctx->streams, handle)) continue;
+        if (db_stream_map_t_put(&ctx->streams, handle, entry) != TURBO_OK) return -1;
+        ctx->next_stream_handle = (handle + 1) % DB_MAX_HANDLES;
+        return handle;
     }
     return -1;
 }
 
-static DataBind *db_handle_get(db_ctx_t *ctx, int h) {
-    if (h < 0 || h >= DB_MAX_HANDLES) return NULL;
-    return ctx->handles[h].codec;
+static db_stream_entry_t *db_stream_handle_get(db_ctx_t *ctx, int h) {
+    db_stream_entry_t **entry;
+
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return NULL;
+    entry = db_stream_map_t_get(&ctx->streams, h);
+    return entry ? *entry : NULL;
 }
 
-static void db_handle_free(db_ctx_t *ctx, int h) {
-    if (h < 0 || h >= DB_MAX_HANDLES) return;
-    if (ctx->handles[h].codec) {
-        data_bind_free(ctx->handles[h].codec);
-        ctx->handles[h].codec = NULL;
+static db_stream_entry_t *db_stream_handle_take(db_ctx_t *ctx, int h) {
+    db_stream_entry_t *entry = NULL;
+
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return NULL;
+    if (db_stream_map_t_remove(&ctx->streams, h, &entry) && entry) {
+        return entry;
+    }
+    return NULL;
+}
+
+static void db_stream_handle_free(db_ctx_t *ctx, int h) {
+    db_stream_entry_t *entry = db_stream_handle_take(ctx, h);
+    if (!entry) return;
+    data_bind_stream_destroy(entry->stream);
+    if (entry->result) data_bind_value_free(entry->result);
+    free(entry);
+}
+
+static void db_stream_close_for_codec(db_ctx_t *ctx, DataBind *codec) {
+    if (!ctx || !codec) return;
+
+    for (int i = 0; i < DB_MAX_HANDLES; i++) {
+        db_stream_entry_t **entry_ptr = db_stream_map_t_get(&ctx->streams, i);
+        if (entry_ptr && *entry_ptr && (*entry_ptr)->codec == codec) {
+            db_stream_handle_free(ctx, i);
+        }
     }
 }
 
@@ -203,6 +324,114 @@ static exprtk_value_t fn_db_create(size_t argc, exprtk_value_t *args, void *ud_)
 }
 
 /**
+ * data_bind.create_from_text(schema_text) -> number (handle >= 0, or -1 on error)
+ */
+static exprtk_value_t fn_db_create_from_text(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec = NULL;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    DataBindStatus status;
+    int handle;
+
+    if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.create_from_text: expected schema string");
+        return exprtk_val_num(-1.0);
+    }
+
+    status = data_bind_create_from_text(args[0].data.string.data,
+                                        args[0].data.string.len, &codec, &err);
+    if (status != DATA_BIND_OK) {
+        DB_ERROR(ud, err.message[0] ? err.message : "data_bind.create_from_text: failed");
+        return exprtk_val_num(-1.0);
+    }
+
+    handle = db_handle_alloc(ud->ctx, codec);
+    if (handle < 0) {
+        data_bind_free(codec);
+        DB_ERROR(ud, "data_bind.create_from_text: too many open codecs");
+        return exprtk_val_num(-1.0);
+    }
+    return exprtk_val_num((double)handle);
+}
+
+typedef DataBindStatus (*db_validate_fn)(DataBind *, const char *,
+                                         const char *, size_t, DataBindError *);
+
+static exprtk_value_t db_validate_text(size_t argc, exprtk_value_t *args, void *ud_,
+                                       const char *fn_name, db_validate_fn validate) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    char *type_name;
+    int handle;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return exprtk_val_bool(0);
+    }
+
+    handle = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, handle);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind validate: invalid handle");
+        return exprtk_val_bool(0);
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data,
+                              args[1].data.string.len);
+    if (!type_name) {
+        DB_ERROR(ud, "data_bind validate: OOM");
+        return exprtk_val_bool(0);
+    }
+
+    return exprtk_val_bool(validate(codec, type_name, args[2].data.string.data,
+                                    args[2].data.string.len, &err) == DATA_BIND_OK);
+}
+
+static exprtk_value_t fn_db_validate_json(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_validate_text(argc, args, ud_,
+                            "data_bind.validate_json: expected (number, string, string)",
+                            data_bind_validate_json);
+}
+
+static exprtk_value_t fn_db_validate_csv(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_validate_text(argc, args, ud_,
+                            "data_bind.validate_csv: expected (number, string, string)",
+                            data_bind_validate_csv);
+}
+
+static exprtk_value_t fn_db_validate_xml(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    char *type_name;
+    int handle;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.validate_xml: expected (number, string, string)");
+        return exprtk_val_bool(0);
+    }
+
+    handle = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, handle);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind.validate_xml: invalid handle");
+        return exprtk_val_bool(0);
+    }
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data,
+                              args[1].data.string.len);
+    if (!type_name) {
+        DB_ERROR(ud, "data_bind.validate_xml: OOM");
+        return exprtk_val_bool(0);
+    }
+
+    return exprtk_val_bool(data_bind_validate_xml_path(
+        codec, type_name, args[2].data.string.data, args[2].data.string.len,
+        NULL, &err) == DATA_BIND_OK);
+}
+
+/**
  * data_bind.parse(handle, type_name, bytes) -> object | 0
  *
  * bytes is a TurboScript string whose data is the raw binary payload.
@@ -259,6 +488,7 @@ static exprtk_value_t db_convert_status_result(db_ud_t *ud, DataBindStatus statu
                                                DataBindValue *result,
                                                const DataBindError *err) {
     if (status != DATA_BIND_OK) {
+        if (result) data_bind_value_free(result);
         if (err && err->message[0]) DB_ERROR(ud, err->message);
         return DB_ZERO;
     }
@@ -299,6 +529,190 @@ static char *db_read_file_text(db_ud_t *ud, const char *path, size_t *out_len) {
     if (out_len) *out_len = nread;
     buf[nread] = '\0';
     return buf;
+}
+
+static int db_get_codec_and_type(db_ud_t *ud, exprtk_value_t *args,
+                                 const char *fn_name, DataBind **out_codec,
+                                 char **out_type_name) {
+    DataBind *codec;
+    char *type_name;
+    int h;
+
+    if (!ud || !args || !fn_name || !out_codec || !out_type_name) return 0;
+
+    h = (int)args[0].data.number;
+    codec = db_handle_get(ud->ctx, h);
+    if (!codec) {
+        DB_ERROR(ud, "data_bind stream: invalid handle");
+        return 0;
+    }
+
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data, args[1].data.string.len);
+    if (!type_name) {
+        DB_ERROR(ud, "data_bind stream: OOM");
+        return 0;
+    }
+
+    (void)fn_name;
+    *out_codec = codec;
+    *out_type_name = type_name;
+    return 1;
+}
+
+static char *db_arg_cstr(db_ud_t *ud, const exprtk_value_t *arg, const char *fn_name) {
+    char *text;
+
+    if (!ud || !arg || arg->type != EXPRTK_VAL_STRING) return NULL;
+    text = db_arena_cstr(ud->scratch, arg->data.string.data, arg->data.string.len);
+    if (!text) DB_ERROR(ud, fn_name ? fn_name : "data_bind stream: OOM");
+    return text;
+}
+
+typedef enum db_stream_mode {
+    DB_STREAM_JSON,
+    DB_STREAM_JSON_ALL,
+    DB_STREAM_JSON_PATH,
+    DB_STREAM_JSON_PATH_ALL,
+    DB_STREAM_CSV_ALL,
+    DB_STREAM_CSV_PATH,
+    DB_STREAM_XML,
+    DB_STREAM_XML_PATH_ALL
+} db_stream_mode_t;
+
+static data_bind_stream_t *db_stream_open(DataBind *codec, const char *type_name,
+                                          db_stream_mode_t mode, const char *expr,
+                                          DataBindValue **out_result,
+                                          DataBindError *error) {
+    switch (mode) {
+    case DB_STREAM_JSON:
+        return data_bind_stream_json_create(codec, type_name, out_result, error);
+    case DB_STREAM_JSON_ALL:
+        return data_bind_stream_json_all_create(codec, type_name, out_result, error);
+    case DB_STREAM_JSON_PATH:
+        return data_bind_stream_json_path_create(codec, type_name, expr, out_result, error);
+    case DB_STREAM_JSON_PATH_ALL:
+        return data_bind_stream_json_path_all_create(codec, type_name, expr, out_result, error);
+    case DB_STREAM_CSV_ALL:
+        return data_bind_stream_csv_all_create(codec, type_name, out_result, error);
+    case DB_STREAM_CSV_PATH:
+        return data_bind_stream_csv_path_create(codec, type_name, expr, out_result, error);
+    case DB_STREAM_XML:
+        return data_bind_stream_xml_create(codec, type_name, out_result, error);
+    case DB_STREAM_XML_PATH_ALL:
+        return data_bind_stream_xml_path_all_create(codec, type_name, expr, out_result, error);
+    }
+    return NULL;
+}
+
+static exprtk_value_t db_stream_text(db_ud_t *ud, DataBind *codec, const char *type_name,
+                                     db_stream_mode_t mode, const char *path_or_expr,
+                                     const char *data, size_t len) {
+    data_bind_stream_t *stream;
+    DataBindValue *result = NULL;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    int status = DATA_BIND_ERR_RUNTIME;
+
+    stream = db_stream_open(codec, type_name, mode, path_or_expr, &result, &err);
+    if (stream) {
+        status = data_bind_stream_feed(stream, data, len);
+        if (status == DATA_BIND_OK) status = data_bind_stream_finish(stream);
+        data_bind_stream_destroy(stream);
+    }
+
+    return db_convert_status_result(ud, (DataBindStatus)status, result, &err);
+}
+
+static exprtk_value_t db_stream_file(db_ud_t *ud, DataBind *codec, const char *type_name,
+                                     db_stream_mode_t mode, const char *path_or_expr,
+                                     const char *file_path) {
+    DataBindValue *result = NULL;
+    DataBindError err = DATA_BIND_ERROR_INIT;
+    data_bind_stream_t *stream;
+    int status = DATA_BIND_ERR_RUNTIME;
+
+    stream = db_stream_open(codec, type_name, mode, path_or_expr, &result, &err);
+    if (stream) {
+        status = data_bind_stream_feed_file(stream, file_path);
+        if (status == DATA_BIND_OK) status = data_bind_stream_finish(stream);
+        data_bind_stream_destroy(stream);
+    }
+
+    return db_convert_status_result(ud, (DataBindStatus)status, result, &err);
+}
+
+static exprtk_value_t db_stream_text_no_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                             const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    char *type_name;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return DB_ZERO;
+    }
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) return DB_ZERO;
+    return db_stream_text(ud, codec, type_name, mode, NULL,
+                          args[2].data.string.data, args[2].data.string.len);
+}
+
+static exprtk_value_t db_stream_text_with_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                               const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    char *type_name;
+    char *expr;
+
+    if (argc != 4 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING ||
+        args[3].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return DB_ZERO;
+    }
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) return DB_ZERO;
+    expr = db_arg_cstr(ud, &args[3], fn_name);
+    if (!expr) return DB_ZERO;
+    return db_stream_text(ud, codec, type_name, mode, expr,
+                          args[2].data.string.data, args[2].data.string.len);
+}
+
+static exprtk_value_t db_stream_file_no_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                             const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    char *type_name;
+    char *file_path;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return DB_ZERO;
+    }
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) return DB_ZERO;
+    file_path = db_arg_cstr(ud, &args[2], fn_name);
+    if (!file_path) return DB_ZERO;
+    return db_stream_file(ud, codec, type_name, mode, NULL, file_path);
+}
+
+static exprtk_value_t db_stream_file_with_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                               const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    char *type_name;
+    char *file_path;
+    char *expr;
+
+    if (argc != 4 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING ||
+        args[3].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return DB_ZERO;
+    }
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) return DB_ZERO;
+    file_path = db_arg_cstr(ud, &args[2], fn_name);
+    expr = db_arg_cstr(ud, &args[3], fn_name);
+    if (!file_path || !expr) return DB_ZERO;
+    return db_stream_file(ud, codec, type_name, mode, expr, file_path);
 }
 
 static exprtk_value_t fn_db_json(size_t argc, exprtk_value_t *args, void *ud_) {
@@ -687,6 +1101,336 @@ static exprtk_value_t fn_db_xml_all_path(size_t argc, exprtk_value_t *args, void
     }
 }
 
+static exprtk_value_t fn_db_json_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_no_expr(argc, args, ud_,
+        "data_bind.json_stream: expected (number, string, string)",
+        DB_STREAM_JSON);
+}
+
+static exprtk_value_t fn_db_json_all_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_no_expr(argc, args, ud_,
+        "data_bind.json_all_stream: expected (number, string, string)",
+        DB_STREAM_JSON_ALL);
+}
+
+static exprtk_value_t fn_db_json_path_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_with_expr(argc, args, ud_,
+        "data_bind.json_path_stream: expected (number, string, string, string)",
+        DB_STREAM_JSON_PATH);
+}
+
+static exprtk_value_t fn_db_json_path_all_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_with_expr(argc, args, ud_,
+        "data_bind.json_path_all_stream: expected (number, string, string, string)",
+        DB_STREAM_JSON_PATH_ALL);
+}
+
+static exprtk_value_t fn_db_csv_all_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_no_expr(argc, args, ud_,
+        "data_bind.csv_all_stream: expected (number, string, string)",
+        DB_STREAM_CSV_ALL);
+}
+
+static exprtk_value_t fn_db_csv_path_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_with_expr(argc, args, ud_,
+        "data_bind.csv_path_stream: expected (number, string, string, string)",
+        DB_STREAM_CSV_PATH);
+}
+
+static exprtk_value_t fn_db_xml_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_no_expr(argc, args, ud_,
+        "data_bind.xml_stream: expected (number, string, string)",
+        DB_STREAM_XML);
+}
+
+static exprtk_value_t fn_db_xml_path_all_stream(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_text_with_expr(argc, args, ud_,
+        "data_bind.xml_path_all_stream: expected (number, string, string, string)",
+        DB_STREAM_XML_PATH_ALL);
+}
+
+static exprtk_value_t fn_db_json_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_no_expr(argc, args, ud_,
+        "data_bind.json_stream_path: expected (number, string, string)",
+        DB_STREAM_JSON);
+}
+
+static exprtk_value_t fn_db_json_all_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_no_expr(argc, args, ud_,
+        "data_bind.json_all_stream_path: expected (number, string, string)",
+        DB_STREAM_JSON_ALL);
+}
+
+static exprtk_value_t fn_db_json_path_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_with_expr(argc, args, ud_,
+        "data_bind.json_path_stream_path: expected (number, string, string, string)",
+        DB_STREAM_JSON_PATH);
+}
+
+static exprtk_value_t fn_db_json_path_all_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_with_expr(argc, args, ud_,
+        "data_bind.json_path_all_stream_path: expected (number, string, string, string)",
+        DB_STREAM_JSON_PATH_ALL);
+}
+
+static exprtk_value_t fn_db_csv_all_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_no_expr(argc, args, ud_,
+        "data_bind.csv_all_stream_path: expected (number, string, string)",
+        DB_STREAM_CSV_ALL);
+}
+
+static exprtk_value_t fn_db_csv_path_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_with_expr(argc, args, ud_,
+        "data_bind.csv_path_stream_path: expected (number, string, string, string)",
+        DB_STREAM_CSV_PATH);
+}
+
+static exprtk_value_t fn_db_xml_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_no_expr(argc, args, ud_,
+        "data_bind.xml_stream_path: expected (number, string, string)",
+        DB_STREAM_XML);
+}
+
+static exprtk_value_t fn_db_xml_path_all_stream_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_file_with_expr(argc, args, ud_,
+        "data_bind.xml_path_all_stream_path: expected (number, string, string, string)",
+        DB_STREAM_XML_PATH_ALL);
+}
+
+static exprtk_value_t db_stream_create_no_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                               const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    db_stream_entry_t *entry;
+    char *type_name;
+    int stream_handle;
+
+    if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return exprtk_val_num(-1.0);
+    }
+
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) {
+        return exprtk_val_num(-1.0);
+    }
+
+    entry = (db_stream_entry_t *)calloc(1, sizeof(*entry));
+    if (!entry) {
+        DB_ERROR(ud, "data_bind sax create: OOM");
+        return exprtk_val_num(-1.0);
+    }
+    entry->codec = codec;
+    entry->error = (DataBindError)DATA_BIND_ERROR_INIT;
+    entry->stream = db_stream_open(codec, type_name, mode, NULL,
+                                   &entry->result, &entry->error);
+    if (!entry->stream) {
+        DB_ERROR(ud, entry->error.message[0] ? entry->error.message : "data_bind sax create: failed");
+        free(entry);
+        return exprtk_val_num(-1.0);
+    }
+
+    stream_handle = db_stream_handle_alloc(ud->ctx, entry);
+    if (stream_handle < 0) {
+        data_bind_stream_destroy(entry->stream);
+        free(entry);
+        DB_ERROR(ud, "data_bind sax create: too many open streams");
+        return exprtk_val_num(-1.0);
+    }
+
+    return exprtk_val_num((double)stream_handle);
+}
+
+static exprtk_value_t db_stream_create_with_expr(size_t argc, exprtk_value_t *args, void *ud_,
+                                                 const char *fn_name, db_stream_mode_t mode) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    db_stream_entry_t *entry;
+    char *type_name;
+    char *expr;
+    int stream_handle;
+
+    if (argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, fn_name);
+        return exprtk_val_num(-1.0);
+    }
+
+    if (!db_get_codec_and_type(ud, args, fn_name, &codec, &type_name)) {
+        return exprtk_val_num(-1.0);
+    }
+
+    expr = db_arg_cstr(ud, &args[2], fn_name);
+    if (!expr) return exprtk_val_num(-1.0);
+
+    entry = (db_stream_entry_t *)calloc(1, sizeof(*entry));
+    if (!entry) {
+        DB_ERROR(ud, "data_bind sax create: OOM");
+        return exprtk_val_num(-1.0);
+    }
+    entry->codec = codec;
+    entry->error = (DataBindError)DATA_BIND_ERROR_INIT;
+    entry->stream = db_stream_open(codec, type_name, mode, expr,
+                                   &entry->result, &entry->error);
+    if (!entry->stream) {
+        DB_ERROR(ud, entry->error.message[0] ? entry->error.message : "data_bind sax create: failed");
+        free(entry);
+        return exprtk_val_num(-1.0);
+    }
+
+    stream_handle = db_stream_handle_alloc(ud->ctx, entry);
+    if (stream_handle < 0) {
+        data_bind_stream_destroy(entry->stream);
+        free(entry);
+        DB_ERROR(ud, "data_bind sax create: too many open streams");
+        return exprtk_val_num(-1.0);
+    }
+
+    return exprtk_val_num((double)stream_handle);
+}
+
+static exprtk_value_t fn_db_sax_json_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_no_expr(argc, args, ud_,
+        "data_bind.sax.json_create: expected (number, string)",
+        DB_STREAM_JSON);
+}
+
+static exprtk_value_t fn_db_sax_json_all_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_no_expr(argc, args, ud_,
+        "data_bind.sax.json_all_create: expected (number, string)",
+        DB_STREAM_JSON_ALL);
+}
+
+static exprtk_value_t fn_db_sax_json_path_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_with_expr(argc, args, ud_,
+        "data_bind.sax.json_path_create: expected (number, string, string)",
+        DB_STREAM_JSON_PATH);
+}
+
+static exprtk_value_t fn_db_sax_json_path_all_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_with_expr(argc, args, ud_,
+        "data_bind.sax.json_path_all_create: expected (number, string, string)",
+        DB_STREAM_JSON_PATH_ALL);
+}
+
+static exprtk_value_t fn_db_sax_csv_all_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_no_expr(argc, args, ud_,
+        "data_bind.sax.csv_all_create: expected (number, string)",
+        DB_STREAM_CSV_ALL);
+}
+
+static exprtk_value_t fn_db_sax_csv_path_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_with_expr(argc, args, ud_,
+        "data_bind.sax.csv_path_create: expected (number, string, string)",
+        DB_STREAM_CSV_PATH);
+}
+
+static exprtk_value_t fn_db_sax_xml_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_no_expr(argc, args, ud_,
+        "data_bind.sax.xml_create: expected (number, string)",
+        DB_STREAM_XML);
+}
+
+static exprtk_value_t fn_db_sax_xml_path_all_create(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_stream_create_with_expr(argc, args, ud_,
+        "data_bind.sax.xml_path_all_create: expected (number, string, string)",
+        DB_STREAM_XML_PATH_ALL);
+}
+
+static exprtk_value_t fn_db_stream_feed(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    db_stream_entry_t *entry;
+    int h;
+
+    if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.stream_feed: expected (number, string)");
+        return DB_ZERO;
+    }
+
+    h = (int)args[0].data.number;
+    entry = db_stream_handle_get(ud->ctx, h);
+    if (!entry) {
+        DB_ERROR(ud, "data_bind.stream_feed: invalid stream handle");
+        return DB_ZERO;
+    }
+
+    if (data_bind_stream_feed(entry->stream, args[1].data.string.data,
+                              args[1].data.string.len) != DATA_BIND_OK) {
+        DB_ERROR(ud, entry->error.message[0] ? entry->error.message : "data_bind.stream_feed: failed");
+        return DB_ZERO;
+    }
+
+    return DB_ZERO;
+}
+
+static exprtk_value_t fn_db_stream_feed_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    db_stream_entry_t *entry;
+    char *file_path;
+    int h;
+
+    if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, "data_bind.stream_feed_path: expected (number, string)");
+        return DB_ZERO;
+    }
+
+    h = (int)args[0].data.number;
+    entry = db_stream_handle_get(ud->ctx, h);
+    if (!entry) {
+        DB_ERROR(ud, "data_bind.stream_feed_path: invalid stream handle");
+        return DB_ZERO;
+    }
+
+    file_path = db_arg_cstr(ud, &args[1], "data_bind.stream_feed_path: OOM");
+    if (!file_path) return DB_ZERO;
+
+    if (data_bind_stream_feed_file(entry->stream, file_path) != DATA_BIND_OK) {
+        DB_ERROR(ud, entry->error.message[0] ? entry->error.message : "data_bind.stream_feed_path: failed");
+        return DB_ZERO;
+    }
+
+    return DB_ZERO;
+}
+
+static exprtk_value_t fn_db_stream_finish(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    db_stream_entry_t *entry;
+    int status;
+    int h;
+
+    if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
+        DB_ERROR(ud, "data_bind.stream_finish: expected number stream_handle");
+        return DB_ZERO;
+    }
+
+    h = (int)args[0].data.number;
+    entry = db_stream_handle_take(ud->ctx, h);
+    if (!entry) {
+        DB_ERROR(ud, "data_bind.stream_finish: invalid stream handle");
+        return DB_ZERO;
+    }
+
+    status = data_bind_stream_finish(entry->stream);
+    data_bind_stream_destroy(entry->stream);
+    {
+        DataBindValue *result = entry->result;
+        DataBindError error = entry->error;
+        free(entry);
+        return db_convert_status_result(ud, (DataBindStatus)status, result, &error);
+    }
+}
+
+static exprtk_value_t fn_db_stream_close(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+
+    if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
+        DB_ERROR(ud, "data_bind.stream_close: expected number stream_handle");
+        return DB_ZERO;
+    }
+
+    db_stream_handle_free(ud->ctx, (int)args[0].data.number);
+    return DB_ZERO;
+}
+
 /**
  * data_bind.close(handle) -> 0
  */
@@ -715,7 +1459,11 @@ void db_plugin_load(void *p, void *e, void *s) {
     ud->scratch = scratch;
 
     exprtk_env_register_func(env, "data_bind.create", fn_db_create, ud);
+    exprtk_env_register_func(env, "data_bind.create_from_text", fn_db_create_from_text, ud);
     exprtk_env_register_func(env, "data_bind.parse",  fn_db_parse,  ud);
+    exprtk_env_register_func(env, "data_bind.validate_json", fn_db_validate_json, ud);
+    exprtk_env_register_func(env, "data_bind.validate_csv", fn_db_validate_csv, ud);
+    exprtk_env_register_func(env, "data_bind.validate_xml", fn_db_validate_xml, ud);
     exprtk_env_register_func(env, "data_bind.json",   fn_db_json,   ud);
     exprtk_env_register_func(env, "data_bind.json_all", fn_db_json_all, ud);
     exprtk_env_register_func(env, "data_bind.json_path",   fn_db_json_path,   ud);
@@ -728,5 +1476,61 @@ void db_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "data_bind.xml_all", fn_db_xml_all, ud);
     exprtk_env_register_func(env, "data_bind.xml_path",    fn_db_xml_path,    ud);
     exprtk_env_register_func(env, "data_bind.xml_all_path", fn_db_xml_all_path, ud);
+    exprtk_env_register_func(env, "data_bind.dom.json",   fn_db_json,   ud);
+    exprtk_env_register_func(env, "data_bind.dom.json_all", fn_db_json_all, ud);
+    exprtk_env_register_func(env, "data_bind.dom.json_path",   fn_db_json_path,   ud);
+    exprtk_env_register_func(env, "data_bind.dom.json_all_path", fn_db_json_all_path, ud);
+    exprtk_env_register_func(env, "data_bind.dom.csv",    fn_db_csv,    ud);
+    exprtk_env_register_func(env, "data_bind.dom.csv_all", fn_db_csv_all, ud);
+    exprtk_env_register_func(env, "data_bind.dom.csv_path",    fn_db_csv_path,    ud);
+    exprtk_env_register_func(env, "data_bind.dom.csv_all_path", fn_db_csv_all_path, ud);
+    exprtk_env_register_func(env, "data_bind.dom.xml",    fn_db_xml,    ud);
+    exprtk_env_register_func(env, "data_bind.dom.xml_all", fn_db_xml_all, ud);
+    exprtk_env_register_func(env, "data_bind.dom.xml_path",    fn_db_xml_path,    ud);
+    exprtk_env_register_func(env, "data_bind.dom.xml_all_path", fn_db_xml_all_path, ud);
+    exprtk_env_register_func(env, "data_bind.json_stream", fn_db_json_stream, ud);
+    exprtk_env_register_func(env, "data_bind.json_all_stream", fn_db_json_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.json_path_stream", fn_db_json_path_stream, ud);
+    exprtk_env_register_func(env, "data_bind.json_path_all_stream", fn_db_json_path_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.csv_all_stream", fn_db_csv_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.csv_path_stream", fn_db_csv_path_stream, ud);
+    exprtk_env_register_func(env, "data_bind.xml_stream", fn_db_xml_stream, ud);
+    exprtk_env_register_func(env, "data_bind.xml_path_all_stream", fn_db_xml_path_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.json_stream_path", fn_db_json_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.json_all_stream_path", fn_db_json_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.json_path_stream_path", fn_db_json_path_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.json_path_all_stream_path", fn_db_json_path_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.csv_all_stream_path", fn_db_csv_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.csv_path_stream_path", fn_db_csv_path_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.xml_stream_path", fn_db_xml_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.xml_path_all_stream_path", fn_db_xml_path_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json", fn_db_json_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_all", fn_db_json_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path", fn_db_json_path_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path_all", fn_db_json_path_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_all", fn_db_csv_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_path", fn_db_csv_path_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml", fn_db_xml_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml_path_all", fn_db_xml_path_all_stream, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_file", fn_db_json_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_all_file", fn_db_json_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path_file", fn_db_json_path_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path_all_file", fn_db_json_path_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_all_file", fn_db_csv_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_path_file", fn_db_csv_path_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml_file", fn_db_xml_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml_path_all_file", fn_db_xml_path_all_stream_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_create", fn_db_sax_json_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_all_create", fn_db_sax_json_all_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path_create", fn_db_sax_json_path_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.json_path_all_create", fn_db_sax_json_path_all_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_all_create", fn_db_sax_csv_all_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.csv_path_create", fn_db_sax_csv_path_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml_create", fn_db_sax_xml_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.xml_path_all_create", fn_db_sax_xml_path_all_create, ud);
+    exprtk_env_register_func(env, "data_bind.sax.feed", fn_db_stream_feed, ud);
+    exprtk_env_register_func(env, "data_bind.sax.feed_path", fn_db_stream_feed_path, ud);
+    exprtk_env_register_func(env, "data_bind.sax.finish", fn_db_stream_finish, ud);
+    exprtk_env_register_func(env, "data_bind.sax.close", fn_db_stream_close, ud);
     exprtk_env_register_func(env, "data_bind.close",  fn_db_close,  ud);
 }

@@ -24,8 +24,7 @@ cmake_config_target(
   ${TARGET_NAME}
   ALIAS TurboScript::Parser
   FOLDER modules/parser
-  EXPORT_NAME Parser
-  NO_INSTALL)
+  EXPORT_NAME Parser)
 
 target_include_directories(${TARGET_NAME}
     PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -35,7 +34,6 @@ target_include_directories(${TARGET_NAME}
 
 target_link_libraries(${TARGET_NAME}
     PUBLIC exprtk TurboUtils::Core TurboUtils::Parser
-    PRIVATE TurboUtils::SchemaBE TurboUtils::DataBind
 )
 
 set_target_properties(${TARGET_NAME} PROPERTIES
@@ -49,6 +47,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${PARSER_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/parser
+  OUTPUT_NAME tbs_parser
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN}

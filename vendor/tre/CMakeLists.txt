@@ -38,8 +38,7 @@ cmake_config_target(
   tre
   ALIAS TurboScript::Tre
   FOLDER vendor
-  EXPORT_NAME Tre
-  NO_INSTALL)
+  EXPORT_NAME Tre)
 
 target_compile_definitions(tre PRIVATE HAVE_CONFIG_H)
 

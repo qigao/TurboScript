@@ -1,10 +1,10 @@
 # DLL-based integration test — loads tbs_sqlite at runtime
-add_executable(test_sqlite_module test_sqlite.c)
-target_link_libraries(test_sqlite_module PRIVATE   exprtk
-                                              TurboUtils::TinyTest)
-add_test(NAME test_sqlite_module COMMAND test_sqlite_module)
-set_target_properties(test_sqlite_module PROPERTIES FOLDER
-                                                 modules/sqlite)
+cmake_add_test(
+  TARGET test_sqlite_module
+  SOURCES test_sqlite.c
+  LIBS exprtk TurboUtils::TinyTest
+  DEPENDS sqlite_tbs
+  FOLDER modules/sqlite)
 
 # Copy plugin DLL next to test executable so it can be found at runtime
 add_custom_command(

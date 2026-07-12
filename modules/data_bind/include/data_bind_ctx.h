@@ -1,8 +1,10 @@
 /**
  * @file data_bind_ctx.h
- * @brief data_bind plugin context - codec handle table.
+ * @brief data_bind plugin context - codec and stream parser handle tables.
  *
  * Each codec handle holds a `DataBind *` from the tbe/data_bind library.
+ * Each stream handle holds a stateful `data_bind_stream_t *` and the result
+ * slot bound to that stream for its full lifetime.
  * Parse results are returned by the core data_bind library as DataBindValue
  * trees and converted at the module boundary into exprtk values.
  */
@@ -11,6 +13,7 @@
 
 #include "exprtk.h"
 #include "turbo_buffer.h"
+#include "turbo_hash.h"
 #include "data_bind.h"
 #include <stdlib.h>
 #include <string.h>
@@ -19,14 +22,23 @@
 /* Maximum number of concurrently open codec handles per plugin instance */
 #define DB_MAX_HANDLES 32
 
+typedef struct {
+    DataBind *codec;
+    data_bind_stream_t *stream;
+    DataBindValue *result;
+    DataBindError error;
+} db_stream_entry_t;
+
+TURBO_HASH_MAP_DEFINE(db_handle_map_t, int, DataBind *)
+TURBO_HASH_MAP_DEFINE(db_stream_map_t, int, db_stream_entry_t *)
+
 /* ── Handle table ─────────────────────────────────────────────────────────── */
 
 typedef struct {
-    DataBind *codec;          /**< Underlying JIT codec (NULL = free slot) */
-} db_handle_t;
-
-typedef struct {
-    db_handle_t handles[DB_MAX_HANDLES];
+    db_handle_map_t handles;
+    db_stream_map_t streams;
+    int next_handle;
+    int next_stream_handle;
 } db_ctx_t;
 
 /* ── Plugin user-data (kept alive for the env lifetime) ──────────────────── */

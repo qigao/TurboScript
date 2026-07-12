@@ -25,9 +25,9 @@ set(exprtk_GRAMMAR_H ${CMAKE_CURRENT_BINARY_DIR}/exprtk_grammar_gen.h)
 add_custom_command(
   OUTPUT ${exprtk_GRAMMAR_GEN} ${exprtk_GRAMMAR_H}
   COMMAND ${CMAKE_COMMAND} -E copy ${exprtk_GRAMMAR_Y}
-  ${CMAKE_CURRENT_BINARY_DIR}/exprtk_grammar_gen.y
+          ${CMAKE_CURRENT_BINARY_DIR}/exprtk_grammar_gen.y
   COMMAND ${LEMON_EXECUTABLE} -T${LEMPAR}
-  ${CMAKE_CURRENT_BINARY_DIR}/exprtk_grammar_gen.y
+          ${CMAKE_CURRENT_BINARY_DIR}/exprtk_grammar_gen.y
   DEPENDS ${exprtk_GRAMMAR_Y} ${LEMON_DEPENDS}
   COMMENT "Generating exprtk parser with lemon"
   VERBATIM)
@@ -35,44 +35,38 @@ add_custom_command(
 # =============================================================================
 # Library (respects BUILD_SHARED_LIBS)
 # =============================================================================
-file(GLOB_RECURSE SOURCE_FILES ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c*
-  ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h*)
+cmake_add_source(SOURCE_FILES RECURSE PATTERNS "*.c*" "*.h*")
 
 add_library(
   ${TARGET_NAME} SHARED
   ${SOURCE_FILES}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/exprtk_runtime.c
-  ${exprtk_LEXER_GEN} ${exprtk_GRAMMAR_GEN} ${exprtk_LEXER_RE}
+  ${exprtk_LEXER_GEN}
+  ${exprtk_GRAMMAR_GEN}
+  ${exprtk_LEXER_RE}
   ${exprtk_GRAMMAR_Y}
-  ${exprtk_GRAMMAR_H}
-)
+  ${exprtk_GRAMMAR_H})
 
 cmake_config_target(
   ${TARGET_NAME}
-  ALIAS TurboScript::ExprTk
-  FOLDER "exprtk"
-  EXPORT_NAME ExprTk)
-
+  ALIAS
+  TurboScript::ExprTk
+  FOLDER
+  "exprtk"
+  EXPORT_NAME
+  ExprTk)
 
 target_include_directories(
   ${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  $<INSTALL_INTERFACE:include>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/parser>
-  $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
+         $<INSTALL_INTERFACE:include>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/parser>
+         $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/vendor/mir)
+          ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/vendor/mir)
 
 # Define BUILDING_EXPRTK so exprtk_grammar.h includes the generated file
 target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
-
-# Find simde include directory
-find_path(SIMDE_INCLUDE_DIRS "simde/simde-common.h")
-if(SIMDE_INCLUDE_DIRS)
-  message(STATUS "Found SIMDe: ${SIMDE_INCLUDE_DIRS}")
-else()
-  message(FATAL_ERROR "SIMDe not found. Please install it (e.g., via vcpkg).")
-endif()
 
 target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
@@ -91,8 +85,8 @@ endif()
 set_target_properties(
   ${TARGET_NAME}
   PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
-  CXX_VISIBILITY_PRESET default
-  VISIBILITY_INLINES_HIDDEN OFF)
+             CXX_VISIBILITY_PRESET default
+             VISIBILITY_INLINES_HIDDEN OFF)
 
 # Install headers
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
@@ -101,4 +95,3 @@ install(FILES ${exprtk_GRAMMAR_H} DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 if(BUILD_TESTS AND ENABLE_TESTS)
   add_subdirectory(test)
 endif()
-

@@ -1,15 +1,10 @@
-set(TEST_NAME test_img)
-
-add_executable(${TEST_NAME} test_img.c)
-
-target_link_libraries(${TEST_NAME} PRIVATE img exprtk TurboUtils::Core TurboUtils::TinyTest)
-
-target_include_directories(${TEST_NAME} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
+cmake_add_test(
+  TARGET test_img
+  SOURCES test_img.c
+  LIBS img exprtk TurboUtils::Core TurboUtils::TinyTest
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../include
+  FOLDER modules/img/test)
 
 if(UNIX)
-  target_link_libraries(${TEST_NAME} PRIVATE m)
+  target_link_libraries(test_img PRIVATE m)
 endif()
-
-add_test(NAME ${TEST_NAME} COMMAND ${TEST_NAME})
-
-set_target_properties(${TEST_NAME} PROPERTIES FOLDER modules/img/test)

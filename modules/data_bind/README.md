@@ -9,6 +9,10 @@ Loads a TBE schema file and compiles it into MIR JIT-executable parsing function
 * **Arguments**: `schema_path` (string)
 * **Returns**: `handle` (number >= 0 on success, or `-1` on failure)
 
+### `data_bind.create_from_text(schema_text)`
+Compiles a trusted TBE schema held in memory and returns a codec handle. The
+handle has the same ownership and close requirements as `data_bind.create`.
+
 ### `data_bind.parse(handle, type_name, bytes)`
 Parses a binary payload (given as a raw byte string) into a dynamic nested object/list tree representation in the environment.
 * **Arguments**:
@@ -40,6 +44,28 @@ bytes payloads directly.
 ### `data_bind.xml_path(handle, type_name, path)`
 ### `data_bind.xml_all_path(handle, type_name, path, xpath)`
 Same argument shape as the non-path variants, but reads payload from a file path.
+
+### Validation
+
+- `data_bind.validate_json(handle, type_name, json)`
+- `data_bind.validate_csv(handle, type_name, csv)`
+- `data_bind.validate_xml(handle, type_name, xml)`
+
+Each function returns a boolean and performs strict schema validation without
+returning a bound value.
+
+### Streaming APIs
+
+`data_bind.sax.json`, `json_all`, `json_path`, `json_path_all`, `csv_all`,
+`csv_path`, `xml`, and `xml_path_all` run the corresponding DataBind streaming
+parser over an in-memory string. The matching `*_file` functions feed a file in
+fixed-size chunks. Legacy `*_stream` and `*_stream_path` names remain available.
+
+For incremental input, create a stream handle with
+`data_bind.sax.<format>_create`, feed one or more chunks with
+`data_bind.sax.feed` (or a file with `data_bind.sax.feed_path`), then call
+`data_bind.sax.finish` to obtain the bound value. `data_bind.sax.close` cancels
+an unfinished stream. Closing a codec also closes every stream created from it.
 
 ### `data_bind.close(handle)`
 Frees the underlying schema JIT module and resources.

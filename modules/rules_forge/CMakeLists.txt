@@ -3,16 +3,13 @@ set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 find_package(RulesForge CONFIG REQUIRED PATHS "${RulesForge_ROOT}")
 
-file(GLOB_RECURSE SOURCE_FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/*.c
-    ${CMAKE_CURRENT_SOURCE_DIR}/include/*.h)
+cmake_add_source(SOURCE_FILES RECURSE PATTERNS "*.c" "*.h")
 
 add_library(${TARGET_NAME_LIB} STATIC ${SOURCE_FILES})
 
 cmake_config_target(
   ${TARGET_NAME_LIB}
-  FOLDER modules/rules_forge
-  NO_INSTALL)
+  FOLDER modules/rules_forge)
 
 target_include_directories(${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
@@ -25,6 +22,7 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME}
   FOLDER modules/rules_forge
+  OUTPUT_NAME tbs_rules_forge
   PLUGIN)
 
 target_include_directories(${TARGET_NAME}
@@ -32,6 +30,18 @@ target_include_directories(${TARGET_NAME}
 
 target_link_libraries(${TARGET_NAME}
   PRIVATE exprtk RulesForge::rule_forge)
+
+if(WIN32)
+  add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:RulesForge::rule_forge> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboUtils::DataBind> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboUtils::Parser> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboUtils::Core> $<TARGET_FILE_DIR:${TARGET_NAME}>)
+endif()
 
 set_target_properties(${TARGET_NAME}
   PROPERTIES

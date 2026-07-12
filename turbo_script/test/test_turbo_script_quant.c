@@ -448,11 +448,11 @@ spec("turbo_script_quant") {
     }
   }
 
-  describe("TA Indicators and JSON Vectors") {
+  describe("TA Indicators and DataBind Vectors") {
     it("should compute SMA and RSI on mocked Polymarket data") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
 
       // Mocked Polymarket history JSON (array of objects with 'p' field)
       const char *mock_history = "["
@@ -461,13 +461,16 @@ spec("turbo_script_quant") {
                                  "]";
       ts_bind_str(ctx, "history_json", mock_history);
 
-      const char *script = "prices = "
-                           "json.to_vec(history_json, \"p\");"
+      const char *script = "codec = data_bind.create_from_text("
+                           "\"message Price { double p; }\");"
+                           "rows = data_bind.json_all(codec, \"Price\", history_json);"
+                           "prices = rows.stream().map(r => r.p).toVector();"
                            "sma3 = ta.sma(prices, 3);"
                            "rsi5 = ta.rsi(prices, 5);"
                            "last_price = prices[9];"
                            "last_sma = sma3[9];"
                            "last_rsi = rsi5[9];"
+                           "data_bind.close(codec);"
                            "res = last_sma;";
 
       int run_res = turbo_script_run(ctx, script);

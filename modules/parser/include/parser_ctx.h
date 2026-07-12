@@ -1,6 +1,6 @@
 /**
  * @file parser_ctx.h
- * @brief Parser module context - CSV/JSON/XML parsing via TurboUtils::Parser
+ * @brief Parser module context for configuration and command-line parsing.
  */
 #ifndef PARSER_CTX_H
 #define PARSER_CTX_H
@@ -13,22 +13,10 @@
 extern "C" {
 #endif
 
-typedef struct DataBind DataBind;
-
-#define PARSER_MAX_DOCS 16
-#define PARSER_MAX_SCHEMAS 16
-#define PARSER_MAX_JSON_DOCS 16
-
 /**
  * @brief Parser module context
  */
 typedef struct parser_ctx_s {
-    turbo_csv_doc_t *csv_docs[PARSER_MAX_DOCS];
-    char **csv_header_names[PARSER_MAX_DOCS];
-    size_t csv_header_counts[PARSER_MAX_DOCS];
-    json_value_t *json_docs[PARSER_MAX_JSON_DOCS];
-    struct turbo_node_s *schemas[PARSER_MAX_SCHEMAS];
-    DataBind *schema_codecs[PARSER_MAX_SCHEMAS];
     char error_msg[256];
 } parser_ctx_t;
 

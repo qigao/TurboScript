@@ -5,9 +5,8 @@ handle-based module namespace.
 
 ## Dependency Direction
 
-`rules_forge_plugin` links to `RulesForge::RulesForge`. RulesForge may link to
-`TurboScript::DataBind` and may dynamically load TurboScript plugins through
-`ruleforge_kb_load_ts_plugin()`. `tbe/data_bind` does not depend on RulesForge.
+`rules_forge_plugin` links to `RulesForge::rule_forge`. RulesForge uses DataBind
+for schema-bound fact input. `tbe/data_bind` does not depend on RulesForge.
 
 RulesForge's C++ RHS adapter is internal to RulesForge. It loads the
 TurboScript runtime through RulesForge's runtime loader and does not require
@@ -30,35 +29,29 @@ let kb = rules_forge.kb_create();
 let status = rules_forge.kb_load(kb, rules_text);
 status = rules_forge.kb_load_file(kb, "rules/order.rfl");
 status = rules_forge.kb_load_decision_table_csv(kb, csv_text);
-status = rules_forge.kb_load_ts_plugin(kb, "math_ext_plugin");
 rules_forge.kb_destroy(kb);
 ```
-
-`rules_forge.kb_load_ts_plugin(kb, path)` delegates to RulesForge and registers
-TurboScript/exprtk plugin functions for RulesForge RHS invocation.
 
 ## Sessions and Facts
 
 ```javascript
 let session = rules_forge.session_create(kb);
 
-let fact = rules_forge.session_add_fact_json(
-    session, "Order", "{\"qty\": 10, \"active\": true}");
-let fact = rules_forge.session_add_fact_json_path(
-    session, "Order", "fixtures/order.json");
-
 let bound = rules_forge.session_add_fact_json_schema(
     session, "schemas/order.tbe", "Order", json_text);
+let first = rules_forge.session_add_fact_json_path_schema(
+    session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
+let selected = rules_forge.session_add_facts_json_path_schema(
+    session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
 let bound = rules_forge.session_add_fact_json_schema_path(
     session, "schemas/order.tbe", "Order", "fixtures/order.json");
 
 let csv_result = rules_forge.session_add_facts_csv_schema(
     session, "schemas/order.tbe", "Order", csv_text);
+let west_orders = rules_forge.session_add_facts_csv_path_schema(
+    session, "schemas/order.tbe", "Order", csv_text, "region == \"west\"");
 let csv_result = rules_forge.session_add_facts_csv_schema_path(
     session, "schemas/order.tbe", "Order", "fixtures/orders.csv");
-let csv_result = rules_forge.session_add_facts_csv_path(
-    session, "Order", "fixtures/orders.csv");
-
 let xml_result = rules_forge.session_add_facts_xml_schema(
     session, "schemas/order.tbe", "Order", xml_text, "/orders/order");
 let xml_result = rules_forge.session_add_facts_xml_schema_path(
@@ -74,11 +67,91 @@ rules_forge.session_destroy(session);
 { status: 0, fired: 3 }
 ```
 
-CSV/XML batch insertion returns:
+Multi-fact JSONPath, CSV/CSVPath, and XML insertion returns:
 
 ```javascript
 { status: 0, loaded: 2, facts: [0, 1] }
 ```
+
+RulesForge 0.5 requires schema-bound structured input. The previous
+`session_add_fact_json`, `session_add_facts_csv`, and `kb_load_ts_plugin`
+entry points are no longer exposed because the upstream C API removed them.
+
+## Stateful DataBind Streams
+
+Create an incremental stream, feed memory chunks or a file, finish the batch,
+then destroy the stream handle:
+
+```javascript
+let input = rules_forge.stream_json_all_create(
+    session, "schemas/order.tbe", "Order");
+rules_forge.stream_feed(input, json_chunk_1);
+rules_forge.stream_feed(input, json_chunk_2);
+let loaded = rules_forge.stream_finish(input);
+rules_forge.stream_destroy(input);
+```
+
+Constructors are available for JSON, JSON arrays and paths, CSV all/path, and
+XML root/path-all. `stream_finish` returns the same
+`{ status, loaded, facts }` shape as synchronous batch insertion. Streams are
+owned by their stateful session and must be used on the same thread.
+
+## Continuous Sessions
+
+Continuous sessions process schema-bound events with bounded event-time state:
+
+```javascript
+let continuous = rules_forge.continuous_create(kb, {
+    max_active_events: 10000,
+    allowed_lateness_ms: 5000,
+    output_fact_types: ["Alert"]
+});
+let step = rules_forge.continuous_push_json_schema(
+    continuous, "schemas/order.tbe", "Order", "event-1", "orders",
+    1720000000000, json_text);
+let metrics = rules_forge.continuous_metrics(continuous);
+rules_forge.continuous_acknowledge(continuous, step.batch_id);
+rules_forge.continuous_result_destroy(step.result);
+rules_forge.continuous_destroy(continuous);
+```
+
+Path-selected JSON, CSV, and XML batches read event metadata from bound fields:
+
+```javascript
+let step = rules_forge.continuous_push_json_path_schema(
+    continuous, "schemas/event.tbe", "Event", envelope_json, "$.events[*]",
+    "event_id", "event_time", "events");
+
+let input = rules_forge.continuous_stream_json_path_create(
+    continuous, "schemas/event.tbe", "Event", "$.events[*]",
+    "event_id", "event_time", "events");
+rules_forge.continuous_stream_feed(input, chunk);
+let streamed_step = rules_forge.continuous_stream_finish(input);
+rules_forge.continuous_stream_destroy(input);
+```
+
+Equivalent `continuous_push_csv_path_schema`, `continuous_push_xml_path_schema`,
+`continuous_stream_csv_path_create`, and `continuous_stream_xml_path_create`
+functions use the same metadata-field and entry-point arguments.
+
+The config starts from RulesForge defaults; supplied fields override only the
+documented bounded values. Push, watermark, drain, and continuous stream finish
+return an object containing `status`, `result`, `step_status`, `batch_id`,
+`rules_fired`, `events_expired`, watermark fields, and `output_count`.
+
+`continuous_result_output(result, index)` returns a fact handle borrowed from
+that result. Destroying the result invalidates all such handles. Continuous
+JSON streams use `continuous_stream_json_create`, `continuous_stream_feed`,
+`continuous_stream_feed_file`, `continuous_stream_finish`, and
+`continuous_stream_destroy`.
+
+DataBind callbacks are synchronous and records are borrowed only for callback
+duration. RulesForge copies each callback record into its own pending event;
+`feed` never mutates the continuous session. `continuous_stream_finish`
+atomically submits the complete pending batch. A failed feed or invalid metadata
+clears the pending batch, so subsequent finish cannot partially commit it.
+Files, sockets, HTTP clients, and brokers remain external byte-chunk producers;
+neither DataBind nor this plugin creates a thread, event loop, or network task.
 
 ## Queries and Field Access
 

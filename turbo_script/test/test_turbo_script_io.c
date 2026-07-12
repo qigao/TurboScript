@@ -60,11 +60,15 @@ spec("turbo_script_io") {
     it("should import json module and use dot notation") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       check_not_null(ctx);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
 
       const char *script = ""
-                           "js = \"{\\\"name\\\": \\\"alice\\\", \\\"score\\\": 99}\"; "
-                           "val = json.query(js, \"$.score\");";
+                           "schema = \"message Score { string name; uint32 score; }\"; "
+                           "codec = data_bind.create_from_text(schema); "
+                           "js = \"{\\\"name\\\":\\\"alice\\\",\\\"score\\\":99}\"; "
+                           "record = data_bind.json(codec, \"Score\", js); "
+                           "val = record.score; "
+                           "data_bind.close(codec);";
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("JSON dot Error: %s\n", turbo_script_get_error(ctx));
@@ -92,494 +96,32 @@ spec("turbo_script_io") {
     }
   }
 
-  describe("CSV Module") {
-    it("should count rows and columns") {
+  describe("Data Bind Module") {
+    it("should bind and validate JSON and CSV through data_bind") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name_s,age_n,city_s\\nAlice,30,NYC\\nBob,25,LA\\nCharlie,35,SF\";"
-                           "var r = csv.rows(data);"
-                           "var c = csv.cols(data);";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV rows/cols Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "r"), 3.0, 0.1); // data rows only (header separated)
-      check_float_eq(ts_get_num(ctx, "c"), 3.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should get cell value as string") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name,score\\nAlice,95\\nBob,87\";"
-                           "var val = csv.get(data, 0, 0);";
-
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      const char *val = ts_get_str(ctx, "val");
-      check_not_null(val);
-      check_int_eq(strcmp(val, "Alice"), 0);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should get cell value as number") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name,score\\nAlice,95\\nBob,87\";"
-                           "var val = csv.ts_get_num(data, 1, 1);";
-
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "val"), 87.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind CSV rows through a TBE schema") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
+      check_not_null(ctx);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
 
       const char *script =
           "var schema = \"message Trade { double price; uint32 qty; bool active; string symbol; }\";"
-          "var data = \"symbol,price,qty,active\\nAAPL,123.5,10,1\\nMSFT,20,3,0\";"
-          "var trade = csv.bind(schema, data, 0, \"Trade\");"
-          "var total = trade.price * trade.qty + trade.active;"
-          "var symbol_len = trade.symbol.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "total"), 1236.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "symbol_len"), 4.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind all CSV rows through a TBE schema") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"message Trade { double price; uint32 qty; bool active; string symbol; }\";"
-          "var data = \"symbol,price,qty,active\\nAAPL,10.5,2,1\\nMSFT,20,3,0\";"
-          "var rows = csv.bind_all(schema, data, \"Trade\");"
-          "var first = rows[0];"
-          "var second = rows[1];"
-          "var n = rows.length();"
-          "var total = first.price * first.qty + second.price * second.qty;";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV bind_all Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 81.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should reuse parsed schema handles for CSV binding") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema_text = \"message Trade { double price; uint32 qty; string symbol; }\";"
-          "var schema_id = schema.parse(schema_text);"
-          "var data = \"symbol,price,qty\\nAAPL,10.5,2\\nMSFT,20,3\";"
-          "var trade = csv.bind_schema(schema_id, data, 0, \"Trade\");"
-          "var rows = csv.bind_all_schema(schema_id, data, \"Trade\");"
-          "var close_rc = schema.close(schema_id);"
+          "var codec = data_bind.create_from_text(schema);"
+          "var json_text = \"{\\\"price\\\":10.5,\\\"qty\\\":2,\\\"active\\\":true,\\\"symbol\\\":\\\"AAPL\\\"}\";"
+          "var csv_text = \"symbol,price,qty,active\\nAAPL,10.5,2,true\\nMSFT,20,3,false\";"
+          "var trade = data_bind.json(codec, \"Trade\", json_text);"
+          "var rows = data_bind.csv_all(codec, \"Trade\", csv_text);"
+          "var json_ok = data_bind.validate_json(codec, \"Trade\", json_text);"
+          "var csv_ok = data_bind.validate_csv(codec, \"Trade\", csv_text);"
           "var total = trade.price * trade.qty + rows[1].price * rows[1].qty;"
-          "var n = rows.length();";
+          "var count = rows.length();"
+          "data_bind.close(codec);";
 
       int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV bind_schema Error: %s\n", turbo_script_get_error(ctx));
+      if (res != 0) printf("Data bind Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "schema_id") >= 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "close_rc"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "json_ok"), 1.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "csv_ok"), 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "total"), 81.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind nested CSV composites and arrays through a TBE schema") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"composite Header { uint32 venue; uint32 seq; } "
-          "composite Point { uint32 x; uint32 y; } "
-          "message Trade { Header header; Point[2] points; uint32[2] levels; "
-          "double price; string symbol; }\";"
-          "var data = \"symbol,price,header.venue,header.seq,points[0].x,points[0].y,"
-          "points[1].x,points[1].y,levels[0],levels[1]\\n"
-          "AAPL,5.5,7,8,1,2,3,4,10,20\";"
-          "var trade = csv.bind(schema, data, 0, \"Trade\");"
-          "var score = trade.header.venue + trade.header.seq + trade.points[1].x + "
-          "trade.levels[0] + trade.levels[1] + trade.price;"
-          "var point_count = trade.points.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV nested bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "score"), 53.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "point_count"), 2.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind emit and validate CSV groups through TBE schemas") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"group Level { uint64 price; uint32 qty; } "
-          "message Book { uint32 seq; group<Level> bids; }\";"
-          "var good = \"seq,bids[0].price,bids[0].qty,bids[1].price,bids[1].qty\\n"
-          "7,100,10,200,20\";"
-          "var bad = \"seq,bids[0].price,bids[0].qty,bids[1].price,bids[1].qty\\n"
-          "7,100,10,200,bad\";"
-          "var book = csv.bind(schema, good, 0, \"Book\");"
-          "var ok = csv.validate(schema, good, \"Book\");"
-          "var bad_detail = csv.validate_ex(schema, bad, \"Book\");"
-          "var emitted = csv.emit(schema, book, \"Book\");"
-          "var rebound = csv.bind(schema, emitted, 0, \"Book\");"
-          "var n = book.bids.length();"
-          "var total = book.seq + book.bids[0].qty + book.bids[1].price;"
-          "var rebound_total = rebound.seq + rebound.bids[0].qty + rebound.bids[1].price;"
-          "var bad_ok = bad_detail.ok;"
-          "var bad_path_len = bad_detail.path.length();"
-          "var bad_message_len = bad_detail.message.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV group bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 217.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rebound_total"), 217.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_ok"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_path_len"), 11.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind emit and validate CSV list and set containers") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"message Containers { list<uint32> values; set<string> tags; }\";"
-          "var good = \"values[0],values[1],values[2],tags[0],tags[1]\\n10,20,30,a,bb\";"
-          "var bad = \"values[0],values[1],tags[0]\\n10,bad,a\";"
-          "var row = csv.bind(schema, good, 0, \"Containers\");"
-          "var ok = csv.validate(schema, good, \"Containers\");"
-          "var bad_detail = csv.validate_ex(schema, bad, \"Containers\");"
-          "var emitted = csv.emit(schema, row, \"Containers\");"
-          "var rebound = csv.bind(schema, emitted, 0, \"Containers\");"
-          "var total = row.values[0] + row.values[2] + row.tags[1].length();"
-          "var rebound_total = rebound.values[0] + rebound.values[2] + rebound.tags[1].length();"
-          "var value_count = row.values.length();"
-          "var tag_count = row.tags.length();"
-          "var bad_ok = bad_detail.ok;"
-          "var bad_path_len = bad_detail.path.length();"
-          "var bad_message_len = bad_detail.message.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV list/set bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 42.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rebound_total"), 42.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "value_count"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tag_count"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_ok"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_path_len"), 9.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should emit CSV from schema-bound values") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"composite Header { uint32 venue; uint32 seq; } "
-          "composite Point { uint32 x; uint32 y; } "
-          "message Trade { Header header; Point[2] points; uint32[2] levels; "
-          "double price; string symbol; }\";"
-          "var js = \"[{\\\"symbol\\\":\\\"AAPL\\\",\\\"price\\\":5.5,"
-          "\\\"header\\\":{\\\"venue\\\":7,\\\"seq\\\":8},"
-          "\\\"points\\\":[{\\\"x\\\":1,\\\"y\\\":2},{\\\"x\\\":3,\\\"y\\\":4}],"
-          "\\\"levels\\\":[10,20]}]\";"
-          "var rows = json.bind_all(schema, js, \"Trade\");"
-          "var emitted = csv.emit(schema, rows, \"Trade\");"
-          "var rebound = csv.bind_all(schema, emitted, \"Trade\");"
-          "var trade = rebound[0];"
-          "var score = trade.header.venue + trade.header.seq + trade.points[1].x + "
-          "trade.levels[0] + trade.levels[1] + trade.price;"
-          "var n = rebound.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV emit Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 53.5, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should emit CSV record lists with merged dynamic headers") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"enum Side { Buy = 1; Sell = 2; } "
-          "flags Permissions { Read; Write; Execute; } "
-          "message Success { uint32 code; } "
-          "union Choice { Side side; Permissions perms; Success success; } "
-          "group Level { uint64 price; uint32 qty; } "
-          "message Batch { uint32 seq; Choice choice; group<Level> bids; "
-          "map<string,int32> attrs; list<Choice> choices; }\";"
-          "var js = \"["
-          "{\\\"seq\\\":1,\\\"bids\\\":[{\\\"price\\\":100,\\\"qty\\\":10},"
-          "{\\\"price\\\":200,\\\"qty\\\":20}],\\\"attrs\\\":{\\\"x\\\":3},"
-          "\\\"choice\\\":{\\\"side\\\":\\\"Buy\\\"},"
-          "\\\"choices\\\":[{\\\"side\\\":\\\"Buy\\\"}]},"
-          "{\\\"seq\\\":2,\\\"bids\\\":[{\\\"price\\\":300,\\\"qty\\\":30}],"
-          "\\\"attrs\\\":{\\\"y\\\":4},\\\"choice\\\":{\\\"success\\\":{\\\"code\\\":200}},"
-          "\\\"choices\\\":[{\\\"success\\\":{\\\"code\\\":201}},"
-          "{\\\"perms\\\":\\\"Read|Execute\\\"}]}]\";"
-          "var rows = json.bind_all(schema, js, \"Batch\");"
-          "var emitted = csv.emit(schema, rows, \"Batch\");"
-          "var ok = csv.validate(schema, emitted, \"Batch\");"
-          "var detail = csv.validate_ex(schema, emitted, \"Batch\");"
-          "var rebound = csv.bind_all(schema, emitted, \"Batch\");"
-          "var first = rebound[0];"
-          "var second = rebound[1];"
-          "var counts = rebound.length() + first.bids.length() + second.bids.length() + "
-          "first.choices.length() + second.choices.length();"
-          "var total = first.seq + first.bids[1].qty + first.attrs.x + first.choice.side + "
-          "first.choices[0].side + second.seq + second.bids[0].qty + second.attrs.y + "
-          "second.choice.success.code + second.choices[0].success.code + second.choices[1].perms;"
-          "var detail_ok = detail.ok;";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV merged dynamic emit Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "detail_ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "counts"), 8.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 468.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should validate CSV against TBE schemas") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema_text = \"composite Header { uint32 venue; uint32 seq; } "
-          "message Trade { Header header; double price; uint32 qty; string symbol; }\";"
-          "var schema_id = schema.parse(schema_text);"
-          "var good = \"symbol,price,qty,header.venue,header.seq\\nAAPL,10.5,2,7,8\";"
-          "var missing = \"symbol,price,qty,header.venue\\nAAPL,10.5,2,7\";"
-          "var bad = \"symbol,price,qty,header.venue,header.seq\\nAAPL,bad,2,7,8\";"
-          "var ok = csv.validate_schema(schema_id, good, \"Trade\");"
-          "var missing_ok = csv.validate_schema(schema_id, missing, \"Trade\");"
-          "var bad_ok = csv.validate(schema_text, bad, \"Trade\");"
-          "var missing_detail = csv.validate_ex_schema(schema_id, missing, \"Trade\");"
-          "var bad_detail = csv.validate_ex(schema_text, bad, \"Trade\");"
-          "var missing_path_len = missing_detail.path.length();"
-          "var missing_message_len = missing_detail.message.length();"
-          "var bad_path_len = bad_detail.path.length();"
-          "var bad_message_len = bad_detail.message.length();"
-          "var close_rc = schema.close(schema_id);";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV validate Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "missing_ok"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_ok"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "missing_path_len"), 10.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_path_len"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "missing_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "close_rc"), 0.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind emit and validate CSV maps through TBE schemas") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema_text = \"message Attrs { uint32 seq; map<string,int32> attrs; }\";"
-          "var good = \"seq,attrs.x,attrs.y\\n7,30,40\";"
-          "var bad = \"seq,attrs.x,attrs.y\\n7,30,bad\";"
-          "var row = csv.bind(schema_text, good, 0, \"Attrs\");"
-          "var ok = csv.validate(schema_text, good, \"Attrs\");"
-          "var bad_detail = csv.validate_ex(schema_text, bad, \"Attrs\");"
-          "var emitted = csv.emit(schema_text, row, \"Attrs\");"
-          "var rebound = csv.bind(schema_text, emitted, 0, \"Attrs\");"
-          "var total = row.seq + row.attrs.x + row.attrs.y;"
-          "var rebound_total = rebound.seq + rebound.attrs.x + rebound.attrs.y;"
-          "var bad_ok = bad_detail.ok;"
-          "var bad_path_len = bad_detail.path.length();"
-          "var bad_message_len = bad_detail.message.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV map bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 77.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rebound_total"), 77.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_ok"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_path_len"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_message_len") > 0.0 ? 1.0 : 0.0, 1.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should bind CSV maps and groups from sanitized flattened columns") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var schema = \"group Level { uint64 price; uint32 qty; } "
-          "message Book { uint32 seq; group<Level> bids; map<string,int32> attrs; }\";"
-          "var data = \"seq,bids_0_price,bids_0_qty,bids_1_price,bids_1_qty,attrs_x,attrs_y\\n"
-          "7,100,10,200,20,3,4\";"
-          "var book = csv.bind(schema, data, 0, \"Book\");"
-          "var ok = csv.validate(schema, data, \"Book\");"
-          "var total = book.seq + book.bids[0].qty + book.bids[1].price + book.attrs.x + book.attrs.y;"
-          "var bid_count = book.bids.length();";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV sanitized bind Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "ok"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 224.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bid_count"), 2.0, 0.001);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should extract column as numeric vector by index") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var data = "
-          "\"ticker,close,volume\\nAAPL,150.5,1000\\nGOOG,2800.0,500\\nMSFT,300.25,750\";"
-          "var prices = csv.col(data, 1);"
-          "var n = vec.len(prices);"
-          "var total = vec.sum(prices);";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV col Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 3.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "total"), 3250.75, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should extract column as numeric vector by name") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var data = "
-          "\"ticker,close,volume\\nAAPL,150.5,1000\\nGOOG,2800.0,500\\nMSFT,300.25,750\";"
-          "var prices = csv.col(data, \"close\");"
-          "var avg_price = vec.avg(prices);";
-
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "avg_price"), 1083.583, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should run csv.col into TA pipeline") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = \"date,close\\n"
-                           "2024-01-01,100\\n2024-01-02,102\\n2024-01-03,104\\n"
-                           "2024-01-04,103\\n2024-01-05,105\\n2024-01-06,107\\n"
-                           "2024-01-07,109\\n2024-01-08,108\\n2024-01-09,110\\n"
-                           "2024-01-10,112\";"
-                           "var close = csv.col(data, \"close\");"
-                           "var sma3 = ta.sma(close, 3);"
-                           "var last = close[9];"
-                           "var last_sma = sma3[9];";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV TA Pipeline Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "last"), 112.0, 0.1);
-      check_float_gt(ts_get_num(ctx, "last_sma"), 0.0);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should filter rows and count matches") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name_s,score_n\\nAlice,95\\nBob,60\\nCharlie,85\\nDave,45\";"
-                           "var n = csv.filter_count(data, \"score > 70\");";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV filter_count Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should filter rows and return matching content") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name_s,score_n\\nAlice,95\\nBob,60\\nCharlie,85\";"
-                           "var result = csv.filter(data, \"score > 70\");"
-                           "var has_data = (vec.len(result) > 0);";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("CSV filter Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "has_data"), 1.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should work via import mechanism") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-
-      const char *script = ""
-                           "import(\"parser\");"
-                           "var data = \"x,y\\n1,2\\n3,4\\n5,6\";"
-                           "var xs = csv.col(data, \"x\");"
-                           "var total = vec.sum(xs);";
-
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "total"), 9.0, 0.1);
+      check_float_eq(ts_get_num(ctx, "count"), 2.0, 0.001);
 
       turbo_script_free(ctx);
     }
@@ -600,59 +142,6 @@ spec("turbo_script_io") {
       check_int_eq(run_res, 0);
       check_float_eq(ts_get_num(ctx, "is_ok"), 1.0, 0.1);
       check_float_eq(ts_get_num(ctx, "has_headers"), 1.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-  }
-
-  describe("DSV Filter via Script API") {
-    it("should filter rows based on number column") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script =
-          "var data = "
-          "\"name_s,age_n,role_s\\nAlice,30,dev\\nBob,40,manager\\nCharlie,25,intern\";"
-          "var result = csv.filter(data, \"age > 30\");"
-          "var n = csv.filter_count(data, \"age > 30\");";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("DSV filter Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 1.0, 0.1);
-
-      const char *result = ts_get_str(ctx, "result");
-      check_not_null(result);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should filter rows based on string column") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = "
-                           "\"name_s,score_n\\nAlice,10\\nBob,5\";"
-                           "var result = csv.filter(data, \"name == \\\"Alice\\\"\");"
-                           "var n = csv.filter_count(data, \"name == \\\"Alice\\\"\");";
-
-      int res = turbo_script_run(ctx, script);
-      if (res != 0) printf("DSV string filter Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 1.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-
-    it("should count zero matches correctly") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
-
-      const char *script = "var data = \"a_n,b_n\\n1,2\\n3,4\";"
-                           "var n = csv.filter_count(data, \"a + b == 99\");";
-
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 0.0, 0.1);
 
       turbo_script_free(ctx);
     }
@@ -756,22 +245,20 @@ spec("turbo_script_io") {
     }
   }
 
-  describe("CSV Write") {
-    it("should write and read back CSV file") {
+  describe("Structured Text Write") {
+    it("should write and read back CSV text with IO functions") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-      check_int_eq(turbo_script_load_plugin(ctx, "parser"), 0);
 
       int r1 = turbo_script_run(ctx, "var data = \"name,age,role\\nAlice,30,dev\\nBob,40,mgr\";"
-                                     "var res = csv.write(\"_test_csv_write.csv\", data);"
+                                     "var res = io.write_file(\"_test_csv_write.csv\", data);"
                                      "var content = read_file(\"_test_csv_write.csv\");"
-                                     "var rows = csv.rows(data);"
                                      "file_remove(\"_test_csv_write.csv\");");
       if (r1 != 0) printf("CSV write Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(r1, 0);
       check_float_eq(ts_get_num(ctx, "res"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "rows"), 2.0, 0.1);
       const char *content = ts_get_str(ctx, "content");
       check_not_null(content);
+      check_str_eq(content, "name,age,role\nAlice,30,dev\nBob,40,mgr");
 
       turbo_script_free(ctx);
     }
@@ -1092,102 +579,48 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *line_text = " a \nbb\n\nccc";
       const char *token_text = "AAPL,MSFT,TSLA";
-      const char *json_text =
-          "{\"orders\":[{\"price\":10,\"qty\":2},{\"price\":3,\"qty\":5},{\"price\":8,\"qty\":1}]}";
-      const char *csv_text = "price,qty\n10,2\n3,5\n8,1\n";
-      const char *csv_no_header_text = "10,2\n3,5\n8,1\n";
-      const char *xml_text =
-          "<orders><order id=\"a\"><price>10</price></order>"
-          "<order id=\"b\"><price>3</price></order>"
-          "<order id=\"c\"><price>8</price></order></orders>";
       char line_path[96];
       char token_path[96];
-      char json_path[96];
-      char csv_path[96];
-      char csv_no_header_path[96];
-      char xml_path[96];
-      char script[4096];
+      char script[2048];
       turbo_fs_buf_t buf;
       int res;
 
       ts_test_make_name(line_path, sizeof(line_path), "_test_stream_file_lines", ".txt");
       ts_test_make_name(token_path, sizeof(token_path), "_test_stream_file_tokens", ".txt");
-      ts_test_make_name(json_path, sizeof(json_path), "_test_stream_file_json", ".json");
-      ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_file_csv", ".csv");
-      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path),
-                        "_test_stream_file_csv_no_header", ".csv");
-      ts_test_make_name(xml_path, sizeof(xml_path), "_test_stream_file_xml", ".xml");
 
       buf = turbo_fs_buf_init((char *)line_text, strlen(line_text));
       check_int_eq(turbo_fs_write_file(line_path, &buf), 0);
       buf = turbo_fs_buf_init((char *)token_text, strlen(token_text));
       check_int_eq(turbo_fs_write_file(token_path, &buf), 0);
-      buf = turbo_fs_buf_init((char *)json_text, strlen(json_text));
-      check_int_eq(turbo_fs_write_file(json_path, &buf), 0);
-      buf = turbo_fs_buf_init((char *)csv_text, strlen(csv_text));
-      check_int_eq(turbo_fs_write_file(csv_path, &buf), 0);
-      buf = turbo_fs_buf_init((char *)csv_no_header_text, strlen(csv_no_header_text));
-      check_int_eq(turbo_fs_write_file(csv_no_header_path, &buf), 0);
-      buf = turbo_fs_buf_init((char *)xml_text, strlen(xml_text));
-      check_int_eq(turbo_fs_write_file(xml_path, &buf), 0);
 
       snprintf(script, sizeof(script),
-          "var line_total = stream.file(\"%s\")"
+          "var line_total = stream.text(io.read_file(\"%s\"))"
           "  .lines()"
           "  .map(line => line.trim())"
           "  .filter(line => line.length() > 0)"
           "  .map(line => line.length())"
           "  .reduce(0, (acc, n) => acc + n); "
-          "var token_total = stream.file(\"%s\")"
-          "  .text()"
+          "var token_total = stream.text(io.read_file(\"%s\"))"
           "  .split(\",\")"
           "  .map(sym => sym.length())"
           "  .reduce(0, (acc, n) => acc + n); "
-          "var json_total = stream.file(\"%s\")"
-          "  .json(\"$.orders[@.price > 5]\")"
-          "  .map(r => r.price * r.qty)"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_total = stream.file(\"%s\")"
-          "  .csv()"
-          "  .filter(r => to_num(r.price) > 5)"
-          "  .map(r => to_num(r.price) * to_num(r.qty))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_no_header_total = stream.file(\"%s\")"
-          "  .csv(0)"
-          "  .filter(r => to_num(r.c0) > 5)"
-          "  .map(r => to_num(r.c0) * to_num(r.c1))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var xml_total = stream.file(\"%s\")"
-          "  .xml(\"//price\")"
-          "  .filter(n => to_num(n.text) > 5)"
-          "  .map(n => to_num(n.text))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var attr_count = stream.file(\"%s\").xml(\"//@id\").count(); "
-          "var score = line_total + token_total + json_total + csv_total + "
-          "csv_no_header_total + xml_total + attr_count;",
-          line_path, token_path, json_path, csv_path, csv_no_header_path, xml_path, xml_path);
+          "var score = line_total + token_total;",
+          line_path, token_path);
 
       res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style file source stream Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "line_total"), 6.0, 0.001);
       check_float_eq(ts_get_num(ctx, "token_total"), 12.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "xml_total"), 18.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 123.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 18.0, 0.001);
       turbo_fs_unlink(line_path);
       turbo_fs_unlink(token_path);
-      turbo_fs_unlink(json_path);
-      turbo_fs_unlink(csv_path);
-      turbo_fs_unlink(csv_no_header_path);
-      turbo_fs_unlink(xml_path);
       turbo_script_free(ctx);
     }
 
     it("should support XML file streams through MIR JIT") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
       const char *xml =
           "<orders><order id=\"a\"><price>10</price></order>"
           "<order id=\"b\"><price>3</price></order>"
@@ -1202,117 +635,98 @@ spec("turbo_script_io") {
       check_int_eq(turbo_fs_write_file(xml_path, &buf), 0);
 
       snprintf(script, sizeof(script),
-          "var total = stream.file(\"%s\").xml(\"//price\")"
-          "  .filter(n => to_num(n.text) > 5)"
-          "  .map(n => to_num(n.text))"
+          "var codec = data_bind.create_from_text(\"message Order { double price; }\"); "
+          "var total = data_bind.xml_path_all_stream_path(codec, \"Order\", \"%s\", \"//order\").stream()"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var attr_count = stream.file(\"%s\").xml(\"//@id\").count(); "
-          "var score = total + attr_count;",
-          xml_path, xml_path);
+          "data_bind.close(codec); "
+          "var score = total;",
+          xml_path);
 
       res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style XML JIT stream Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "total"), 18.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 21.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 18.0, 0.001);
       turbo_fs_unlink(xml_path);
       turbo_script_free(ctx);
     }
 
     it("should support Java-style streams from json and csv files") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
       char json_path[96];
       char csv_path[96];
-      char csv_no_header_path[96];
       char script[3072];
       int res;
       ts_test_make_name(json_path, sizeof(json_path), "_test_stream_json", ".json");
       ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_csv", ".csv");
-      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path), "_test_stream_csv_no_header", ".csv");
       snprintf(script, sizeof(script),
           "write_file(\"%s\", \"[{\\\"price\\\":10,\\\"qty\\\":2},{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]\"); "
           "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
-          "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
-          "var json_total = stream.file(\"%s\").json()"
+          "var codec = data_bind.create_from_text(\"message Order { double price; uint32 qty; }\"); "
+          "var json_total = data_bind.json_all_stream_path(codec, \"Order\", \"%s\").stream()"
           "  .filter(r => r.price > 5)"
           "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_total = stream.file(\"%s\").csv()"
-          "  .filter(r => to_num(r.price) > 5)"
-          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "var csv_total = data_bind.csv_all_stream_path(codec, \"Order\", \"%s\").stream()"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_no_header_total = stream.file(\"%s\").csv(0)"
-          "  .filter(r => to_num(r.c0) > 5)"
-          "  .map(r => to_num(r.c0) * to_num(r.c1))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var line_count = stream.file(\"%s\").lines().filter(line => line.length() > 0).count(); "
-          "var score = json_total + csv_total + csv_no_header_total + line_count;",
-          json_path, csv_path, csv_no_header_path, json_path, csv_path,
-          csv_no_header_path, csv_path);
+          "data_bind.close(codec); "
+          "var line_count = stream.text(io.read_file(\"%s\")).lines().filter(line => line.length() > 0).count(); "
+          "var score = json_total + csv_total + line_count;",
+          json_path, csv_path, json_path, csv_path, csv_path);
       res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style file stream Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
       check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
       check_float_eq(ts_get_num(ctx, "line_count"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 88.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 60.0, 0.001);
       turbo_fs_unlink(json_path);
       turbo_fs_unlink(csv_path);
-      turbo_fs_unlink(csv_no_header_path);
       turbo_script_free(ctx);
     }
 
     it("should support expression filters and json path stream sources") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
       char json_path[96];
       char csv_path[96];
-      char csv_no_header_path[96];
       char script[4096];
       int res;
       ts_test_make_name(json_path, sizeof(json_path), "_test_stream_path_json", ".json");
       ts_test_make_name(csv_path, sizeof(csv_path), "_test_stream_expr_csv", ".csv");
-      ts_test_make_name(csv_no_header_path, sizeof(csv_no_header_path),
-                        "_test_stream_expr_csv_no_header", ".csv");
       snprintf(script, sizeof(script),
           "write_file(\"%s\", \"{\\\"orders\\\":[{\\\"price\\\":10,\\\"qty\\\":2},"
           "{\\\"price\\\":3,\\\"qty\\\":5},{\\\"price\\\":8,\\\"qty\\\":1}]}\"); "
           "write_file(\"%s\", \"price,qty\\n10,2\\n3,5\\n8,1\\n\"); "
-          "write_file(\"%s\", \"10,2\\n3,5\\n8,1\\n\"); "
-          "var json_total = stream.file(\"%s\").json(\"$.orders[@.price > 5]\")"
+          "var codec = data_bind.create_from_text(\"message Order { double price; uint32 qty; }\"); "
+          "var json_total = data_bind.json_path_all_stream_path(codec, \"Order\", \"%s\", \"$.orders[@.price > 5]\").stream()"
           "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_total = stream.file(\"%s\").csv()"
-          "  .filterExpr(\"price > 5\")"
-          "  .map(r => to_num(r.price) * to_num(r.qty))"
+          "var csv_total = data_bind.csv_path_stream_path(codec, \"Order\", \"%s\", \"price > 5\").stream()"
+          "  .map(r => r.price * r.qty)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_alias_total = stream.file(\"%s\").csv()"
-          "  .where(\"price > 5\")"
-          "  .map(r => to_num(r.price) * to_num(r.qty))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var csv_no_header_total = stream.file(\"%s\").csv(0)"
-          "  .filterExpr(\"c0 > 5\")"
-          "  .map(r => to_num(r.c0) * to_num(r.c1))"
-          "  .reduce(0, (acc, v) => acc + v); "
-          "var score = json_total + csv_total + csv_alias_total + csv_no_header_total;",
-          json_path, csv_path, csv_no_header_path, json_path, csv_path, csv_path,
-          csv_no_header_path);
+          "data_bind.close(codec); "
+          "var score = json_total + csv_total;",
+          json_path, csv_path, json_path, csv_path);
       res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style stream expression filter Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "json_total"), 28.0, 0.001);
       check_float_eq(ts_get_num(ctx, "csv_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "csv_alias_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "csv_no_header_total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 112.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 56.0, 0.001);
       turbo_fs_unlink(json_path);
       turbo_fs_unlink(csv_path);
-      turbo_fs_unlink(csv_no_header_path);
       turbo_script_free(ctx);
     }
 
     it("should support Java-style streams from XML files") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
       char xml_path[96];
       char script[2048];
       int res;
@@ -1322,19 +736,21 @@ spec("turbo_script_io") {
           "write_file(\"%s\", \"<orders><order id=\\\"a\\\"><price>10</price></order>"
           "<order id=\\\"b\\\"><price>3</price></order>"
           "<order id=\\\"c\\\"><price>8</price></order></orders>\"); "
-          "var total = stream.file(\"%s\").xml(\"//price\")"
-          "  .filter(n => to_num(n.text) > 5)"
-          "  .map(n => to_num(n.text))"
+          "var codec = data_bind.create_from_text(\"message Order { double price; }\"); "
+          "var rows = data_bind.xml_path_all_stream_path(codec, \"Order\", \"%s\", \"//order\"); "
+          "var total = rows.stream()"
+          "  .filter(r => r.price > 5)"
+          "  .map(r => r.price)"
           "  .reduce(0, (acc, v) => acc + v); "
-          "var names = stream.file(\"%s\").xml(\"//@id\").map(n => n.text).toList(); "
-          "var score = total + names.length() + (names[1] == \"b\");",
-          xml_path, xml_path, xml_path);
+          "var score = total + rows.length(); "
+          "data_bind.close(codec);",
+          xml_path, xml_path);
 
       res = turbo_script_run(ctx, script);
       if (res != 0) printf("Java-style XML stream Error: %s\n", turbo_script_get_error(ctx));
       check_int_eq(res, 0);
       check_float_eq(ts_get_num(ctx, "total"), 18.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 22.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "score"), 21.0, 0.001);
       turbo_fs_unlink(xml_path);
       turbo_script_free(ctx);
     }
@@ -1866,4 +1282,3 @@ spec("turbo_script_io") {
 
   }
 }
- 
