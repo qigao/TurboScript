@@ -19,8 +19,9 @@ TurboScript modules to expose RulesForge C++ types.
 import("rules_forge");
 ```
 
-On Windows the plugin build copies `rule_forge.dll` and `data_bind.dll` beside
-`tbs_rules_forge.dll`.
+RulesForge is linked through `RulesForge::rule_forge` and loaded as a normal runtime
+dependency. Ensure the RulesForge runtime library is available in your process
+runtime search path for deployment.
 
 ## Knowledge Base
 
@@ -29,7 +30,7 @@ let kb = rules_forge.kb_create();
 let status = rules_forge.kb_load(kb, rules_text);
 status = rules_forge.kb_load_file(kb, "rules/order.rfl");
 status = rules_forge.kb_load_decision_table_csv(kb, csv_text);
-status = rules_forge.kb_load_ts_plugin(kb, "math_ext_plugin.dll");
+status = rules_forge.kb_load_ts_plugin(kb, "math_ext_plugin");
 rules_forge.kb_destroy(kb);
 ```
 
@@ -43,15 +44,25 @@ let session = rules_forge.session_create(kb);
 
 let fact = rules_forge.session_add_fact_json(
     session, "Order", "{\"qty\": 10, \"active\": true}");
+let fact = rules_forge.session_add_fact_json_path(
+    session, "Order", "fixtures/order.json");
 
 let bound = rules_forge.session_add_fact_json_schema(
     session, "schemas/order.tbe", "Order", json_text);
+let bound = rules_forge.session_add_fact_json_schema_path(
+    session, "schemas/order.tbe", "Order", "fixtures/order.json");
 
 let csv_result = rules_forge.session_add_facts_csv_schema(
     session, "schemas/order.tbe", "Order", csv_text);
+let csv_result = rules_forge.session_add_facts_csv_schema_path(
+    session, "schemas/order.tbe", "Order", "fixtures/orders.csv");
+let csv_result = rules_forge.session_add_facts_csv_path(
+    session, "Order", "fixtures/orders.csv");
 
 let xml_result = rules_forge.session_add_facts_xml_schema(
     session, "schemas/order.tbe", "Order", xml_text, "/orders/order");
+let xml_result = rules_forge.session_add_facts_xml_schema_path(
+    session, "schemas/order.tbe", "Order", "fixtures/orders.xml", "/orders/order");
 
 let fired = rules_forge.session_fire_all(session, -1);
 rules_forge.session_destroy(session);

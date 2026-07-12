@@ -33,6 +33,14 @@ For text binding, JSON/XML bytes fields read string text as the byte sequence an
 CSV bytes fields read the cell text. Binary parsing reads fixed or variable TBE
 bytes payloads directly.
 
+### `data_bind.json_path(handle, type_name, path)`
+### `data_bind.json_all_path(handle, type_name, path)`
+### `data_bind.csv_path(handle, type_name, path, row)`
+### `data_bind.csv_all_path(handle, type_name, path)`
+### `data_bind.xml_path(handle, type_name, path)`
+### `data_bind.xml_all_path(handle, type_name, path, xpath)`
+Same argument shape as the non-path variants, but reads payload from a file path.
+
 ### `data_bind.close(handle)`
 Frees the underlying schema JIT module and resources.
 * **Arguments**: `handle` (number)

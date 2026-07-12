@@ -1,5 +1,7 @@
 #include "rules_forge_ctx.h"
 
+#include <stdio.h>
+
 #define RFG_OK RULES_FORGE_OK
 #define RFG_INVALID RULES_FORGE_ERROR_INVALID_ARGUMENT
 
@@ -26,6 +28,37 @@ static int rfg_arg_string(rfg_ud_t *ud, exprtk_value_t v, char **out) {
     buf[v.data.string.len] = '\0';
     *out = buf;
     return 1;
+}
+
+static char *rfg_read_file_text(rfg_ud_t *ud, const char *path) {
+    FILE *f;
+    long size;
+    size_t nread;
+    mem_pool_t *pool;
+    char *buf;
+
+    if (!ud || !ud->env || !path) return NULL;
+    pool = ud->scratch ? ud->scratch : &ud->env->arena;
+    f = fopen(path, "rb");
+    if (!f) return NULL;
+    if (fseek(f, 0, SEEK_END) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    size = ftell(f);
+    if (size < 0 || fseek(f, 0, SEEK_SET) != 0) {
+        fclose(f);
+        return NULL;
+    }
+    buf = (char *)mem_alloc(pool, (size_t)size + 1);
+    if (!buf) {
+        fclose(f);
+        return NULL;
+    }
+    nread = fread(buf, 1, (size_t)size, f);
+    fclose(f);
+    buf[nread] = '\0';
+    return buf;
 }
 
 static int rfg_arg_bytes(exprtk_value_t v, const uint8_t **out, size_t *out_len) {
@@ -328,7 +361,7 @@ static exprtk_value_t fn_kb_load_ts_plugin(size_t argc, exprtk_value_t *args, vo
         return rfg_status(rfg_bad_args(ud, "rules_forge.kb_load_ts_plugin: expected (kb, plugin_path)"), ud);
     kb = rfg_get_kb(ud->ctx, h);
     if (!kb) return rfg_status(rfg_bad_args(ud, "rules_forge.kb_load_ts_plugin: invalid kb handle"), ud);
-    return rfg_status(ruleforge_kb_load_ts_plugin(kb, path), ud);
+    return rfg_status(ruleforge_kb_load_native_function_table(kb, path, NULL), ud);
 }
 
 static exprtk_value_t fn_session_create(size_t argc, exprtk_value_t *args, void *ud_) {
@@ -439,6 +472,37 @@ static exprtk_value_t fn_session_add_fact_json(size_t argc, exprtk_value_t *args
     return exprtk_val_num((double)fh);
 }
 
+static exprtk_value_t fn_session_add_fact_json_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t fact = NULL;
+    char *type, *path, *json;
+    ruleforge_status_t st;
+    int h, fh;
+    if (!ud || argc != 3 || !rfg_arg_int(args[0], &h) || !rfg_arg_string(ud, args[1], &type) ||
+        !rfg_arg_string(ud, args[2], &path)) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_json_path: expected (session, type, path)");
+        return exprtk_val_num(-1.0);
+    }
+    session = rfg_get_session(ud->ctx, h);
+    if (!session) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_json_path: invalid session handle");
+        return exprtk_val_num(-1.0);
+    }
+    json = rfg_read_file_text(ud, path);
+    if (!json) {
+        rfg_set_error(ud->ctx, "rules_forge.session_add_fact_json_path: failed to read json path");
+        return exprtk_val_num(-1.0);
+    }
+    st = ruleforge_session_add_fact_json_ex(session, type, json, &fact);
+    if (st != RFG_OK || !fact) {
+        rfg_set_error(ud->ctx, NULL);
+        return exprtk_val_num(-1.0);
+    }
+    fh = rfg_alloc_fact(ud->ctx, fact, 1, h);
+    return exprtk_val_num((double)fh);
+}
+
 static exprtk_value_t fn_session_add_fact_json_schema(size_t argc, exprtk_value_t *args, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
@@ -454,6 +518,37 @@ static exprtk_value_t fn_session_add_fact_json_schema(size_t argc, exprtk_value_
     session = rfg_get_session(ud->ctx, h);
     if (!session) {
         rfg_bad_args(ud, "rules_forge.session_add_fact_json_schema: invalid session handle");
+        return exprtk_val_num(-1.0);
+    }
+    st = ruleforge_session_add_fact_json_schema(session, schema, type, json, &fact);
+    if (st != RFG_OK || !fact) {
+        rfg_set_error(ud->ctx, NULL);
+        return exprtk_val_num(-1.0);
+    }
+    fh = rfg_alloc_fact(ud->ctx, fact, 1, h);
+    return exprtk_val_num((double)fh);
+}
+
+static exprtk_value_t fn_session_add_fact_json_schema_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t fact = NULL;
+    char *schema, *type, *path, *json;
+    ruleforge_status_t st;
+    int h, fh;
+    if (!ud || argc != 4 || !rfg_arg_int(args[0], &h) || !rfg_arg_string(ud, args[1], &schema) ||
+        !rfg_arg_string(ud, args[2], &type) || !rfg_arg_string(ud, args[3], &path)) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_json_schema_path: expected (session, schema_path, type, path)");
+        return exprtk_val_num(-1.0);
+    }
+    session = rfg_get_session(ud->ctx, h);
+    if (!session) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_json_schema_path: invalid session handle");
+        return exprtk_val_num(-1.0);
+    }
+    json = rfg_read_file_text(ud, path);
+    if (!json) {
+        rfg_set_error(ud->ctx, "rules_forge.session_add_fact_json_schema_path: failed to read json path");
         return exprtk_val_num(-1.0);
     }
     st = ruleforge_session_add_fact_json_schema(session, schema, type, json, &fact);
@@ -514,6 +609,32 @@ static exprtk_value_t fn_session_add_facts_csv(size_t argc, exprtk_value_t *args
     }
 }
 
+static exprtk_value_t fn_session_add_facts_csv_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t *facts = NULL;
+    char *type, *path, *csv;
+    int h, loaded = 0;
+    ruleforge_status_t st;
+    if (!ud || argc != 3 || !rfg_arg_int(args[0], &h) || !rfg_arg_string(ud, args[1], &type) ||
+        !rfg_arg_string(ud, args[2], &path))
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_csv_path: expected (session, type, path)"), NULL, 0, -1);
+    session = rfg_get_session(ud->ctx, h);
+    if (!session)
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_csv_path: invalid session handle"), NULL, 0, h);
+    csv = rfg_read_file_text(ud, path);
+    if (!csv) {
+        rfg_set_error(ud->ctx, "rules_forge.session_add_facts_csv_path: failed to read csv path");
+        return rfg_status_facts_loaded(ud, RFG_INVALID, NULL, 0, h);
+    }
+    st = ruleforge_session_add_facts_csv_ex(session, type, csv, &facts, &loaded);
+    {
+        exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
+        if (facts) ruleforge_fact_array_free(facts);
+        return result;
+    }
+}
+
 static exprtk_value_t fn_session_add_facts_csv_schema(size_t argc, exprtk_value_t *args, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
@@ -527,6 +648,32 @@ static exprtk_value_t fn_session_add_facts_csv_schema(size_t argc, exprtk_value_
     session = rfg_get_session(ud->ctx, h);
     if (!session)
         return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_csv_schema: invalid session handle"), NULL, 0, h);
+    st = ruleforge_session_add_facts_csv_schema(session, schema, type, csv, &facts, &loaded);
+    {
+        exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
+        if (facts) ruleforge_fact_array_free(facts);
+        return result;
+    }
+}
+
+static exprtk_value_t fn_session_add_facts_csv_schema_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t *facts = NULL;
+    char *schema, *type, *path, *csv;
+    int h, loaded = 0;
+    ruleforge_status_t st;
+    if (!ud || argc != 4 || !rfg_arg_int(args[0], &h) || !rfg_arg_string(ud, args[1], &schema) ||
+        !rfg_arg_string(ud, args[2], &type) || !rfg_arg_string(ud, args[3], &path))
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_csv_schema_path: expected (session, schema_path, type, path)"), NULL, 0, -1);
+    session = rfg_get_session(ud->ctx, h);
+    if (!session)
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_csv_schema_path: invalid session handle"), NULL, 0, h);
+    csv = rfg_read_file_text(ud, path);
+    if (!csv) {
+        rfg_set_error(ud->ctx, "rules_forge.session_add_facts_csv_schema_path: failed to read csv path");
+        return rfg_status_facts_loaded(ud, RFG_INVALID, NULL, 0, h);
+    }
     st = ruleforge_session_add_facts_csv_schema(session, schema, type, csv, &facts, &loaded);
     {
         exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
@@ -549,6 +696,33 @@ static exprtk_value_t fn_session_add_facts_xml_schema(size_t argc, exprtk_value_
     session = rfg_get_session(ud->ctx, h);
     if (!session)
         return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_xml_schema: invalid session handle"), NULL, 0, h);
+    st = ruleforge_session_add_facts_xml_schema(session, schema, type, xml, xpath, &facts, &loaded);
+    {
+        exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
+        if (facts) ruleforge_fact_array_free(facts);
+        return result;
+    }
+}
+
+static exprtk_value_t fn_session_add_facts_xml_schema_path(size_t argc, exprtk_value_t *args, void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t *facts = NULL;
+    char *schema, *type, *path, *xml, *xpath;
+    int h, loaded = 0;
+    ruleforge_status_t st;
+    if (!ud || argc != 5 || !rfg_arg_int(args[0], &h) || !rfg_arg_string(ud, args[1], &schema) ||
+        !rfg_arg_string(ud, args[2], &type) || !rfg_arg_string(ud, args[3], &path) ||
+        !rfg_arg_string(ud, args[4], &xpath))
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_xml_schema_path: expected (session, schema_path, type, path, xpath)"), NULL, 0, -1);
+    session = rfg_get_session(ud->ctx, h);
+    if (!session)
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_xml_schema_path: invalid session handle"), NULL, 0, h);
+    xml = rfg_read_file_text(ud, path);
+    if (!xml) {
+        rfg_set_error(ud->ctx, "rules_forge.session_add_facts_xml_schema_path: failed to read xml path");
+        return rfg_status_facts_loaded(ud, RFG_INVALID, NULL, 0, h);
+    }
     st = ruleforge_session_add_facts_xml_schema(session, schema, type, xml, xpath, &facts, &loaded);
     {
         exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
@@ -832,11 +1006,16 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "rules_forge.session_fact_count", fn_session_fact_count, ud);
     exprtk_env_register_func(env, "rules_forge.session_set_validation_mode", fn_session_set_validation_mode, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_json", fn_session_add_fact_json, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_fact_json_path", fn_session_add_fact_json_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_json_schema", fn_session_add_fact_json_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_fact_json_schema_path", fn_session_add_fact_json_schema_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_binary_schema", fn_session_add_fact_binary_schema, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_facts_csv", fn_session_add_facts_csv, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_facts_csv_path", fn_session_add_facts_csv_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_facts_csv_schema", fn_session_add_facts_csv_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_facts_csv_schema_path", fn_session_add_facts_csv_schema_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_facts_xml_schema", fn_session_add_facts_xml_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_facts_xml_schema_path", fn_session_add_facts_xml_schema_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_query", fn_session_query, ud);
     exprtk_env_register_func(env, "rules_forge.query_size", fn_query_size, ud);
     exprtk_env_register_func(env, "rules_forge.query_fact", fn_query_fact, ud);

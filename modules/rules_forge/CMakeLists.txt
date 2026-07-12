@@ -40,15 +40,6 @@ set_target_properties(${TARGET_NAME}
     VERSION ${PROJECT_VERSION}
     SOVERSION ${PROJECT_VERSION_MAJOR})
 
-if(WIN32)
-  add_custom_command(
-    TARGET ${TARGET_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:RulesForge::rule_forge>
-            $<TARGET_FILE_DIR:${TARGET_NAME}>
-  )
-endif()
-
 if(BUILD_TESTING)
   add_subdirectory(test)
 endif()
