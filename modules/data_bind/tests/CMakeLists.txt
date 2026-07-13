@@ -2,7 +2,7 @@
 cmake_add_test(
   TARGET test_data_bind_module
   SOURCES test_data_bind.c
-  LIBS exprtk TurboUtils::TinyTest
+  LIBS exprtk TurboUtils::DataBind TurboUtils::TinyTest
   DEPENDS data_bind_tbs
   FOLDER modules/data_bind)
 

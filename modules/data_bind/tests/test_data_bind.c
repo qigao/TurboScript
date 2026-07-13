@@ -1,4 +1,5 @@
 #include "exprtk.h"
+#include "data_bind.h"
 #include "tinytest.h"
 #include "ts_plugin_loader.h"
 #include <stdio.h>
@@ -74,6 +75,173 @@ static void write_u32_le(uint8_t *buf, size_t offset, uint32_t value) {
 }
 
 spec("data_bind_module") {
+  describe("DataBind 1.10 value cloning") {
+    it("should deep clone object list map and string ownership") {
+      const char *schema =
+        "composite Header { uint32 seq; uint64 ts; }\n"
+        "message Book { Header header; list<uint32> values; map<string,int32> attrs; "
+        "string symbol; }\n";
+      const char *json =
+        "{\"header\":{\"seq\":7,\"ts\":99},\"values\":[3,4],"
+        "\"attrs\":{\"x\":30,\"y\":40},\"symbol\":\"ABCD\"}";
+      DataBind *codec = NULL;
+      DataBindValue *source = NULL;
+      DataBindValue *copy = NULL;
+      DataBindValue *sentinel = (DataBindValue *)(uintptr_t)1u;
+      DataBindError error = DATA_BIND_ERROR_INIT;
+      const DataBindValue *source_header;
+      const DataBindValue *copy_header;
+      DataBindMapEntry source_entry;
+      DataBindMapEntry copy_entry;
+
+      check_int_eq(data_bind_value_clone(NULL, &sentinel), DATA_BIND_ERR_INVALID_ARG);
+      check_null(sentinel);
+      check_int_eq(data_bind_value_clone((const DataBindValue *)(uintptr_t)1u, NULL),
+                   DATA_BIND_ERR_INVALID_ARG);
+      check_int_eq(data_bind_create_from_text(schema, strlen(schema), &codec, &error),
+                   DATA_BIND_OK);
+      check_not_null(codec);
+      check_int_eq(data_bind_parse_json(codec, "Book", json, strlen(json), &source, &error),
+                   DATA_BIND_OK);
+      check_not_null(source);
+
+      source_header = data_bind_value_get(source, "header");
+      source_entry = data_bind_value_map_entry_at(data_bind_value_get(source, "attrs"), 0u);
+      check_int_eq(data_bind_value_clone(source, &copy), DATA_BIND_OK);
+      check_not_null(copy);
+      check_ptr_ne(copy, source);
+      copy_header = data_bind_value_get(copy, "header");
+      copy_entry = data_bind_value_map_entry_at(data_bind_value_get(copy, "attrs"), 0u);
+      check_ptr_ne(copy_header, source_header);
+      check_ptr_ne(copy_entry.key, source_entry.key);
+      check_ptr_ne(data_bind_value_as_string(data_bind_value_get(copy, "symbol")),
+                   data_bind_value_as_string(data_bind_value_get(source, "symbol")));
+
+      data_bind_value_free(source);
+      source = NULL;
+      check_int_eq(data_bind_value_as_int(data_bind_value_get(copy_header, "seq")), 7);
+      check_int_eq(data_bind_value_as_int64(data_bind_value_get(copy_header, "ts")), 99);
+      check_size_eq(data_bind_value_count(data_bind_value_get(copy, "values")), 2u);
+      check_int_eq(data_bind_value_as_int(
+                     data_bind_value_at(data_bind_value_get(copy, "values"), 1u)), 4);
+      check_str_eq(copy_entry.key, "x");
+      check_int_eq(data_bind_value_as_int(copy_entry.value), 30);
+      check_str_eq(data_bind_value_as_string(data_bind_value_get(copy, "symbol")), "ABCD");
+
+      data_bind_value_free(copy);
+      data_bind_free(codec);
+    }
+
+    it("should deep clone set and bytes storage") {
+      const char *schema = "message Values { set<string> tags; bytes raw; }\n";
+      const char *json = "{\"tags\":[\"alpha\",\"beta\"],\"raw\":\"Az\"}";
+      DataBind *codec = NULL;
+      DataBindValue *source = NULL;
+      DataBindValue *copy = NULL;
+      DataBindError error = DATA_BIND_ERROR_INIT;
+      const DataBindValue *source_tags;
+      const DataBindValue *copy_tags;
+      const uint8_t *source_bytes;
+      const uint8_t *copy_bytes;
+      size_t source_len = 0;
+      size_t copy_len = 0;
+
+      check_int_eq(data_bind_create_from_text(schema, strlen(schema), &codec, &error),
+                   DATA_BIND_OK);
+      check_int_eq(data_bind_parse_json(codec, "Values", json, strlen(json), &source, &error),
+                   DATA_BIND_OK);
+      source_tags = data_bind_value_get(source, "tags");
+      source_bytes = data_bind_value_as_bytes(data_bind_value_get(source, "raw"), &source_len);
+      check_int_eq(data_bind_value_clone(source, &copy), DATA_BIND_OK);
+      check_not_null(copy);
+      copy_tags = data_bind_value_get(copy, "tags");
+      copy_bytes = data_bind_value_as_bytes(data_bind_value_get(copy, "raw"), &copy_len);
+      check_int_eq(data_bind_value_kind(copy_tags), DATA_BIND_VALUE_SET);
+      check_size_eq(data_bind_value_count(copy_tags), 2u);
+      check_ptr_ne(copy_tags, source_tags);
+      check_ptr_ne(data_bind_value_as_string(data_bind_value_at(copy_tags, 0u)),
+                   data_bind_value_as_string(data_bind_value_at(source_tags, 0u)));
+      check_size_eq(copy_len, source_len);
+      check_ptr_ne(copy_bytes, source_bytes);
+      check_mem_eq(copy_bytes, source_bytes, source_len);
+
+      data_bind_value_free(source);
+      source = NULL;
+      check_str_eq(data_bind_value_as_string(
+                     data_bind_value_at(data_bind_value_get(copy, "tags"), 1u)), "beta");
+      copy_bytes = data_bind_value_as_bytes(data_bind_value_get(copy, "raw"), &copy_len);
+      check_size_eq(copy_len, 2u);
+      check_mem_eq(copy_bytes, "Az", 2u);
+
+      data_bind_value_free(copy);
+      data_bind_free(codec);
+    }
+
+    it("should deep clone UUID temporal and high precision scalars") {
+      const char *schema =
+        "message Scalars { uuid id; datetime at; date d; time t; duration span; "
+        "decimal price; bigint count; money total; }\n";
+      const char *json =
+        "{\"id\":\"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\","
+        "\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"d\":\"2026-06-28\","
+        "\"t\":\"09:30:05.123\",\"span\":\"1h30m5s250ms\",\"price\":\"123.4500\","
+        "\"count\":\"000123456789012345678901234567890\","
+        "\"total\":{\"amount\":\"99.9900\",\"currency\":\"EUR\"}}";
+      DataBind *codec = NULL;
+      DataBindValue *source = NULL;
+      DataBindValue *copy = NULL;
+      DataBindError error = DATA_BIND_ERROR_INIT;
+      DataBindDate date;
+      DataBindTime time;
+      DataBindDecimal decimal;
+      DataBindMoney money;
+      uint8_t uuid[DATA_BIND_UUID_SIZE];
+      char uuid_text[64];
+      const char *source_bigint;
+
+      check_int_eq(data_bind_create_from_text(schema, strlen(schema), &codec, &error),
+                   DATA_BIND_OK);
+      check_int_eq(data_bind_parse_json(codec, "Scalars", json, strlen(json), &source, &error),
+                   DATA_BIND_OK);
+      source_bigint = data_bind_value_as_bigint_string(data_bind_value_get(source, "count"));
+      check_int_eq(data_bind_value_clone(source, &copy), DATA_BIND_OK);
+      check_not_null(copy);
+      check_ptr_ne(data_bind_value_as_bigint_string(data_bind_value_get(copy, "count")),
+                   source_bigint);
+
+      data_bind_value_free(source);
+      source = NULL;
+      check_true(data_bind_value_as_uuid(data_bind_value_get(copy, "id"), uuid));
+      check_str_eq(data_bind_value_as_uuid_string(data_bind_value_get(copy, "id"), uuid_text,
+                                                  sizeof(uuid_text)),
+                   "01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001");
+      check_double_eq(data_bind_value_as_datetime_timestamp(data_bind_value_get(copy, "at")),
+                      1141478874.0, 0.001);
+      check_int_eq(data_bind_value_get_date(data_bind_value_get(copy, "d"), &date),
+                   DATA_BIND_OK);
+      check_int_eq(date.year, 2026);
+      check_int_eq(data_bind_value_get_time(data_bind_value_get(copy, "t"), &time),
+                   DATA_BIND_OK);
+      check_int_eq(time.millisecond, 123);
+      check_int_eq((int)data_bind_value_as_duration_milliseconds(
+                     data_bind_value_get(copy, "span")), 5405250);
+      check_int_eq(data_bind_value_get_decimal(data_bind_value_get(copy, "price"), &decimal),
+                   DATA_BIND_OK);
+      check_int_eq((int)decimal.mantissa, 12345);
+      check_int_eq(decimal.scale, 2);
+      check_str_eq(data_bind_value_as_bigint_string(data_bind_value_get(copy, "count")),
+                   "123456789012345678901234567890");
+      check_int_eq(data_bind_value_get_money(data_bind_value_get(copy, "total"), &money),
+                   DATA_BIND_OK);
+      check_str_eq(money.currency, "EUR");
+      check_int_eq((int)money.amount.mantissa, 9999);
+      check_int_eq(money.amount.scale, 2);
+
+      data_bind_value_free(copy);
+      data_bind_free(codec);
+    }
+  }
+
   describe("plugin") {
     it("should load and unload data_bind_plugin via DLL") {
       ts_plugin_handle_t *h = ts_plugin_load(DATA_BIND_PLUGIN_DLL);
@@ -151,6 +319,68 @@ spec("data_bind_module") {
       check_true(call_fn(&t, "data_bind.validate_xml", 3, xml_args).data.boolean);
       xml_args[2] = make_str(&t, "<trade><price>bad</price><qty>2</qty><symbol>AAPL</symbol></trade>");
       check_false(call_fn(&t, "data_bind.validate_xml", 3, xml_args).data.boolean);
+
+      call_fn(&t, "data_bind.close", 1, &handle);
+      test_env_free(&t);
+    }
+  }
+
+  describe("DataBind 1.10 scalar conversion") {
+    it("should preserve native temporal and high precision script types") {
+      const char *schema =
+        "message Scalars { uuid id; datetime at; date d; time t; duration span; "
+        "decimal price; bigint count; money total; }\n";
+      const char *json =
+        "{\"id\":\"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\","
+        "\"at\":\"Sat, 04 Mar 2006 13:27:54 GMT\",\"d\":\"2026-06-28\","
+        "\"t\":\"09:30:05.123\",\"span\":\"1h30m5s250ms\",\"price\":\"123.4500\","
+        "\"count\":\"000123456789012345678901234567890\","
+        "\"total\":{\"amount\":\"99.9900\",\"currency\":\"EUR\"}}";
+      test_env_t t;
+      exprtk_value_t create_args[1];
+      exprtk_value_t args[3];
+      exprtk_value_t handle;
+      exprtk_value_t value;
+      exprtk_value_t field;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      create_args[0] = make_str(&t, schema);
+      handle = call_fn(&t, "data_bind.create_from_text", 1, create_args);
+      check(handle.data.number >= 0.0);
+
+      args[0] = handle;
+      args[1] = make_str(&t, "Scalars");
+      args[2] = make_str(&t, json);
+      value = call_fn(&t, "data_bind.json", 3, args);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+
+      check_int_eq(exprtk_map_get(&value, "id").type, EXPRTK_VAL_UUID);
+      check_int_eq(exprtk_map_get(&value, "at").type, EXPRTK_VAL_DATETIME);
+      field = exprtk_map_get(&value, "d");
+      check_int_eq(field.type, EXPRTK_VAL_DATE);
+      check_int_eq(field.data.date.year, 2026);
+      field = exprtk_map_get(&value, "t");
+      check_int_eq(field.type, EXPRTK_VAL_TIME);
+      check_int_eq(field.data.time.millisecond, 123);
+      field = exprtk_map_get(&value, "span");
+      check_int_eq(field.type, EXPRTK_VAL_DURATION);
+      check_int_eq((int)field.data.duration_ms, 5405250);
+      field = exprtk_map_get(&value, "price");
+      check_int_eq(field.type, EXPRTK_VAL_DECIMAL);
+      check_int_eq((int)field.data.decimal.mantissa, 12345);
+      check_int_eq(field.data.decimal.scale, 2);
+      field = exprtk_map_get(&value, "count");
+      check_int_eq(field.type, EXPRTK_VAL_BIGINT);
+      check_size_eq(field.data.bigint.text.len,
+                    strlen("123456789012345678901234567890"));
+      check_mem_eq(field.data.bigint.text.data, "123456789012345678901234567890",
+                   field.data.bigint.text.len);
+      field = exprtk_map_get(&value, "total");
+      check_int_eq(field.type, EXPRTK_VAL_MONEY);
+      check_int_eq((int)field.data.money.amount.mantissa, 9999);
+      check_int_eq(field.data.money.amount.scale, 2);
+      check_mem_eq(field.data.money.currency, "EUR", 3u);
 
       call_fn(&t, "data_bind.close", 1, &handle);
       test_env_free(&t);

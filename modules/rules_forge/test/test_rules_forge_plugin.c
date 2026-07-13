@@ -2,6 +2,8 @@
 #include "tinytest.h"
 #include "ts_plugin_loader.h"
 
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #ifdef _WIN32
@@ -31,6 +33,18 @@ static exprtk_value_t call_native(exprtk_env_t *env, const char *name,
     exprtk_func_t *fn = find_native(env, name);
     if (!fn) return exprtk_val_num(-999.0);
     return fn->data.native.fn(argc, args, fn->data.native.user_data);
+}
+
+static char *make_rule_path(const char *path) {
+    size_t i;
+    size_t len = strlen(path);
+    char *result = (char *)malloc(len + 1);
+    if (!result) return NULL;
+    memcpy(result, path, len + 1);
+    for (i = 0; i < len; i++) {
+        if (result[i] == '\\') result[i] = '/';
+    }
+    return result;
 }
 
 spec("rules_forge_plugin") {
@@ -274,6 +288,156 @@ spec("rules_forge_plugin") {
             ts_plugin_unload(h);
             exprtk_env_free(&env);
             mem_destroy(&scratch);
+        }
+
+        it("should bind all DataBind value kinds from YAML selected by YPATH") {
+            static const char schema_text[] =
+                "schema Market [id(12), version(1), byte_order(little)]; "
+                "composite Header { uint32 seq; uint64 ts; } "
+                "message FullFact { Header header; list<uint32> values; "
+                "set<string> tags; map<string,int32> attrs; bytes raw; uuid id; "
+                "datetime at; date trade_date; time trade_time; duration latency; "
+                "decimal price; bigint sequence; money total; bool active; }";
+            static const char yaml_text[] =
+                "events:\n"
+                "  - header: {seq: 7, ts: 99}\n"
+                "    values: [3, 4]\n"
+                "    tags: [alpha, beta]\n"
+                "    attrs: {x: 30, y: 40}\n"
+                "    raw: Az\n"
+                "    id: 01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\n"
+                "    at: 'Sat, 04 Mar 2006 13:27:54 GMT'\n"
+                "    trade_date: '2026-06-28'\n"
+                "    trade_time: '09:30:05.123'\n"
+                "    latency: 1h30m5s250ms\n"
+                "    price: '123.4500'\n"
+                "    sequence: '000123456789012345678901234567890'\n"
+                "    total: {amount: '123.4500', currency: USD}\n"
+                "    active: true\n";
+            ts_plugin_handle_t *h = ts_plugin_load(RULES_FORGE_PLUGIN_DLL);
+            exprtk_env_t env;
+            mem_pool_t scratch;
+            char *schema_path = tt_make_temp_file("rfg", ".schema");
+            char *rule_path = NULL;
+            char rules[2048];
+            int rules_len = -1;
+            exprtk_value_t kb = exprtk_val_num(-1.0);
+            exprtk_value_t session = exprtk_val_num(-1.0);
+            exprtk_value_t query = exprtk_val_num(-1.0);
+            exprtk_value_t fact = exprtk_val_num(-1.0);
+
+            check_not_null(h);
+            check_not_null(schema_path);
+            if (!h || !schema_path) {
+                free(schema_path);
+                if (h) ts_plugin_unload(h);
+                return;
+            }
+            check_int_eq(tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1), 0);
+            rule_path = make_rule_path(schema_path);
+            check_not_null(rule_path);
+            if (!rule_path) {
+                tt_remove_file(schema_path);
+                free(schema_path);
+                ts_plugin_unload(h);
+                return;
+            }
+
+            rules_len = snprintf(
+                rules, sizeof(rules),
+                "import \"%s\";\n"
+                "query \"FindFullFact\"\n"
+                "  $f : FullFact("
+                "id == \"01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001\", "
+                "trade_date == \"2026-06-28\", trade_time == \"09:30:05.123\", "
+                "latency == 5405250, price == \"123.45\", "
+                "sequence == \"123456789012345678901234567890\", "
+                "total == \"USD 123.45\")\n"
+                "end\n",
+                rule_path);
+            check(rules_len > 0 && (size_t)rules_len < sizeof(rules));
+
+            exprtk_env_init(&env);
+            mem_init(&scratch, 4096);
+            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+
+            kb = call_native(&env, "rules_forge.kb_create", 0, NULL);
+            check(kb.data.number >= 0.0);
+            if (kb.data.number >= 0.0) {
+                exprtk_value_t load_args[2] = {kb, make_string(&env, rules)};
+                exprtk_value_t create_args[1] = {kb};
+                exprtk_value_t load_status = call_native(
+                    &env, "rules_forge.kb_load", 2, load_args);
+                check_float_eq(load_status.data.number, 0.0, 0.001);
+                session = call_native(&env, "rules_forge.session_create", 1, create_args);
+            }
+            check(session.data.number >= 0.0);
+
+            if (session.data.number >= 0.0) {
+                exprtk_value_t add_args[5] = {
+                    session,
+                    make_string(&env, schema_path),
+                    make_string(&env, "FullFact"),
+                    make_string(&env, yaml_text),
+                    make_string(&env, "/events/*")
+                };
+                exprtk_value_t query_args[2] = {session, make_string(&env, "FindFullFact")};
+                exprtk_value_t loaded = call_native(
+                    &env, "rules_forge.session_add_facts_yaml_path_schema", 5, add_args);
+                check_int_eq(exprtk_map_get(&loaded, "status").data.integer, 0);
+                check_int_eq(exprtk_map_get(&loaded, "loaded").data.integer, 1);
+
+                query = call_native(&env, "rules_forge.session_query", 2, query_args);
+                check(query.data.number >= 0.0);
+            }
+
+            if (query.data.number >= 0.0) {
+                exprtk_value_t size_args[1] = {query};
+                exprtk_value_t fact_args[3] = {
+                    query, exprtk_val_int(0), make_string(&env, "f")
+                };
+                check_int_eq(call_native(&env, "rules_forge.query_size", 1, size_args).data.integer,
+                             1);
+                fact = call_native(&env, "rules_forge.query_fact", 3, fact_args);
+                check(fact.data.number >= 0.0);
+            }
+
+            if (fact.data.number >= 0.0) {
+                exprtk_value_t field_args[2] = {fact, make_string(&env, "at")};
+                exprtk_value_t at = call_native(&env, "rules_forge.fact_string", 2, field_args);
+                check_int_eq(at.type, EXPRTK_VAL_STRING);
+                check(at.data.string.len > 0);
+                field_args[1] = make_string(&env, "latency");
+                check_int_eq(call_native(&env, "rules_forge.fact_int", 2, field_args).data.integer,
+                             5405250);
+                field_args[1] = make_string(&env, "total");
+                check_str_eq(call_native(&env, "rules_forge.fact_string", 2, field_args)
+                                 .data.string.data,
+                             "USD 123.45");
+            }
+
+            if (query.data.number >= 0.0) {
+                exprtk_value_t args[1] = {query};
+                check_float_eq(call_native(&env, "rules_forge.query_destroy", 1, args).data.number,
+                               0.0, 0.001);
+            }
+            if (session.data.number >= 0.0) {
+                exprtk_value_t args[1] = {session};
+                check_float_eq(call_native(&env, "rules_forge.session_destroy", 1, args).data.number,
+                               0.0, 0.001);
+            }
+            if (kb.data.number >= 0.0) {
+                exprtk_value_t args[1] = {kb};
+                check_float_eq(call_native(&env, "rules_forge.kb_destroy", 1, args).data.number,
+                               0.0, 0.001);
+            }
+
+            ts_plugin_unload(h);
+            exprtk_env_free(&env);
+            mem_destroy(&scratch);
+            check_int_eq(tt_remove_file(schema_path), 0);
+            free(rule_path);
+            free(schema_path);
         }
 
         it("should report errors without crashing") {

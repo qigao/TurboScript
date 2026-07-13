@@ -847,6 +847,14 @@ and `money` are implemented in
 `tbe/data_bind`; DataBind uses TurboUtils::Parser directly and binds JSON/XML/CSV/YAML
 text to native runtime values. Schema emit writes them back as strings.
 
+The `data_bind` module requires DataBind 1.10.0 or newer. Its C API provides
+`data_bind_value_clone()` for callers that need an independently owned deep
+copy of a `DataBindValue` tree, including nested object/list/set/map values,
+bytes, UUID and temporal values, decimal, bigint, and money. TurboScript does
+not expose raw `DataBindValue` handles: plugin results and synchronous stream
+callback records are converted immediately into environment-owned script
+values, so script code does not need to clone or free the C tree.
+
 The `data_bind` module exposes YAML with the same DOM and buffered stream models
 as JSON and XML:
 

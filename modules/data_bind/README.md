@@ -2,6 +2,11 @@
 
 The `data_bind` plugin enables high-performance binary-to-object parsing using JIT-compiled TBE schemas directly inside TurboScript.
 
+This module requires DataBind 1.10.0 or newer. The dependency provides
+`data_bind_value_clone()` for C callers that retain an independent value tree;
+the TurboScript boundary converts returned trees immediately into
+environment-owned script values.
+
 ## Functions
 
 ### `data_bind.create(schema_path)`
@@ -30,8 +35,9 @@ they represent schema map fields, not record objects.
 Scalar fields preserve native TurboScript runtime types where available:
 schema `bool` maps to `bool`, `int64/uint64` maps to `int64`, fixed/variable
 `bytes` maps to `bytes`, schema `uuid` maps to native `uuid`, schema
-`datetime` maps to native `datetime` for JSON/CSV/XML text binding, and other
-numeric fields map to `number`.
+`datetime` maps to native `datetime` for JSON/YAML/CSV/XML text binding. Schema
+`date`, `time`, `duration`, `decimal`, `bigint`, and `money` preserve their
+corresponding native TurboScript types; other numeric fields map to `number`.
 
 For text binding, JSON/XML bytes fields read string text as the byte sequence and
 CSV bytes fields read the cell text. Binary parsing reads fixed or variable TBE

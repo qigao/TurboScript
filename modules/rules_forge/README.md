@@ -79,6 +79,13 @@ Multi-fact JSONPath, YAML/YPATH, CSV/CSVPath, and XML insertion returns:
 { status: 0, loaded: 2, facts: [0, 1] }
 ```
 
+Schema-bound JSON and YAML facts preserve the complete DataBind value model.
+RulesForge converts object/composite, list, set, map, bytes, UUID, datetime,
+date, time, duration, decimal, bigint, and money fields into its owned fact
+values before the DataBind parse tree is released. UUID and temporal values
+are normalized for rule comparisons; decimal, bigint, and money comparisons
+retain their canonical text precision.
+
 RulesForge 0.5 requires schema-bound structured input. The previous
 `session_add_fact_json`, `session_add_facts_csv`, and `kb_load_ts_plugin`
 entry points are no longer exposed because the upstream C API removed them.
@@ -189,6 +196,12 @@ rules_forge.query_destroy(query);
 Fact handles are borrowed from the owning session or query. Destroying or
 resetting a session invalidates its fact handles. Destroying a query invalidates
 facts borrowed from that query.
+
+The RulesForge 0.5 C ABI currently exposes field accessors only for string,
+double, int64, and bool. Complex fields are available to RulesForge rules but
+are not exported as raw `DataBindValue` pointers or TurboScript values. This
+keeps fact ownership inside the session/query boundary; no plugin-side clone or
+cross-module free is required.
 
 ## Observability
 

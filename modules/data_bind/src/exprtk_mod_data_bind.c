@@ -68,6 +68,12 @@
  */
 #include "data_bind_ctx.h"
 
+#define DB_REQUIRED_DATA_BIND_VERSION 11000
+
+#if DATA_BIND_VERSION < DB_REQUIRED_DATA_BIND_VERSION
+  #error "TurboScript data_bind requires DataBind 1.10.0 or newer"
+#endif
+
 /* ── Lifecycle ────────────────────────────────────────────────────────────── */
 
 void *db_ctx_create(void) {
@@ -233,7 +239,7 @@ static exprtk_value_t db_bytes_value(exprtk_env_t *env, const DataBindValue *val
 
 static exprtk_value_t db_uuid_value(const DataBindValue *value) {
     uuid_t uuid;
-    if (!data_bind_value_as_uuid(value, &uuid)) return DB_ZERO;
+    if (!data_bind_value_as_uuid(value, uuid.bytes)) return DB_ZERO;
     return exprtk_val_uuid(uuid);
 }
 
@@ -241,6 +247,59 @@ static exprtk_value_t db_datetime_value(const DataBindValue *value) {
     turbo_datetime_t dt;
     if (!data_bind_value_as_datetime(value, &dt)) return DB_ZERO;
     return exprtk_val_datetime(dt);
+}
+
+static exprtk_value_t db_date_value(const DataBindValue *value) {
+    DataBindDate source;
+    exprtk_date_t date;
+    if (!data_bind_value_as_date(value, &source)) return DB_ZERO;
+    date.year = source.year;
+    date.month = source.month;
+    date.day = source.day;
+    return exprtk_val_date(date);
+}
+
+static exprtk_value_t db_time_value(const DataBindValue *value) {
+    DataBindTime source;
+    exprtk_time_t time;
+    if (!data_bind_value_as_time(value, &source)) return DB_ZERO;
+    time.hour = source.hour;
+    time.minute = source.minute;
+    time.second = source.second;
+    time.millisecond = source.millisecond;
+    return exprtk_val_time(time);
+}
+
+static exprtk_value_t db_decimal_value(const DataBindValue *value) {
+    DataBindDecimal source;
+    exprtk_decimal_t decimal;
+    if (!data_bind_value_as_decimal(value, &source)) return DB_ZERO;
+    decimal.mantissa = source.mantissa;
+    decimal.scale = source.scale;
+    return exprtk_val_decimal(decimal);
+}
+
+static exprtk_value_t db_bigint_value(exprtk_env_t *env, const DataBindValue *value) {
+    const char *text = NULL;
+    size_t len = 0;
+    char *copy;
+    if (!env || data_bind_value_get_bigint(value, &text, &len) != DATA_BIND_OK ||
+        (!text && len > 0))
+        return DB_ZERO;
+    copy = db_arena_cstr(&env->arena, text ? text : "", len);
+    if (!copy) return DB_ZERO;
+    return exprtk_val_bigint(tstr_v_from_buf(copy, len));
+}
+
+static exprtk_value_t db_money_value(const DataBindValue *value) {
+    DataBindMoney source;
+    exprtk_money_t money;
+    if (!data_bind_value_as_money(value, &source)) return DB_ZERO;
+    memset(&money, 0, sizeof(money));
+    money.amount.mantissa = source.amount.mantissa;
+    money.amount.scale = source.amount.scale;
+    memcpy(money.currency, source.currency, sizeof(money.currency));
+    return exprtk_val_money(money);
 }
 
 static exprtk_value_t db_value_to_exprtk(db_ud_t *ud, const DataBindValue *value) {
@@ -292,6 +351,18 @@ static exprtk_value_t db_value_to_exprtk(db_ud_t *ud, const DataBindValue *value
         return db_uuid_value(value);
     case DATA_BIND_VALUE_DATETIME:
         return db_datetime_value(value);
+    case DATA_BIND_VALUE_DATE:
+        return db_date_value(value);
+    case DATA_BIND_VALUE_TIME:
+        return db_time_value(value);
+    case DATA_BIND_VALUE_DURATION:
+        return exprtk_val_duration(data_bind_value_as_duration_milliseconds(value));
+    case DATA_BIND_VALUE_DECIMAL:
+        return db_decimal_value(value);
+    case DATA_BIND_VALUE_BIGINT:
+        return db_bigint_value(ud->env, value);
+    case DATA_BIND_VALUE_MONEY:
+        return db_money_value(value);
     case DATA_BIND_VALUE_NULL:
     default:
         return db_null_value();
