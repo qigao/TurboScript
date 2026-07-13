@@ -453,7 +453,135 @@ spec("data_bind_module") {
     }
   }
 
+  describe("data_bind YAML") {
+    it("should bind YAML roots, sequences, YPATH matches, files, and strict validation") {
+      test_env_t t;
+      exprtk_value_t schema_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t args[4];
+      exprtk_value_t value;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      schema_args[0] = make_str(&t,
+        "message Order { uint32 id; string symbol; bool active; }\n");
+      handle = call_fn(&t, "data_bind.create_from_text", 1, schema_args);
+      check(handle.data.number >= 0.0);
+
+      args[0] = handle;
+      args[1] = make_str(&t, "Order");
+      args[2] = make_str(&t, "id: 7\nsymbol: AAPL\nactive: true\n");
+      value = call_fn(&t, "data_bind.yaml", 3, args);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "id").data.number, 7.0, 0.01);
+      check_str_eq(exprtk_map_get(&value, "symbol").data.string.data, "AAPL");
+
+      args[2] = make_str(&t,
+        "- id: 1\n  symbol: AAPL\n  active: true\n"
+        "- id: 2\n  symbol: MSFT\n  active: false\n");
+      value = call_fn(&t, "data_bind.yaml_all", 3, args);
+      check_int_eq(value.type, EXPRTK_VAL_LIST);
+      check_size_eq(value.data.list.count, 2);
+      check_float_eq(exprtk_map_get(&value.data.list.items[1], "id").data.number, 2.0, 0.01);
+
+      args[2] = make_str(&t,
+        "orders:\n"
+        "  - id: 3\n    symbol: NVDA\n    active: true\n"
+        "  - id: 4\n    symbol: AMD\n    active: false\n");
+      args[3] = make_str(&t, "/orders[*]");
+      value = call_fn(&t, "data_bind.yaml_ypath", 4, args);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "id").data.number, 3.0, 0.01);
+      value = call_fn(&t, "data_bind.yaml_ypath_all", 4, args);
+      check_int_eq(value.type, EXPRTK_VAL_LIST);
+      check_size_eq(value.data.list.count, 2);
+      check_str_eq(exprtk_map_get(&value.data.list.items[1], "symbol").data.string.data, "AMD");
+
+      args[2] = make_str(&t, "id: 9\nsymbol: INTC\nactive: true\n");
+      check_true(call_fn(&t, "data_bind.validate_yaml", 3, args).data.boolean);
+      args[2] = make_str(&t, "id: bad\nsymbol: INTC\nactive: true\n");
+      check_false(call_fn(&t, "data_bind.validate_yaml", 3, args).data.boolean);
+      args[2] = make_str(&t,
+        "orders:\n  - id: 5\n    symbol: QCOM\n    active: true\n");
+      args[3] = make_str(&t, "/orders[*]");
+      check_true(call_fn(&t, "data_bind.validate_yaml_path", 4, args).data.boolean);
+
+      write_schema("test_order.yaml", "id: 10\nsymbol: ARM\nactive: true\n");
+      args[2] = make_str(&t, "test_order.yaml");
+      value = call_fn(&t, "data_bind.yaml_path", 3, args);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "id").data.number, 10.0, 0.01);
+
+      call_fn(&t, "data_bind.close", 1, &handle);
+      remove("test_order.yaml");
+      test_env_free(&t);
+    }
+  }
+
   describe("data_bind SAX streams") {
+    it("should bind buffered YAML and propagate callback errors") {
+      test_env_t t;
+      exprtk_value_t schema_args[1];
+      exprtk_value_t handle;
+      exprtk_value_t args[4];
+      exprtk_value_t stream_handle;
+      exprtk_value_t callback;
+      exprtk_value_t value;
+      exprtk_node_t *callback_ast;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      schema_args[0] = make_str(&t,
+        "message Order { uint32 id; string symbol; bool active; }\n");
+      handle = call_fn(&t, "data_bind.create_from_text", 1, schema_args);
+      check(handle.data.number >= 0.0);
+
+      args[0] = handle;
+      args[1] = make_str(&t, "Order");
+      args[2] = make_str(&t, "id: 11\nsymbol: IBM\nactive: true\n");
+      value = call_fn(&t, "data_bind.sax.yaml", 3, args);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "id").data.number, 11.0, 0.01);
+
+      args[2] = make_str(&t,
+        "orders:\n"
+        "  - id: 12\n    symbol: ORCL\n    active: true\n"
+        "  - id: 13\n    symbol: SAP\n    active: false\n");
+      args[3] = make_str(&t, "/orders[*]");
+      value = call_fn(&t, "data_bind.yaml_path_all_stream", 4, args);
+      check_int_eq(value.type, EXPRTK_VAL_LIST);
+      check_size_eq(value.data.list.count, 2);
+
+      args[0] = handle;
+      args[1] = make_str(&t, "Order");
+      args[2] = make_str(&t, "/orders/*");
+      stream_handle = call_fn(&t, "data_bind.sax.yaml_path_all_create", 3, args);
+      check(stream_handle.data.number >= 0.0);
+
+      callback_ast = exprtk_parse(
+        "record_callback = (record, index) => record.id + index - 15;", 0);
+      check_not_null(callback_ast);
+      exprtk_eval(callback_ast, &t.env);
+      callback = exprtk_env_get(&t.env, "record_callback");
+      check_int_eq(callback.type, EXPRTK_VAL_FUNCTION);
+      args[0] = stream_handle;
+      args[1] = callback;
+      check_true(call_fn(&t, "data_bind.sax.set_callback", 2, args).data.boolean);
+
+      args[0] = stream_handle;
+      args[1] = make_str(&t,
+        "orders:\n  - id: 14\n    symbol: CRM\n    active: true\n");
+      call_fn(&t, "data_bind.sax.feed", 2, args);
+      t.env.aborted = 0;
+      value = call_fn(&t, "data_bind.sax.finish", 1, &stream_handle);
+      check_int_eq(t.env.aborted, 1);
+      check_int_eq(value.type, EXPRTK_VAL_NUMBER);
+
+      exprtk_free(callback_ast);
+      call_fn(&t, "data_bind.close", 1, &handle);
+      test_env_free(&t);
+    }
+
     it("should bind inline JSON through the stream API") {
       test_env_t t;
       exprtk_value_t create_args[1];

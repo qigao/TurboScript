@@ -844,12 +844,33 @@ nodes, schema reflection records, and schema-bound records/unions. Script
 by the script parser module and use TurboNet's datetime parser/format helpers.
 TBE schema scalars `datetime`, `date`, `time`, `duration`, `decimal`, `bigint`,
 and `money` are implemented in
-`tbe/data_bind`; DataBind uses TurboUtils::Parser directly and binds JSON/XML/CSV
+`tbe/data_bind`; DataBind uses TurboUtils::Parser directly and binds JSON/XML/CSV/YAML
 text to native runtime values. Schema emit writes them back as strings.
+
+The `data_bind` module exposes YAML with the same DOM and buffered stream models
+as JSON and XML:
+
+| Function | Description |
+|----------|-------------|
+| `data_bind.yaml(handle, type, yaml)` | Bind the YAML root |
+| `data_bind.yaml_all(handle, type, yaml)` | Bind every item in a root sequence |
+| `data_bind.yaml_ypath(handle, type, yaml, ypath)` | Bind the first YPATH match |
+| `data_bind.yaml_ypath_all(handle, type, yaml, ypath)` | Bind all YPATH matches |
+| `data_bind.yaml_path(...)` / `yaml_all_path(...)` | Bind YAML from a file path |
+| `data_bind.validate_yaml(...)` / `validate_yaml_path(...)` | Strictly validate a root or YPATH match |
+| `data_bind.sax.yaml*` | Bind buffered YAML text or files |
+| `data_bind.sax.yaml*_create(...)` | Create a chunk-fed buffered YAML stream |
+| `data_bind.sax.set_callback(stream, fn)` | Receive `(record, index)` before `finish()` |
+
+For callbacks, `false` or `0` continues, `true` or a positive number stops later
+notifications, and a negative number fails the stream. `data_bind.sax.finish()`
+still returns the final bound object or list. The `data_bind.dom.yaml*` names are
+aliases for the non-streaming YAML functions. In script APIs, `yaml_path` denotes
+a file path; YPATH selection uses the explicit `yaml_ypath` names.
 
 Schema string fields can also use field formats, for example
 `[format(ipaddr)] string ip;` or `[format(url)] string href;`. These validate
-JSON/CSV/XML/default text but still bind as normal strings. Supported formats:
+JSON/CSV/XML/YAML/default text but still bind as normal strings. Supported formats:
 `ipaddr`, `ip`, `cidr`, `hostname`, `domain`, `email`, `url`, `uri`,
 `macaddr`, `mac`, `semver`, `hex`, `base64`, `base64url`, `currency`,
 `json_pointer`, `jsonpath`, `xpath`, `cron`, `color`, `mime`, and `regex`.

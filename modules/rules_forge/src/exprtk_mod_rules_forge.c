@@ -650,6 +650,89 @@ static exprtk_value_t fn_session_add_facts_json_path_schema(size_t argc, exprtk_
     }
 }
 
+static exprtk_value_t fn_session_add_fact_yaml_schema(size_t argc, exprtk_value_t *args,
+                                                       void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t fact = NULL;
+    char *schema, *type, *yaml;
+    ruleforge_status_t st;
+    int h, fh;
+    if (!ud || argc != 4 || !rfg_arg_int(args[0], &h) ||
+        !rfg_arg_string(ud, args[1], &schema) || !rfg_arg_string(ud, args[2], &type) ||
+        !rfg_arg_string(ud, args[3], &yaml)) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_yaml_schema: expected (session, schema_path, type, yaml)");
+        return exprtk_val_num(-1.0);
+    }
+    session = rfg_get_session(ud->ctx, h);
+    if (!session) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_yaml_schema: invalid session handle");
+        return exprtk_val_num(-1.0);
+    }
+    st = ruleforge_session_add_fact_yaml_schema(session, schema, type, yaml, &fact);
+    if (st != RFG_OK || !fact) {
+        rfg_set_error(ud->ctx, NULL);
+        return exprtk_val_num(-1.0);
+    }
+    fh = rfg_alloc_fact(ud->ctx, fact, 1, h);
+    return exprtk_val_num((double)fh);
+}
+
+static exprtk_value_t fn_session_add_fact_yaml_path_schema(size_t argc, exprtk_value_t *args,
+                                                            void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t fact = NULL;
+    char *schema, *type, *yaml, *yaml_path;
+    ruleforge_status_t st;
+    int h, fh;
+    if (!ud || argc != 5 || !rfg_arg_int(args[0], &h) ||
+        !rfg_arg_string(ud, args[1], &schema) || !rfg_arg_string(ud, args[2], &type) ||
+        !rfg_arg_string(ud, args[3], &yaml) || !rfg_arg_string(ud, args[4], &yaml_path)) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_yaml_path_schema: expected (session, schema_path, type, yaml, yaml_path)");
+        return exprtk_val_num(-1.0);
+    }
+    session = rfg_get_session(ud->ctx, h);
+    if (!session) {
+        rfg_bad_args(ud, "rules_forge.session_add_fact_yaml_path_schema: invalid session handle");
+        return exprtk_val_num(-1.0);
+    }
+    st = ruleforge_session_add_fact_yaml_path_schema(session, schema, type, yaml, yaml_path,
+                                                     &fact);
+    if (st != RFG_OK || !fact) {
+        rfg_set_error(ud->ctx, NULL);
+        return exprtk_val_num(-1.0);
+    }
+    fh = rfg_alloc_fact(ud->ctx, fact, 1, h);
+    if (fh < 0)
+        rfg_set_error(ud->ctx, "rules_forge.session_add_fact_yaml_path_schema: too many fact handles");
+    return exprtk_val_num((double)fh);
+}
+
+static exprtk_value_t fn_session_add_facts_yaml_path_schema(size_t argc, exprtk_value_t *args,
+                                                             void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_stateful_session_t session;
+    ruleforge_fact_t *facts = NULL;
+    char *schema, *type, *yaml, *yaml_path;
+    int h, loaded = 0;
+    ruleforge_status_t st;
+    if (!ud || argc != 5 || !rfg_arg_int(args[0], &h) ||
+        !rfg_arg_string(ud, args[1], &schema) || !rfg_arg_string(ud, args[2], &type) ||
+        !rfg_arg_string(ud, args[3], &yaml) || !rfg_arg_string(ud, args[4], &yaml_path))
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_yaml_path_schema: expected (session, schema_path, type, yaml, yaml_path)"), NULL, 0, -1);
+    session = rfg_get_session(ud->ctx, h);
+    if (!session)
+        return rfg_status_facts_loaded(ud, rfg_bad_args(ud, "rules_forge.session_add_facts_yaml_path_schema: invalid session handle"), NULL, 0, h);
+    st = ruleforge_session_add_facts_yaml_path_schema(session, schema, type, yaml, yaml_path,
+                                                      &facts, &loaded);
+    {
+        exprtk_value_t result = rfg_status_facts_loaded(ud, st, facts, loaded, h);
+        if (facts) ruleforge_fact_array_free(facts);
+        return result;
+    }
+}
+
 static exprtk_value_t fn_session_add_fact_json_schema_path(size_t argc, exprtk_value_t *args, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
@@ -834,6 +917,10 @@ typedef enum {
     RFG_STREAM_JSON_ALL,
     RFG_STREAM_JSON_PATH,
     RFG_STREAM_JSON_PATH_ALL,
+    RFG_STREAM_YAML,
+    RFG_STREAM_YAML_ALL,
+    RFG_STREAM_YAML_PATH,
+    RFG_STREAM_YAML_PATH_ALL,
     RFG_STREAM_CSV_ALL,
     RFG_STREAM_CSV_PATH,
     RFG_STREAM_XML,
@@ -849,6 +936,7 @@ static exprtk_value_t rfg_stream_create(size_t argc, exprtk_value_t *args, void 
     char *schema, *type, *path = NULL;
     int session_h, stream_h;
     int needs_path = kind == RFG_STREAM_JSON_PATH || kind == RFG_STREAM_JSON_PATH_ALL ||
+                     kind == RFG_STREAM_YAML_PATH || kind == RFG_STREAM_YAML_PATH_ALL ||
                      kind == RFG_STREAM_CSV_PATH || kind == RFG_STREAM_XML_PATH_ALL;
 
     if (!ud || argc != (size_t)(needs_path ? 4 : 3) ||
@@ -872,6 +960,14 @@ static exprtk_value_t rfg_stream_create(size_t argc, exprtk_value_t *args, void 
         st = ruleforge_data_bind_stream_json_path_create(session, schema, type, path, &stream); break;
     case RFG_STREAM_JSON_PATH_ALL:
         st = ruleforge_data_bind_stream_json_path_all_create(session, schema, type, path, &stream); break;
+    case RFG_STREAM_YAML:
+        st = ruleforge_data_bind_stream_yaml_create(session, schema, type, &stream); break;
+    case RFG_STREAM_YAML_ALL:
+        st = ruleforge_data_bind_stream_yaml_all_create(session, schema, type, &stream); break;
+    case RFG_STREAM_YAML_PATH:
+        st = ruleforge_data_bind_stream_yaml_path_create(session, schema, type, path, &stream); break;
+    case RFG_STREAM_YAML_PATH_ALL:
+        st = ruleforge_data_bind_stream_yaml_path_all_create(session, schema, type, path, &stream); break;
     case RFG_STREAM_CSV_ALL:
         st = ruleforge_data_bind_stream_csv_all_create(session, schema, type, &stream); break;
     case RFG_STREAM_CSV_PATH:
@@ -907,6 +1003,14 @@ RFG_STREAM_CREATE_FN(fn_stream_json_path_create, RFG_STREAM_JSON_PATH,
                      "rules_forge.stream_json_path_create: expected (session, schema_path, type, json_path)")
 RFG_STREAM_CREATE_FN(fn_stream_json_path_all_create, RFG_STREAM_JSON_PATH_ALL,
                      "rules_forge.stream_json_path_all_create: expected (session, schema_path, type, json_path)")
+RFG_STREAM_CREATE_FN(fn_stream_yaml_create, RFG_STREAM_YAML,
+                     "rules_forge.stream_yaml_create: expected (session, schema_path, type)")
+RFG_STREAM_CREATE_FN(fn_stream_yaml_all_create, RFG_STREAM_YAML_ALL,
+                     "rules_forge.stream_yaml_all_create: expected (session, schema_path, type)")
+RFG_STREAM_CREATE_FN(fn_stream_yaml_path_create, RFG_STREAM_YAML_PATH,
+                     "rules_forge.stream_yaml_path_create: expected (session, schema_path, type, yaml_path)")
+RFG_STREAM_CREATE_FN(fn_stream_yaml_path_all_create, RFG_STREAM_YAML_PATH_ALL,
+                     "rules_forge.stream_yaml_path_all_create: expected (session, schema_path, type, yaml_path)")
 RFG_STREAM_CREATE_FN(fn_stream_csv_all_create, RFG_STREAM_CSV_ALL,
                      "rules_forge.stream_csv_all_create: expected (session, schema_path, type)")
 RFG_STREAM_CREATE_FN(fn_stream_csv_path_create, RFG_STREAM_CSV_PATH,
@@ -1380,8 +1484,31 @@ static exprtk_value_t fn_continuous_push_json_schema(size_t argc, exprtk_value_t
     return rfg_continuous_result_value(ud, st, result, h);
 }
 
+static exprtk_value_t fn_continuous_push_yaml_schema(size_t argc, exprtk_value_t *args,
+                                                      void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_continuous_session_t session;
+    ruleforge_continuous_result_t result = NULL;
+    char *schema, *type, *event_id, *entry_point, *yaml;
+    int h;
+    int64_t event_time;
+    ruleforge_status_t st;
+    if (!ud || argc != 7 || !rfg_arg_int(args[0], &h) ||
+        !rfg_arg_string(ud, args[1], &schema) || !rfg_arg_string(ud, args[2], &type) ||
+        !rfg_arg_string(ud, args[3], &event_id) || !rfg_arg_string(ud, args[4], &entry_point) ||
+        !rfg_arg_i64(args[5], &event_time) || !rfg_arg_string(ud, args[6], &yaml))
+        return rfg_continuous_result_value(ud, rfg_bad_args(ud, "rules_forge.continuous_push_yaml_schema: expected (session, schema_path, type, event_id, entry_point, event_time_ms, yaml)"), NULL, -1);
+    session = rfg_get_continuous(ud->ctx, h);
+    if (!session)
+        return rfg_continuous_result_value(ud, rfg_bad_args(ud, "rules_forge.continuous_push_yaml_schema: invalid session handle"), NULL, h);
+    st = ruleforge_continuous_push_yaml_schema(session, schema, type, event_id, entry_point,
+                                               event_time, yaml, &result);
+    return rfg_continuous_result_value(ud, st, result, h);
+}
+
 typedef enum {
     RFG_CONTINUOUS_PATH_JSON,
+    RFG_CONTINUOUS_PATH_YAML,
     RFG_CONTINUOUS_PATH_CSV,
     RFG_CONTINUOUS_PATH_XML
 } rfg_continuous_path_kind_t;
@@ -1410,6 +1537,9 @@ static exprtk_value_t rfg_continuous_push_path(size_t argc, exprtk_value_t *args
     if (kind == RFG_CONTINUOUS_PATH_JSON)
         st = ruleforge_continuous_push_json_path_schema(session, schema, type, source, path,
             event_id_field, event_time_field, entry_point, &result);
+    else if (kind == RFG_CONTINUOUS_PATH_YAML)
+        st = ruleforge_continuous_push_yaml_path_schema(session, schema, type, source, path,
+            event_id_field, event_time_field, entry_point, &result);
     else if (kind == RFG_CONTINUOUS_PATH_CSV)
         st = ruleforge_continuous_push_csv_path_schema(session, schema, type, source, path,
             event_id_field, event_time_field, entry_point, &result);
@@ -1426,6 +1556,8 @@ static exprtk_value_t rfg_continuous_push_path(size_t argc, exprtk_value_t *args
 
 RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_json_path_schema, RFG_CONTINUOUS_PATH_JSON,
     "rules_forge.continuous_push_json_path_schema: expected (session, schema_path, type, json, json_path, event_id_field, event_time_field, entry_point)")
+RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_yaml_path_schema, RFG_CONTINUOUS_PATH_YAML,
+    "rules_forge.continuous_push_yaml_path_schema: expected (session, schema_path, type, yaml, yaml_path, event_id_field, event_time_field, entry_point)")
 RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_csv_path_schema, RFG_CONTINUOUS_PATH_CSV,
     "rules_forge.continuous_push_csv_path_schema: expected (session, schema_path, type, csv, csv_path, event_id_field, event_time_field, entry_point)")
 RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_xml_path_schema, RFG_CONTINUOUS_PATH_XML,
@@ -1550,6 +1682,36 @@ static exprtk_value_t fn_continuous_stream_json_create(size_t argc, exprtk_value
     return exprtk_val_int(stream_h);
 }
 
+static exprtk_value_t fn_continuous_stream_yaml_create(size_t argc, exprtk_value_t *args,
+                                                        void *ud_) {
+    rfg_ud_t *ud = (rfg_ud_t *)ud_;
+    ruleforge_continuous_session_t session;
+    ruleforge_continuous_data_bind_stream_t stream = NULL;
+    char *schema, *type, *event_id, *entry_point;
+    int h, stream_h;
+    int64_t event_time;
+    ruleforge_status_t st;
+    if (!ud || argc != 6 || !rfg_arg_int(args[0], &h) ||
+        !rfg_arg_string(ud, args[1], &schema) || !rfg_arg_string(ud, args[2], &type) ||
+        !rfg_arg_string(ud, args[3], &event_id) || !rfg_arg_string(ud, args[4], &entry_point) ||
+        !rfg_arg_i64(args[5], &event_time)) {
+        rfg_bad_args(ud, "rules_forge.continuous_stream_yaml_create: expected (session, schema_path, type, event_id, entry_point, event_time_ms)");
+        return exprtk_val_num(-1.0);
+    }
+    session = rfg_get_continuous(ud->ctx, h);
+    if (!session) return exprtk_val_num(-1.0);
+    st = ruleforge_continuous_data_bind_stream_yaml_create(session, schema, type, event_id,
+                                                            entry_point, event_time, &stream);
+    if (st != RFG_OK || !stream) { rfg_set_error(ud->ctx, NULL); return exprtk_val_num(-1.0); }
+    stream_h = rfg_alloc_continuous_stream(ud->ctx, stream, h);
+    if (stream_h < 0) {
+        ruleforge_continuous_data_bind_stream_destroy(stream);
+        rfg_set_error(ud->ctx, "rules_forge.continuous_stream_yaml_create: too many stream handles");
+        return exprtk_val_num(-1.0);
+    }
+    return exprtk_val_int(stream_h);
+}
+
 static exprtk_value_t rfg_continuous_stream_path_create(size_t argc, exprtk_value_t *args,
                                                         void *ud_,
                                                         rfg_continuous_path_kind_t kind,
@@ -1576,6 +1738,9 @@ static exprtk_value_t rfg_continuous_stream_path_create(size_t argc, exprtk_valu
     }
     if (kind == RFG_CONTINUOUS_PATH_JSON)
         st = ruleforge_continuous_data_bind_stream_json_path_create(session, schema, type, path,
+            event_id_field, event_time_field, entry_point, &stream);
+    else if (kind == RFG_CONTINUOUS_PATH_YAML)
+        st = ruleforge_continuous_data_bind_stream_yaml_path_create(session, schema, type, path,
             event_id_field, event_time_field, entry_point, &stream);
     else if (kind == RFG_CONTINUOUS_PATH_CSV)
         st = ruleforge_continuous_data_bind_stream_csv_path_create(session, schema, type, path,
@@ -1605,6 +1770,9 @@ static exprtk_value_t rfg_continuous_stream_path_create(size_t argc, exprtk_valu
 RFG_CONTINUOUS_STREAM_PATH_FN(fn_continuous_stream_json_path_create,
     RFG_CONTINUOUS_PATH_JSON,
     "rules_forge.continuous_stream_json_path_create: expected (session, schema_path, type, json_path, event_id_field, event_time_field, entry_point)")
+RFG_CONTINUOUS_STREAM_PATH_FN(fn_continuous_stream_yaml_path_create,
+    RFG_CONTINUOUS_PATH_YAML,
+    "rules_forge.continuous_stream_yaml_path_create: expected (session, schema_path, type, yaml_path, event_id_field, event_time_field, entry_point)")
 RFG_CONTINUOUS_STREAM_PATH_FN(fn_continuous_stream_csv_path_create,
     RFG_CONTINUOUS_PATH_CSV,
     "rules_forge.continuous_stream_csv_path_create: expected (session, schema_path, type, csv_path, event_id_field, event_time_field, entry_point)")
@@ -1689,6 +1857,9 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "rules_forge.session_add_fact_json_schema", fn_session_add_fact_json_schema, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_json_path_schema", fn_session_add_fact_json_path_schema, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_facts_json_path_schema", fn_session_add_facts_json_path_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_fact_yaml_schema", fn_session_add_fact_yaml_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_fact_yaml_path_schema", fn_session_add_fact_yaml_path_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.session_add_facts_yaml_path_schema", fn_session_add_facts_yaml_path_schema, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_json_schema_path", fn_session_add_fact_json_schema_path, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_fact_binary_schema", fn_session_add_fact_binary_schema, ud);
     exprtk_env_register_func(env, "rules_forge.session_add_facts_csv_schema", fn_session_add_facts_csv_schema, ud);
@@ -1700,6 +1871,10 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "rules_forge.stream_json_all_create", fn_stream_json_all_create, ud);
     exprtk_env_register_func(env, "rules_forge.stream_json_path_create", fn_stream_json_path_create, ud);
     exprtk_env_register_func(env, "rules_forge.stream_json_path_all_create", fn_stream_json_path_all_create, ud);
+    exprtk_env_register_func(env, "rules_forge.stream_yaml_create", fn_stream_yaml_create, ud);
+    exprtk_env_register_func(env, "rules_forge.stream_yaml_all_create", fn_stream_yaml_all_create, ud);
+    exprtk_env_register_func(env, "rules_forge.stream_yaml_path_create", fn_stream_yaml_path_create, ud);
+    exprtk_env_register_func(env, "rules_forge.stream_yaml_path_all_create", fn_stream_yaml_path_all_create, ud);
     exprtk_env_register_func(env, "rules_forge.stream_csv_all_create", fn_stream_csv_all_create, ud);
     exprtk_env_register_func(env, "rules_forge.stream_csv_path_create", fn_stream_csv_path_create, ud);
     exprtk_env_register_func(env, "rules_forge.stream_xml_create", fn_stream_xml_create, ud);
@@ -1727,6 +1902,8 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "rules_forge.continuous_destroy", fn_continuous_destroy, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_push_json_schema", fn_continuous_push_json_schema, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_push_json_path_schema", fn_continuous_push_json_path_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.continuous_push_yaml_schema", fn_continuous_push_yaml_schema, ud);
+    exprtk_env_register_func(env, "rules_forge.continuous_push_yaml_path_schema", fn_continuous_push_yaml_path_schema, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_push_csv_path_schema", fn_continuous_push_csv_path_schema, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_push_xml_path_schema", fn_continuous_push_xml_path_schema, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_advance_watermark", fn_continuous_advance_watermark, ud);
@@ -1737,6 +1914,8 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_register_func(env, "rules_forge.continuous_result_destroy", fn_continuous_result_destroy, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_stream_json_create", fn_continuous_stream_json_create, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_stream_json_path_create", fn_continuous_stream_json_path_create, ud);
+    exprtk_env_register_func(env, "rules_forge.continuous_stream_yaml_create", fn_continuous_stream_yaml_create, ud);
+    exprtk_env_register_func(env, "rules_forge.continuous_stream_yaml_path_create", fn_continuous_stream_yaml_path_create, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_stream_csv_path_create", fn_continuous_stream_csv_path_create, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_stream_xml_path_create", fn_continuous_stream_xml_path_create, ud);
     exprtk_env_register_func(env, "rules_forge.continuous_stream_feed", fn_continuous_stream_feed, ud);

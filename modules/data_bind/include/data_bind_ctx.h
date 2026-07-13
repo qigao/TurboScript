@@ -27,6 +27,8 @@ typedef struct {
     data_bind_stream_t *stream;
     DataBindValue *result;
     DataBindError error;
+    exprtk_env_t *env;
+    exprtk_value_t record_callback;
 } db_stream_entry_t;
 
 TURBO_HASH_MAP_DEFINE(db_handle_map_t, int, DataBind *)

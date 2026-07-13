@@ -43,6 +43,12 @@ let first = rules_forge.session_add_fact_json_path_schema(
     session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
 let selected = rules_forge.session_add_facts_json_path_schema(
     session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
+let yaml_bound = rules_forge.session_add_fact_yaml_schema(
+    session, "schemas/order.tbe", "Order", yaml_text);
+let yaml_first = rules_forge.session_add_fact_yaml_path_schema(
+    session, "schemas/order.tbe", "Order", envelope_yaml, "/orders/*");
+let yaml_selected = rules_forge.session_add_facts_yaml_path_schema(
+    session, "schemas/order.tbe", "Order", envelope_yaml, "/orders/*");
 let bound = rules_forge.session_add_fact_json_schema_path(
     session, "schemas/order.tbe", "Order", "fixtures/order.json");
 
@@ -67,7 +73,7 @@ rules_forge.session_destroy(session);
 { status: 0, fired: 3 }
 ```
 
-Multi-fact JSONPath, CSV/CSVPath, and XML insertion returns:
+Multi-fact JSONPath, YAML/YPATH, CSV/CSVPath, and XML insertion returns:
 
 ```javascript
 { status: 0, loaded: 2, facts: [0, 1] }
@@ -91,8 +97,9 @@ let loaded = rules_forge.stream_finish(input);
 rules_forge.stream_destroy(input);
 ```
 
-Constructors are available for JSON, JSON arrays and paths, CSV all/path, and
-XML root/path-all. `stream_finish` returns the same
+Constructors are available for JSON and YAML root/all/path/path-all, CSV
+all/path, and XML root/path-all. YAML path constructors use YPATH expressions
+such as `/orders/*`. `stream_finish` returns the same
 `{ status, loaded, facts }` shape as synchronous batch insertion. Streams are
 owned by their stateful session and must be used on the same thread.
 
@@ -115,7 +122,7 @@ rules_forge.continuous_result_destroy(step.result);
 rules_forge.continuous_destroy(continuous);
 ```
 
-Path-selected JSON, CSV, and XML batches read event metadata from bound fields:
+Path-selected JSON, YAML, CSV, and XML batches read event metadata from bound fields:
 
 ```javascript
 let step = rules_forge.continuous_push_json_path_schema(
@@ -128,11 +135,21 @@ let input = rules_forge.continuous_stream_json_path_create(
 rules_forge.continuous_stream_feed(input, chunk);
 let streamed_step = rules_forge.continuous_stream_finish(input);
 rules_forge.continuous_stream_destroy(input);
+
+let yaml_step = rules_forge.continuous_push_yaml_path_schema(
+    continuous, "schemas/event.tbe", "Event", envelope_yaml, "/events/*",
+    "event_id", "event_time", "events");
+
+let yaml_input = rules_forge.continuous_stream_yaml_path_create(
+    continuous, "schemas/event.tbe", "Event", "/events/*",
+    "event_id", "event_time", "events");
 ```
 
+YAML selectors use YPATH syntax such as `/events/*`, not JSONPath syntax.
 Equivalent `continuous_push_csv_path_schema`, `continuous_push_xml_path_schema`,
 `continuous_stream_csv_path_create`, and `continuous_stream_xml_path_create`
-functions use the same metadata-field and entry-point arguments.
+functions use the same metadata-field and entry-point arguments. Root YAML
+events use `continuous_push_yaml_schema` or `continuous_stream_yaml_create`.
 
 The config starts from RulesForge defaults; supplied fields override only the
 documented bounded values. Push, watermark, drain, and continuous stream finish
@@ -141,7 +158,8 @@ return an object containing `status`, `result`, `step_status`, `batch_id`,
 
 `continuous_result_output(result, index)` returns a fact handle borrowed from
 that result. Destroying the result invalidates all such handles. Continuous
-JSON streams use `continuous_stream_json_create`, `continuous_stream_feed`,
+JSON and YAML streams use `continuous_stream_json_create` or
+`continuous_stream_yaml_create`, followed by `continuous_stream_feed`,
 `continuous_stream_feed_file`, `continuous_stream_finish`, and
 `continuous_stream_destroy`.
 

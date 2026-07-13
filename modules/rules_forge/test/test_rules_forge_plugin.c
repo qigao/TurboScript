@@ -54,17 +54,28 @@ spec("rules_forge_plugin") {
             check_not_null(find_native(&env, "rules_forge.session_add_fact_json_schema"));
             check_not_null(find_native(&env, "rules_forge.session_add_fact_json_path_schema"));
             check_not_null(find_native(&env, "rules_forge.session_add_facts_json_path_schema"));
+            check_not_null(find_native(&env, "rules_forge.session_add_fact_yaml_schema"));
+            check_not_null(find_native(&env, "rules_forge.session_add_fact_yaml_path_schema"));
+            check_not_null(find_native(&env, "rules_forge.session_add_facts_yaml_path_schema"));
             check_not_null(find_native(&env, "rules_forge.session_add_facts_csv_path_schema"));
             check_not_null(find_native(&env, "rules_forge.stream_json_create"));
+            check_not_null(find_native(&env, "rules_forge.stream_yaml_create"));
+            check_not_null(find_native(&env, "rules_forge.stream_yaml_all_create"));
+            check_not_null(find_native(&env, "rules_forge.stream_yaml_path_create"));
+            check_not_null(find_native(&env, "rules_forge.stream_yaml_path_all_create"));
             check_not_null(find_native(&env, "rules_forge.stream_finish"));
             check_not_null(find_native(&env, "rules_forge.continuous_create"));
             check_not_null(find_native(&env, "rules_forge.continuous_push_json_schema"));
             check_not_null(find_native(&env, "rules_forge.continuous_push_json_path_schema"));
+            check_not_null(find_native(&env, "rules_forge.continuous_push_yaml_schema"));
+            check_not_null(find_native(&env, "rules_forge.continuous_push_yaml_path_schema"));
             check_not_null(find_native(&env, "rules_forge.continuous_push_csv_path_schema"));
             check_not_null(find_native(&env, "rules_forge.continuous_push_xml_path_schema"));
             check_not_null(find_native(&env, "rules_forge.continuous_metrics"));
             check_not_null(find_native(&env, "rules_forge.continuous_stream_json_create"));
             check_not_null(find_native(&env, "rules_forge.continuous_stream_json_path_create"));
+            check_not_null(find_native(&env, "rules_forge.continuous_stream_yaml_create"));
+            check_not_null(find_native(&env, "rules_forge.continuous_stream_yaml_path_create"));
             check_not_null(find_native(&env, "rules_forge.continuous_stream_csv_path_create"));
             check_not_null(find_native(&env, "rules_forge.continuous_stream_xml_path_create"));
             check_null(find_native(&env, "rules_forge.kb_load_ts_plugin"));
@@ -94,8 +105,12 @@ spec("rules_forge_plugin") {
             mem_pool_t scratch;
             exprtk_value_t push_args[8];
             exprtk_value_t stream_args[7];
+            exprtk_value_t yaml_push_args[8];
+            exprtk_value_t yaml_stream_args[7];
             exprtk_value_t push_result;
             exprtk_value_t stream_result;
+            exprtk_value_t yaml_push_result;
+            exprtk_value_t yaml_stream_result;
 
             check_not_null(h);
             exprtk_env_init(&env);
@@ -123,9 +138,29 @@ spec("rules_forge_plugin") {
             stream_result = call_native(&env,
                 "rules_forge.continuous_stream_json_path_create", 7, stream_args);
 
+            memcpy(yaml_push_args, push_args, sizeof(yaml_push_args));
+            yaml_push_args[3] = make_string(&env,
+                "events:\n  - event_id: event-1\n    event_time: 1720000000000\n");
+            yaml_push_args[4] = make_string(&env, "/events/*");
+            yaml_push_result = call_native(&env,
+                "rules_forge.continuous_push_yaml_path_schema", 8, yaml_push_args);
+
+            yaml_stream_args[0] = yaml_push_args[0];
+            yaml_stream_args[1] = yaml_push_args[1];
+            yaml_stream_args[2] = yaml_push_args[2];
+            yaml_stream_args[3] = yaml_push_args[4];
+            yaml_stream_args[4] = yaml_push_args[5];
+            yaml_stream_args[5] = yaml_push_args[6];
+            yaml_stream_args[6] = yaml_push_args[7];
+            yaml_stream_result = call_native(&env,
+                "rules_forge.continuous_stream_yaml_path_create", 7, yaml_stream_args);
+
             check_int_eq(exprtk_map_get(&push_result, "status").data.integer, 2);
             check_int_eq(exprtk_map_get(&push_result, "result").data.integer, -1);
             check_float_eq(stream_result.data.number, -1.0, 0.001);
+            check_int_eq(exprtk_map_get(&yaml_push_result, "status").data.integer, 2);
+            check_int_eq(exprtk_map_get(&yaml_push_result, "result").data.integer, -1);
+            check_float_eq(yaml_stream_result.data.number, -1.0, 0.001);
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -138,8 +173,11 @@ spec("rules_forge_plugin") {
             mem_pool_t scratch;
             exprtk_value_t json_args[5];
             exprtk_value_t csv_args[5];
+            exprtk_value_t yaml_args[5];
             exprtk_value_t one;
             exprtk_value_t many;
+            exprtk_value_t yaml_one;
+            exprtk_value_t yaml_many;
             exprtk_value_t csv;
 
             check_not_null(h);
@@ -157,6 +195,14 @@ spec("rules_forge_plugin") {
             many = call_native(&env, "rules_forge.session_add_facts_json_path_schema",
                                5, json_args);
 
+            memcpy(yaml_args, json_args, sizeof(yaml_args));
+            yaml_args[3] = make_string(&env, "events:\n  - name: launch\n");
+            yaml_args[4] = make_string(&env, "/events/*");
+            yaml_one = call_native(&env, "rules_forge.session_add_fact_yaml_path_schema",
+                                   5, yaml_args);
+            yaml_many = call_native(&env, "rules_forge.session_add_facts_yaml_path_schema",
+                                    5, yaml_args);
+
             memcpy(csv_args, json_args, sizeof(csv_args));
             csv_args[3] = make_string(&env, "name_s,age_n\nAlice,30\n");
             csv_args[4] = make_string(&env, "age > 18");
@@ -166,6 +212,9 @@ spec("rules_forge_plugin") {
             check_float_eq(one.data.number, -1.0, 0.001);
             check_int_eq(exprtk_map_get(&many, "status").data.integer, 2);
             check_int_eq(exprtk_map_get(&many, "loaded").data.integer, 0);
+            check_float_eq(yaml_one.data.number, -1.0, 0.001);
+            check_int_eq(exprtk_map_get(&yaml_many, "status").data.integer, 2);
+            check_int_eq(exprtk_map_get(&yaml_many, "loaded").data.integer, 0);
             check_int_eq(exprtk_map_get(&csv, "status").data.integer, 2);
             check_int_eq(exprtk_map_get(&csv, "loaded").data.integer, 0);
 
