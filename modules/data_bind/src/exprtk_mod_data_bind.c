@@ -89,8 +89,16 @@ void *db_ctx_create(void) {
         free(ctx);
         return NULL;
     }
+    if (db_object_map_t_init(&ctx->objects) != 0) {
+        db_stream_map_t_destroy(&ctx->streams);
+        db_handle_map_t_destroy(&ctx->handles);
+        free(ctx);
+        return NULL;
+    }
     if (turbo_hash_map_reserve(&ctx->handles.raw, DB_MAX_HANDLES) != 0 ||
-        turbo_hash_map_reserve(&ctx->streams.raw, DB_MAX_HANDLES) != 0) {
+        turbo_hash_map_reserve(&ctx->streams.raw, DB_MAX_HANDLES) != 0 ||
+        turbo_hash_map_reserve(&ctx->objects.raw, DB_MAX_HANDLES) != 0) {
+        db_object_map_t_destroy(&ctx->objects);
         db_stream_map_t_destroy(&ctx->streams);
         db_handle_map_t_destroy(&ctx->handles);
         free(ctx);
@@ -98,6 +106,7 @@ void *db_ctx_create(void) {
     }
     ctx->next_handle = 0;
     ctx->next_stream_handle = 0;
+    ctx->next_object_handle = 0;
     return ctx;
 }
 
@@ -113,11 +122,16 @@ void db_ctx_destroy(void *p) {
         }
     }
     for (int i = 0; i < DB_MAX_HANDLES; ++i) {
+        DataBindObject **object_ptr = db_object_map_t_get(&ctx->objects, i);
+        if (object_ptr && *object_ptr) data_bind_object_free(*object_ptr);
+    }
+    for (int i = 0; i < DB_MAX_HANDLES; ++i) {
         DataBind **codec_ptr = db_handle_map_t_get(&ctx->handles, i);
         if (codec_ptr && *codec_ptr) {
             data_bind_free(*codec_ptr);
         }
     }
+    db_object_map_t_destroy(&ctx->objects);
     db_stream_map_t_destroy(&ctx->streams);
     db_handle_map_t_destroy(&ctx->handles);
     free(ctx);
@@ -145,6 +159,33 @@ static DataBind *db_handle_get(db_ctx_t *ctx, int h) {
 }
 
 static void db_stream_close_for_codec(db_ctx_t *ctx, DataBind *codec);
+
+static int db_object_handle_alloc(db_ctx_t *ctx, DataBindObject *object) {
+    if (!ctx || !object) return -1;
+    for (int i = 0; i < DB_MAX_HANDLES; i++) {
+        int handle = (ctx->next_object_handle + i) % DB_MAX_HANDLES;
+        if (db_object_map_t_contains(&ctx->objects, handle)) continue;
+        if (db_object_map_t_put(&ctx->objects, handle, object) != TURBO_OK) return -1;
+        ctx->next_object_handle = (handle + 1) % DB_MAX_HANDLES;
+        return handle;
+    }
+    return -1;
+}
+
+static DataBindObject *db_object_handle_get(db_ctx_t *ctx, int h) {
+    DataBindObject **object;
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return NULL;
+    object = db_object_map_t_get(&ctx->objects, h);
+    return object ? *object : NULL;
+}
+
+static int db_object_handle_free(db_ctx_t *ctx, int h) {
+    DataBindObject *object = NULL;
+    if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return 0;
+    if (!db_object_map_t_remove(&ctx->objects, h, &object) || !object) return 0;
+    data_bind_object_free(object);
+    return 1;
+}
 
 static void db_handle_free(db_ctx_t *ctx, int h) {
     if (!ctx || h < 0 || h >= DB_MAX_HANDLES) return;
@@ -238,7 +279,7 @@ static exprtk_value_t db_bytes_value(exprtk_env_t *env, const DataBindValue *val
 }
 
 static exprtk_value_t db_uuid_value(const DataBindValue *value) {
-    uuid_t uuid;
+    turbo_uuid_t uuid;
     if (!data_bind_value_as_uuid(value, uuid.bytes)) return DB_ZERO;
     return exprtk_val_uuid(uuid);
 }
@@ -625,6 +666,258 @@ static exprtk_value_t db_convert_status_result(db_ud_t *ud, DataBindStatus statu
         return DB_ZERO;
     }
     return db_convert_result(ud, result);
+}
+
+typedef DataBindStatus (*db_object_text_fn)(DataBind *, const char *, const char *, size_t,
+                                            DataBindObject **, DataBindError *);
+typedef DataBindStatus (*db_object_serialize_fn)(const DataBindObject *, char **, size_t *,
+                                                 DataBindError *);
+
+static exprtk_value_t db_object_publish(db_ud_t *ud, DataBindObject *object,
+                                        const DataBindError *error) {
+    int handle;
+    if (!object) {
+        if (error && error->message[0]) DB_ERROR(ud, error->message);
+        return exprtk_val_num(-1.0);
+    }
+    handle = db_object_handle_alloc(ud->ctx, object);
+    if (handle < 0) {
+        data_bind_object_free(object);
+        DB_ERROR(ud, "data_bind.object: too many open objects");
+        return exprtk_val_num(-1.0);
+    }
+    return exprtk_val_num((double)handle);
+}
+
+static exprtk_value_t db_object_from_text(size_t argc, exprtk_value_t *args, void *ud_,
+                                          const char *error_text,
+                                          db_object_text_fn parse) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    DataBindObject *object = NULL;
+    DataBindError error = DATA_BIND_ERROR_INIT;
+    DataBindStatus status;
+    char *type_name;
+
+    if (!ud || argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING) {
+        DB_ERROR(ud, error_text);
+        return exprtk_val_num(-1.0);
+    }
+    codec = db_handle_get(ud->ctx, (int)args[0].data.number);
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data,
+                              args[1].data.string.len);
+    if (!codec || !type_name) {
+        DB_ERROR(ud, !codec ? "data_bind.object: invalid codec handle" :
+                             "data_bind.object: OOM");
+        return exprtk_val_num(-1.0);
+    }
+    status = parse(codec, type_name, args[2].data.string.data,
+                   args[2].data.string.len, &object, &error);
+    if (status != DATA_BIND_OK) {
+        if (object) data_bind_object_free(object);
+        DB_ERROR(ud, error.message[0] ? error.message : error_text);
+        return exprtk_val_num(-1.0);
+    }
+    return db_object_publish(ud, object, &error);
+}
+
+static exprtk_value_t fn_db_object_from_json(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_from_text(argc, args, ud_,
+        "data_bind.object_from_json: expected (codec, type, json)",
+        data_bind_object_from_json);
+}
+
+static exprtk_value_t fn_db_object_from_yaml(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_from_text(argc, args, ud_,
+        "data_bind.object_from_yaml: expected (codec, type, yaml)",
+        data_bind_object_from_yaml);
+}
+
+static exprtk_value_t fn_db_object_from_xml(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_from_text(argc, args, ud_,
+        "data_bind.object_from_xml: expected (codec, type, xml)",
+        data_bind_object_from_xml);
+}
+
+static exprtk_value_t fn_db_object_from_binary(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    DataBindObject *object = NULL;
+    DataBindError error = DATA_BIND_ERROR_INIT;
+    DataBindStatus status;
+    char *type_name;
+    const char *data;
+    size_t len;
+
+    if (!ud || argc != 3 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING ||
+        (args[2].type != EXPRTK_VAL_STRING && args[2].type != EXPRTK_VAL_BYTES)) {
+        DB_ERROR(ud, "data_bind.object_from_binary: expected (codec, type, bytes)");
+        return exprtk_val_num(-1.0);
+    }
+    codec = db_handle_get(ud->ctx, (int)args[0].data.number);
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data,
+                              args[1].data.string.len);
+    if (args[2].type == EXPRTK_VAL_BYTES) {
+        data = args[2].data.bytes.data;
+        len = args[2].data.bytes.len;
+    } else {
+        data = args[2].data.string.data;
+        len = args[2].data.string.len;
+    }
+    if (!codec || !type_name) {
+        DB_ERROR(ud, !codec ? "data_bind.object_from_binary: invalid codec handle" :
+                             "data_bind.object_from_binary: OOM");
+        return exprtk_val_num(-1.0);
+    }
+    status = data_bind_object_from_bin(codec, type_name, (const uint8_t *)data, len,
+                                       &object, &error);
+    if (status != DATA_BIND_OK) {
+        if (object) data_bind_object_free(object);
+        DB_ERROR(ud, error.message[0] ? error.message :
+                     "data_bind.object_from_binary: failed");
+        return exprtk_val_num(-1.0);
+    }
+    return db_object_publish(ud, object, &error);
+}
+
+static exprtk_value_t fn_db_object_from_csv(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBind *codec;
+    DataBindObject *object = NULL;
+    DataBindError error = DATA_BIND_ERROR_INIT;
+    DataBindStatus status;
+    char *type_name;
+    int64_t row;
+
+    if (!ud || argc != 4 || args[0].type != EXPRTK_VAL_NUMBER ||
+        args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING ||
+        (args[3].type != EXPRTK_VAL_INTEGER && args[3].type != EXPRTK_VAL_NUMBER)) {
+        DB_ERROR(ud, "data_bind.object_from_csv: expected (codec, type, csv, row)");
+        return exprtk_val_num(-1.0);
+    }
+    row = args[3].type == EXPRTK_VAL_INTEGER ? args[3].data.integer :
+                                               (int64_t)args[3].data.number;
+    if (row < 0) {
+        DB_ERROR(ud, "data_bind.object_from_csv: row must be non-negative");
+        return exprtk_val_num(-1.0);
+    }
+    codec = db_handle_get(ud->ctx, (int)args[0].data.number);
+    type_name = db_arena_cstr(ud->scratch, args[1].data.string.data,
+                              args[1].data.string.len);
+    if (!codec || !type_name) {
+        DB_ERROR(ud, !codec ? "data_bind.object_from_csv: invalid codec handle" :
+                             "data_bind.object_from_csv: OOM");
+        return exprtk_val_num(-1.0);
+    }
+    status = data_bind_object_from_csv(codec, type_name, args[2].data.string.data,
+                                       args[2].data.string.len, (size_t)row, &object, &error);
+    if (status != DATA_BIND_OK) {
+        if (object) data_bind_object_free(object);
+        DB_ERROR(ud, error.message[0] ? error.message : "data_bind.object_from_csv: failed");
+        return exprtk_val_num(-1.0);
+    }
+    return db_object_publish(ud, object, &error);
+}
+
+static exprtk_value_t fn_db_object_clone(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBindObject *source;
+    DataBindObject *clone = NULL;
+    if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_NUMBER ||
+        !(source = db_object_handle_get(ud->ctx, (int)args[0].data.number))) {
+        DB_ERROR(ud, "data_bind.object_clone: expected valid object handle");
+        return exprtk_val_num(-1.0);
+    }
+    if (data_bind_object_clone(source, &clone) != DATA_BIND_OK || !clone) {
+        DB_ERROR(ud, "data_bind.object_clone: failed");
+        return exprtk_val_num(-1.0);
+    }
+    return db_object_publish(ud, clone, NULL);
+}
+
+static exprtk_value_t fn_db_object_type(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBindObject *object;
+    if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_NUMBER ||
+        !(object = db_object_handle_get(ud->ctx, (int)args[0].data.number))) {
+        DB_ERROR(ud, "data_bind.object_type: expected valid object handle");
+        return db_string_value(ud->env, "");
+    }
+    return db_string_value(ud->env, data_bind_object_type_name(object));
+}
+
+static exprtk_value_t fn_db_object_value(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBindObject *object;
+    const DataBindValue *value;
+    if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_NUMBER ||
+        !(object = db_object_handle_get(ud->ctx, (int)args[0].data.number)) ||
+        !(value = data_bind_object_value(object))) {
+        DB_ERROR(ud, "data_bind.object_value: expected valid object handle");
+        return DB_ZERO;
+    }
+    return db_value_to_exprtk(ud, value);
+}
+
+static exprtk_value_t db_object_serialize(size_t argc, exprtk_value_t *args, void *ud_,
+                                          const char *error_text,
+                                          db_object_serialize_fn serialize) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    DataBindObject *object;
+    DataBindError error = DATA_BIND_ERROR_INIT;
+    char *serialized = NULL;
+    char *copy;
+    size_t len = 0;
+    DataBindStatus status;
+
+    if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_NUMBER ||
+        !(object = db_object_handle_get(ud->ctx, (int)args[0].data.number))) {
+        DB_ERROR(ud, error_text);
+        return db_string_value(ud ? ud->env : NULL, "");
+    }
+    status = serialize(object, &serialized, &len, &error);
+    if (status != DATA_BIND_OK || !serialized) {
+        if (serialized) data_bind_serialized_free(serialized);
+        DB_ERROR(ud, error.message[0] ? error.message : error_text);
+        return db_string_value(ud->env, "");
+    }
+    copy = db_arena_cstr(&ud->env->arena, serialized, len);
+    data_bind_serialized_free(serialized);
+    if (!copy) {
+        DB_ERROR(ud, "data_bind.object_serialize: OOM");
+        return db_string_value(ud->env, "");
+    }
+    return exprtk_val_str(tstr_v_from_buf(copy, len));
+}
+
+static exprtk_value_t fn_db_object_serialize_json(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_serialize(argc, args, ud_,
+        "data_bind.object_serialize_json: expected valid object handle",
+        data_bind_object_serialize_json);
+}
+
+static exprtk_value_t fn_db_object_serialize_yaml(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_serialize(argc, args, ud_,
+        "data_bind.object_serialize_yaml: expected valid object handle",
+        data_bind_object_serialize_yaml);
+}
+
+static exprtk_value_t fn_db_object_serialize_xml(size_t argc, exprtk_value_t *args, void *ud_) {
+    return db_object_serialize(argc, args, ud_,
+        "data_bind.object_serialize_xml: expected valid object handle",
+        data_bind_object_serialize_xml);
+}
+
+static exprtk_value_t fn_db_object_close(size_t argc, exprtk_value_t *args, void *ud_) {
+    db_ud_t *ud = (db_ud_t *)ud_;
+    if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_NUMBER ||
+        !db_object_handle_free(ud->ctx, (int)args[0].data.number)) {
+        DB_ERROR(ud, "data_bind.object_close: expected valid object handle");
+        return exprtk_val_num(-1.0);
+    }
+    return DB_ZERO;
 }
 
 static char *db_read_file_text(db_ud_t *ud, const char *path, size_t *out_len) {
@@ -1927,6 +2220,18 @@ void db_plugin_load(void *p, void *e, void *s) {
 
     exprtk_env_register_func(env, "data_bind.create", fn_db_create, ud);
     exprtk_env_register_func(env, "data_bind.create_from_text", fn_db_create_from_text, ud);
+    exprtk_env_register_func(env, "data_bind.object_from_binary", fn_db_object_from_binary, ud);
+    exprtk_env_register_func(env, "data_bind.object_from_json", fn_db_object_from_json, ud);
+    exprtk_env_register_func(env, "data_bind.object_from_yaml", fn_db_object_from_yaml, ud);
+    exprtk_env_register_func(env, "data_bind.object_from_xml", fn_db_object_from_xml, ud);
+    exprtk_env_register_func(env, "data_bind.object_from_csv", fn_db_object_from_csv, ud);
+    exprtk_env_register_func(env, "data_bind.object_clone", fn_db_object_clone, ud);
+    exprtk_env_register_func(env, "data_bind.object_type", fn_db_object_type, ud);
+    exprtk_env_register_func(env, "data_bind.object_value", fn_db_object_value, ud);
+    exprtk_env_register_func(env, "data_bind.object_serialize_json", fn_db_object_serialize_json, ud);
+    exprtk_env_register_func(env, "data_bind.object_serialize_yaml", fn_db_object_serialize_yaml, ud);
+    exprtk_env_register_func(env, "data_bind.object_serialize_xml", fn_db_object_serialize_xml, ud);
+    exprtk_env_register_func(env, "data_bind.object_close", fn_db_object_close, ud);
     exprtk_env_register_func(env, "data_bind.parse",  fn_db_parse,  ud);
     exprtk_env_register_func(env, "data_bind.validate_json", fn_db_validate_json, ud);
     exprtk_env_register_func(env, "data_bind.validate_yaml", fn_db_validate_yaml, ud);

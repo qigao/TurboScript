@@ -83,7 +83,7 @@ static inline exprtk_value_t exprtk_val_bytes(tstr_v v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_uuid(uuid_t v) {
+static inline exprtk_value_t exprtk_val_uuid(turbo_uuid_t v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_UUID;

@@ -58,7 +58,7 @@ static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
     } else if (value.type == EXPRTK_VAL_BYTES) {
         n = snprintf(buf, buf_size, "bytes(%zu)", value.data.bytes.len);
     } else if (value.type == EXPRTK_VAL_UUID) {
-        if (!uuid_to_s(value.data.uuid, buf, (int)buf_size)) return 0;
+        if (turbo_uuid_format(&value.data.uuid, buf, buf_size) != TURBO_OK) return 0;
         *out_data = buf;
         *out_len = strlen(buf);
         return 1;
@@ -317,8 +317,9 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                     int bytes_len = snprintf(bytes_buf, sizeof(bytes_buf), "bytes(%zu)", expr_val.data.bytes.len);
                                     if (bytes_len > 0) APPEND_STR(bytes_buf, (size_t)bytes_len);
                                 } else if (expr_val.type == EXPRTK_VAL_UUID) {
-                                    char uuid_buf[UUID4_STR_BUFFER_SIZE];
-                                    if (uuid_to_s(expr_val.data.uuid, uuid_buf, sizeof(uuid_buf)))
+                                    char uuid_buf[TURBO_UUID_STRING_SIZE];
+                                    if (turbo_uuid_format(&expr_val.data.uuid, uuid_buf,
+                                                          sizeof(uuid_buf)) == TURBO_OK)
                                         APPEND_STR(uuid_buf, strlen(uuid_buf));
                                 } else if (expr_val.type == EXPRTK_VAL_DATE ||
                                            expr_val.type == EXPRTK_VAL_TIME ||

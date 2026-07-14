@@ -4,7 +4,7 @@
 #include "turbo_buffer.h"
 #include "turbo_parser.h"
 #include "turbo_str_view.h"
-#include "uuid.h"
+#include "turbo_uuid.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -358,7 +358,7 @@ typedef struct exprtk_value_s {
     int64_t integer;
     int boolean;
     tstr_v bytes;
-    uuid_t uuid;
+    turbo_uuid_t uuid;
     turbo_datetime_t datetime;
     exprtk_date_t date;
     exprtk_time_t time;

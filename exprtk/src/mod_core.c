@@ -13,23 +13,13 @@
 #include <stdio.h>
 #include <string.h>
 
-static uuid_state_t core_uuid_state;
-static int core_uuid_seeded = 0;
-
 static exprtk_value_t core_null_value(void);
 static double exprtk_numeric_value(exprtk_value_t value);
-
-static void core_uuid_seed_once(void) {
-    if (!core_uuid_seeded) {
-        uuid_seed(&core_uuid_state);
-        core_uuid_seeded = 1;
-    }
-}
 
 static int core_uuid_text(exprtk_value_t value, char *out, size_t out_size) {
     if (!out || out_size == 0) return 0;
     if (value.type == EXPRTK_VAL_UUID)
-        return uuid_to_s(value.data.uuid, out, (int)out_size) ? 1 : 0;
+        return turbo_uuid_format(&value.data.uuid, out, out_size) == TURBO_OK;
     if (value.type == EXPRTK_VAL_STRING) {
         size_t len = value.data.string.len < out_size - 1 ? value.data.string.len : out_size - 1;
         if (!value.data.string.data) return 0;
@@ -1096,11 +1086,12 @@ static exprtk_value_t fn_is_typed_array(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_uuid(size_t argc, exprtk_value_t *args,
                               exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
-    char text[UUID4_STR_BUFFER_SIZE];
-    uuid_t id;
+    char text[TURBO_UUID_STRING_SIZE];
+    turbo_uuid_t id;
 
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING ||
-        !core_uuid_text(args[0], text, sizeof(text)) || !uuid_from_s(text, &id))
+        !core_uuid_text(args[0], text, sizeof(text)) ||
+        turbo_uuid_parse(text, &id) != TURBO_OK)
         return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
@@ -1108,25 +1099,23 @@ static exprtk_value_t fn_uuid(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_uuid4(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, mem_pool_t *arena) {
     (void)argc; (void)args; (void)env; (void)arena;
-    uuid_t id;
-    core_uuid_seed_once();
-    uuid4_gen(&core_uuid_state, &id);
+    turbo_uuid_t id;
+    if (turbo_uuid_v4_generate(&id) != TURBO_OK) return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
 
 static exprtk_value_t fn_uuid7(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, mem_pool_t *arena) {
     (void)argc; (void)args; (void)env; (void)arena;
-    uuid_t id;
-    core_uuid_seed_once();
-    uuid7_gen(&core_uuid_state, &id);
+    turbo_uuid_t id;
+    if (turbo_uuid_v7_generate(&id) != TURBO_OK) return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
 
 static exprtk_value_t fn_uuid_string(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
-    char text[UUID4_STR_BUFFER_SIZE];
+    char text[TURBO_UUID_STRING_SIZE];
 
     if (argc != 1 || !core_uuid_text(args[0], text, sizeof(text)))
         return exprtk_val_str(tstr_v_from_cstr(""));

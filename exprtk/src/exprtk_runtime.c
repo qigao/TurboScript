@@ -2849,13 +2849,14 @@ exprtk_value_t eval_bytes_method(mc_ctx_t *mc) {
 }
 
 exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
-    char text[UUID4_STR_BUFFER_SIZE];
+    char text[TURBO_UUID_STRING_SIZE];
     char *buf;
     size_t len;
 
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "uuid");
-    if (!uuid_to_s(mc->obj.data.uuid, text, sizeof(text))) return exprtk_val_num(0);
+    if (turbo_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != TURBO_OK)
+        return exprtk_val_num(0);
     len = strlen(text);
     buf = (char *)mem_alloc(mc->arena, len + 1);
     if (!buf) return exprtk_val_num(0);

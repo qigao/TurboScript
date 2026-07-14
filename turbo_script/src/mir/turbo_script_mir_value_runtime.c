@@ -39,7 +39,6 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc, exprtk_val
 exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env);
 exprtk_value_t eval_class_instantiation(const char *class_name, exprtk_node_t **arg_nodes,
                                         size_t arg_count, exprtk_env_t *env);
-bool uuid_to_s(const uuid_t uuid, char *out, int capacity);
 time_t turbo_datetime_to_time(const turbo_datetime_t *dt);
 int turbo_datetime_format_rfc822(time_t t, char *buf, size_t buf_size);
 
@@ -217,7 +216,7 @@ static int ts_mir_runtime_value_text(exprtk_value_t value, char *buf, size_t buf
     return 1;
   }
   if (value.type == EXPRTK_VAL_UUID) {
-    if (!uuid_to_s(value.data.uuid, buf, (int)buf_size)) return 0;
+    if (turbo_uuid_format(&value.data.uuid, buf, buf_size) != TURBO_OK) return 0;
     *out_data = buf;
     *out_len = strlen(buf);
     return 1;
@@ -610,7 +609,7 @@ static int ts_mir_template_append_value(exprtk_env_t *env, char **buf, size_t *l
     n = snprintf(num_buf, sizeof(num_buf), "bytes(%zu)", value.data.bytes.len);
     return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
   case EXPRTK_VAL_UUID:
-    if (!uuid_to_s(value.data.uuid, num_buf, sizeof(num_buf))) return 0;
+    if (turbo_uuid_format(&value.data.uuid, num_buf, sizeof(num_buf)) != TURBO_OK) return 0;
     return ts_mir_template_append(env, buf, len, cap, num_buf, strlen(num_buf));
   case EXPRTK_VAL_DATETIME: {
     time_t ts = turbo_datetime_to_time(&value.data.datetime);

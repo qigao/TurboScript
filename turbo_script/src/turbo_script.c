@@ -820,8 +820,8 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
     printf("bytes(%zu)", val->data.bytes.len);
     break;
   case EXPRTK_VAL_UUID: {
-    char text[UUID4_STR_BUFFER_SIZE];
-    if (uuid_to_s(val->data.uuid, text, sizeof(text))) printf("%s", text);
+    char text[TURBO_UUID_STRING_SIZE];
+    if (turbo_uuid_format(&val->data.uuid, text, sizeof(text)) == TURBO_OK) printf("%s", text);
     else printf("[uuid]");
     break;
   }
