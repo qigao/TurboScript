@@ -16,6 +16,18 @@ typedef struct turbo_script_compiled_s turbo_script_compiled_t;
 typedef struct coro_context_s coro_context_t;
 typedef struct exprtk_value_s exprtk_value_t;
 
+/**
+ * @brief Borrowed iterator over a TurboScript map value.
+ *
+ * The iterator and returned key pointers become invalid when the source map is
+ * modified or released. Callers must not retain them across those operations.
+ */
+typedef struct {
+  void *storage;
+  size_t position;
+  size_t bound;
+} turbo_script_value_map_iterator_t;
+
 #define TURBO_SCRIPT_VERSION_MAJOR 1
 #define TURBO_SCRIPT_VERSION_MINOR 0
 #define TURBO_SCRIPT_VERSION_PATCH 0
@@ -196,6 +208,38 @@ CXX_C_API int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name
  * @brief Convert an exprtk_value_t to boolean (0.0 or 1.0).
  */
 CXX_C_API bool turbo_script_value_as_bool(exprtk_value_t val);
+
+/**
+ * @brief Create an empty map value owned by the TurboScript value runtime.
+ */
+CXX_C_API exprtk_value_t turbo_script_value_map(void);
+
+/**
+ * @brief Set a map entry, copying the key and value according to TurboScript value semantics.
+ */
+CXX_C_API void turbo_script_value_map_set(exprtk_value_t *map, const char *key,
+                                          exprtk_value_t value);
+
+/**
+ * @brief Start iterating over a map without taking ownership of it.
+ */
+CXX_C_API turbo_script_value_map_iterator_t
+turbo_script_value_map_iter_begin(const exprtk_value_t *map);
+
+/**
+ * @brief Read the next map entry.
+ * @return 1 when an entry was produced, 0 when iteration is complete or invalid.
+ */
+CXX_C_API int turbo_script_value_map_iter_next(turbo_script_value_map_iterator_t *iterator,
+                                               const char **key, exprtk_value_t *value);
+
+/**
+ * @brief Create a list value that borrows the supplied item storage.
+ *
+ * The returned value does not free @p items. The storage must remain valid for
+ * as long as TurboScript can observe the returned list.
+ */
+CXX_C_API exprtk_value_t turbo_script_value_list_borrowed(exprtk_value_t *items, size_t count);
 
 /* ========================================================================
  * JIT Statistics API

@@ -1207,6 +1207,44 @@ void ts_bind_func(turbo_script_ctx_t *ctx, const char *name, turbo_script_func_t
   exprtk_env_register_func(&ctx->env, name, fn, user_data);
 }
 
+exprtk_value_t turbo_script_value_map(void) { return exprtk_val_map(); }
+
+void turbo_script_value_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
+  if (!map || !key) return;
+  exprtk_map_set(map, key, value);
+}
+
+turbo_script_value_map_iterator_t
+turbo_script_value_map_iter_begin(const exprtk_value_t *map) {
+  const exprtk_map_iter_t iterator = exprtk_map_iter_begin(map);
+  turbo_script_value_map_iterator_t result;
+  result.storage = iterator.htab;
+  result.position = iterator.pos;
+  result.bound = iterator.bound;
+  return result;
+}
+
+int turbo_script_value_map_iter_next(turbo_script_value_map_iterator_t *iterator,
+                                     const char **key, exprtk_value_t *value) {
+  exprtk_map_iter_t internal;
+  int has_entry;
+
+  if (!iterator || !key || !value) return 0;
+
+  internal.htab = iterator->storage;
+  internal.pos = iterator->position;
+  internal.bound = iterator->bound;
+  has_entry = exprtk_map_iter_next(&internal, key, value);
+  iterator->storage = internal.htab;
+  iterator->position = internal.pos;
+  iterator->bound = internal.bound;
+  return has_entry;
+}
+
+exprtk_value_t turbo_script_value_list_borrowed(exprtk_value_t *items, size_t count) {
+  return exprtk_val_list_ex(items, count, 0);
+}
+
 /* ========================================================================
  * JIT Statistics Implementation
  * ======================================================================== */

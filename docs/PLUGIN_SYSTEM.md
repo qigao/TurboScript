@@ -8,7 +8,7 @@
 
 TurboScript uses a **two-tier module system**:
 
-1. **Built-in modules** - Compiled into `exprtk.dll`, registered at startup
+1. **Built-in modules** - Statically embedded in `turbo_script.dll`, registered at startup
 2. **Plugin modules** - Dynamically loaded DLLs, loaded on-demand via `import()`
 
 ---
@@ -59,7 +59,7 @@ void turbo_script_register_modules(void) {
 ```
 
 **Characteristics:**
-- ✅ Compiled into `exprtk.dll`
+- ✅ Statically embedded in `turbo_script.dll`
 - ✅ Always available (no `import()` needed)
 - ✅ Registered to **global registry**
 - ✅ Zero runtime overhead
@@ -425,7 +425,7 @@ turbo_script_register_plugin(ctx, "C:/custom/my_plugin.dll");
 | **Registration** | Global registry | Per-context env |
 | **Import needed?** | ❌ No | ✅ Yes |
 | **Overhead** | Zero | Minimal (dlopen) |
-| **Distribution** | Part of exprtk.dll | Separate DLLs |
+| **Distribution** | Part of turbo_script.dll | Separate DLLs |
 | **Update** | Recompile exprtk | Replace DLL |
 | **Use case** | Core functions | Domain-specific |
 

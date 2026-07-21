@@ -21,7 +21,7 @@ target_include_directories(
 
 target_compile_definitions(${TARGET_NAME} PRIVATE AES128=1 AES192=0 AES256=0 CBC=0 ECB=0 CTR=1)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk monocypher sha2
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboNet::Crypto
                                             unofficial::tiny-aes-c::tiny-aes-c
                                             TurboUtils::Core)
 

@@ -1,8 +1,7 @@
 #include "crypto.h"
 
 #include "aes.h"
-#include "monocypher.h"
-#include "sha-256.h"
+#include "turbo_crypto.h"
 
 #include <math.h>
 #include <stdlib.h>
@@ -100,18 +99,19 @@ static exprtk_value_t crypto_copy_bytes(const uint8_t *bytes, size_t len, mem_po
 }
 
 static exprtk_value_t crypto_bytes32_unary(size_t argc, exprtk_value_t *args, mem_pool_t *arena,
-                                           void (*fn)(uint8_t[32], const uint8_t[32])) {
+                                           int (*fn)(uint8_t[32], const uint8_t[32])) {
     tstr_v in;
     if (argc != 1 || !crypto_value_bytes(args[0], &in) || in.len != 32)
         return crypto_null();
     uint8_t out[32];
-    fn(out, (const uint8_t *)in.data);
+    if (fn(out, (const uint8_t *)in.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(out, sizeof(out), arena);
 }
 
 static exprtk_value_t crypto_bytes32_binary(size_t argc, exprtk_value_t *args, mem_pool_t *arena,
-                                            void (*fn)(uint8_t[32], const uint8_t[32],
-                                                       const uint8_t[32])) {
+                                            int (*fn)(uint8_t[32], const uint8_t[32],
+                                                      const uint8_t[32])) {
     tstr_v a;
     tstr_v b;
     if (argc != 2 ||
@@ -120,7 +120,8 @@ static exprtk_value_t crypto_bytes32_binary(size_t argc, exprtk_value_t *args, m
         a.len != 32 || b.len != 32)
         return crypto_null();
     uint8_t out[32];
-    fn(out, (const uint8_t *)a.data, (const uint8_t *)b.data);
+    if (fn(out, (const uint8_t *)a.data, (const uint8_t *)b.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(out, sizeof(out), arena);
 }
 
@@ -131,8 +132,9 @@ static exprtk_value_t fn_sha256(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if (argc != 1 || !crypto_value_bytes(args[0], &data))
         return crypto_null();
 
-    uint8_t digest[SIZE_OF_SHA_256_HASH];
-    calc_sha_256(digest, data.data, data.len);
+    uint8_t digest[TURBO_CRYPTO_SHA256_SIZE];
+    if (turbo_crypto_sha256(data.data, data.len, digest) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_hex_bytes(digest, sizeof(digest), arena);
 }
 
@@ -143,8 +145,9 @@ static exprtk_value_t fn_sha256_bytes(size_t argc, exprtk_value_t *args, exprtk_
     if (argc != 1 || !crypto_value_bytes(args[0], &data))
         return crypto_null();
 
-    uint8_t digest[SIZE_OF_SHA_256_HASH];
-    calc_sha_256(digest, data.data, data.len);
+    uint8_t digest[TURBO_CRYPTO_SHA256_SIZE];
+    if (turbo_crypto_sha256(data.data, data.len, digest) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(digest, sizeof(digest), arena);
 }
 
@@ -160,7 +163,8 @@ static exprtk_value_t fn_blake2b(size_t argc, exprtk_value_t *args, exprtk_env_t
         return crypto_null();
 
     uint8_t digest[64];
-    crypto_blake2b(digest, digest_size, (const uint8_t *)data.data, data.len);
+    if (turbo_crypto_blake2b(digest, digest_size, data.data, data.len) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_hex_bytes(digest, digest_size, arena);
 }
 
@@ -181,14 +185,13 @@ static exprtk_value_t fn_blake2b_keyed(size_t argc, exprtk_value_t *args, exprtk
         return crypto_null();
 
     uint8_t digest[64];
-    crypto_blake2b_keyed(digest, digest_size,
-                         (const uint8_t *)key.data, key.len,
-                         (const uint8_t *)data.data, data.len);
+    if (turbo_crypto_blake2b_keyed(digest, digest_size, key.data, key.len,
+                                   data.data, data.len) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_hex_bytes(digest, digest_size, arena);
 }
 
-static exprtk_value_t crypto_verify_fixed(size_t argc, exprtk_value_t *args, size_t len,
-                                          int (*verify)(const uint8_t *, const uint8_t *)) {
+static exprtk_value_t crypto_verify_fixed(size_t argc, exprtk_value_t *args, size_t len) {
     tstr_v a;
     tstr_v b;
     if (argc != 2 || !crypto_value_bytes(args[0], &a) || !crypto_value_bytes(args[1], &b))
@@ -196,28 +199,28 @@ static exprtk_value_t crypto_verify_fixed(size_t argc, exprtk_value_t *args, siz
     if (a.len != len || b.len != len)
         return exprtk_val_num(0);
 
-    return exprtk_val_num(verify((const uint8_t *)a.data, (const uint8_t *)b.data) == 0 ? 1.0 : 0.0);
+    return exprtk_val_num(turbo_crypto_verify(a.data, b.data, len) == TURBO_CRYPTO_OK ? 1.0 : 0.0);
 }
 
 static exprtk_value_t fn_verify16(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                   mem_pool_t *arena) {
     (void)env;
     (void)arena;
-    return crypto_verify_fixed(argc, args, 16, crypto_verify16);
+    return crypto_verify_fixed(argc, args, 16);
 }
 
 static exprtk_value_t fn_verify32(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                   mem_pool_t *arena) {
     (void)env;
     (void)arena;
-    return crypto_verify_fixed(argc, args, 32, crypto_verify32);
+    return crypto_verify_fixed(argc, args, 32);
 }
 
 static exprtk_value_t fn_verify64(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                   mem_pool_t *arena) {
     (void)env;
     (void)arena;
-    return crypto_verify_fixed(argc, args, 64, crypto_verify64);
+    return crypto_verify_fixed(argc, args, 64);
 }
 
 static exprtk_value_t fn_aes_ctr_crypt(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -268,12 +271,12 @@ static exprtk_value_t fn_aead_lock(size_t argc, exprtk_value_t *args, exprtk_env
         cipher = (char *)mem_alloc(arena, plain.len);
         if (!cipher) return crypto_null();
     }
-    uint8_t mac[16];
-    crypto_aead_lock((uint8_t *)cipher, mac,
-                     (const uint8_t *)key.data,
-                     (const uint8_t *)nonce.data,
-                     (const uint8_t *)ad.data, ad.len,
-                     (const uint8_t *)plain.data, plain.len);
+    uint8_t mac[TURBO_CRYPTO_AEAD_MAC_SIZE];
+    if (turbo_crypto_aead_lock(cipher, mac,
+                               (const uint8_t *)key.data,
+                               (const uint8_t *)nonce.data,
+                               ad.data, ad.len, plain.data, plain.len) != TURBO_CRYPTO_OK)
+        return crypto_null();
 
     exprtk_value_t result = exprtk_val_object();
     exprtk_map_set(&result, "cipher", exprtk_val_bytes(tstr_v_from_buf(cipher, plain.len)));
@@ -305,12 +308,11 @@ static exprtk_value_t fn_aead_unlock(size_t argc, exprtk_value_t *args, exprtk_e
         if (!plain) return crypto_null();
     }
 
-    if (crypto_aead_unlock((uint8_t *)plain,
-                           (const uint8_t *)mac.data,
-                           (const uint8_t *)key.data,
-                           (const uint8_t *)nonce.data,
-                           (const uint8_t *)ad.data, ad.len,
-                           (const uint8_t *)cipher.data, cipher.len) != 0)
+    if (turbo_crypto_aead_unlock(plain,
+                                 (const uint8_t *)mac.data,
+                                 (const uint8_t *)key.data,
+                                 (const uint8_t *)nonce.data,
+                                 ad.data, ad.len, cipher.data, cipher.len) != TURBO_CRYPTO_OK)
         return crypto_null();
 
     return exprtk_val_bytes(tstr_v_from_buf(plain, cipher.len));
@@ -334,7 +336,7 @@ static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if (!crypto_value_u32(args[2], 1, 1024, &hash_size) ||
         !crypto_value_u32(args[3], 8, CRYPTO_ARGON2_MAX_BLOCKS, &nb_blocks) ||
         !crypto_value_u32(args[4], 1, UINT32_MAX, &nb_passes) ||
-        !crypto_value_u32(args[5], CRYPTO_ARGON2_D, CRYPTO_ARGON2_ID, &algorithm))
+        !crypto_value_u32(args[5], TURBO_CRYPTO_ARGON2_D, TURBO_CRYPTO_ARGON2_ID, &algorithm))
         return crypto_null();
 
     tstr_v key = {0};
@@ -353,34 +355,41 @@ static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t 
 
     uint8_t *hash = (uint8_t *)malloc(hash_size);
     if (!hash) {
-        crypto_wipe(work_area, work_size);
+        turbo_crypto_wipe(work_area, work_size);
         free(work_area);
         return crypto_null();
     }
 
-    crypto_argon2_config config = {
+    turbo_crypto_argon2_config_t config = {
         .algorithm = algorithm,
-        .nb_blocks = nb_blocks,
-        .nb_passes = nb_passes,
-        .nb_lanes = 1,
+        .block_count = nb_blocks,
+        .pass_count = nb_passes,
+        .lane_count = 1,
     };
-    crypto_argon2_inputs inputs = {
-        .pass = (const uint8_t *)pass.data,
+    turbo_crypto_argon2_inputs_t inputs = {
+        .password = (const uint8_t *)pass.data,
         .salt = (const uint8_t *)salt.data,
-        .pass_size = (uint32_t)pass.len,
+        .password_size = (uint32_t)pass.len,
         .salt_size = (uint32_t)salt.len,
     };
-    crypto_argon2_extras extras = {
+    turbo_crypto_argon2_extras_t extras = {
         .key = (const uint8_t *)key.data,
-        .ad = (const uint8_t *)ad.data,
+        .associated_data = (const uint8_t *)ad.data,
         .key_size = (uint32_t)key.len,
-        .ad_size = (uint32_t)ad.len,
+        .associated_data_size = (uint32_t)ad.len,
     };
 
-    crypto_argon2(hash, hash_size, work_area, config, inputs, extras);
+    if (turbo_crypto_argon2(hash, hash_size, work_area, config, inputs, extras) !=
+        TURBO_CRYPTO_OK) {
+        turbo_crypto_wipe(hash, hash_size);
+        turbo_crypto_wipe(work_area, work_size);
+        free(hash);
+        free(work_area);
+        return crypto_null();
+    }
     exprtk_value_t result = crypto_copy_bytes(hash, hash_size, arena);
-    crypto_wipe(hash, hash_size);
-    crypto_wipe(work_area, work_size);
+    turbo_crypto_wipe(hash, hash_size);
+    turbo_crypto_wipe(work_area, work_size);
     free(hash);
     free(work_area);
     return result;
@@ -389,37 +398,37 @@ static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t 
 static exprtk_value_t fn_x25519_public_key(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                            mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_x25519_public_key);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_x25519_public_key);
 }
 
 static exprtk_value_t fn_x25519(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                 mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_binary(argc, args, arena, crypto_x25519);
+    return crypto_bytes32_binary(argc, args, arena, turbo_crypto_x25519);
 }
 
 static exprtk_value_t fn_x25519_to_eddsa(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                          mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_x25519_to_eddsa);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_x25519_to_eddsa);
 }
 
 static exprtk_value_t fn_x25519_inverse(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                         mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_binary(argc, args, arena, crypto_x25519_inverse);
+    return crypto_bytes32_binary(argc, args, arena, turbo_crypto_x25519_inverse);
 }
 
 static exprtk_value_t fn_x25519_dirty_small(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                             mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_x25519_dirty_small);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_x25519_dirty_small);
 }
 
 static exprtk_value_t fn_x25519_dirty_fast(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                            mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_x25519_dirty_fast);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_x25519_dirty_fast);
 }
 
 static exprtk_value_t fn_eddsa_key_pair(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -432,13 +441,14 @@ static exprtk_value_t fn_eddsa_key_pair(size_t argc, exprtk_value_t *args, exprt
     uint8_t secret_key[64];
     uint8_t public_key[32];
     memcpy(seed_copy, seed.data, sizeof(seed_copy));
-    crypto_eddsa_key_pair(secret_key, public_key, seed_copy);
+    if (turbo_crypto_eddsa_key_pair(secret_key, public_key, seed_copy) != TURBO_CRYPTO_OK)
+        return crypto_null();
 
     exprtk_value_t result = exprtk_val_object();
     exprtk_map_set(&result, "secret_key", crypto_copy_bytes(secret_key, sizeof(secret_key), arena));
     exprtk_map_set(&result, "public_key", crypto_copy_bytes(public_key, sizeof(public_key), arena));
-    crypto_wipe(seed_copy, sizeof(seed_copy));
-    crypto_wipe(secret_key, sizeof(secret_key));
+    turbo_crypto_wipe(seed_copy, sizeof(seed_copy));
+    turbo_crypto_wipe(secret_key, sizeof(secret_key));
     return result;
 }
 
@@ -453,8 +463,9 @@ static exprtk_value_t fn_eddsa_sign(size_t argc, exprtk_value_t *args, exprtk_en
         secret_key.len != 64)
         return crypto_null();
     uint8_t signature[64];
-    crypto_eddsa_sign(signature, (const uint8_t *)secret_key.data,
-                      (const uint8_t *)message.data, message.len);
+    if (turbo_crypto_eddsa_sign(signature, (const uint8_t *)secret_key.data,
+                                message.data, message.len) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(signature, sizeof(signature), arena);
 }
 
@@ -471,22 +482,23 @@ static exprtk_value_t fn_eddsa_check(size_t argc, exprtk_value_t *args, exprtk_e
         !crypto_value_bytes(args[2], &message) ||
         signature.len != 64 || public_key.len != 32)
         return exprtk_val_num(0);
-    return exprtk_val_num(crypto_eddsa_check((const uint8_t *)signature.data,
-                                             (const uint8_t *)public_key.data,
-                                             (const uint8_t *)message.data,
-                                             message.len) == 0 ? 1.0 : 0.0);
+    return exprtk_val_num(turbo_crypto_eddsa_check((const uint8_t *)signature.data,
+                                                   (const uint8_t *)public_key.data,
+                                                   message.data, message.len) == TURBO_CRYPTO_OK
+                              ? 1.0
+                              : 0.0);
 }
 
 static exprtk_value_t fn_eddsa_to_x25519(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                          mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_eddsa_to_x25519);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_eddsa_to_x25519);
 }
 
 static exprtk_value_t fn_eddsa_trim_scalar(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                            mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_eddsa_trim_scalar);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_eddsa_trim_scalar);
 }
 
 static exprtk_value_t fn_eddsa_reduce(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -496,7 +508,8 @@ static exprtk_value_t fn_eddsa_reduce(size_t argc, exprtk_value_t *args, exprtk_
     if (argc != 1 || !crypto_value_bytes(args[0], &expanded) || expanded.len != 64)
         return crypto_null();
     uint8_t reduced[32];
-    crypto_eddsa_reduce(reduced, (const uint8_t *)expanded.data);
+    if (turbo_crypto_eddsa_reduce(reduced, (const uint8_t *)expanded.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(reduced, sizeof(reduced), arena);
 }
 
@@ -513,16 +526,17 @@ static exprtk_value_t fn_eddsa_mul_add(size_t argc, exprtk_value_t *args, exprtk
         a.len != 32 || b.len != 32 || c.len != 32)
         return crypto_null();
     uint8_t out[32];
-    crypto_eddsa_mul_add(out, (const uint8_t *)a.data,
-                         (const uint8_t *)b.data,
-                         (const uint8_t *)c.data);
+    if (turbo_crypto_eddsa_mul_add(out, (const uint8_t *)a.data,
+                                   (const uint8_t *)b.data,
+                                   (const uint8_t *)c.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(out, sizeof(out), arena);
 }
 
 static exprtk_value_t fn_eddsa_scalarbase(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                           mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_eddsa_scalarbase);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_eddsa_scalarbase);
 }
 
 static exprtk_value_t fn_chacha20_h(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -536,7 +550,9 @@ static exprtk_value_t fn_chacha20_h(size_t argc, exprtk_value_t *args, exprtk_en
         key.len != 32 || in.len != 16)
         return crypto_null();
     uint8_t out[32];
-    crypto_chacha20_h(out, (const uint8_t *)key.data, (const uint8_t *)in.data);
+    if (turbo_crypto_chacha20_h(out, (const uint8_t *)key.data,
+                                (const uint8_t *)in.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(out, sizeof(out), arena);
 }
 
@@ -562,17 +578,23 @@ static exprtk_value_t crypto_chacha20_crypt(size_t argc, exprtk_value_t *args,
     }
 
     if (nonce_len == 8) {
-        crypto_chacha20_djb((uint8_t *)buf, (const uint8_t *)data.data, data.len,
-                            (const uint8_t *)key.data, (const uint8_t *)nonce.data,
-                            (uint64_t)ctr32);
+        if (turbo_crypto_chacha20_djb(buf, data.data, data.len,
+                                      (const uint8_t *)key.data,
+                                      (const uint8_t *)nonce.data,
+                                      (uint64_t)ctr32) != TURBO_CRYPTO_OK)
+            return crypto_null();
     } else if (nonce_len == 12) {
-        crypto_chacha20_ietf((uint8_t *)buf, (const uint8_t *)data.data, data.len,
-                             (const uint8_t *)key.data, (const uint8_t *)nonce.data,
-                             ctr32);
+        if (turbo_crypto_chacha20_ietf(buf, data.data, data.len,
+                                       (const uint8_t *)key.data,
+                                       (const uint8_t *)nonce.data,
+                                       ctr32) != TURBO_CRYPTO_OK)
+            return crypto_null();
     } else {
-        crypto_chacha20_x((uint8_t *)buf, (const uint8_t *)data.data, data.len,
-                          (const uint8_t *)key.data, (const uint8_t *)nonce.data,
-                          (uint64_t)ctr32);
+        if (turbo_crypto_chacha20_x(buf, data.data, data.len,
+                                    (const uint8_t *)key.data,
+                                    (const uint8_t *)nonce.data,
+                                    (uint64_t)ctr32) != TURBO_CRYPTO_OK)
+            return crypto_null();
     }
     return exprtk_val_bytes(tstr_v_from_buf(buf, data.len));
 }
@@ -606,14 +628,16 @@ static exprtk_value_t fn_poly1305(size_t argc, exprtk_value_t *args, exprtk_env_
         key.len != 32)
         return crypto_null();
     uint8_t mac[16];
-    crypto_poly1305(mac, (const uint8_t *)message.data, message.len, (const uint8_t *)key.data);
+    if (turbo_crypto_poly1305(mac, message.data, message.len,
+                              (const uint8_t *)key.data) != TURBO_CRYPTO_OK)
+        return crypto_null();
     return crypto_copy_bytes(mac, sizeof(mac), arena);
 }
 
 static exprtk_value_t fn_elligator_map(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                        mem_pool_t *arena) {
     (void)env;
-    return crypto_bytes32_unary(argc, args, arena, crypto_elligator_map);
+    return crypto_bytes32_unary(argc, args, arena, turbo_crypto_elligator_map);
 }
 
 static exprtk_value_t fn_elligator_rev(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -627,7 +651,8 @@ static exprtk_value_t fn_elligator_rev(size_t argc, exprtk_value_t *args, exprtk
         !crypto_value_u32(args[1], 0, 255, &tweak))
         return crypto_null();
     uint8_t hidden[32];
-    if (crypto_elligator_rev(hidden, (const uint8_t *)curve.data, (uint8_t)tweak) != 0)
+    if (turbo_crypto_elligator_rev(hidden, (const uint8_t *)curve.data, (uint8_t)tweak) !=
+        TURBO_CRYPTO_OK)
         return crypto_null();
     return crypto_copy_bytes(hidden, sizeof(hidden), arena);
 }
@@ -642,13 +667,14 @@ static exprtk_value_t fn_elligator_key_pair(size_t argc, exprtk_value_t *args, e
     uint8_t hidden[32];
     uint8_t secret_key[32];
     memcpy(seed_copy, seed.data, sizeof(seed_copy));
-    crypto_elligator_key_pair(hidden, secret_key, seed_copy);
+    if (turbo_crypto_elligator_key_pair(hidden, secret_key, seed_copy) != TURBO_CRYPTO_OK)
+        return crypto_null();
 
     exprtk_value_t result = exprtk_val_object();
     exprtk_map_set(&result, "hidden", crypto_copy_bytes(hidden, sizeof(hidden), arena));
     exprtk_map_set(&result, "secret_key", crypto_copy_bytes(secret_key, sizeof(secret_key), arena));
-    crypto_wipe(seed_copy, sizeof(seed_copy));
-    crypto_wipe(secret_key, sizeof(secret_key));
+    turbo_crypto_wipe(seed_copy, sizeof(seed_copy));
+    turbo_crypto_wipe(secret_key, sizeof(secret_key));
     return result;
 }
 

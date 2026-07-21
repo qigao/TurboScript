@@ -68,7 +68,7 @@ include(CMakePackageConfigHelpers)
 
 # Project-owned installation policy
 install(
-  TARGETS exprtk turbo_script
+  TARGETS turbo_script
   EXPORT TurboScriptTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

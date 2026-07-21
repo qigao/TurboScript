@@ -62,6 +62,34 @@ spec("turbo_script_basics") {
       check_str_eq(turbo_script_version(), TURBO_SCRIPT_VERSION_STRING);
     }
 
+    it("should expose host map and borrowed list values") {
+      exprtk_value_t items[2] = {
+          {EXPRTK_VAL_NUMBER, .data.number = 3.0},
+          {EXPRTK_VAL_NUMBER, .data.number = 5.0},
+      };
+      exprtk_value_t list = turbo_script_value_list_borrowed(items, 2);
+      exprtk_value_t map = turbo_script_value_map();
+      turbo_script_value_map_iterator_t iterator;
+      const char *key = NULL;
+      exprtk_value_t entry;
+
+      check_int_eq(list.type, EXPRTK_VAL_LIST);
+      check_ptr_eq(list.data.list.items, items);
+      check_size_eq(list.data.list.count, 2);
+      check_int_eq(list.data.list.heap_owned, 0);
+
+      turbo_script_value_map_set(&map, "values", list);
+      iterator = turbo_script_value_map_iter_begin(&map);
+      check_int_eq(turbo_script_value_map_iter_next(&iterator, &key, &entry), 1);
+      check_str_eq(key, "values");
+      check_int_eq(entry.type, EXPRTK_VAL_LIST);
+      check_size_eq(entry.data.list.count, 2);
+      check_float_eq(entry.data.list.items[1].data.number, 5.0, 0.001);
+      check_int_eq(turbo_script_value_map_iter_next(&iterator, &key, &entry), 0);
+
+      exprtk_map_free(&map);
+    }
+
     it("should reuse parsed ast for repeated runs of the same script") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       exprtk_node_t *first_expr = NULL;

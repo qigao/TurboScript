@@ -78,8 +78,8 @@ target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE mir_static
-  PUBLIC TurboUtils::Core exprtk)
+  PRIVATE exprtk mir_static
+  PUBLIC TurboUtils::Core)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  

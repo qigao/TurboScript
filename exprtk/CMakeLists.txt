@@ -33,12 +33,12 @@ add_custom_command(
   VERBATIM)
 
 # =============================================================================
-# Library (respects BUILD_SHARED_LIBS)
+# Static frontend/runtime embedded by TurboScript and plugin binaries
 # =============================================================================
 cmake_add_source(SOURCE_FILES RECURSE PATTERNS "*.c*" "*.h*")
 
 add_library(
-  ${TARGET_NAME} SHARED
+  ${TARGET_NAME} STATIC
   ${SOURCE_FILES}
   ${CMAKE_CURRENT_SOURCE_DIR}/src/exprtk_runtime.c
   ${exprtk_LEXER_GEN}
@@ -65,9 +65,6 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
           ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/vendor/mir)
 
-# Define BUILDING_EXPRTK so exprtk_grammar.h includes the generated file
-target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
-
 target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
@@ -84,9 +81,7 @@ endif()
 
 set_target_properties(
   ${TARGET_NAME}
-  PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON
-             CXX_VISIBILITY_PRESET default
-             VISIBILITY_INLINES_HIDDEN OFF)
+  PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 # Install headers
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
