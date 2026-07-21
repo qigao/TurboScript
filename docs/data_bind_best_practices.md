@@ -6,10 +6,11 @@
 
 1. [Plain Object vs Class Instance](#plain-object-vs-class-instance)
 2. [类包装模式选择](#类包装模式选择)
-3. [性能优化](#性能优化)
-4. [错误处理](#错误处理)
-5. [架构模式](#架构模式)
-6. [常见陷阱](#常见陷阱)
+3. [可复用对象与序列化](#可复用对象与序列化)
+4. [性能优化](#性能优化)
+5. [错误处理](#错误处理)
+6. [架构模式](#架构模式)
+7. [常见陷阱](#常见陷阱)
 
 ---
 
@@ -25,7 +26,7 @@ import("data_bind");
 import("finance");
 
 var codec = data_bind.create("market_data.tbe");
-var tick = data_bind.from_binary(codec, binary_data);
+var tick = data_bind.parse(codec, "Tick", binary_data);
 
 // 直接使用字段进行计算
 var ma = finance.sma(tick.close, 20);
@@ -41,7 +42,7 @@ if (rsi > 70) {
 ```javascript
 // 日志处理：高吞吐量，无需行为封装
 var codec = data_bind.create("log_event.tbe");
-var logs = data_bind.parse_json_all(codec, "LogEvent", json_array);
+var logs = data_bind.json_all(codec, "LogEvent", json_array);
 
 var error_count = 0;
 var warning_count = 0;
@@ -59,9 +60,10 @@ print("Errors: " + error_count + ", Warnings: " + warning_count);
 
 ```javascript
 // API 响应解析后立即转换为其他格式
-var response = data_bind.parse_json(codec, "ApiResponse", json_text);
-var csv_output = data_bind.to_csv(codec, response);
+var response = data_bind.object_from_json(codec, "ApiResponse", json_text);
+var csv_output = data_bind.object_serialize_csv(response);
 write_file("output.csv", csv_output);
+data_bind.object_close(response);
 ```
 
 ---
@@ -74,7 +76,7 @@ write_file("output.csv", csv_output);
 // 用户管理：需要验证、权限检查等行为
 class User {
     static from_json(codec, json_text) {
-        var plain = data_bind.parse_json(codec, "User", json_text);
+        var plain = data_bind.json(codec, "User", json_text);
         return User.from_plain(plain);
     }
     
@@ -199,6 +201,33 @@ class TradingStrategy {
 
 ---
 
+## 可复用对象与序列化
+
+普通 `json()`、`yaml()`、`csv()`、`xml()` 和 `parse()` 适合解析后立即作为
+Plain Object 使用。需要把同一值输出为多种格式或稍后再输出时，创建 owned
+object，避免重新解析源文本：
+
+```javascript
+var codec = data_bind.create("order.tbe");
+var object = data_bind.object_from_json(codec, "Order", json_text);
+
+var csv = data_bind.object_serialize_csv(object);       // string
+var binary = data_bind.object_serialize_binary(object); // bytes
+
+data_bind.object_close(object);
+data_bind.close(codec);
+```
+
+生命周期规则：
+
+- `object_from_*()` 和 `object_clone()` 返回必须关闭的对象句柄。
+- `object_value()` 返回环境拥有的 Plain Object，不需要调用 `object_close()`。
+- 先关闭对象，再关闭 codec。`data_bind.close(codec)` 会清理遗漏的关联对象。
+- Binary 依赖 codec schema，不是自描述格式；接收方必须使用兼容 schema 和类型名。
+- CSV 适合可平坦化的数据。空容器、包含 `.` 或 `[` 的 map key 等无法无损表达的形状会失败。
+
+---
+
 ## 性能优化
 
 ### 1. 重用 Codec 实例
@@ -208,9 +237,9 @@ class TradingStrategy {
 ```javascript
 function process_message(json_text) {
     var codec = data_bind.create("schema.tbe");  // ❌ 每次都重新编译
-    var msg = data_bind.parse_json(codec, "Message", json_text);
+    var msg = data_bind.json(codec, "Message", json_text);
     // ...
-    data_bind.free(codec);
+    data_bind.close(codec);
 }
 
 for (var i = 0; i < 10000; i++) {
@@ -224,7 +253,7 @@ for (var i = 0; i < 10000; i++) {
 var codec = data_bind.create("schema.tbe");  // ✅ 只编译一次
 
 function process_message(json_text) {
-    return data_bind.parse_json(codec, "Message", json_text);
+    return data_bind.json(codec, "Message", json_text);
 }
 
 for (var i = 0; i < 10000; i++) {
@@ -232,7 +261,7 @@ for (var i = 0; i < 10000; i++) {
     // ...
 }
 
-data_bind.free(codec);
+data_bind.close(codec);
 ```
 
 **性能提升**：~100x（缓存命中后从 50ms 降到 0.5ms）
@@ -267,7 +296,7 @@ data_bind.clear_cache();
 ```javascript
 // 对象池自动管理，无需手动配置
 for (var i = 0; i < 10000; i++) {
-    var obj = data_bind.parse_json(codec, "Message", json_array[i]);
+    var obj = data_bind.json(codec, "Message", json_array[i]);
     process(obj);
     data_bind.value_free(obj);  // 对象回到池中，下次复用
 }
@@ -306,12 +335,12 @@ print("Pool efficiency: " + (stats.reused / stats.allocated * 100) + "%");
 // ❌ 逐条解析：N 次函数调用开销
 var results = [];
 for (var i = 0; i < json_array.length; i++) {
-    var obj = data_bind.parse_json(codec, "Item", json_array[i]);
+    var obj = data_bind.json(codec, "Item", json_array[i]);
     results.push(obj);
 }
 
 // ✅ 批量解析：1 次函数调用
-var results = data_bind.parse_json_all(codec, "Item", json_array_text);
+var results = data_bind.json_all(codec, "Item", json_array_text);
 ```
 
 **性能提升**：20-40%（取决于数组大小）
@@ -332,7 +361,7 @@ var codec = data_bind.create("schema.tbe");
 // 严格验证：任何字段错误都会抛出异常
 try {
     data_bind.validate_json(codec, "User", json_text);
-    var user = data_bind.parse_json(codec, "User", json_text);
+    var user = data_bind.json(codec, "User", json_text);
     // 此时保证 user 完全符合 schema
 } catch (err) {
     print("Validation failed: " + err);
@@ -344,7 +373,7 @@ try {
 
 ```javascript
 // 宽松解析：跳过无效记录
-var users = data_bind.parse_json_all(codec, "User", json_array_text);
+var users = data_bind.json_all(codec, "User", json_array_text);
 // users 只包含成功解析的记录，无效记录被跳过
 
 print("Parsed " + len(users) + " valid users");
@@ -356,7 +385,7 @@ print("Parsed " + len(users) + " valid users");
 
 ```javascript
 try {
-    var user = data_bind.parse_json(codec, "User", json_text);
+    var user = data_bind.json(codec, "User", json_text);
 } catch (err) {
     // 错误路径指示具体位置
     // JSON: "json: $.address.zipcode"
@@ -377,7 +406,7 @@ try {
 function load_user(user_id) {
     try {
         var json = api_get("/users/" + user_id);
-        var plain = data_bind.parse_json(codec, "User", json);
+        var plain = data_bind.json(codec, "User", json);
         return User.from_plain(plain);
     } catch (err) {
         throw "UserNotFound: " + user_id;  // 领域层错误
@@ -412,13 +441,13 @@ class UserRepository {
     
     find_by_id(id) {
         var json = api_get("/users/" + id);
-        var plain = data_bind.parse_json(this.codec, "User", json);
+        var plain = data_bind.json(this.codec, "User", json);
         return User.from_plain(plain);
     }
     
     find_all() {
         var json = api_get("/users");
-        var plains = data_bind.parse_json_all(this.codec, "User", json);
+        var plains = data_bind.json_all(this.codec, "User", json);
         var users = [];
         for (var i = 0; i < len(plains); i++) {
             users.push(User.from_plain(plains[i]));
@@ -428,8 +457,8 @@ class UserRepository {
     
     save(user) {
         var plain = user.to_plain();  // 需要在 User 类中实现
-        var json = data_bind.to_json(this.codec, plain);
-        api_post("/users", json);
+        var json_text = json.stringify(plain);
+        api_post("/users", json_text);
     }
 }
 
@@ -451,12 +480,12 @@ repo.save(user);
 function transfer_user_data(from_service, to_service) {
     // 从服务 A 获取 Plain Object
     var codec_a = data_bind.create("service_a_schema.tbe");
-    var dto = data_bind.parse_json(codec_a, "User", from_service.get_user());
+    var dto = data_bind.json(codec_a, "User", from_service.get_user());
     
-    // 转换为服务 B 的格式（Plain Object 直接传递）
-    var codec_b = data_bind.create("service_b_schema.tbe");
-    var json = data_bind.to_json(codec_b, dto);
-    to_service.create_user(json);
+    // Plain Object 直接输出 JSON 后传给服务 B
+    var json_text = json.stringify(dto);
+    to_service.create_user(json_text);
+    data_bind.close(codec_a);
     
     // 无需创建 Class Instance，提高性能
 }
@@ -477,10 +506,10 @@ class DataSourceAdapter {
     load(identifier) {
         if (this.source_type == "json") {
             var json = read_file(identifier);
-            return data_bind.parse_json(this.codec, "Data", json);
+            return data_bind.json(this.codec, "Data", json);
         } else if (this.source_type == "csv") {
             var csv = read_file(identifier);
-            return data_bind.parse_csv_all(this.codec, "Data", csv);
+            return data_bind.csv_all(this.codec, "Data", csv);
         } else if (this.source_type == "binary") {
             var binary = read_binary_file(identifier);
             return data_bind.parse(this.codec, "Data", binary);
@@ -506,7 +535,7 @@ var data2 = csv_adapter.load("data.csv");
 
 ```javascript
 // ❌ 错误：尝试在 Plain Object 上调用方法
-var plain = data_bind.parse_json(codec, "User", json);
+var plain = data_bind.json(codec, "User", json);
 plain.greet();  // 运行时错误！Plain Object 没有方法
 
 // ✅ 正确：先包装成 Class Instance
@@ -516,24 +545,26 @@ user.greet();  // OK
 
 ---
 
-### ❌ 陷阱 2：忘记释放 Codec
+### ❌ 陷阱 2：忘记关闭对象句柄或 Codec
 
 ```javascript
 // ❌ 内存泄漏
 function process() {
     var codec = data_bind.create("schema.tbe");
-    var obj = data_bind.parse_json(codec, "Data", json);
-    // 忘记调用 data_bind.free(codec)
+    var obj = data_bind.object_from_json(codec, "Data", json);
+    // 忘记调用 object_close(obj) 和 close(codec)
 }
 
 // ✅ 正确：总是释放资源
 function process() {
     var codec = data_bind.create("schema.tbe");
+    var obj = -1;
     try {
-        var obj = data_bind.parse_json(codec, "Data", json);
-        return obj;
+        obj = data_bind.object_from_json(codec, "Data", json);
+        return data_bind.object_value(obj);
     } finally {
-        data_bind.free(codec);
+        if (obj >= 0) data_bind.object_close(obj);
+        data_bind.close(codec);
     }
 }
 
@@ -541,7 +572,7 @@ function process() {
 var global_codec = data_bind.create("schema.tbe");
 
 function process() {
-    return data_bind.parse_json(global_codec, "Data", json);
+    return data_bind.json(global_codec, "Data", json);
 }
 ```
 
@@ -552,14 +583,14 @@ function process() {
 ```javascript
 // ❌ 不必要的包装：纯数据处理无需 Class
 for (var i = 0; i < 1000000; i++) {
-    var plain = data_bind.parse_json(codec, "Tick", json_array[i]);
+    var plain = data_bind.json(codec, "Tick", json_array[i]);
     var tick = Tick.from_plain(plain);  // 浪费性能
     var price = tick.price;  // 只访问字段，不需要方法
 }
 
 // ✅ 直接使用 Plain Object
 for (var i = 0; i < 1000000; i++) {
-    var tick = data_bind.parse_json(codec, "Tick", json_array[i]);
+    var tick = data_bind.json(codec, "Tick", json_array[i]);
     var price = tick.price;  // 快得多
 }
 ```
@@ -574,7 +605,7 @@ var schema = `message User { string name; int age; }`;
 var codec = data_bind.create_from_text(schema);
 
 var json = '{"name":"Alice","age":"30"}';  // age 是字符串，不是整数
-var user = data_bind.parse_json(codec, "User", json);  // 解析失败
+var user = data_bind.json(codec, "User", json);  // 解析失败
 
 // ✅ 使用严格验证提前发现问题
 try {

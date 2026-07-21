@@ -5,7 +5,7 @@ handle-based module namespace.
 
 ## Dependency Direction
 
-`rules_forge_plugin` links to `RulesForge::rule_forge`. RulesForge uses DataBind
+`rules_forge_plugin` links to `RulesForge::rules_forge`. RulesForge uses DataBind
 for schema-bound fact input. `tbe/data_bind` does not depend on RulesForge.
 
 RulesForge's C++ RHS adapter is internal to RulesForge. It loads the
@@ -18,7 +18,7 @@ TurboScript modules to expose RulesForge C++ types.
 import("rules_forge");
 ```
 
-RulesForge is linked through `RulesForge::rule_forge` and loaded as a normal runtime
+RulesForge is linked through `RulesForge::rules_forge` and loaded as a normal runtime
 dependency. Ensure the RulesForge runtime library is available in your process
 runtime search path for deployment.
 
@@ -32,36 +32,55 @@ status = rules_forge.kb_load_decision_table_csv(kb, csv_text);
 rules_forge.kb_destroy(kb);
 ```
 
+## Owned DataBind Objects
+
+RulesForge 0.7 exposes independently owned, schema-bound DataBind objects. Object
+construction receives a schema path; once a Knowledge Base imports that schema,
+the same object can be inserted without reparsing and remains owned by the caller.
+
+```javascript
+let object = rules_forge.data_bind_object_from_json(
+    "schemas/order.schema", "Order", json_text);
+let copy = rules_forge.data_bind_object_clone(object);
+let type = rules_forge.data_bind_object_type(copy);
+
+let json = rules_forge.data_bind_object_serialize_json(copy);
+let yaml = rules_forge.data_bind_object_serialize_yaml(copy);
+let xml = rules_forge.data_bind_object_serialize_xml(copy);
+let csv = rules_forge.data_bind_object_serialize_csv(copy);
+let binary = rules_forge.data_bind_object_serialize_binary(copy);
+
+rules_forge.data_bind_object_destroy(copy);
+rules_forge.data_bind_object_destroy(object);
+```
+
+Constructors are available for JSON, YAML, XML, CSV row, and DataBind binary:
+`data_bind_object_from_json`, `data_bind_object_from_yaml`,
+`data_bind_object_from_xml`, `data_bind_object_from_csv`, and
+`data_bind_object_from_binary`. Text serializers return strings and the binary
+serializer returns bytes; results are copied into the TurboScript arena before
+RulesForge's allocation is released.
+
 ## Sessions and Facts
 
 ```javascript
 let session = rules_forge.session_create(kb);
 
-let bound = rules_forge.session_add_fact_json_schema(
-    session, "schemas/order.tbe", "Order", json_text);
-let first = rules_forge.session_add_fact_json_path_schema(
-    session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
-let selected = rules_forge.session_add_facts_json_path_schema(
-    session, "schemas/order.tbe", "Order", envelope_json, "$.orders[*]");
-let yaml_bound = rules_forge.session_add_fact_yaml_schema(
-    session, "schemas/order.tbe", "Order", yaml_text);
-let yaml_first = rules_forge.session_add_fact_yaml_path_schema(
-    session, "schemas/order.tbe", "Order", envelope_yaml, "/orders/*");
-let yaml_selected = rules_forge.session_add_facts_yaml_path_schema(
-    session, "schemas/order.tbe", "Order", envelope_yaml, "/orders/*");
-let bound = rules_forge.session_add_fact_json_schema_path(
-    session, "schemas/order.tbe", "Order", "fixtures/order.json");
+let bound = rules_forge.session_add_fact_json(session, "Order", json_text);
+let first = rules_forge.session_add_fact_json_path(
+    session, "Order", envelope_json, "$.orders[*]");
+let selected = rules_forge.session_add_facts_json_path(
+    session, "Order", envelope_json, "$.orders[*]");
+let yaml_bound = rules_forge.session_add_fact_yaml(session, "Order", yaml_text);
+let yaml_selected = rules_forge.session_add_facts_yaml_path(
+    session, "Order", envelope_yaml, "/orders/*");
+let object_fact = rules_forge.session_add_data_bind_object(session, object);
 
-let csv_result = rules_forge.session_add_facts_csv_schema(
-    session, "schemas/order.tbe", "Order", csv_text);
-let west_orders = rules_forge.session_add_facts_csv_path_schema(
-    session, "schemas/order.tbe", "Order", csv_text, "region == \"west\"");
-let csv_result = rules_forge.session_add_facts_csv_schema_path(
-    session, "schemas/order.tbe", "Order", "fixtures/orders.csv");
-let xml_result = rules_forge.session_add_facts_xml_schema(
-    session, "schemas/order.tbe", "Order", xml_text, "/orders/order");
-let xml_result = rules_forge.session_add_facts_xml_schema_path(
-    session, "schemas/order.tbe", "Order", "fixtures/orders.xml", "/orders/order");
+let csv_result = rules_forge.session_add_facts_csv(session, "Order", csv_text);
+let west_orders = rules_forge.session_add_facts_csv_path(
+    session, "Order", csv_text, "region == \"west\"");
+let xml_result = rules_forge.session_add_facts_xml(
+    session, "Order", xml_text, "/orders/order");
 
 let fired = rules_forge.session_fire_all(session, -1);
 rules_forge.session_destroy(session);
@@ -86,9 +105,10 @@ values before the DataBind parse tree is released. UUID and temporal values
 are normalized for rule comparisons; decimal, bigint, and money comparisons
 retain their canonical text precision.
 
-RulesForge 0.5 requires schema-bound structured input. The previous
-`session_add_fact_json`, `session_add_facts_csv`, and `kb_load_ts_plugin`
-entry points are no longer exposed because the upstream C API removed them.
+The Knowledge Base is the single schema source for session ingestion. RFL must
+import the fact type before direct or object insertion; session calls do not
+accept or reload a schema path. `kb_load_ts_plugin` remains unavailable because
+the upstream C API removed TurboScript RHS loading.
 
 ## Stateful DataBind Streams
 
@@ -97,7 +117,7 @@ then destroy the stream handle:
 
 ```javascript
 let input = rules_forge.stream_json_all_create(
-    session, "schemas/order.tbe", "Order");
+    session, "Order");
 rules_forge.stream_feed(input, json_chunk_1);
 rules_forge.stream_feed(input, json_chunk_2);
 let loaded = rules_forge.stream_finish(input);
@@ -120,9 +140,11 @@ let continuous = rules_forge.continuous_create(kb, {
     allowed_lateness_ms: 5000,
     output_fact_types: ["Alert"]
 });
-let step = rules_forge.continuous_push_json_schema(
-    continuous, "schemas/order.tbe", "Order", "event-1", "orders",
+let step = rules_forge.continuous_push_json(
+    continuous, "Order", "event-1", "orders",
     1720000000000, json_text);
+let object_step = rules_forge.continuous_push_data_bind_object(
+    continuous, object, "event-2", "orders", 1720000000001);
 let metrics = rules_forge.continuous_metrics(continuous);
 rules_forge.continuous_acknowledge(continuous, step.batch_id);
 rules_forge.continuous_result_destroy(step.result);
@@ -132,31 +154,31 @@ rules_forge.continuous_destroy(continuous);
 Path-selected JSON, YAML, CSV, and XML batches read event metadata from bound fields:
 
 ```javascript
-let step = rules_forge.continuous_push_json_path_schema(
-    continuous, "schemas/event.tbe", "Event", envelope_json, "$.events[*]",
+let step = rules_forge.continuous_push_json_path(
+    continuous, "Event", envelope_json, "$.events[*]",
     "event_id", "event_time", "events");
 
 let input = rules_forge.continuous_stream_json_path_create(
-    continuous, "schemas/event.tbe", "Event", "$.events[*]",
+    continuous, "Event", "$.events[*]",
     "event_id", "event_time", "events");
 rules_forge.continuous_stream_feed(input, chunk);
 let streamed_step = rules_forge.continuous_stream_finish(input);
 rules_forge.continuous_stream_destroy(input);
 
-let yaml_step = rules_forge.continuous_push_yaml_path_schema(
-    continuous, "schemas/event.tbe", "Event", envelope_yaml, "/events/*",
+let yaml_step = rules_forge.continuous_push_yaml_path(
+    continuous, "Event", envelope_yaml, "/events/*",
     "event_id", "event_time", "events");
 
 let yaml_input = rules_forge.continuous_stream_yaml_path_create(
-    continuous, "schemas/event.tbe", "Event", "/events/*",
+    continuous, "Event", "/events/*",
     "event_id", "event_time", "events");
 ```
 
 YAML selectors use YPATH syntax such as `/events/*`, not JSONPath syntax.
-Equivalent `continuous_push_csv_path_schema`, `continuous_push_xml_path_schema`,
+Equivalent `continuous_push_csv_path`, `continuous_push_xml_path`,
 `continuous_stream_csv_path_create`, and `continuous_stream_xml_path_create`
 functions use the same metadata-field and entry-point arguments. Root YAML
-events use `continuous_push_yaml_schema` or `continuous_stream_yaml_create`.
+events use `continuous_push_yaml` or `continuous_stream_yaml_create`.
 
 The config starts from RulesForge defaults; supplied fields override only the
 documented bounded values. Push, watermark, drain, and continuous stream finish
@@ -197,7 +219,7 @@ Fact handles are borrowed from the owning session or query. Destroying or
 resetting a session invalidates its fact handles. Destroying a query invalidates
 facts borrowed from that query.
 
-The RulesForge 0.5 C ABI currently exposes field accessors only for string,
+The RulesForge 0.7 C ABI currently exposes field accessors only for string,
 double, int64, and bool. Complex fields are available to RulesForge rules but
 are not exported as raw `DataBindValue` pointers or TurboScript values. This
 keeps fact ownership inside the session/query boundary; no plugin-side clone or

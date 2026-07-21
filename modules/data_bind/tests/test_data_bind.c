@@ -325,6 +325,76 @@ spec("data_bind_module") {
     }
   }
 
+  describe("data_bind owned object serialization") {
+    it("should round-trip CSV and binary and close objects with their codec") {
+      const char *schema =
+        "message Trade { uint32 id; string symbol; double price; bool active; }\n";
+      test_env_t t;
+      exprtk_value_t create_args[1];
+      exprtk_value_t parse_args[4];
+      exprtk_value_t objects[4];
+      exprtk_value_t codec;
+      exprtk_value_t csv;
+      exprtk_value_t binary;
+      exprtk_value_t value;
+      exprtk_value_t result;
+      size_t i;
+
+      test_env_init(&t);
+      check_not_null(t.db_plugin);
+      create_args[0] = make_str(&t, schema);
+      codec = call_fn(&t, "data_bind.create_from_text", 1, create_args);
+      check(codec.data.number >= 0.0);
+
+      parse_args[0] = codec;
+      parse_args[1] = make_str(&t, "Trade");
+      parse_args[2] = make_str(&t,
+        "{\"id\":7,\"symbol\":\"AAPL\",\"price\":189.5,\"active\":true}");
+      objects[0] = call_fn(&t, "data_bind.object_from_json", 3, parse_args);
+      check(objects[0].data.number >= 0.0);
+      check_str_eq(call_fn(&t, "data_bind.object_type", 1, &objects[0]).data.string.data,
+                   "Trade");
+
+      objects[1] = call_fn(&t, "data_bind.object_clone", 1, &objects[0]);
+      check(objects[1].data.number >= 0.0);
+      csv = call_fn(&t, "data_bind.object_serialize_csv", 1, &objects[0]);
+      binary = call_fn(&t, "data_bind.object_serialize_binary", 1, &objects[1]);
+      check_int_eq(csv.type, EXPRTK_VAL_STRING);
+      check(csv.data.string.len > 0);
+      check_int_eq(binary.type, EXPRTK_VAL_BYTES);
+      check(binary.data.bytes.len > 0);
+
+      parse_args[2] = csv;
+      parse_args[3] = exprtk_val_int(0);
+      objects[2] = call_fn(&t, "data_bind.object_from_csv", 4, parse_args);
+      check(objects[2].data.number >= 0.0);
+      parse_args[2] = binary;
+      objects[3] = call_fn(&t, "data_bind.object_from_binary", 3, parse_args);
+      check(objects[3].data.number >= 0.0);
+
+      value = call_fn(&t, "data_bind.object_value", 1, &objects[2]);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "id").data.number, 7.0, 0.01);
+      check_str_eq(exprtk_map_get(&value, "symbol").data.string.data, "AAPL");
+      value = call_fn(&t, "data_bind.object_value", 1, &objects[3]);
+      check_int_eq(value.type, EXPRTK_VAL_OBJECT);
+      check_float_eq(exprtk_map_get(&value, "price").data.number, 189.5, 0.01);
+      check_true(exprtk_map_get(&value, "active").data.boolean);
+
+      for (i = 0; i < 3; ++i) {
+        result = call_fn(&t, "data_bind.object_close", 1, &objects[i]);
+        check_float_eq(result.data.number, 0.0, 0.01);
+      }
+
+      call_fn(&t, "data_bind.close", 1, &codec);
+      t.env.aborted = 0;
+      result = call_fn(&t, "data_bind.object_close", 1, &objects[3]);
+      check_float_eq(result.data.number, -1.0, 0.01);
+      check_int_eq(t.env.aborted, 1);
+      test_env_free(&t);
+    }
+  }
+
   describe("DataBind 1.10 scalar conversion") {
     it("should preserve native temporal and high precision script types") {
       const char *schema =

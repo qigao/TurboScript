@@ -1,10 +1,12 @@
 /**
  * @file data_bind_ctx.h
- * @brief data_bind plugin context - codec and stream parser handle tables.
+ * @brief data_bind plugin context - codec, stream, and owned object handle tables.
  *
  * Each codec handle holds a `DataBind *` from the tbe/data_bind library.
  * Each stream handle holds a stateful `data_bind_stream_t *` and the result
  * slot bound to that stream for its full lifetime.
+ * Each object handle owns a `DataBindObject *` and borrows its creating codec
+ * until the object or codec handle is closed.
  * Parse results are returned by the core data_bind library as DataBindValue
  * trees and converted at the module boundary into exprtk values.
  */
@@ -31,9 +33,14 @@ typedef struct {
     exprtk_value_t record_callback;
 } db_stream_entry_t;
 
+typedef struct {
+    DataBind *codec;
+    DataBindObject *object;
+} db_object_entry_t;
+
 TURBO_HASH_MAP_DEFINE(db_handle_map_t, int, DataBind *)
 TURBO_HASH_MAP_DEFINE(db_stream_map_t, int, db_stream_entry_t *)
-TURBO_HASH_MAP_DEFINE(db_object_map_t, int, DataBindObject *)
+TURBO_HASH_MAP_DEFINE(db_object_map_t, int, db_object_entry_t)
 
 /* ── Handle table ─────────────────────────────────────────────────────────── */
 

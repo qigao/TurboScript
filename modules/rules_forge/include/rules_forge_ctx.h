@@ -6,7 +6,7 @@
 #define RULES_FORGE_CTX_H
 
 #include "exprtk.h"
-#include "rule_forge.h"
+#include "rules_forge.h"
 #include "turbo_buffer.h"
 
 #include <stdint.h>
@@ -35,6 +35,10 @@ typedef struct {
 } rfg_stream_slot_t;
 
 typedef struct {
+    ruleforge_data_bind_object_t ptr;
+} rfg_data_bind_object_slot_t;
+
+typedef struct {
     ruleforge_continuous_session_t ptr;
     int kb_handle;
 } rfg_continuous_slot_t;
@@ -60,6 +64,7 @@ typedef struct {
     rfg_session_slot_t sessions[RFG_MAX_HANDLES];
     rfg_query_slot_t queries[RFG_MAX_HANDLES];
     rfg_stream_slot_t streams[RFG_MAX_HANDLES];
+    rfg_data_bind_object_slot_t data_bind_objects[RFG_MAX_HANDLES];
     rfg_continuous_slot_t continuous[RFG_MAX_HANDLES];
     rfg_continuous_result_slot_t continuous_results[RFG_MAX_HANDLES];
     rfg_continuous_stream_slot_t continuous_streams[RFG_MAX_HANDLES];

@@ -15,7 +15,7 @@ target_include_directories(${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
 target_link_libraries(${TARGET_NAME_LIB}
-  PRIVATE exprtk RulesForge::rule_forge)
+  PRIVATE exprtk RulesForge::rules_forge)
 
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 
@@ -29,12 +29,12 @@ target_include_directories(${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
 target_link_libraries(${TARGET_NAME}
-  PRIVATE exprtk RulesForge::rule_forge)
+  PRIVATE exprtk RulesForge::rules_forge)
 
 if(WIN32)
   add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:RulesForge::rule_forge> $<TARGET_FILE_DIR:${TARGET_NAME}>
+            $<TARGET_FILE:RulesForge::rules_forge> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboUtils::DataBind> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

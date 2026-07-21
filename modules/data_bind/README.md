@@ -43,6 +43,54 @@ For text binding, JSON/XML bytes fields read string text as the byte sequence an
 CSV bytes fields read the cell text. Binary parsing reads fixed or variable TBE
 bytes payloads directly.
 
+### Owned object and serialization APIs
+
+Use the `object_*` APIs when one schema-bound value must be retained, cloned, or
+serialized more than once. Constructors return a numeric object handle instead
+of an environment-owned plain object.
+
+| Function | Result |
+|----------|--------|
+| `data_bind.object_from_binary(handle, type, bytes)` | Owned object handle |
+| `data_bind.object_from_json(handle, type, json)` | Owned object handle |
+| `data_bind.object_from_yaml(handle, type, yaml)` | Owned object handle |
+| `data_bind.object_from_xml(handle, type, xml)` | Owned object handle |
+| `data_bind.object_from_csv(handle, type, csv, row)` | Owned object handle for a zero-based data row |
+| `data_bind.object_clone(object)` | Independent object handle associated with the same codec |
+| `data_bind.object_type(object)` | Schema type name |
+| `data_bind.object_value(object)` | Environment-owned plain-object snapshot |
+| `data_bind.object_serialize_json(object)` | UTF-8 string |
+| `data_bind.object_serialize_yaml(object)` | UTF-8 string |
+| `data_bind.object_serialize_xml(object)` | UTF-8 string |
+| `data_bind.object_serialize_csv(object)` | RFC 4180 header and one data row as a string |
+| `data_bind.object_serialize_binary(object)` | TBE wire representation as `bytes` |
+| `data_bind.object_close(object)` | `0` after releasing the object |
+
+An object handle is associated with the codec that created it because binary
+serialization requires that codec's schema. Close object handles before their
+codec. `data_bind.close(handle)` also closes any remaining object and stream
+handles associated with that codec. CSV serialization can fail for shapes that
+cannot be represented losslessly, including empty containers and map keys that
+contain `.` or `[`. Binary serialization is schema-specific and can fail for
+text-only extended scalars, optional presence bitmaps, or unions.
+
+```javascript
+var codec = data_bind.create("trade.tbe");
+var object = data_bind.object_from_json(
+    codec, "Trade", '{"id":7,"symbol":"AAPL","price":189.5}');
+
+var csv = data_bind.object_serialize_csv(object);
+var binary = data_bind.object_serialize_binary(object);
+
+var from_csv = data_bind.object_from_csv(codec, "Trade", csv, 0);
+var from_binary = data_bind.object_from_binary(codec, "Trade", binary);
+
+data_bind.object_close(from_binary);
+data_bind.object_close(from_csv);
+data_bind.object_close(object);
+data_bind.close(codec);
+```
+
 ### `data_bind.json_path(handle, type_name, path)`
 ### `data_bind.json_all_path(handle, type_name, path)`
 ### `data_bind.csv_path(handle, type_name, path, row)`
@@ -74,7 +122,8 @@ For incremental input, create a stream handle with
 an unfinished stream. Closing a codec also closes every stream created from it.
 
 ### `data_bind.close(handle)`
-Frees the underlying schema JIT module and resources.
+Closes streams and owned objects associated with the codec, then frees the
+underlying schema JIT module and resources.
 * **Arguments**: `handle` (number)
 * **Returns**: `0`
 

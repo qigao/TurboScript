@@ -10,7 +10,7 @@
       "name": "tiny-aes-c"
     }, 
     {
-      "name": "openssl"
+      "name": "boringssl"
     }, 
     {
       "name": "stb"

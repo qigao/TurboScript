@@ -49,19 +49,45 @@ var codec = data_bind.create("user.tbe");
 
 // 解析 JSON
 var json = '{"name":"Alice","age":30,"email":"alice@example.com"}';
-var user = data_bind.parse_json(codec, "User", json);
+var user = data_bind.json(codec, "User", json);
 
 // 访问字段
 print(user.name);  // "Alice"
 print(user.age);   // 30
 ```
 
-### 步骤 3：添加业务逻辑（可选）
+### 步骤 3：跨格式序列化（可选）
+
+直接解析 API 返回环境拥有的 Plain Object。需要保留同一份 schema 绑定数据并
+多次序列化时，使用 `object_*` 句柄 API：
+
+```javascript
+var object = data_bind.object_from_json(codec, "User", json);
+
+var json_text = data_bind.object_serialize_json(object);
+var yaml_text = data_bind.object_serialize_yaml(object);
+var xml_text = data_bind.object_serialize_xml(object);
+var csv_text = data_bind.object_serialize_csv(object);
+var binary = data_bind.object_serialize_binary(object); // bytes
+
+var csv_copy = data_bind.object_from_csv(codec, "User", csv_text, 0);
+var binary_copy = data_bind.object_from_binary(codec, "User", binary);
+
+data_bind.object_close(binary_copy);
+data_bind.object_close(csv_copy);
+data_bind.object_close(object);
+data_bind.close(codec);
+```
+
+CSV 输出包含表头和一行数据；Binary 输出依赖同一份兼容 schema，并非自描述格式。
+对象句柄应先于 codec 关闭；关闭 codec 会自动关闭仍与其关联的对象和流句柄。
+
+### 步骤 4：添加业务逻辑（可选）
 
 ```javascript
 class User {
     static from_json(codec, json_text) {
-        var plain = data_bind.parse_json(codec, "User", json_text);
+        var plain = data_bind.json(codec, "User", json_text);
         var user = new User();
         user.name = plain.name;
         user.age = plain.age;
@@ -146,7 +172,7 @@ var user = create_user(plain);
 ```javascript
 class User {
     static from_json(codec, json) {
-        var plain = data_bind.parse_json(codec, "User", json);
+        var plain = data_bind.json(codec, "User", json);
         var user = new User();
         user.name = plain.name;
         user.age = plain.age;
@@ -186,7 +212,7 @@ var user = User.from_json(codec, json);
    ```javascript
    var codec = data_bind.create("schema.tbe");  // 只创建一次
    for (var i = 0; i < 10000; i++) {
-       var obj = data_bind.parse_json(codec, "Data", json_array[i]);
+       var obj = data_bind.json(codec, "Data", json_array[i]);
    }
    ```
 
@@ -202,7 +228,7 @@ var user = User.from_json(codec, json);
 
 4. **批量处理**（20-40% 提升）
    ```javascript
-   var objects = data_bind.parse_json_all(codec, "Data", json_array);
+   var objects = data_bind.json_all(codec, "Data", json_array);
    ```
 
 5. **避免过度包装**（20-40% 提升）
@@ -227,7 +253,7 @@ var user = User.from_json(codec, json);
 try {
     // 严格验证（生产环境推荐）
     data_bind.validate_json(codec, "User", json);
-    var user = data_bind.parse_json(codec, "User", json);
+    var user = data_bind.json(codec, "User", json);
 } catch (err) {
     // 错误路径指示具体位置
     print("Error at: " + err.path);        // "json: $.address.zipcode"
@@ -243,10 +269,14 @@ try {
 
 | 格式 | 解析 API | 生成 API | 性能 | 适用场景 |
 |------|---------|---------|------|---------|
-| **Binary TBE** | `parse()` | `to_binary()` | 🚀🚀🚀 最快 | RPC、内部通信 |
-| **JSON** | `parse_json()` | `to_json()` | 🚀 快 | API、配置 |
-| **CSV** | `parse_csv()` | `to_csv()` | 🚀🚀 很快 | 报表、导出 |
-| **XML** | `parse_xml()` | `to_xml()` | 🐢 慢 | 遗留系统 |
+| **Binary TBE** | `parse()` / `object_from_binary()` | `object_serialize_binary()` | 🚀🚀🚀 最快 | RPC、内部通信 |
+| **JSON** | `json()` / `object_from_json()` | `object_serialize_json()` | 🚀 快 | API、配置 |
+| **YAML** | `yaml()` / `object_from_yaml()` | `object_serialize_yaml()` | 🚀 快 | 配置、交换 |
+| **CSV** | `csv()` / `object_from_csv()` | `object_serialize_csv()` | 🚀🚀 很快 | 报表、导出 |
+| **XML** | `xml()` / `object_from_xml()` | `object_serialize_xml()` | 🐢 慢 | 遗留系统 |
+
+所有 `object_serialize_*()` 都接收对象句柄。文本格式返回 string，Binary 返回
+bytes；使用完毕后调用 `data_bind.object_close()`。
 
 ---
 

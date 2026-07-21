@@ -855,6 +855,29 @@ not expose raw `DataBindValue` handles: plugin results and synchronous stream
 callback records are converted immediately into environment-owned script
 values, so script code does not need to clone or free the C tree.
 
+For retained values and cross-format serialization, DataBind also exposes owned
+object handles:
+
+| Function | Description |
+|----------|-------------|
+| `data_bind.object_from_binary(codec, type, bytes)` | Create an object from TBE binary |
+| `data_bind.object_from_json(codec, type, json)` | Create an object from JSON |
+| `data_bind.object_from_yaml(codec, type, yaml)` | Create an object from YAML |
+| `data_bind.object_from_xml(codec, type, xml)` | Create an object from XML |
+| `data_bind.object_from_csv(codec, type, csv, row)` | Create an object from a zero-based CSV data row |
+| `data_bind.object_clone(object)` | Deep-copy an object using the same codec association |
+| `data_bind.object_type(object)` | Return the schema type name |
+| `data_bind.object_value(object)` | Convert the retained value to an environment-owned script value |
+| `data_bind.object_serialize_json/yaml/xml/csv(object)` | Return serialized text |
+| `data_bind.object_serialize_binary(object)` | Return schema-specific TBE `bytes` |
+| `data_bind.object_close(object)` | Release an object handle |
+
+Object handles retain an association with their creating codec because binary
+serialization needs the schema. Close objects before the codec. Closing a codec
+also closes all associated object and stream handles, so those handles must not
+be used afterward. CSV emits an RFC 4180 header plus one row; Binary is not
+self-describing and must be read with a compatible schema and type name.
+
 The `data_bind` module exposes YAML with the same DOM and buffered stream models
 as JSON and XML:
 
