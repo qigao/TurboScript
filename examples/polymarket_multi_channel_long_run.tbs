@@ -1,0 +1,79 @@
+// Bounded multi-message Polymarket example.
+// Increase duration_ms for longer sessions, but keep max_events as a
+// context-lifetime memory quota for arena-backed received frames.
+import("./polymarket_patterns.tbs");
+
+class SamplingPreviewObserver implements EventObserver {
+    every_n = 10;
+    preview_bytes = 160;
+    seen = 0;
+
+    constructor(every_n, preview_bytes) {
+        if (every_n <= 0 || preview_bytes <= 0)
+            throw "sampling preview limits must be positive";
+        this.every_n = every_n;
+        this.preview_bytes = preview_bytes;
+    }
+
+    update(event) {
+        this.seen = this.seen + 1;
+        if (this.seen == 1 || this.seen % this.every_n == 0) {
+            print(event.source + " sample #" + this.seen
+                  + " [" + event.kind + "]: "
+                  + event.raw.substr(0, this.preview_bytes));
+        }
+    }
+}
+
+function long_run_options() {
+    return map{
+        duration_ms: 60000,
+        max_events: 25,
+        recv_timeout_ms: 10000,
+        reconnect_delay_ms: 1000,
+        max_reconnects: 5
+    };
+}
+
+var market_task = task.spawn(() => {
+    var metrics = MetricsObserver();
+    var bus = EventBus();
+    bus.attach(SamplingPreviewObserver(10, 160));
+    bus.attach(metrics);
+    var command = MarketSubscriptionCommand(market_subscription, bus, metrics);
+    return command.execute_until(long_run_options());
+});
+var sports_task = task.spawn(() => {
+    var metrics = MetricsObserver();
+    var bus = EventBus();
+    bus.attach(SamplingPreviewObserver(10, 160));
+    bus.attach(metrics);
+    var command = SportsSubscriptionCommand(bus, metrics);
+    return command.execute_until(long_run_options());
+});
+
+var report_task = task.spawn(() => {
+    try {
+        var market = task.join(market_task);
+        var sports = task.join(sports_task);
+        print("long-run market events=" + market.events
+              + " data=" + market.data_events
+              + " bytes=" + market.bytes
+              + " reconnects=" + market.reconnects
+              + " elapsed_ms=" + market.elapsed_ms);
+        print("long-run sports events=" + sports.events
+              + " data=" + sports.data_events
+              + " heartbeats=" + sports.heartbeats
+              + " bytes=" + sports.bytes
+              + " reconnects=" + sports.reconnects
+              + " elapsed_ms=" + sports.elapsed_ms);
+        task.release(market_task);
+        task.release(sports_task);
+        return market.bytes + sports.bytes;
+    } catch (error) {
+        task.cancel(market_task);
+        task.cancel(sports_task);
+        print("Polymarket long-run command failed: " + error);
+        throw error;
+    }
+});

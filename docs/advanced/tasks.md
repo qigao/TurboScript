@@ -109,6 +109,10 @@ coro_context_destroy(coro);
   `ws.connect/send/recv/close`，不会覆盖彼此的 socket。root 环境中的 `ws.*` 仍保持
   原有单连接语义。task WebSocket 注册表最多同时持有 256 条连接，满时连接失败；
   `task.cancel()` 可中断等待中的 WebSocket connect/send/recv。
+- `ws.recv()` 返回的帧字符串由当前 TurboScript context 的 arena 持有，context 销毁前
+  不会逐帧回收。持续订阅必须同时设置运行时限与事件数内存配额；仓库中的
+  [Polymarket long-run 示例](../../examples/polymarket_multi_channel_long_run.tbs)
+  展示了有界接收、有限重连、同步 Observer 背压与采样输出。
 - 迁移成本集中在需要后台任务的宿主：绑定并驱动 CoroNet context，并在消费结果后 release。
 - 回滚时可移除 `task.*` 注册、task scheduler 生命周期和 CLI task 计数检查；不涉及脚本数据格式迁移，timer 与手动 coro 模块仍可独立工作。
 

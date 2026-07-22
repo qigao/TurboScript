@@ -49,7 +49,10 @@
   使用 `task.spawn` 和 `task.join` 并发等待多个 HTTP 请求
 
 - **[Polymarket 多频道 Task](../examples/polymarket_multi_channel.tbs)**
-  使用独立 managed task 并发订阅 market（多个资产）与 sports WebSocket 频道
+  使用独立 managed task 对 market（多个资产）与 sports WebSocket 频道做一次接收 smoke test
+
+- **[Polymarket 多频道 Long Run](../examples/polymarket_multi_channel_long_run.tbs)**
+  在运行时限、事件数与重连次数配额内持续接收，采用同步 Observer 背压和采样输出
 
 ### GoF 设计模式示例
 

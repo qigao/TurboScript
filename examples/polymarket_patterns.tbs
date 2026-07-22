@@ -1,0 +1,310 @@
+// Shared Polymarket GoF components used by the smoke and bounded long-run examples.
+import("net");
+
+interface Command {
+    execute();
+}
+
+interface MessageStrategy {
+    decode(message);
+}
+
+interface EventObserver {
+    update(event);
+}
+
+// Notifications stay synchronous so processing applies backpressure instead of
+// growing a second queue beside the WebSocket transport.
+class EventBus {
+    observers = list();
+
+    constructor() {
+        this.observers = list();
+    }
+
+    attach(observer: EventObserver) {
+        var updated = this.observers;
+        updated.push(observer);
+        this.observers = updated;
+    }
+
+    publish(event) {
+        var observers = this.observers;
+        for (var i = 0; i < observers.length(); i += 1) {
+            var observer = observers[i];
+            observer.update(event);
+        }
+    }
+}
+
+class MarketMessageStrategy implements MessageStrategy {
+    decode(message) {
+        var payload = json.parse(message);
+        return map{
+            source: "market",
+            kind: "data",
+            payload: payload,
+            payload_type: typeof(payload),
+            raw: message,
+            bytes: len(message)
+        };
+    }
+}
+
+class SportsMessageStrategy implements MessageStrategy {
+    decode(message) {
+        if (message == "ping") {
+            return map{
+                source: "sports",
+                kind: "heartbeat",
+                payload: message,
+                payload_type: "string",
+                raw: message,
+                bytes: len(message)
+            };
+        }
+        var payload = json.parse(message);
+        return map{
+            source: "sports",
+            kind: "data",
+            payload: payload,
+            payload_type: typeof(payload),
+            raw: message,
+            bytes: len(message)
+        };
+    }
+}
+
+class PreviewObserver implements EventObserver {
+    preview_bytes = 160;
+
+    constructor(preview_bytes) {
+        this.preview_bytes = preview_bytes;
+    }
+
+    update(event) {
+        print(event.source + "[" + event.kind + "]: "
+              + event.raw.substr(0, this.preview_bytes));
+    }
+}
+
+class MetricsObserver implements EventObserver {
+    event_count = 0;
+    data_count = 0;
+    heartbeat_count = 0;
+    reconnect_count = 0;
+    total_bytes = 0;
+    payload_type = "null";
+
+    update(event) {
+        this.event_count = this.event_count + 1;
+        this.total_bytes = this.total_bytes + event.bytes;
+        this.payload_type = event.payload_type;
+        if (event.kind == "heartbeat") {
+            this.heartbeat_count = this.heartbeat_count + 1;
+        } else {
+            this.data_count = this.data_count + 1;
+        }
+    }
+
+    record_reconnect() {
+        this.reconnect_count = this.reconnect_count + 1;
+    }
+
+    snapshot(source) {
+        return map{
+            source: source,
+            events: this.event_count,
+            data_events: this.data_count,
+            heartbeats: this.heartbeat_count,
+            reconnects: this.reconnect_count,
+            bytes: this.total_bytes,
+            payload_type: this.payload_type
+        };
+    }
+}
+
+// Template Method: subclasses customize protocol-specific receive handling.
+class SubscriptionCommand implements Command {
+    source = "";
+    endpoint = "";
+    subscription = "";
+    strategy = null;
+    bus = null;
+    metrics = null;
+
+    constructor(source, endpoint, subscription, strategy, bus, metrics) {
+        this.source = source;
+        this.endpoint = endpoint;
+        this.subscription = subscription;
+        this.strategy = strategy;
+        this.bus = bus;
+        this.metrics = metrics;
+    }
+
+    after_receive(message) {
+        return 0;
+    }
+
+    process_message(message) {
+        this.after_receive(message);
+        var strategy = this.strategy;
+        var event = strategy.decode(message);
+        var bus = this.bus;
+        bus.publish(event);
+    }
+
+    execute() {
+        var connected = false;
+        try {
+            if (ws.connect(this.endpoint) == 0)
+                throw "Polymarket " + this.source + " channel connect failed";
+            connected = true;
+
+            var subscription = this.subscription;
+            if (subscription.length() > 0 && ws.send(subscription) == 0)
+                throw "Polymarket " + this.source + " subscription failed";
+
+            var message = ws.recv(15000);
+            if (typeof(message) != "string")
+                throw "Polymarket " + this.source + " channel timed out";
+            this.process_message(message);
+
+            ws.close();
+            connected = false;
+            var metrics = this.metrics;
+            return metrics.snapshot(this.source);
+        } catch (error) {
+            if (connected)
+                ws.close();
+            throw error;
+        }
+    }
+
+    validate_long_run_options(options) {
+        if (options.duration_ms <= 0) {
+            throw "long-run duration_ms must be positive";
+        }
+        if (options.max_events <= 0) {
+            throw "long-run max_events must be positive";
+        }
+        if (options.recv_timeout_ms <= 0) {
+            throw "long-run recv_timeout_ms must be positive";
+        }
+        if (options.reconnect_delay_ms < 0) {
+            throw "long-run reconnect_delay_ms cannot be negative";
+        }
+        if (options.max_reconnects < 0) {
+            throw "long-run max_reconnects cannot be negative";
+        }
+    }
+
+    record_retry_or_throw(options, stage) {
+        var metrics = this.metrics;
+        metrics.record_reconnect();
+        if (metrics.reconnect_count > options.max_reconnects) {
+            throw "Polymarket " + this.source + " exceeded reconnect limit at " + stage;
+        }
+    }
+
+    sleep_before_retry(options, deadline) {
+        var remaining = deadline - monotonic_ms();
+        if (remaining <= 0) {
+            return 0;
+        }
+        var delay = options.reconnect_delay_ms;
+        if (delay > remaining) {
+            delay = remaining;
+        }
+        task.sleep(delay);
+        return 0;
+    }
+
+    // Bounded long-run loop. Both duration_ms and max_events are hard limits,
+    // because received frame strings remain arena-backed for the script context.
+    execute_until(options) {
+        this.validate_long_run_options(options);
+        var started = monotonic_ms();
+        var deadline = started + options.duration_ms;
+        var metrics = this.metrics;
+
+        while (monotonic_ms() < deadline &&
+               metrics.event_count < options.max_events) {
+            if (ws.connect(this.endpoint) == 0) {
+                this.record_retry_or_throw(options, "connect");
+                this.sleep_before_retry(options, deadline);
+                continue;
+            }
+
+            var subscription = this.subscription;
+            if (subscription.length() > 0 && ws.send(subscription) == 0) {
+                ws.close();
+                this.record_retry_or_throw(options, "subscribe");
+                this.sleep_before_retry(options, deadline);
+                continue;
+            }
+
+            var retry_receive = false;
+            while (monotonic_ms() < deadline &&
+                   metrics.event_count < options.max_events) {
+                var remaining = deadline - monotonic_ms();
+                var recv_timeout = options.recv_timeout_ms;
+                if (recv_timeout > remaining) {
+                    recv_timeout = remaining;
+                }
+
+                var message = ws.recv(recv_timeout);
+                if (typeof(message) != "string") {
+                    retry_receive = true;
+                    break;
+                }
+
+                try {
+                    this.process_message(message);
+                } catch (error) {
+                    ws.close();
+                    throw error;
+                }
+            }
+
+            ws.close();
+            if (retry_receive && monotonic_ms() < deadline &&
+                metrics.event_count < options.max_events) {
+                this.record_retry_or_throw(options, "receive");
+                this.sleep_before_retry(options, deadline);
+            }
+        }
+
+        var result = metrics.snapshot(this.source);
+        result.elapsed_ms = monotonic_ms() - started;
+        return result;
+    }
+}
+
+class MarketSubscriptionCommand extends SubscriptionCommand {
+    constructor(subscription, bus, metrics) {
+        super("market",
+              "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+              subscription, MarketMessageStrategy(), bus, metrics);
+    }
+}
+
+class SportsSubscriptionCommand extends SubscriptionCommand {
+    constructor(bus, metrics) {
+        super("sports", "wss://sports-api.polymarket.com/ws", "",
+              SportsMessageStrategy(), bus, metrics);
+    }
+
+    after_receive(message) {
+        if (message == "ping" && ws.send("pong") == 0)
+            throw "Polymarket sports heartbeat failed";
+        return 0;
+    }
+}
+
+var market_subscription =
+    "{\"assets_ids\":["
+    + "\"86197714519550358819008298760465075055751383364064067370245817340337029716028\","
+    + "\"37547725450088389758758412627942798667155152054792958645593801586277429549851\","
+    + "\"23682783661698200355976024725434882444341443991093829870154443663355078978916\""
+    + "],\"type\":\"market\",\"custom_feature_enabled\":true}";

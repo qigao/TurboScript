@@ -33,4 +33,11 @@ if(BUILD_TESTING)
     set_tests_properties(example_gof_${EXAMPLE_NAME}
       PROPERTIES LABELS "examples;gof")
   endforeach()
+
+  add_test(
+    NAME example_polymarket_patterns_load
+    COMMAND $<TARGET_FILE:turbo_script_repl>
+            --file ${CMAKE_SOURCE_DIR}/examples/polymarket_patterns.tbs)
+  set_tests_properties(example_polymarket_patterns_load
+    PROPERTIES LABELS "examples;polymarket")
 endif()
