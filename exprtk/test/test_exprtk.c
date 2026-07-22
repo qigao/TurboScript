@@ -595,6 +595,29 @@ suite("exprtk_grammar") {
             exprtk_env_free(&env);
         }
 
+        it("should bind member calls inside zero-parameter arrow bodies") {
+            const char *input = "f = () => task.join(21)";
+            exprtk_node_t *root = exprtk_parse(input, 0);
+            check_not_null(root);
+            check_int_eq(root->type, EXPRTK_NODE_BLOCK);
+            check_int_eq(root->data.block.count, 1);
+            exprtk_node_t *assignment = root->data.block.statements[0];
+            check_int_eq(assignment->type, EXPRTK_NODE_ASSIGNMENT);
+            exprtk_node_t *function = assignment->data.assignment.value;
+            check_int_eq(function->type, EXPRTK_NODE_FUNCTION_EXPRESSION);
+            exprtk_node_t *body = function->data.func_def.body;
+            check_int_eq(body->type, EXPRTK_NODE_BLOCK);
+            check_int_eq(body->data.block.count, 1);
+            exprtk_node_t *implicit_return = body->data.block.statements[0];
+            check_int_eq(implicit_return->type, EXPRTK_NODE_FLOW);
+            exprtk_node_t *call = implicit_return->data.flow.value;
+            check_int_eq(call->type, EXPRTK_NODE_MEMBER_CALL);
+            check_str_eq(call->data.member_call.method, "join");
+            check_int_eq(call->data.member_call.object->type, EXPRTK_NODE_VARIABLE);
+            check_str_eq(call->data.member_call.object->data.variable.name, "task");
+            exprtk_free(root);
+        }
+
         it("should pass arrow functions as first-class values") {
             exprtk_env_t env;
             exprtk_env_init(&env);

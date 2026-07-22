@@ -3364,9 +3364,19 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
         case EXPRTK_VAL_TYPED_ARRAY: return eval_typed_array_method(&mc);
         case EXPRTK_VAL_STRING: return eval_string_method(&mc);
         case EXPRTK_VAL_VECTOR: return eval_vector_method(&mc);
-        default:
+        case EXPRTK_VAL_INSTANCE:
+        case EXPRTK_VAL_CLASS:
             return exprtk_oop_call_method_checked_values(object_name, method_name,
                                                          object_node, argc, args, env);
+        default: {
+            char full_name[256];
+            int written = snprintf(full_name, sizeof(full_name), "%s.%s",
+                                   object_name, method_name);
+            if (written < 0 || (size_t)written >= sizeof(full_name)) {
+                return throw_error(env, object_node, "Qualified function name is too long");
+            }
+            return exprtk_call_internal(full_name, argc, args, env, &env->arena);
+        }
     }
 }
 

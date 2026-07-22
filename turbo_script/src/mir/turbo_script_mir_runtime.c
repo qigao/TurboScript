@@ -37,16 +37,19 @@ double ts_mir_numeric_value(exprtk_value_t val) {
 }
 
 void ts_mir_promote_env_error(turbo_script_ctx_t *ctx) {
+  exprtk_env_t *env;
   if (!ctx) return;
+  env = ts_task_execution_env(ctx);
 
-  if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE)
-    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
-
-  if (ctx->error_msg[0] == '\0') {
-    const char *msg = ctx->env.error_msg[0] ? ctx->env.error_msg : "JIT runtime error";
-    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s", msg);
+  if (env == &ctx->env) {
+    if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE)
+      ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+    if (ctx->error_msg[0] == '\0') {
+      const char *msg = env->error_msg[0] ? env->error_msg : "JIT runtime error";
+      snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s", msg);
+    }
   }
-  ctx->env.aborted = 1;
+  env->aborted = 1;
 }
 
 double ts_mir_load_var(void *ctx_ptr, const char *name) {

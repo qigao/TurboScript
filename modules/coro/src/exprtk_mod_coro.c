@@ -5,7 +5,7 @@
 #include "coro_ctx.h"
 #include "exprtk_module.h"
 #include "turbo_str.h"
-#include "../src/minicoro.h"
+#include <math.h>
 #include <string.h>
 
 /* Module user data */
@@ -32,24 +32,6 @@ static exprtk_value_t coro_str(const char *text) {
     return exprtk_val_str(tstr_v_from_cstr(text));
 }
 
-static exprtk_value_t coro_tstr_to_arena(mem_pool_t *arena, tstr_t text) {
-    size_t len;
-    char *buf;
-    exprtk_value_t value;
-    if (!text) return exprtk_val_num(0);
-    len = tstr_len(text);
-    buf = (char *)mem_alloc(arena, len + 1);
-    if (!buf) {
-        tstr_free(text);
-        return exprtk_val_num(0);
-    }
-    if (len > 0) memcpy(buf, text, len);
-    buf[len] = '\0';
-    value = exprtk_val_str(tstr_v_from_buf(buf, len));
-    tstr_free(text);
-    return value;
-}
-
 /* ========================================================================
  * coro.create(func_name, [stack_size])
  * ======================================================================== */
@@ -57,7 +39,7 @@ static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, void *us
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     /* Validate arguments */
-    if (argc < 1 || args[0].type != EXPRTK_VAL_STRING) {
+    if (argc < 1 || argc > 2 || args[0].type != EXPRTK_VAL_STRING) {
         return exprtk_val_num(0); /* Invalid */
     }
     
@@ -71,12 +53,24 @@ static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, void *us
     
     /* Optional stack size */
     size_t stack_size = 0;
-    if (argc >= 2 && args[1].type == EXPRTK_VAL_NUMBER) {
-        stack_size = (size_t)args[1].data.number;
+    if (argc == 2) {
+        if (args[1].type == EXPRTK_VAL_INTEGER &&
+            args[1].data.integer >= 0 &&
+            (uint64_t)args[1].data.integer <= (uint64_t)SIZE_MAX) {
+            stack_size = (size_t)args[1].data.integer;
+        } else if (args[1].type == EXPRTK_VAL_NUMBER &&
+                   isfinite(args[1].data.number) &&
+                   args[1].data.number >= 0 &&
+                   args[1].data.number <= (double)SIZE_MAX) {
+            stack_size = (size_t)args[1].data.number;
+        } else {
+            return exprtk_val_num(0);
+        }
     }
     
     /* Create coroutine context */
-    coro_ctx_t *ctx = coro_ctx_create(mod->env, func_name, stack_size);
+    coro_ctx_t *ctx = coro_ctx_create_pooled(
+        mod->env, func_name, stack_size, mod->registry->pool);
     if (!ctx) {
         return exprtk_val_num(0);
     }
@@ -118,42 +112,38 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
         return make_result_map(mod->scratch, "error", coro_str("coroutine not found"));
     }
     
-    if (ctx->status == 2) { /* dead */
+    if (coro_ctx_status(ctx) == 2) { /* dead */
         return make_result_map(mod->scratch, "dead", ctx->return_value);
     }
     
-    if (ctx->status == 1) { /* running */
+    if (coro_ctx_status(ctx) == 1) { /* running */
         return make_result_map(mod->scratch, "error", coro_str("coroutine is already running"));
     }
     
-    /* Save resume arguments (for Phase 2) */
+    /* The pointers remain valid while the outer exprtk call is suspended. */
     ctx->resume_args = (argc > 1) ? &args[1] : NULL;
     ctx->resume_argc = (argc > 1) ? argc - 1 : 0;
     
     /* Resume coroutine */
     ctx->status = 1; /* running */
-    mco_result res = mco_resume(ctx->coro);
-    
-    if (res != MCO_SUCCESS) {
-        ctx->status = 2; /* dead on error */
-        const char *err_desc = mco_result_description(res);
-        tstr_t error = tstr_new();
-        if (!error) return exprtk_val_map();
-        error = tstr_cat_fmt(error, "resume failed: %s", err_desc ? err_desc : "");
-        return make_result_map(mod->scratch, "error", coro_tstr_to_arena(mod->scratch, error));
+    int res = coro_resume(ctx->coro);
+
+    if (res != 0) {
+        coro_ctx_status(ctx);
+        return make_result_map(mod->scratch, "error", coro_str("resume failed"));
     }
     
     /* Check status after resume */
-    mco_state state = mco_status(ctx->coro);
+    coro_state_t state = coro_state(ctx->coro);
     
-    if (state == MCO_SUSPENDED) {
+    if (state == coro_SUSPENDED) {
         ctx->status = 0; /* suspended */
         return make_result_map(mod->scratch, "suspended", ctx->yield_value);
-    } else if (state == MCO_DEAD) {
+    } else if (state == coro_DEAD) {
         ctx->status = 2; /* dead */
         return make_result_map(mod->scratch, "dead", ctx->return_value);
     } else {
-        ctx->status = 2; /* dead on unexpected state */
+        coro_ctx_status(ctx);
         return make_result_map(mod->scratch, "error", coro_str("unexpected coroutine state"));
     }
 }
@@ -162,16 +152,26 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
  * coro.yield(value)
  * ======================================================================== */
 exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, void *user_data) {
-    (void)user_data;
+    coro_mod_t *mod = (coro_mod_t *)user_data;
+    coro_ctx_t *ctx = NULL;
     
-    /* Get current coroutine using mco_running() */
-    mco_coro *running_coro = mco_running();
+    /* Get current coroutine using TurboUtils::Core. */
+    coro_t *running_coro = coro_running();
     if (!running_coro) {
         return exprtk_val_num(0); /* Not in coroutine context */
     }
     
-    /* Get coroutine context from user_data */
-    coro_ctx_t *ctx = (coro_ctx_t *)mco_get_user_data(running_coro);
+    /* CoroNet tasks share the same user_data slot.  Verify pointer ownership
+     * in this module's registry before reading coro_ctx_t fields. */
+    if (mod && mod->registry) {
+        void *running_data = coro_get_data(running_coro);
+        for (size_t i = 0; i < mod->registry->capacity; ++i) {
+            if (mod->registry->coroutines[i] == running_data) {
+                ctx = mod->registry->coroutines[i];
+                break;
+            }
+        }
+    }
     if (!ctx || ctx->status != 1) { /* not running */
         return exprtk_val_num(0);
     }
@@ -192,10 +192,13 @@ exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, void *user_data)
      * and switch back to the main stack
      */
     ctx->status = 0; /* suspended */
-    mco_yield(running_coro);
+    if (coro_yield() != 0) {
+        ctx->status = 1;
+        return exprtk_val_num(0);
+    }
     ctx->status = 1; /* running again after resume */
     
-    /* When we get here, mco_resume() has been called again
+    /* When we get here, coro_resume() has been called again
      * Return resume arguments if any
      */
     if (ctx->resume_argc > 0) {
@@ -235,7 +238,7 @@ static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *us
     }
     
     const char *status_str;
-    switch (ctx->status) {
+    switch (coro_ctx_status(ctx)) {
         case 0: status_str = "suspended"; break;
         case 1: status_str = "running"; break;
         case 2: status_str = "dead"; break;
@@ -271,7 +274,7 @@ static exprtk_value_t fn_coro_destroy(size_t argc, exprtk_value_t *args, void *u
     }
     
     /* Cannot destroy running coroutine */
-    if (ctx->status == 1) {
+    if (coro_ctx_status(ctx) == 1) {
         return exprtk_val_num(0);
     }
     

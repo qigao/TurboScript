@@ -4,9 +4,9 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
     TARGET ${TARGET_NAME}
     SOURCES ${SOURCE_FILE}
-    LIBS turbo_script TurboUtils::TinyTest exprtk ta mir_static
+    LIBS turbo_script TurboUtils::TinyTest TurboNet::CoroNet exprtk ta mir_static
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-    DEPENDS data_bind_tbs fin_tbs ta_tbs ts_tbs parser_tbs net_tbs
+    DEPENDS data_bind_tbs fin_tbs ta_tbs ts_tbs parser_tbs net_tbs coro_tbs
     FOLDER turbo_script)
   add_custom_command(
     TARGET ${TARGET_NAME} POST_BUILD
@@ -15,7 +15,8 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ts_tbs>     $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:parser_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:data_bind_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>    $<TARGET_FILE_DIR:${TARGET_NAME}>)
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>    $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:coro_tbs>   $<TARGET_FILE_DIR:${TARGET_NAME}>)
 endmacro()
 
 # Interpreter test suites (split by module)
@@ -23,6 +24,9 @@ add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
+add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
+add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
+add_ts_test(test_turbo_script_coro       test_turbo_script_coro.c)
 
 cmake_add_test(
   SOURCES bench_turbo_script.c

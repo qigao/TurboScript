@@ -1,0 +1,14 @@
+import("net");
+import("timer");
+
+var check_site = () => {
+    var response = http.get(
+        "https://example.com/",
+        map { timeout: 5000 }
+    );
+    print(response);
+};
+
+check_site();
+var watch_id = timer.every(30000, check_site);
+print("website watcher started", watch_id);

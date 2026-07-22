@@ -5,7 +5,6 @@ set(TARGET_NAME coro)
 set(TARGET_NAME_PLUGIN coro_tbs)
 
 set(CORO_SOURCES
-    src/minicoro_impl.c
     src/coro_core.c
     src/exprtk_mod_coro.c
 )
@@ -16,7 +15,6 @@ set(CORO_PLUGIN_SOURCES
 
 set(CORO_HEADERS
     include/coro_ctx.h
-    src/minicoro.h
 )
 
 # ── STATIC lib (for unit tests — direct linking) ─────────────────

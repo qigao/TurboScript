@@ -16,6 +16,8 @@ Complete reference for all built-in functions and standard library.
 8. [Date and Time](#date-and-time)
 9. [Type Conversion](#type-conversion)
 10. [Platform Functions](#platform-functions)
+11. [Timer and Cron](../advanced/timers.md)
+12. [Managed Tasks](../advanced/tasks.md)
 
 For module-specific functions (CSV, JSON, TA, etc.), see [Module Documentation](modules/).
 

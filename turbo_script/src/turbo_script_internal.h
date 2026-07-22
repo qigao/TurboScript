@@ -11,6 +11,11 @@
 #include <mir.h>
 #include "ts_plugin_loader.h"
 #include "turbo_script.h"
+#include <stdatomic.h>
+
+typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
+typedef struct ts_task_scheduler_s ts_task_scheduler_t;
+typedef struct coro_cancel_token_s coro_cancel_token_t;
 
 typedef struct imported_module_s {
   char *name;
@@ -51,6 +56,8 @@ _Static_assert(sizeof(ts_jit_stats_t) == sizeof(turbo_script_jit_stats_t),
 
 
 struct turbo_script_ctx_s {
+  atomic_uint ref_count;
+  atomic_int closing;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
@@ -67,6 +74,12 @@ struct turbo_script_ctx_s {
   exprtk_env_t *current_import_env;
   char error_msg[1024];
   turbo_script_error_code_t error_code;
+
+  /* Timer callbacks are posted onto this borrowed serialized executor. */
+  turbo_script_executor_t executor;
+  coro_context_t *coro_ctx;
+  ts_timer_scheduler_t *timer_scheduler;
+  ts_task_scheduler_t *task_scheduler;
 
   /* JIT compiling tracking to prevent memory leak and data race */
   int mir_mod_idx;
@@ -108,6 +121,7 @@ struct turbo_script_compiled_s {
 };
 
 exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script);
+exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 
 /* Built-in module accessors */
 void turbo_script_register_modules(void);
@@ -130,5 +144,16 @@ CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *s
 
 /* Internal REPL helper */
 int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script);
+
+/* Context references protect accepted executor tasks during deferred shutdown. */
+void ts_context_retain(turbo_script_ctx_t *ctx);
+void ts_context_release(turbo_script_ctx_t *ctx);
+
+/* Returns the caller environment owned by the currently running managed task,
+ * or the root environment when execution is not inside one. */
+exprtk_env_t *ts_task_execution_env(turbo_script_ctx_t *ctx);
+
+/* Returns the cooperative cancellation token owned by the current managed task. */
+const coro_cancel_token_t *ts_task_cancel_token(turbo_script_ctx_t *ctx);
 
 #endif /* TURBO_SCRIPT_INTERNAL_H */

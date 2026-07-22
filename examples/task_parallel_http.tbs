@@ -1,0 +1,19 @@
+import("net");
+
+var first = task.spawn(() => {
+    return http.get("https://example.com/", map { timeout: 5000 });
+});
+
+var second = task.spawn(() => {
+    return http.get("https://www.iana.org/", map { timeout: 5000 });
+});
+
+var report = task.spawn(() => {
+    var first_response = task.join(first);
+    var second_response = task.join(second);
+    print(first_response);
+    print(second_response);
+    task.release(first);
+    task.release(second);
+    return 0;
+});

@@ -3,6 +3,7 @@
  * @brief HTTP and WebSocket module: http.* and ws.* for TurboScript.
  */
 #include "net_ctx.h"
+#include "turbo_script.h"
 #include "exprtk_module.h"
 #include <CoroNet.h>
 #include <turbo_parser.h>
@@ -415,6 +416,7 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
   const char *body = NULL;
   size_t body_len = 0;
   exprtk_value_t ret = NET_ZERO;
+  http_request_control_t control = HTTP_REQUEST_CONTROL_DEFAULT;
 
   if (!ud || !ud->env) return NET_ZERO;
 
@@ -437,7 +439,8 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
   }
 
   net_apply_request_options(ud, client, options, &headers, &header_count);
-  resp = http_request(client, method, url, headers, header_count, body, body_len);
+  control.cancel_token = turbo_script_current_task_cancel_token();
+  resp = http_request_ex(client, method, url, headers, header_count, body, body_len, &control);
   if (resp) {
     ret = structured_response ? net_response_value(ud, resp) : copy_response_body(resp, ud->env);
     http_response_free(resp);

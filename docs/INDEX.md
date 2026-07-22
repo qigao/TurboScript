@@ -10,6 +10,15 @@
 - **[TurboScript API 参考](../turbo_script/include/turbo_script.h)**  
   C API 接口、JIT 编译、变量绑定、插件系统
 
+- **[Timer 与 Cron 调度](./advanced/timers.md)**
+  `after`、固定延迟 interval、cron、executor 线程边界与关闭语义
+
+- **[调度型 Task](./advanced/tasks.md)**
+  CoroNet 托管 task、yield/sleep/join、并发 HTTP、结果与关闭协议
+
+- **[Task runtime 与协作式取消](./architecture/task-runtime-cancellation.md)**
+  task/timer/HTTP/REPL 的状态归属、token 生命周期与关闭顺序
+
 ### DataBind 模块
 
 - **[DataBind 完整指南](./DATA_BIND_GUIDE.md)** ⭐ **推荐起点**  
@@ -32,6 +41,12 @@
 
 - **[IO 函数](../examples/test_io_functions.tbs)**  
   日期时间、文件操作、目录遍历
+
+- **[周期检查网站](../examples/timer_website_watch.tbs)**
+  使用 `timer.every` 和 `http.get` 定期检查网站
+
+- **[并发 HTTP Task](../examples/task_parallel_http.tbs)**
+  使用 `task.spawn` 和 `task.join` 并发等待多个 HTTP 请求
 
 ### DataBind 示例
 

@@ -11,6 +11,10 @@ set(SOURCE_FILES
   src/turbo_script_closure_analysis.h
   src/turbo_script_internal.h
   src/turbo_script_registry.c
+  src/turbo_script_task.c
+  src/turbo_script_task.h
+  src/turbo_script_timer.c
+  src/turbo_script_timer.h
 )
 
 # MIR backend modules. turbo_script_mir.c still owns the main AST lowering path
@@ -46,7 +50,8 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core TurboUtils::Parser)
+  PUBLIC TurboUtils::Core TurboUtils::Parser
+  PRIVATE TurboUtils::Cron TurboNet::CoroNet)
 
 # Enable strict warnings for modularized code
 if(MSVC)
@@ -79,7 +84,8 @@ target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core)
+  PUBLIC TurboUtils::Core
+  PRIVATE TurboUtils::Cron TurboNet::CoroNet)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  

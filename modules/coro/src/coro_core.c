@@ -1,233 +1,285 @@
 /**
  * @file coro_core.c
- * @brief Coroutine core implementation using minicoro.
+ * @brief TurboScript coroutine contexts backed by TurboUtils::Core.
  */
-#include "../src/minicoro.h"
 #include "coro_ctx.h"
 #include "turbo_str.h"
-#include "exprtk.h"
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <stdio.h>
 
-/* Initial capacity for coroutine registry */
-#define CORO_REGISTRY_INITIAL_CAPACITY 16
+enum {
+    CORO_REGISTRY_INITIAL_CAPACITY = 16,
+    CORO_REGISTRY_MAX_CAPACITY = 1024,
+    CORO_DEFAULT_STACK_SIZE = 64 * 1024
+};
 
-/* Default stack size (64KB) */
-#define CORO_DEFAULT_STACK_SIZE (64 * 1024)
+static int coro_legacy_status(coro_state_t state) {
+    switch (state) {
+        case coro_RUNNING:
+            return 1;
+        case coro_DEAD:
+            return 2;
+        case coro_READY:
+        case coro_SUSPENDED:
+        default:
+            return 0;
+    }
+}
 
-/* ========================================================================
- * Registry Management
- * ======================================================================== */
+static exprtk_value_t coro_null_value(void) {
+    exprtk_value_t value;
+    memset(&value, 0, sizeof(value));
+    value.type = EXPRTK_VAL_NULL;
+    return value;
+}
+
+static exprtk_value_t coro_error_value(coro_ctx_t *ctx, const char *message) {
+    size_t len;
+    char *copy;
+
+    if (!ctx || !ctx->env || !message) return coro_null_value();
+    len = strlen(message);
+    copy = (char *)mem_alloc(&ctx->env->arena, len + 1);
+    if (!copy) return coro_null_value();
+    memcpy(copy, message, len + 1);
+    return exprtk_val_str(tstr_v_from_buf(copy, len));
+}
+
+static void coro_set_error(coro_ctx_t *ctx, const char *message) {
+    if (!ctx || !message) return;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s", message);
+    ctx->return_value = coro_error_value(ctx, ctx->error_msg);
+}
+
+static void coro_entry_point(coro_t *co, void *arg) {
+    coro_ctx_t *ctx = (coro_ctx_t *)arg;
+    exprtk_value_t result;
+
+    (void)co;
+    if (!ctx) return;
+
+    ctx->status = 1;
+    if (!ctx->env || !ctx->func_name ||
+        !exprtk_env_has_func(ctx->env, ctx->func_name)) {
+        coro_set_error(ctx, "coroutine function not found");
+        ctx->status = 2;
+        return;
+    }
+
+    result = exprtk_call_internal(ctx->func_name,
+                                  ctx->resume_argc,
+                                  ctx->resume_args,
+                                  ctx->env,
+                                  &ctx->env->arena);
+
+    if (ctx->env->flow == exprtk_FLOW_THROW) {
+        const char *message = ctx->env->error_msg[0] != '\0'
+                                  ? ctx->env->error_msg
+                                  : "coroutine function error";
+        coro_set_error(ctx, message);
+        ctx->env->flow = exprtk_FLOW_NORMAL;
+    } else {
+        ctx->return_value = result;
+    }
+    ctx->status = 2;
+}
 
 coro_registry_t *coro_registry_create(void) {
-    coro_registry_t *registry = (coro_registry_t *)calloc(1, sizeof(coro_registry_t));
+    turbo_coro_pool_config_t config;
+    coro_registry_t *registry = (coro_registry_t *)calloc(1, sizeof(*registry));
+
     if (!registry) return NULL;
-    
+
     registry->capacity = CORO_REGISTRY_INITIAL_CAPACITY;
-    registry->coroutines = (coro_ctx_t **)calloc(registry->capacity, sizeof(coro_ctx_t *));
+    registry->coroutines =
+        (coro_ctx_t **)calloc(registry->capacity, sizeof(*registry->coroutines));
     if (!registry->coroutines) {
         free(registry);
         return NULL;
     }
-    
-    registry->count = 0;
-    registry->next_id = 1; /* Start from 1, 0 is invalid */
+
+    config.initial_capacity = CORO_REGISTRY_INITIAL_CAPACITY;
+    config.max_capacity = CORO_REGISTRY_MAX_CAPACITY;
+    config.stack_size = CORO_DEFAULT_STACK_SIZE;
+    config.storage_size = 0;
+    config.alloc_fn = NULL;
+    config.free_fn = NULL;
+    config.allocator_data = NULL;
+    registry->pool = turbo_coro_pool_create(&config);
+    if (!registry->pool) {
+        free(registry->coroutines);
+        free(registry);
+        return NULL;
+    }
+
+    registry->next_id = 1;
     return registry;
 }
 
 void coro_registry_destroy(coro_registry_t *registry) {
+    size_t i;
+
     if (!registry) return;
-    
-    /* Destroy all coroutines */
-    for (size_t i = 0; i < registry->capacity; i++) {
-        if (registry->coroutines[i]) {
-            coro_ctx_destroy(registry->coroutines[i]);
-        }
+    for (i = 0; i < registry->capacity; ++i) {
+        coro_ctx_destroy(registry->coroutines[i]);
     }
-    
+    turbo_coro_pool_destroy(registry->pool);
     free(registry->coroutines);
     free(registry);
 }
 
 int coro_registry_add(coro_registry_t *registry, coro_ctx_t *ctx) {
-    if (!registry || !ctx) return -1;
-    
-    /* Find empty slot or expand */
-    size_t slot = (size_t)-1;
-    for (size_t i = 0; i < registry->capacity; i++) {
+    size_t slot = SIZE_MAX;
+    size_t i;
+
+    if (!registry || !ctx || registry->count >= CORO_REGISTRY_MAX_CAPACITY) return -1;
+
+    for (i = 0; i < registry->capacity; ++i) {
         if (!registry->coroutines[i]) {
             slot = i;
             break;
         }
     }
-    
-    /* Need to expand */
-    if (slot == (size_t)-1) {
-        size_t new_capacity = registry->capacity * 2;
-        coro_ctx_t **new_array = (coro_ctx_t **)realloc(
-            registry->coroutines,
-            new_capacity * sizeof(coro_ctx_t *)
-        );
+
+    if (slot == SIZE_MAX) {
+        size_t old_capacity = registry->capacity;
+        size_t new_capacity = old_capacity * 2;
+        coro_ctx_t **new_array;
+
+        if (new_capacity > CORO_REGISTRY_MAX_CAPACITY) {
+            new_capacity = CORO_REGISTRY_MAX_CAPACITY;
+        }
+        new_array = (coro_ctx_t **)realloc(
+            registry->coroutines, new_capacity * sizeof(*registry->coroutines));
         if (!new_array) return -1;
-        
-        /* Zero out new slots */
-        memset(new_array + registry->capacity, 0,
-               (new_capacity - registry->capacity) * sizeof(coro_ctx_t *));
-        
+        memset(new_array + old_capacity,
+               0,
+               (new_capacity - old_capacity) * sizeof(*new_array));
         registry->coroutines = new_array;
-        slot = registry->capacity;
         registry->capacity = new_capacity;
+        slot = old_capacity;
     }
-    
+
     registry->coroutines[slot] = ctx;
-    registry->count++;
+    ++registry->count;
     return 0;
 }
 
 coro_ctx_t *coro_registry_find(coro_registry_t *registry, int id) {
+    size_t i;
+
     if (!registry || id <= 0) return NULL;
-    
-    for (size_t i = 0; i < registry->capacity; i++) {
+    for (i = 0; i < registry->capacity; ++i) {
         coro_ctx_t *ctx = registry->coroutines[i];
-        if (ctx && ctx->id == id) {
-            return ctx;
-        }
+        if (ctx && ctx->id == id) return ctx;
     }
-    
     return NULL;
 }
 
 void coro_registry_remove(coro_registry_t *registry, int id) {
+    size_t i;
+
     if (!registry || id <= 0) return;
-    
-    for (size_t i = 0; i < registry->capacity; i++) {
+    for (i = 0; i < registry->capacity; ++i) {
         coro_ctx_t *ctx = registry->coroutines[i];
         if (ctx && ctx->id == id) {
             registry->coroutines[i] = NULL;
-            registry->count--;
+            --registry->count;
             return;
         }
     }
 }
 
-/* ========================================================================
- * Coroutine Context Management
- * ======================================================================== */
+static coro_ctx_t *coro_ctx_create_impl(exprtk_env_t *env,
+                                        const char *func_name,
+                                        size_t stack_size,
+                                        turbo_coro_pool_t *pool) {
+    coro_ctx_t *ctx;
 
-/* Coroutine entry point wrapper */
-static void coro_entry_point(mco_coro *co) {
-    coro_ctx_t *ctx = (coro_ctx_t *)mco_get_user_data(co);
-    if (!ctx) return;
-    
-    ctx->status = 1; /* running */
-    
-    /* Check if we should try to call a TurboScript function */
-    int use_fallback = 0;
-    if (!ctx->env || !ctx->func_name || !ctx->env->funcs) {
-        use_fallback = 1;
-    }
-    
-    if (!use_fallback) {
-        /* Call the user-defined TurboScript function
-         * The function may yield multiple times via FLOW_YIELD
-         */
-        exprtk_value_t result = exprtk_call_internal(
-            ctx->func_name,
-            ctx->resume_argc,
-            ctx->resume_args,
-            ctx->env,
-            &ctx->env->arena
-        );
-        
-        /* Check flow control */
-        if (ctx->env->flow == exprtk_FLOW_THROW) {
-            /* Function threw an error */
-            const char *err_msg = "coroutine function error";
-            if (ctx->env->error_msg[0] != '\0') {
-                err_msg = ctx->env->error_msg;
-            }
-            size_t err_len = strlen(err_msg);
-            char *err_buf = (char *)malloc(err_len + 1);
-            if (err_buf) {
-                memcpy(err_buf, err_msg, err_len);
-                err_buf[err_len] = '\0';
-                ctx->return_value = exprtk_val_str(tstr_v_from_buf(err_buf, err_len));
-            }
-            ctx->env->flow = exprtk_FLOW_NORMAL;
-        } else {
-            /* Normal completion (or after final yield) */
-            ctx->return_value = result;
-        }
-    } else {
-        /* Fallback: Placeholder for tests without real functions */
-        ctx->yield_value = exprtk_val_num(42.0);
-        mco_yield(co);
-        
-        ctx->yield_value = exprtk_val_num(100.0);
-        mco_yield(co);
-        
-        const char *done_str = "done";
-        ctx->return_value = exprtk_val_str(tstr_v_from_buf(done_str, strlen(done_str)));
-    }
-    
-    ctx->status = 2; /* dead */
-}
-
-coro_ctx_t *coro_ctx_create(exprtk_env_t *env, const char *func_name, size_t stack_size) {
     if (!env || !func_name) return NULL;
-    
-    /* Allocate context */
-    coro_ctx_t *ctx = (coro_ctx_t *)calloc(1, sizeof(coro_ctx_t));
+
+    ctx = (coro_ctx_t *)calloc(1, sizeof(*ctx));
     if (!ctx) return NULL;
-    
     ctx->env = env;
-    ctx->status = 0; /* suspended */
     ctx->func_name = strdup(func_name);
     if (!ctx->func_name) {
         free(ctx);
         return NULL;
     }
-    
-    /* Use default stack size if not specified */
-    if (stack_size == 0) {
-        stack_size = CORO_DEFAULT_STACK_SIZE;
+
+    if (pool && stack_size == 0) {
+        ctx->coro = turbo_coro_pool_acquire(pool, coro_entry_point, ctx);
+        ctx->pool = pool;
+        ctx->pooled = 1;
+    } else {
+        coro_opts_t opts = coro_OPTS_DEFAULT;
+        opts.stack_size = stack_size == 0 ? CORO_DEFAULT_STACK_SIZE : stack_size;
+        opts.user_data = ctx;
+        ctx->coro = coro_create(coro_entry_point, ctx, &opts);
     }
-    
-    /* Create minicoro coroutine */
-    mco_desc desc = mco_desc_init(coro_entry_point, stack_size);
-    desc.user_data = ctx;
-    
-    mco_result res = mco_create(&ctx->coro, &desc);
-    if (res != MCO_SUCCESS) {
-        snprintf(ctx->error_msg, sizeof(ctx->error_msg),
-                 "Failed to create coroutine: %s", mco_result_description(res));
+
+    if (!ctx->coro) {
         free(ctx->func_name);
         free(ctx);
         return NULL;
     }
-    
+
+    coro_set_data(ctx->coro, ctx);
+    ctx->magic = CORO_CTX_MAGIC;
+    ctx->status = coro_legacy_status(coro_state(ctx->coro));
     return ctx;
+}
+
+coro_ctx_t *coro_ctx_create(exprtk_env_t *env,
+                            const char *func_name,
+                            size_t stack_size) {
+    return coro_ctx_create_impl(env, func_name, stack_size, NULL);
+}
+
+coro_ctx_t *coro_ctx_create_pooled(exprtk_env_t *env,
+                                   const char *func_name,
+                                   size_t stack_size,
+                                   turbo_coro_pool_t *pool) {
+    return coro_ctx_create_impl(env, func_name, stack_size, pool);
+}
+
+int coro_ctx_status(coro_ctx_t *ctx) {
+    if (!ctx || !ctx->coro) return 2;
+    ctx->status = coro_legacy_status(coro_state(ctx->coro));
+    return ctx->status;
 }
 
 void coro_ctx_destroy(coro_ctx_t *ctx) {
     if (!ctx) return;
-    
+
+    ctx->magic = 0;
+
     if (ctx->coro) {
-        mco_destroy(ctx->coro);
+        coro_t *co = ctx->coro;
+        coro_state_t state = coro_state(co);
+
+        coro_set_data(co, NULL);
         ctx->coro = NULL;
+        if (ctx->pooled) {
+            if (state == coro_DEAD) {
+                turbo_coro_pool_release(ctx->pool, co);
+            } else {
+                turbo_coro_pool_discard_coro(co);
+                coro_destroy(co);
+            }
+        } else {
+            coro_destroy(co);
+        }
     }
-    
-    if (ctx->func_name) {
-        free(ctx->func_name);
-        ctx->func_name = NULL;
-    }
-    
+
+    free(ctx->func_name);
     free(ctx);
 }
 
 coro_ctx_t *coro_get_current(void) {
-    mco_coro *co = mco_running();
-    if (!co) return NULL;
-    return (coro_ctx_t *)mco_get_user_data(co);
+    coro_t *co = coro_running();
+    coro_ctx_t *ctx = co ? (coro_ctx_t *)coro_get_data(co) : NULL;
+    return ctx && ctx->magic == CORO_CTX_MAGIC ? ctx : NULL;
 }

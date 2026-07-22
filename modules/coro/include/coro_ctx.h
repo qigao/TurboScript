@@ -6,6 +6,8 @@
 #define CORO_CTX_H
 
 #include "exprtk.h"
+#include "turbo_coro.h"
+#include "turbo_coro_pool.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -13,17 +15,19 @@
 extern "C" {
 #endif
 
-/* Forward declaration */
-typedef struct mco_coro mco_coro;
+#define CORO_CTX_MAGIC UINT64_C(0x5453434F524F4358)
+
+/** @deprecated Compatibility alias for the former module-local coroutine handle. */
+typedef coro_t mco_coro;
 
 /**
- * @brief Coroutine context - wraps minicoro with TurboScript integration
+ * @brief Coroutine context backed by TurboUtils::Core.
  */
 typedef struct coro_ctx_s {
-    mco_coro *coro;              /* minicoro coroutine object */
+    mco_coro *coro;              /* TurboUtils coroutine object */
     exprtk_env_t *env;           /* exprtk environment */
     int id;                      /* unique coroutine ID */
-    int status;                  /* 0=suspended, 1=running, 2=dead */
+    int status;                  /* compatibility mirror: 0=suspended, 1=running, 2=dead */
     
     /* Function to execute */
     char *func_name;             /* function name (owned) */
@@ -38,6 +42,11 @@ typedef struct coro_ctx_s {
     
     /* Error handling */
     char error_msg[256];
+
+    /* Appended lifecycle metadata keeps existing field offsets stable. */
+    turbo_coro_pool_t *pool;     /* non-NULL when the coroutine is pooled */
+    int pooled;                  /* whether pool owns the reusable stack */
+    uint64_t magic;              /* distinguishes manual generators from managed tasks */
 } coro_ctx_t;
 
 /**
@@ -48,6 +57,7 @@ typedef struct coro_registry_s {
     size_t capacity;
     size_t count;
     int next_id;
+    turbo_coro_pool_t *pool;     /* default-stack coroutine reuse */
 } coro_registry_t;
 
 /* Registry management */
@@ -59,15 +69,15 @@ void coro_registry_remove(coro_registry_t *registry, int id);
 
 /* Coroutine context management */
 coro_ctx_t *coro_ctx_create(exprtk_env_t *env, const char *func_name, size_t stack_size);
+coro_ctx_t *coro_ctx_create_pooled(exprtk_env_t *env,
+                                   const char *func_name,
+                                   size_t stack_size,
+                                   turbo_coro_pool_t *pool);
 void coro_ctx_destroy(coro_ctx_t *ctx);
+int coro_ctx_status(coro_ctx_t *ctx);
 
-/* Get current running coroutine (stored in minicoro user_data) */
+/* Get current running coroutine (stored in TurboUtils user_data) */
 coro_ctx_t *coro_get_current(void);
-
-/* Test helpers - expose minicoro functions for unit testing */
-#ifdef CORO_TESTING
-#include "../src/minicoro.h"
-#endif
 
 #ifdef __cplusplus
 }

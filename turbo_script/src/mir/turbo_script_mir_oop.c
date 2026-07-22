@@ -1298,10 +1298,12 @@ double ts_mir_oop_new_assign(void *ctx_ptr, const char *target_name, const char 
 double ts_mir_oop_member_call(void *ctx_ptr, const char *object_name, const char *method_name,
                               void *object_node, int64_t argc, double *argv) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
+  exprtk_env_t *env;
   if (!ctx || !object_name || !method_name) return 0.0;
+  env = ts_task_execution_env(ctx);
 
   exprtk_value_t result = exprtk_member_call_checked_numeric(
-      object_name, method_name, (exprtk_node_t *)object_node, (size_t)argc, argv, &ctx->env);
+      object_name, method_name, (exprtk_node_t *)object_node, (size_t)argc, argv, env);
   return ts_mir_numeric_value(result);
 }
 
@@ -1309,11 +1311,13 @@ double ts_mir_oop_member_call_value(void *ctx_ptr, const char *object_name,
                                     const char *method_name, void *object_node,
                                     void *call_node) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
+  exprtk_env_t *env;
   if (!ctx || !object_name || !method_name) return 0.0;
+  env = ts_task_execution_env(ctx);
 
   exprtk_value_t result = exprtk_member_call_checked_value_nodes(
       object_name, method_name, (exprtk_node_t *)object_node,
-      (exprtk_node_t *)call_node, &ctx->env);
+      (exprtk_node_t *)call_node, env);
   return ts_mir_numeric_value(result);
 }
 

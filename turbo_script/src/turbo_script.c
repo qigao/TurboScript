@@ -5,6 +5,8 @@
 #include "turbo_buffer.h"
 #include "turbo_fs.h"
 #include "turbo_script_internal.h"
+#include "turbo_script_timer.h"
+#include "turbo_script_task.h"
 #include <mir-gen.h>
 #include <mir.h>
 
@@ -18,8 +20,8 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode);
 static void set_error_msg(turbo_script_ctx_t *ctx, const char *msg);
 static void set_error(turbo_script_ctx_t *ctx, turbo_script_error_code_t code, const char *msg);
 static void clear_error(turbo_script_ctx_t *ctx);
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env);
+static void ts_context_destroy_final(turbo_script_ctx_t *ctx);
 
 const char *turbo_script_version(void) { return TURBO_SCRIPT_VERSION_STRING; }
 
@@ -103,8 +105,11 @@ static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
   return 0;
 }
 
-void turbo_script_free(turbo_script_ctx_t *ctx) {
+static void ts_context_destroy_final(turbo_script_ctx_t *ctx) {
   if (!ctx) return;
+
+  ts_task_scheduler_destroy(ctx);
+  ts_timer_scheduler_destroy(ctx);
 
   // Free JIT cache copied script strings
   for (int i = 0; i < TS_JIT_CACHE_SIZE; ++i) {
@@ -161,6 +166,25 @@ void turbo_script_free(turbo_script_ctx_t *ctx) {
   free(ctx->current_script_dir);
   mem_destroy(&ctx->scratch_arena);
   free(ctx);
+}
+
+void ts_context_retain(turbo_script_ctx_t *ctx) {
+  if (!ctx) return;
+  (void)atomic_fetch_add_explicit(&ctx->ref_count, 1U, memory_order_relaxed);
+}
+
+void ts_context_release(turbo_script_ctx_t *ctx) {
+  if (!ctx) return;
+  if (atomic_fetch_sub_explicit(&ctx->ref_count, 1U, memory_order_acq_rel) == 1U)
+    ts_context_destroy_final(ctx);
+}
+
+void turbo_script_free(turbo_script_ctx_t *ctx) {
+  if (!ctx) return;
+  if (atomic_exchange_explicit(&ctx->closing, 1, memory_order_acq_rel)) return;
+  ts_timer_scheduler_shutdown(ctx);
+  ts_task_scheduler_shutdown(ctx);
+  ts_context_release(ctx);
 }
 
 static void set_error_msg(turbo_script_ctx_t *ctx, const char *msg) {
@@ -747,7 +771,8 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, void *user_da
 
   if (strcmp(name, "math") == 0 || strcmp(name, "string") == 0 ||
       strcmp(name, "stats") == 0 || strcmp(name, "io") == 0 ||
-      strcmp(name, "core") == 0 || strcmp(name, "regex") == 0) {
+      strcmp(name, "core") == 0 || strcmp(name, "regex") == 0 ||
+      strcmp(name, "timer") == 0) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
@@ -925,12 +950,25 @@ turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)calloc(1, sizeof(turbo_script_ctx_t));
   if (!ctx) return NULL;
 
+  atomic_init(&ctx->ref_count, 1U);
+  atomic_init(&ctx->closing, 0);
   exprtk_env_init(&ctx->env);
   mem_init(&ctx->scratch_arena, 4096);
+
+  if (ts_timer_scheduler_init(ctx, TS_TIMER_DEFAULT_CAPACITY) != 0) {
+    turbo_script_free(ctx);
+    return NULL;
+  }
+  if (ts_task_scheduler_init(ctx, TS_TASK_DEFAULT_CAPACITY) != 0) {
+    turbo_script_free(ctx);
+    return NULL;
+  }
 
   exprtk_env_register_func(&ctx->env, "import", ts_import, ctx);
   exprtk_env_register_func(&ctx->env, "import_module", ts_import_module, ctx);
   exprtk_env_register_func(&ctx->env, "export", ts_export, ctx);
+  ts_timer_register_functions(ctx);
+  ts_task_register_functions(ctx);
 
   if (flags == TURBO_SCRIPT_INIT_DEFAULT) {
     exprtk_env_register_func(&ctx->env, "print", ts_print, ctx);
@@ -965,6 +1003,7 @@ int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
 
 int turbo_script_run(turbo_script_ctx_t *ctx, const char *script) {
   if (!ctx) return -1;
+  if (atomic_load_explicit(&ctx->closing, memory_order_acquire)) return -1;
   if (!script) {
     set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "script is NULL");
     return -1;

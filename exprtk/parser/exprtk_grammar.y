@@ -745,7 +745,7 @@ expr(A) ::= LPAREN expr_list_2plus(Args) RPAREN ARROW(OP) expr(B). [ARROW] {
     }
 }
 
-expr(A) ::= LPAREN RPAREN ARROW(OP) expr(B). {
+expr(A) ::= LPAREN RPAREN ARROW(OP) expr(B). [ARROW] {
     if (!B) {
         A = NULL;
     } else {
