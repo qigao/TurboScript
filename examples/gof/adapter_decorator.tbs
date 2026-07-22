@@ -1,0 +1,83 @@
+// Adapter normalizes a legacy feed; Decorators compose presentation concerns.
+interface QuoteSource {
+    quote(symbol);
+}
+
+class LegacyPriceFeed {
+    fetch(ticker) {
+        return map{ticker: ticker, last: 189.5};
+    }
+}
+
+class LegacyQuoteAdapter implements QuoteSource {
+    legacy = null;
+
+    constructor(legacy) {
+        this.legacy = legacy;
+    }
+
+    quote(symbol) {
+        var row = this.legacy.fetch(symbol);
+        return map{symbol: row.ticker, price: row.last};
+    }
+}
+
+interface QuoteRenderer {
+    render(quote);
+}
+
+class SymbolRenderer implements QuoteRenderer {
+    render(quote) {
+        return quote.symbol;
+    }
+}
+
+class PriceDecorator implements QuoteRenderer {
+    inner = null;
+
+    constructor(inner) {
+        this.inner = inner;
+    }
+
+    render(quote) {
+        return this.inner.render(quote) + " @ " + quote.price;
+    }
+}
+
+class CurrencyDecorator implements QuoteRenderer {
+    inner = null;
+    currency = "";
+
+    constructor(inner, currency) {
+        this.inner = inner;
+        this.currency = currency;
+    }
+
+    render(quote) {
+        return this.inner.render(quote) + " " + this.currency;
+    }
+}
+
+class FrameDecorator implements QuoteRenderer {
+    inner = null;
+
+    constructor(inner) {
+        this.inner = inner;
+    }
+
+    render(quote) {
+        return "[" + this.inner.render(quote) + "]";
+    }
+}
+
+var source = LegacyQuoteAdapter(LegacyPriceFeed());
+var quote = source.quote("AAPL");
+var renderer = FrameDecorator(
+    CurrencyDecorator(PriceDecorator(SymbolRenderer()), "USD"));
+var rendered = renderer.render(quote);
+
+if (quote.symbol != "AAPL" || quote.price != 189.5 ||
+    rendered != "[AAPL @ 189.5 USD]")
+    throw "Adapter/Decorator result mismatch";
+print("Adapter + Decorator: " + rendered);
+

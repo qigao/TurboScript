@@ -1,0 +1,143 @@
+// Commands objectify account mutations; Mementos restore prior state.
+interface Command {
+    execute();
+    undo();
+}
+
+class AccountMemento {
+    balance = 0;
+
+    constructor(balance) {
+        this.balance = balance;
+    }
+}
+
+class BankAccount {
+    balance = 0;
+
+    constructor(balance) {
+        if (balance < 0)
+            throw "initial balance cannot be negative";
+        this.balance = balance;
+    }
+
+    deposit(amount) {
+        if (amount <= 0)
+            throw "deposit must be positive";
+        this.balance = this.balance + amount;
+    }
+
+    withdraw(amount) {
+        if (amount <= 0 || amount > this.balance)
+            throw "invalid withdrawal";
+        this.balance = this.balance - amount;
+    }
+
+    snapshot() {
+        return AccountMemento(this.balance);
+    }
+
+    restore(memento) {
+        this.balance = memento.balance;
+    }
+}
+
+class DepositCommand implements Command {
+    account = null;
+    amount = 0;
+    before = null;
+
+    constructor(account, amount) {
+        this.account = account;
+        this.amount = amount;
+    }
+
+    execute() {
+        this.before = this.account.snapshot();
+        this.account.deposit(this.amount);
+    }
+
+    undo() {
+        if (this.before == null)
+            throw "deposit command has not executed";
+        this.account.restore(this.before);
+    }
+}
+
+class WithdrawCommand implements Command {
+    account = null;
+    amount = 0;
+    before = null;
+
+    constructor(account, amount) {
+        this.account = account;
+        this.amount = amount;
+    }
+
+    execute() {
+        this.before = this.account.snapshot();
+        this.account.withdraw(this.amount);
+    }
+
+    undo() {
+        if (this.before == null)
+            throw "withdraw command has not executed";
+        this.account.restore(this.before);
+    }
+}
+
+class CommandHistory {
+    commands = list();
+    cursor = 0;
+
+    constructor() {
+        this.commands = list();
+    }
+
+    run(command: Command) {
+        var commands = this.commands;
+        if (this.cursor != commands.length())
+            throw "execute after undo requires an explicit history branch policy";
+        command.execute();
+        commands.push(command);
+        this.commands = commands;
+        this.cursor = this.cursor + 1;
+    }
+
+    undo() {
+        if (this.cursor == 0)
+            throw "nothing to undo";
+        this.cursor = this.cursor - 1;
+        var commands = this.commands;
+        var command = commands[this.cursor];
+        command.undo();
+    }
+
+    redo() {
+        var commands = this.commands;
+        if (this.cursor >= commands.length())
+            throw "nothing to redo";
+        var command = commands[this.cursor];
+        command.execute();
+        this.cursor = this.cursor + 1;
+    }
+}
+
+var account = BankAccount(100);
+var history = CommandHistory();
+history.run(DepositCommand(account, 40));
+history.run(WithdrawCommand(account, 15));
+if (account.balance != 125)
+    throw "Command execution mismatch";
+
+history.undo();
+if (account.balance != 140)
+    throw "first undo mismatch";
+history.undo();
+if (account.balance != 100)
+    throw "second undo mismatch";
+history.redo();
+if (account.balance != 140)
+    throw "redo mismatch";
+print("Command + Memento: balance=" + account.balance);
+

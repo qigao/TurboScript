@@ -1,0 +1,103 @@
+// Composite gives files and directories one traversal interface.
+// Visitors add independent operations without changing the node classes.
+interface FileSystemNode {
+    accept(visitor);
+}
+
+interface NodeVisitor {
+    enter_directory(directory);
+    leave_directory(directory);
+    visit_file(file);
+}
+
+class FileNode implements FileSystemNode {
+    name = "";
+    bytes = 0;
+
+    constructor(name, bytes) {
+        this.name = name;
+        this.bytes = bytes;
+    }
+
+    accept(visitor) {
+        visitor.visit_file(this);
+    }
+}
+
+class DirectoryNode implements FileSystemNode {
+    name = "";
+    children = list();
+
+    constructor(name) {
+        this.name = name;
+        this.children = list();
+    }
+
+    add(child: FileSystemNode) {
+        var children = this.children;
+        children.push(child);
+        this.children = children;
+    }
+
+    accept(visitor) {
+        visitor.enter_directory(this);
+        var children = this.children;
+        for (var i = 0; i < children.length(); i += 1) {
+            var child = children[i];
+            child.accept(visitor);
+        }
+        visitor.leave_directory(this);
+    }
+}
+
+class SizeVisitor implements NodeVisitor {
+    total_bytes = 0;
+
+    enter_directory(directory) {
+        return 0;
+    }
+
+    leave_directory(directory) {
+        return 0;
+    }
+
+    visit_file(file) {
+        this.total_bytes = this.total_bytes + file.bytes;
+    }
+}
+
+class CountVisitor implements NodeVisitor {
+    file_count = 0;
+    directory_count = 0;
+
+    enter_directory(directory) {
+        this.directory_count = this.directory_count + 1;
+    }
+
+    leave_directory(directory) {
+        return 0;
+    }
+
+    visit_file(file) {
+        this.file_count = this.file_count + 1;
+    }
+}
+
+var root = DirectoryNode("root");
+var logs = DirectoryNode("logs");
+root.add(FileNode("config.toml", 50));
+logs.add(FileNode("app.log", 100));
+root.add(logs);
+
+var sizes = SizeVisitor();
+var counts = CountVisitor();
+root.accept(sizes);
+root.accept(counts);
+
+if (sizes.total_bytes != 150 || counts.file_count != 2 ||
+    counts.directory_count != 2)
+    throw "Composite/Visitor result mismatch";
+print("Composite + Visitor: bytes=" + sizes.total_bytes
+      + " files=" + counts.file_count
+      + " directories=" + counts.directory_count);
+

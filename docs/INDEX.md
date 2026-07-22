@@ -51,6 +51,26 @@
 - **[Polymarket 多频道 Task](../examples/polymarket_multi_channel.tbs)**
   使用独立 managed task 并发订阅 market（多个资产）与 sports WebSocket 频道
 
+### GoF 设计模式示例
+
+- **[GoF 示例导航](../examples/gof/README.md)**
+  五个可独立运行并带自检的示例，覆盖 Factory、Builder、Adapter、Decorator、Composite、Visitor、Command、Memento、State 与 Chain of Responsibility
+
+- **[Factory 与 Builder](../examples/gof/factory_builder.tbs)**
+  隔离实现选择，并集中校验分步构造参数
+
+- **[Adapter 与 Decorator](../examples/gof/adapter_decorator.tbs)**
+  统一遗留行情接口，并动态组合渲染职责
+
+- **[Composite 与 Visitor](../examples/gof/composite_visitor.tbs)**
+  统一遍历文件树，并独立扩展统计操作
+
+- **[Command 与 Memento](../examples/gof/command_memento.tbs)**
+  对象化账户操作，并支持撤销与重做
+
+- **[State 与责任链](../examples/gof/state_chain.tbs)**
+  分离订单状态迁移与可组合输入校验
+
 ### DataBind 示例
 
 - **[类包装模式](../examples/test_data_bind_class_wrapping.tbs)**  

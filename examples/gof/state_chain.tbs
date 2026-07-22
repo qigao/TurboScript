@@ -1,0 +1,137 @@
+// A validation chain handles independent checks before the State machine runs.
+class Validator {
+    next = null;
+
+    set_next(next) {
+        this.next = next;
+    }
+
+    check(order) {
+        return true;
+    }
+
+    error_message() {
+        return "validation failed";
+    }
+
+    handle(order) {
+        if (!this.check(order))
+            throw this.error_message();
+        if (this.next != null)
+            this.next.handle(order);
+    }
+}
+
+class ReferenceValidator extends Validator {
+    check(order) {
+        return order.reference.length() > 0;
+    }
+
+    error_message() {
+        return "order reference is required";
+    }
+}
+
+class AmountValidator extends Validator {
+    check(order) {
+        return order.amount > 0;
+    }
+
+    error_message() {
+        return "order amount must be positive";
+    }
+}
+
+interface OrderState {
+    label();
+    pay(order);
+    ship(order);
+}
+
+class PendingState implements OrderState {
+    label() {
+        return "pending";
+    }
+
+    pay(order) {
+        order.change_state(PaidState());
+    }
+
+    ship(order) {
+        throw "pending order cannot ship";
+    }
+}
+
+class PaidState implements OrderState {
+    label() {
+        return "paid";
+    }
+
+    pay(order) {
+        throw "order is already paid";
+    }
+
+    ship(order) {
+        order.change_state(ShippedState());
+    }
+}
+
+class ShippedState implements OrderState {
+    label() {
+        return "shipped";
+    }
+
+    pay(order) {
+        throw "shipped order cannot be paid again";
+    }
+
+    ship(order) {
+        throw "order is already shipped";
+    }
+}
+
+class Order {
+    reference = "";
+    amount = 0;
+    state = null;
+
+    constructor(reference, amount) {
+        this.reference = reference;
+        this.amount = amount;
+        this.state = PendingState();
+    }
+
+    change_state(state: OrderState) {
+        this.state = state;
+    }
+
+    status() {
+        return this.state.label();
+    }
+
+    pay() {
+        this.state.pay(this);
+    }
+
+    ship() {
+        this.state.ship(this);
+    }
+}
+
+var reference_check = ReferenceValidator();
+var amount_check = AmountValidator();
+reference_check.set_next(amount_check);
+
+var order = Order("ORD-42", 250);
+reference_check.handle(order);
+if (order.status() != "pending")
+    throw "initial State mismatch";
+order.pay();
+if (order.status() != "paid")
+    throw "paid State mismatch";
+order.ship();
+if (order.status() != "shipped")
+    throw "shipped State mismatch";
+print("State + Chain of Responsibility: " + order.reference
+      + " status=" + order.status());
+

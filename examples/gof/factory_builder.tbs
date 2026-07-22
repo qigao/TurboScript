@@ -1,0 +1,91 @@
+// Factory chooses an implementation; Builder validates a multi-step value.
+interface Transport {
+    deliver(alert);
+}
+
+class EmailTransport implements Transport {
+    deliver(alert) {
+        return "email:" + alert.recipient + ":" + alert.message;
+    }
+}
+
+class SmsTransport implements Transport {
+    deliver(alert) {
+        return "sms:" + alert.recipient + ":" + alert.message;
+    }
+}
+
+class TransportFactory {
+    static create(kind) {
+        if (kind == "email")
+            return EmailTransport();
+        if (kind == "sms")
+            return SmsTransport();
+        throw "unsupported transport: " + kind;
+    }
+}
+
+class Alert {
+    channel = "";
+    recipient = "";
+    message = "";
+    priority = 0;
+
+    constructor(channel, recipient, message, priority) {
+        this.channel = channel;
+        this.recipient = recipient;
+        this.message = message;
+        this.priority = priority;
+    }
+}
+
+class AlertBuilder {
+    channel_name = "";
+    recipient_value = "";
+    message_value = "";
+    priority_value = 1;
+
+    use_channel(channel) {
+        this.channel_name = channel;
+    }
+
+    for_recipient(recipient) {
+        this.recipient_value = recipient;
+    }
+
+    with_message(message) {
+        this.message_value = message;
+    }
+
+    with_priority(priority) {
+        this.priority_value = priority;
+    }
+
+    build() {
+        if (this.channel_name != "email" && this.channel_name != "sms")
+            throw "alert channel must be email or sms";
+        if (this.recipient_value.length() == 0)
+            throw "alert recipient is required";
+        if (this.message_value.length() == 0)
+            throw "alert message is required";
+        if (this.priority_value < 1 || this.priority_value > 5)
+            throw "alert priority must be between 1 and 5";
+        return Alert(this.channel_name, this.recipient_value,
+                     this.message_value, this.priority_value);
+    }
+}
+
+var builder = AlertBuilder();
+builder.use_channel("email");
+builder.for_recipient("ops@example.com");
+builder.with_message("CPU high");
+builder.with_priority(4);
+
+var alert = builder.build();
+var transport = TransportFactory.create(alert.channel);
+var delivery = transport.deliver(alert);
+
+if (delivery != "email:ops@example.com:CPU high" || alert.priority != 4)
+    throw "Factory/Builder result mismatch";
+print("Factory + Builder: " + delivery);
+
