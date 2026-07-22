@@ -586,7 +586,12 @@ const char *ts_emit_oop_receiver_to_temp(ts_mir_compiler_t *c, exprtk_node_t *ob
   if (!target_name) return NULL;
 
   if (object_node->type == EXPRTK_NODE_NEW && object_node->data.new_expr.class_name) {
-    ts_emit_oop_new_assign(c, target_name, object_node);
+    if (ts_oop_call_args_need_value_bridge(c, object_node->data.new_expr.arg_count,
+                                           object_node->data.new_expr.args)) {
+      ts_emit_value_expr_assign(c, target_name, object_node);
+    } else {
+      ts_emit_oop_new_assign(c, target_name, object_node);
+    }
     ts_mir_set_var_class(c, target_name, object_node->data.new_expr.class_name);
     return target_name;
   }
@@ -594,7 +599,12 @@ const char *ts_emit_oop_receiver_to_temp(ts_mir_compiler_t *c, exprtk_node_t *ob
   if (object_node->type == EXPRTK_NODE_FUNCTION_CALL && object_node->data.function.name) {
     const char *name = object_node->data.function.name;
     if (ts_mir_is_known_class_name(c, name)) {
-      ts_emit_oop_class_call_assign(c, target_name, object_node);
+      if (ts_oop_call_args_need_value_bridge(c, object_node->data.function.arg_count,
+                                             object_node->data.function.args)) {
+        ts_emit_value_expr_assign(c, target_name, object_node);
+      } else {
+        ts_emit_oop_class_call_assign(c, target_name, object_node);
+      }
       ts_mir_set_var_class(c, target_name, name);
       return target_name;
     }

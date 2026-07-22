@@ -380,6 +380,35 @@ static int exprtk_value_is_reference_type(exprtk_value_t value) {
 
 static exprtk_value_t exprtk_value_store_to_env(exprtk_value_t value, exprtk_env_t *dst_env) {
     if (exprtk_value_is_reference_type(value)) return value;
+
+    /* Containers own their storage but retain object identity for nested reference
+     * values. This is required for collections of observers, callbacks, and class
+     * instances; deep-cloning those elements would change identity and can bind
+     * them to the lifetime of a temporary method environment. */
+    if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET) {
+        exprtk_value_t stored = value.type == EXPRTK_VAL_SET ? exprtk_val_set_empty()
+                                                             : exprtk_val_list_empty();
+        if (!value.data.list.items || value.data.list.count == 0) return stored;
+        stored.data.list.items = (exprtk_value_t *)mem_alloc_array(
+            &dst_env->arena, sizeof(*stored.data.list.items), value.data.list.count);
+        if (!stored.data.list.items) return stored;
+        stored.data.list.count = value.data.list.count;
+        stored.data.list.capacity = value.data.list.count;
+        for (size_t i = 0; i < value.data.list.count; ++i)
+            stored.data.list.items[i] = exprtk_value_store_to_env(
+                value.data.list.items[i], dst_env);
+        return stored;
+    }
+    if (exprtk_value_is_object_like(&value)) {
+        exprtk_value_t stored = value.type == EXPRTK_VAL_OBJECT ? exprtk_val_object()
+                                                                : exprtk_val_map();
+        exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
+        const char *key;
+        exprtk_value_t child;
+        while (exprtk_map_iter_next(&it, &key, &child))
+            exprtk_map_set(&stored, key, exprtk_value_store_to_env(child, dst_env));
+        return stored;
+    }
     return exprtk_value_clone_to_env(value, dst_env);
 }
 

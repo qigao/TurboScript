@@ -22,9 +22,14 @@ void *net_ctx_create(void) {
 
 void net_ctx_destroy(void *p) {
   net_ctx_t *ctx = (net_ctx_t *)p;
+  size_t i;
   if (!ctx) return;
   if (ctx->client) http_client_destroy(ctx->client);
   if (ctx->ws_client) coro_socket_destroy(ctx->ws_client);
+  for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
+    if (ctx->ws_task_connections[i].socket)
+      coro_socket_destroy(ctx->ws_task_connections[i].socket);
+  }
   free(ctx);
 }
 
@@ -120,23 +125,80 @@ static int net_parse_ws_url(const char *url, const char **host, size_t *host_len
   return 0;
 }
 
-static coro_socket_t *net_ctx_recreate_ws_client(net_ctx_t *ctx) {
-  coro_context_t *cctx;
+static coro_socket_t **net_ctx_ws_slot(net_ctx_t *ctx, const coro_cancel_token_t *owner,
+                                       int create) {
+  size_t i;
+  net_ws_task_connection_t *free_slot = NULL;
 
   if (!ctx) return NULL;
-  if (ctx->ws_client) {
-    coro_socket_destroy(ctx->ws_client);
-    ctx->ws_client = NULL;
+  if (!owner) return &ctx->ws_client;
+
+  for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
+    net_ws_task_connection_t *entry = &ctx->ws_task_connections[i];
+    if (entry->socket && entry->owner == owner) return &entry->socket;
+    if (!entry->socket && !free_slot) free_slot = entry;
   }
+  if (!create || !free_slot) return NULL;
+
+  free_slot->owner = owner;
+  ctx->ws_task_connection_count++;
+  return &free_slot->socket;
+}
+
+static void net_ctx_clear_ws_slot(net_ctx_t *ctx, const coro_cancel_token_t *owner,
+                                  coro_socket_t **slot) {
+  size_t i;
+
+  if (!ctx || !slot) return;
+  if (*slot) coro_socket_destroy(*slot);
+  *slot = NULL;
+  if (!owner) return;
+
+  for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
+    net_ws_task_connection_t *entry = &ctx->ws_task_connections[i];
+    if (&entry->socket != slot) continue;
+    entry->owner = NULL;
+    if (ctx->ws_task_connection_count > 0) ctx->ws_task_connection_count--;
+    return;
+  }
+}
+
+static coro_socket_t *net_ctx_recreate_ws_client(net_ctx_t *ctx,
+                                                  const coro_cancel_token_t *owner) {
+  coro_context_t *cctx;
+  coro_socket_t **slot;
+
+  if (!ctx) return NULL;
+  slot = net_ctx_ws_slot(ctx, owner, 1);
+  if (!slot) {
+    net_set_error(ctx, "ws task connection capacity exhausted");
+    return NULL;
+  }
+  if (*slot) net_ctx_clear_ws_slot(ctx, owner, slot);
+  slot = net_ctx_ws_slot(ctx, owner, 1);
+  if (!slot) return NULL;
 
   cctx = coro_context_current();
   if (!cctx) {
     net_set_error(ctx, "no coroutine context");
+    net_ctx_clear_ws_slot(ctx, owner, slot);
     return NULL;
   }
 
-  ctx->ws_client = coro_socket_create_tcpv4(cctx);
-  return ctx->ws_client;
+  *slot = coro_socket_create_tcpv4(cctx);
+  if (!*slot) net_ctx_clear_ws_slot(ctx, owner, slot);
+  return *slot;
+}
+
+static coro_socket_t *net_ctx_current_ws_client(net_ctx_t *ctx,
+                                                const coro_cancel_token_t *owner) {
+  coro_socket_t **slot = net_ctx_ws_slot(ctx, owner, 0);
+  return slot ? *slot : NULL;
+}
+
+static void net_ws_cancel_wait(void *arg) {
+  coro_socket_t *socket = (coro_socket_t *)arg;
+  if (socket) (void)coro_socket_interrupt_wait(socket, TURBO_ECANCELED);
 }
 
 static char *net_trim_ascii(char *text) {
@@ -483,6 +545,8 @@ static exprtk_value_t fn_http_post(size_t argc, exprtk_value_t *args, void *user
 
 static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
+  const coro_cancel_token_t *owner;
+  coro_cancel_registration_t *cancel_registration = NULL;
   coro_socket_t *client;
   char *url;
   const char *host = NULL;
@@ -500,7 +564,8 @@ static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, void *use
     return NET_ZERO;
   }
 
-  client = net_ctx_recreate_ws_client(ud->ctx);
+  owner = turbo_script_current_task_cancel_token();
+  client = net_ctx_recreate_ws_client(ud->ctx, owner);
   if (!client) {
     return NET_ZERO;
   }
@@ -508,50 +573,86 @@ static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, void *use
   url = net_arena_cstr(ud->scratch, args[0].data.string);
   if (!url) {
     net_set_error(ud->ctx, "url alloc failed");
-    return NET_ZERO;
+    goto fail;
   }
 
   if (net_parse_ws_url(url, &host, &host_len, &port, &path, &is_tls) != 0) {
     net_set_error(ud->ctx, "invalid ws url");
-    return NET_ZERO;
+    goto fail;
   }
 
   host_buf = mem_alloc(ud->scratch, host_len + 1);
   if (!host_buf) {
     net_set_error(ud->ctx, "host alloc failed");
-    return NET_ZERO;
+    goto fail;
   }
   memcpy(host_buf, host, host_len);
   host_buf[host_len] = '\0';
 
   coro_socket_set_timeout(client, 10000);
+  if (owner) {
+    r = coro_cancel_register(owner, net_ws_cancel_wait, client, &cancel_registration);
+    if (r != TURBO_OK) {
+      net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws connect cancelled"
+                                                  : "ws connect cancellation setup failed");
+      goto fail;
+    }
+  }
   r = coro_socket_connect_ws(client, host_buf, port, path, is_tls);
+  if (cancel_registration) {
+    (void)coro_cancel_unregister(cancel_registration);
+    cancel_registration = NULL;
+  }
   if (r != 0) {
-    net_set_error(ud->ctx, "ws connect failed");
-    return NET_ZERO;
+    net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws connect cancelled"
+                                                : "ws connect failed");
+    goto fail;
   }
 
   net_set_error(ud->ctx, "");
   return NET_ONE;
+
+fail:
+  if (cancel_registration) (void)coro_cancel_unregister(cancel_registration);
+  {
+    coro_socket_t **slot = net_ctx_ws_slot(ud->ctx, owner, 0);
+    if (slot) net_ctx_clear_ws_slot(ud->ctx, owner, slot);
+  }
+  return NET_ZERO;
 }
 
 static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
+  const coro_cancel_token_t *owner;
+  coro_cancel_registration_t *cancel_registration = NULL;
+  coro_socket_t *client;
   tstr_v payload;
   int r;
 
   if (!ud || !ud->ctx || argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
     return NET_ZERO;
   }
-  if (!ud->ctx->ws_client) {
+  owner = turbo_script_current_task_cancel_token();
+  client = net_ctx_current_ws_client(ud->ctx, owner);
+  if (!client) {
     net_set_error(ud->ctx, "ws client not connected");
     return NET_ZERO;
   }
 
   payload = args[0].data.string;
-  r = coro_socket_send(ud->ctx->ws_client, payload.data, payload.len);
+  if (owner) {
+    r = coro_cancel_register(owner, net_ws_cancel_wait, client, &cancel_registration);
+    if (r != TURBO_OK) {
+      net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws send cancelled"
+                                                  : "ws send cancellation setup failed");
+      return NET_ZERO;
+    }
+  }
+  r = coro_socket_send(client, payload.data, payload.len);
+  if (cancel_registration) (void)coro_cancel_unregister(cancel_registration);
   if (r < 0) {
-    net_set_error(ud->ctx, "ws send failed");
+    net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws send cancelled"
+                                                : "ws send failed");
     return NET_ZERO;
   }
 
@@ -561,6 +662,10 @@ static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, void *user_d
 
 static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
+  const coro_cancel_token_t *owner;
+  const coro_cancel_token_t *cancel_token;
+  coro_cancel_registration_t *cancel_registration = NULL;
+  coro_socket_t *client;
   int timeout_ms = 5000;
   char *resp = NULL;
   size_t len = 0;
@@ -569,18 +674,37 @@ static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_d
 
   if (!ud || !ud->ctx || argc > 1) return NET_ZERO;
   if (argc == 1 && args[0].type != EXPRTK_VAL_NUMBER) return NET_ZERO;
-  if (!ud->ctx->ws_client) {
+  owner = turbo_script_current_task_cancel_token();
+  client = net_ctx_current_ws_client(ud->ctx, owner);
+  if (!client) {
     net_set_error(ud->ctx, "ws client not connected");
     return NET_ZERO;
   }
 
   if (argc == 1) timeout_ms = (int)args[0].data.number;
 
-  coro_socket_set_timeout(ud->ctx->ws_client, (uint64_t)timeout_ms);
+  if (timeout_ms < 0) {
+    net_set_error(ud->ctx, "ws recv timeout must be non-negative");
+    return NET_ZERO;
+  }
+  coro_socket_set_timeout(client, (uint64_t)timeout_ms);
 
-  r = coro_socket_recv(ud->ctx->ws_client, &resp, &len);
+  cancel_token = owner;
+  if (cancel_token) {
+    r = coro_cancel_register(cancel_token, net_ws_cancel_wait, client,
+                             &cancel_registration);
+    if (r != TURBO_OK) {
+      net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws recv cancelled"
+                                                  : "ws recv cancellation setup failed");
+      return NET_ZERO;
+    }
+  }
+
+  r = coro_socket_recv(client, &resp, &len);
+  if (cancel_registration) (void)coro_cancel_unregister(cancel_registration);
   if (r != 0 || !resp) {
-    net_set_error(ud->ctx, "ws recv failed or timeout");
+    net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws recv cancelled"
+                                                : "ws recv failed or timeout");
     if (resp) coro_socket_free_recv(resp);
     return NET_ZERO;
   }
@@ -600,13 +724,14 @@ static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_d
 
 static exprtk_value_t fn_ws_close(size_t argc, exprtk_value_t *args, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
+  const coro_cancel_token_t *owner;
+  coro_socket_t **slot;
   (void)args;
   if (!ud || !ud->ctx || argc != 0) return NET_ZERO;
 
-  if (ud->ctx->ws_client) {
-    coro_socket_destroy(ud->ctx->ws_client);
-    ud->ctx->ws_client = NULL;
-  }
+  owner = turbo_script_current_task_cancel_token();
+  slot = net_ctx_ws_slot(ud->ctx, owner, 0);
+  if (slot) net_ctx_clear_ws_slot(ud->ctx, owner, slot);
   net_set_error(ud->ctx, "");
   return NET_ONE;
 }

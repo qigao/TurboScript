@@ -4,9 +4,21 @@
 #include <stdbool.h>
 #include <stdatomic.h>
 #include "turbo_coro_context.h"
+#include "CoroNet/turbo_coro_object_pool.h"
 #include "turbo_parser.h"
 #include "turbo_script.h"
 #include "turbo_thread.h"
+
+enum { TURBO_SCRIPT_CORO_STACK_SIZE = 512 * 1024 };
+
+static coro_context_t *create_script_coro_context(void) {
+    const coro_object_pool_config_t pool_config = {
+        16,
+        1024,
+        TURBO_SCRIPT_CORO_STACK_SIZE,
+    };
+    return coro_context_create_ex(NULL, &pool_config);
+}
 
 static int run_scheduled_callbacks(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx,
                                    int script_result) {
@@ -156,7 +168,7 @@ int main(int argc, char **argv) {
     }
 
     if (eval_str || file_path) {
-        coro_context_t *coro_ctx = coro_context_create(NULL);
+        coro_context_t *coro_ctx = create_script_coro_context();
         if (!coro_ctx) {
             fprintf(stderr, "Failed to initialize the timer event loop.\n");
             turbo_script_free(ctx);
@@ -181,7 +193,7 @@ int main(int argc, char **argv) {
 #endif
     printf("Type 'exit' or 'quit' to exit.\n");
 
-    coro_context_t *repl_coro_ctx = coro_context_create(NULL);
+    coro_context_t *repl_coro_ctx = create_script_coro_context();
     repl_runtime_t repl_runtime;
     if (!repl_coro_ctx) {
         fprintf(stderr, "Failed to initialize the REPL event loop.\n");

@@ -15,6 +15,7 @@ spec("net_ctx") {
             check_not_null(ctx);
             check_null(ctx->client);
             check_null(ctx->ws_client);
+            check_size_eq(ctx->ws_task_connection_count, 0);
             check_str_eq(ctx->error_msg, "");
             net_ctx_destroy(ctx);
         }

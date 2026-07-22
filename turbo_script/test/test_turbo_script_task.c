@@ -2,13 +2,21 @@
 #include "exprtk.h"
 #include "turbo_coro.h"
 #include "turbo_coro_context.h"
+#include "CoroNet/turbo_coro_object_pool.h"
 #include "turbo_script.h"
 
 #include <stdio.h>
 
+enum { TASK_TEST_CORO_STACK_SIZE = 512 * 1024 };
+
 static turbo_script_ctx_t *task_test_context(coro_context_t **coro_out) {
   turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-  coro_context_t *coro_ctx = coro_context_create(NULL);
+  const coro_object_pool_config_t pool_config = {
+      16,
+      1024,
+      TASK_TEST_CORO_STACK_SIZE,
+  };
+  coro_context_t *coro_ctx = coro_context_create_ex(NULL, &pool_config);
   if (!ctx || !coro_ctx) {
     if (ctx) turbo_script_free(ctx);
     if (coro_ctx) coro_context_destroy(coro_ctx);
@@ -62,6 +70,60 @@ spec("turbo_script_task") {
       check_size_eq(turbo_script_task_failed_count(ctx), 0);
       check_int_eq(task_test_run(ctx, "overlapped = task.result(second);"), 0);
       check_float_eq(ts_get_num(ctx, "overlapped"), 1.0, 0.001);
+      task_test_destroy(ctx, coro_ctx);
+    }
+
+    it("runs a deep GoF-style object graph on the configured coroutine stack") {
+      coro_context_t *coro_ctx = NULL;
+      turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
+      check_not_null(ctx);
+
+      check_int_eq(task_test_run(ctx,
+                                 "interface Observer { update(event); }"
+                                 "interface Strategy { decode(raw); }"
+                                 "class JsonStrategy implements Strategy {"
+                                 "  decode(raw) {"
+                                 "    var payload = json.parse(raw);"
+                                 "    return map{kind: \"data\", payload: payload, bytes: len(raw)};"
+                                 "  }"
+                                 "}"
+                                 "class Metrics implements Observer {"
+                                 "  count = 0; total = 0;"
+                                 "  update(event) {"
+                                 "    this.count = this.count + 1;"
+                                 "    this.total = this.total + event.bytes;"
+                                 "  }"
+                                 "}"
+                                 "class EventBus {"
+                                 "  observers = list();"
+                                 "  constructor() { this.observers = list(); }"
+                                 "  attach(observer: Observer) {"
+                                 "    var observers = this.observers;"
+                                 "    observers.push(observer);"
+                                 "    this.observers = observers;"
+                                 "  }"
+                                 "  publish(event) {"
+                                 "    var observers = this.observers;"
+                                 "    for (var i = 0; i < observers.length(); i += 1) {"
+                                 "      var observer = observers[i];"
+                                 "      observer.update(event);"
+                                 "    }"
+                                 "  }"
+                                 "}"
+                                 "deep_task = task.spawn(() => {"
+                                 "  var metrics = Metrics();"
+                                 "  var bus = EventBus();"
+                                 "  bus.attach(metrics);"
+                                 "  var strategy = JsonStrategy();"
+                                 "  var event = strategy.decode(\"{\\\"price\\\":0.5}\");"
+                                 "  bus.publish(event);"
+                                 "  return metrics.total;"
+                                 "});"),
+                   0);
+      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
+      check_size_eq(turbo_script_task_failed_count(ctx), 0);
+      check_int_eq(task_test_run(ctx, "deep_total = task.result(deep_task);"), 0);
+      check_float_eq(ts_get_num(ctx, "deep_total"), 13.0, 0.001);
       task_test_destroy(ctx, coro_ctx);
     }
 

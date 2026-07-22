@@ -13,9 +13,22 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define NET_WS_TASK_CONNECTION_CAPACITY 256
+
+typedef struct net_ws_task_connection_s {
+    const coro_cancel_token_t *owner;
+    coro_socket_t             *socket;
+} net_ws_task_connection_t;
+
 typedef struct net_ctx_s {
     http_client_t *client;
-    coro_socket_t *ws_client; 
+    /* The root environment keeps the legacy singleton. Managed tasks use a
+     * bounded owner-token registry so ws.* calls in different tasks cannot
+     * replace one another's sockets. The context owns every socket and task
+     * code only borrows its matching entry until ws.close() or teardown. */
+    coro_socket_t *ws_client;
+    net_ws_task_connection_t ws_task_connections[NET_WS_TASK_CONNECTION_CAPACITY];
+    size_t ws_task_connection_count;
     char           error_msg[256];
 } net_ctx_t;
 

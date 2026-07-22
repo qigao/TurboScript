@@ -1,0 +1,232 @@
+// Live Polymarket smoke test expressed with TurboScript GoF patterns:
+// Command + Strategy + Observer + Template Method.
+// Refresh market token IDs from:
+// https://gamma-api.polymarket.com/markets?active=true&closed=false&limit=3
+import("net");
+
+interface Command {
+    execute();
+}
+
+interface MessageStrategy {
+    decode(message);
+}
+
+interface EventObserver {
+    update(event);
+}
+
+// Observer subject. Notifications are deliberately synchronous: a slow observer
+// applies backpressure to its owning subscription task instead of growing a queue.
+class EventBus {
+    observers = list();
+
+    constructor() {
+        this.observers = list();
+    }
+
+    attach(observer: EventObserver) {
+        var updated = this.observers;
+        updated.push(observer);
+        this.observers = updated;
+    }
+
+    publish(event) {
+        var observers = this.observers;
+        for (var i = 0; i < observers.length(); i += 1) {
+            var observer = observers[i];
+            observer.update(event);
+        }
+    }
+}
+
+// Strategy: normalize channel-specific wire messages into one event contract.
+class MarketMessageStrategy implements MessageStrategy {
+    decode(message) {
+        var payload = json.parse(message);
+        return map{
+            source: "market",
+            kind: "data",
+            payload: payload,
+            payload_type: typeof(payload),
+            raw: message,
+            bytes: len(message)
+        };
+    }
+}
+
+class SportsMessageStrategy implements MessageStrategy {
+    decode(message) {
+        if (message == "ping") {
+            return map{
+                source: "sports",
+                kind: "heartbeat",
+                payload: message,
+                payload_type: "string",
+                raw: message,
+                bytes: len(message)
+            };
+        }
+        var payload = json.parse(message);
+        return map{
+            source: "sports",
+            kind: "data",
+            payload: payload,
+            payload_type: typeof(payload),
+            raw: message,
+            bytes: len(message)
+        };
+    }
+}
+
+class PreviewObserver implements EventObserver {
+    preview_bytes = 160;
+
+    constructor(preview_bytes) {
+        this.preview_bytes = preview_bytes;
+    }
+
+    update(event) {
+        print(event.source + "[" + event.kind + "]: "
+              + event.raw.substr(0, this.preview_bytes));
+    }
+}
+
+class MetricsObserver implements EventObserver {
+    event_count = 0;
+    total_bytes = 0;
+    payload_type = "null";
+
+    update(event) {
+        this.event_count = this.event_count + 1;
+        this.total_bytes = this.total_bytes + event.bytes;
+        this.payload_type = event.payload_type;
+    }
+
+    snapshot(source) {
+        return map{
+            source: source,
+            events: this.event_count,
+            bytes: this.total_bytes,
+            payload_type: this.payload_type
+        };
+    }
+}
+
+// Template Method: subclasses customize only protocol-specific receive handling.
+class SubscriptionCommand implements Command {
+    source = "";
+    endpoint = "";
+    subscription = "";
+    strategy = null;
+    bus = null;
+    metrics = null;
+
+    constructor(source, endpoint, subscription, strategy, bus, metrics) {
+        this.source = source;
+        this.endpoint = endpoint;
+        this.subscription = subscription;
+        this.strategy = strategy;
+        this.bus = bus;
+        this.metrics = metrics;
+    }
+
+    after_receive(message) {
+        return 0;
+    }
+
+    execute() {
+        var connected = false;
+        try {
+            if (ws.connect(this.endpoint) == 0)
+                throw "Polymarket " + this.source + " channel connect failed";
+            connected = true;
+
+            var subscription = this.subscription;
+            if (subscription.length() > 0 && ws.send(subscription) == 0)
+                throw "Polymarket " + this.source + " subscription failed";
+
+            var message = ws.recv(15000);
+            if (typeof(message) != "string")
+                throw "Polymarket " + this.source + " channel timed out";
+
+            this.after_receive(message);
+            var strategy = this.strategy;
+            var event = strategy.decode(message);
+            var bus = this.bus;
+            bus.publish(event);
+
+            ws.close();
+            connected = false;
+            var metrics = this.metrics;
+            return metrics.snapshot(this.source);
+        } catch (error) {
+            if (connected)
+                ws.close();
+            throw error;
+        }
+    }
+}
+
+class MarketSubscriptionCommand extends SubscriptionCommand {
+    constructor(subscription, bus, metrics) {
+        super("market",
+              "wss://ws-subscriptions-clob.polymarket.com/ws/market",
+              subscription, MarketMessageStrategy(), bus, metrics);
+    }
+}
+
+class SportsSubscriptionCommand extends SubscriptionCommand {
+    constructor(bus, metrics) {
+        super("sports", "wss://sports-api.polymarket.com/ws", "",
+              SportsMessageStrategy(), bus, metrics);
+    }
+
+    after_receive(message) {
+        if (message == "ping" && ws.send("pong") == 0)
+            throw "Polymarket sports heartbeat failed";
+        return 0;
+    }
+}
+
+var market_subscription =
+    "{\"assets_ids\":["
+    + "\"86197714519550358819008298760465075055751383364064067370245817340337029716028\","
+    + "\"37547725450088389758758412627942798667155152054792958645593801586277429549851\","
+    + "\"23682783661698200355976024725434882444341443991093829870154443663355078978916\""
+    + "],\"type\":\"market\",\"custom_feature_enabled\":true}";
+
+var market_task = task.spawn(() => {
+    var metrics = MetricsObserver();
+    var bus = EventBus();
+    bus.attach(PreviewObserver(160));
+    bus.attach(metrics);
+    var command = MarketSubscriptionCommand(market_subscription, bus, metrics);
+    return command.execute();
+});
+
+var sports_task = task.spawn(() => {
+    var metrics = MetricsObserver();
+    var bus = EventBus();
+    bus.attach(PreviewObserver(160));
+    bus.attach(metrics);
+    var command = SportsSubscriptionCommand(bus, metrics);
+    return command.execute();
+});
+
+var report_task = task.spawn(() => {
+    try {
+        var market = task.join(market_task);
+        var sports = task.join(sports_task);
+        print("processed market events=" + market.events
+              + " bytes=" + market.bytes
+              + " payload=" + market.payload_type);
+        print("processed sports events=" + sports.events
+              + " bytes=" + sports.bytes
+              + " payload=" + sports.payload_type);
+        return market.bytes + sports.bytes;
+    } catch (error) {
+        print("Polymarket command failed: " + error);
+        throw error;
+    }
+});

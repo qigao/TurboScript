@@ -30,3 +30,16 @@ if(TARGET TurboNet::CoroNet)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:TurboNet::CoroNet>
             $<TARGET_FILE_DIR:test_net_module>)
 endif()
+
+cmake_add_test(
+  TARGET test_net_task_ws
+  SOURCES test_net_task_ws.c
+  LIBS turbo_script TurboNet::CoroNet TurboUtils::TinyTest
+  DEPENDS net_tbs
+  FOLDER modules/net)
+
+add_custom_command(
+  TARGET test_net_task_ws
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>
+          $<TARGET_FILE_DIR:test_net_task_ws>)

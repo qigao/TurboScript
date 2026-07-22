@@ -3395,6 +3395,71 @@ spec("turbo_script_mir_oop") {
       turbo_script_free(ctx);
     }
 
+    it("should retain observer identity in instance-owned lists") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "interface Observer { update(value); };"
+          "class Subject {"
+          "  observers = list();"
+          "  constructor() { this.observers = list(); }"
+          "  attach(observer: Observer) {"
+          "    var updated = this.observers;"
+          "    updated.push(observer);"
+          "    this.observers = updated;"
+          "  }"
+          "  notify(value) {"
+          "    for (var i = 0; i < this.observers.length(); i += 1) {"
+          "      this.observers[i].update(value);"
+          "    }"
+          "  }"
+          "};"
+          "class Counter implements Observer {"
+          "  value = 0;"
+          "  update(value) { this.value = value + 1; }"
+          "};"
+          "subject = Subject();"
+          "counter = Counter();"
+          "subject.attach(counter);"
+          "subject.notify(41);"
+          "result = counter.value;";
+
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_double_eq(ts_get_num(ctx_interp, "result"), 42.0, EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should preserve instance arguments stored by constructors") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "class Counter {"
+          "  value = 0;"
+          "  update(value) { this.value = value + 1; }"
+          "};"
+          "class Command {"
+          "  observer = null;"
+          "  constructor(observer) { this.observer = observer; }"
+          "  execute(value) { this.observer.update(value); }"
+          "};"
+          "counter = Counter();"
+          "command = Command(counter);"
+          "command.execute(41);"
+          "result = counter.value;";
+
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_double_eq(ts_get_num(ctx_interp, "result"), 42.0, EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
     it("should reject missing instance methods in JIT") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "class Counter {};"

@@ -8,13 +8,189 @@
 
 #include "exprtk_module.h"
 #include "exprtk_internal.h"
+#include "turbo_parser.h"
 #include <ctype.h>
+#include <errno.h>
 #include <math.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 static exprtk_value_t core_null_value(void);
 static double exprtk_numeric_value(exprtk_value_t value);
+
+enum {
+    CORE_JSON_MAX_DEPTH = 128,
+    CORE_JSON_MAX_INPUT_BYTES = 16 * 1024 * 1024
+};
+
+typedef struct {
+    mem_pool_t *arena;
+    size_t nodes;
+    size_t max_nodes;
+} core_json_convert_t;
+
+static exprtk_value_t core_fail(exprtk_env_t *env, const char *message) {
+    if (env) {
+        env->aborted = 1;
+        snprintf(env->error_msg, sizeof(env->error_msg), "%s", message ? message : "core error");
+    }
+    return exprtk_val_num(0.0);
+}
+
+static void core_json_release(exprtk_value_t *value) {
+    if (!value) return;
+    if (value->type == EXPRTK_VAL_LIST || value->type == EXPRTK_VAL_SET) {
+        for (size_t i = 0; i < value->data.list.count; ++i)
+            core_json_release(&value->data.list.items[i]);
+    } else if (exprtk_value_is_object_like(value)) {
+        exprtk_map_iter_t it = exprtk_map_iter_begin(value);
+        const char *key;
+        exprtk_value_t child;
+        while (exprtk_map_iter_next(&it, &key, &child)) {
+            (void)key;
+            core_json_release(&child);
+        }
+        exprtk_map_free(value);
+    }
+}
+
+static exprtk_value_t core_json_number(const json_value_t *json) {
+    const char *text;
+    size_t len = 0;
+    char token[64];
+    char *end = NULL;
+    long long integer;
+
+    text = turbo_json_number_text(json, &len);
+    if (text && len > 0 && len < sizeof(token) &&
+        !memchr(text, '.', len) && !memchr(text, 'e', len) && !memchr(text, 'E', len)) {
+        memcpy(token, text, len);
+        token[len] = '\0';
+        errno = 0;
+        integer = strtoll(token, &end, 10);
+        if (errno != ERANGE && end == token + len)
+            return exprtk_val_int((int64_t)integer);
+    }
+    return exprtk_val_num(turbo_json_number(json));
+}
+
+/* Thin adapter from TurboUtils::Parser's owning JSON DOM to arena-backed script values. */
+static int core_json_convert(core_json_convert_t *ctx, const json_value_t *json,
+                             size_t depth, exprtk_value_t *out) {
+    size_t count;
+
+    if (!ctx || !json || !out || depth > CORE_JSON_MAX_DEPTH || ctx->nodes >= ctx->max_nodes)
+        return -1;
+    ctx->nodes++;
+
+    switch (turbo_json_type(json)) {
+        case TURBO_JSON_NULL:
+            *out = core_null_value();
+            return 0;
+        case TURBO_JSON_BOOL:
+            *out = exprtk_val_bool(turbo_json_bool(json));
+            return 0;
+        case TURBO_JSON_NUMBER:
+            *out = core_json_number(json);
+            return 0;
+        case TURBO_JSON_STRING: {
+            const char *text = turbo_json_string(json);
+            size_t len = turbo_json_string_len(json);
+            char *copy = (char *)mem_alloc(ctx->arena, len + 1);
+            if (!copy) return -2;
+            if (len > 0) memcpy(copy, text, len);
+            copy[len] = '\0';
+            *out = exprtk_val_str(tstr_v_from_buf(copy, len));
+            return 0;
+        }
+        case TURBO_JSON_ARRAY: {
+            exprtk_value_t list = exprtk_val_list_empty();
+            count = turbo_json_array_size(json);
+            if (count > ctx->max_nodes - ctx->nodes) return -1;
+            if (count > 0) {
+                list.data.list.items = (exprtk_value_t *)mem_alloc_array(
+                    ctx->arena, sizeof(*list.data.list.items), count);
+                if (!list.data.list.items) return -2;
+                memset(list.data.list.items, 0, count * sizeof(*list.data.list.items));
+                list.data.list.capacity = count;
+                for (size_t i = 0; i < count; ++i) {
+                    int rc = core_json_convert(ctx, turbo_json_array_get(json, i), depth + 1,
+                                               &list.data.list.items[i]);
+                    if (rc != 0) {
+                        list.data.list.count = i;
+                        core_json_release(&list);
+                        return rc;
+                    }
+                    list.data.list.count++;
+                }
+            }
+            *out = list;
+            return 0;
+        }
+        case TURBO_JSON_OBJECT: {
+            exprtk_value_t object = exprtk_val_object();
+            if (!object.data.map.htab) return -2;
+            count = turbo_json_object_size(json);
+            if (count > ctx->max_nodes - ctx->nodes) {
+                exprtk_map_free(&object);
+                return -1;
+            }
+            for (size_t i = 0; i < count; ++i) {
+                const char *key = turbo_json_object_key(json, i);
+                exprtk_value_t child;
+                int existed;
+                int rc;
+                if (!key) {
+                    core_json_release(&object);
+                    return -1;
+                }
+                rc = core_json_convert(ctx, turbo_json_object_value(json, i), depth + 1, &child);
+                if (rc != 0) {
+                    core_json_release(&object);
+                    return rc;
+                }
+                existed = exprtk_map_has(&object, key);
+                exprtk_map_set(&object, key, child);
+                if (!existed && !exprtk_map_has(&object, key)) {
+                    core_json_release(&child);
+                    core_json_release(&object);
+                    return -2;
+                }
+            }
+            *out = object;
+            return 0;
+        }
+        default:
+            return -1;
+    }
+}
+
+static exprtk_value_t fn_json_parse(size_t argc, exprtk_value_t *args,
+                                    exprtk_env_t *env, mem_pool_t *arena) {
+    turbo_json_doc_t *document = NULL;
+    core_json_convert_t convert;
+    exprtk_value_t result;
+    int rc;
+
+    if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || !args[0].data.string.data)
+        return core_fail(env, "json.parse: expected one string argument");
+    if (args[0].data.string.len == 0 || args[0].data.string.len > CORE_JSON_MAX_INPUT_BYTES)
+        return core_fail(env, "json.parse: input must be between 1 byte and 16 MiB");
+    if (turbo_parse_json((const uint8_t *)args[0].data.string.data,
+                         args[0].data.string.len, &document) != TURBO_OK || !document)
+        return core_fail(env, "json.parse: invalid JSON document");
+
+    memset(&convert, 0, sizeof(convert));
+    convert.arena = arena;
+    convert.max_nodes = env && env->max_nodes > 0 ? env->max_nodes : 100000;
+    rc = core_json_convert(&convert, document, 0, &result);
+    turbo_free_json(&document);
+    if (rc != 0)
+        return core_fail(env, rc == -2 ? "json.parse: out of memory"
+                                      : "json.parse: JSON nesting or node limit exceeded");
+    return result;
+}
 
 static int core_uuid_text(exprtk_value_t value, char *out, size_t out_size) {
     if (!out || out_size == 0) return 0;
@@ -1954,6 +2130,7 @@ static const exprtk_func_entry_t core_entries[] = {
     { "is_typed_array", fn_is_typed_array },
     { "is_uuid",   fn_is_uuid },
     { "is_vector", fn_is_vector },
+    { "json.parse", fn_json_parse },
     { "lag",       fn_lag },
     { "list",      fn_list },
     { "map",       fn_map },

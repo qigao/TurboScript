@@ -109,6 +109,9 @@ CXX_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
  * The CoroNet context is borrowed and must outlive the TurboScript context,
  * all accepted callbacks, and all managed tasks. This compatibility API records errors on @p ctx;
  * use turbo_script_set_executor() when the caller needs a return code.
+ * Script callbacks with deep class or collection call graphs may need more than
+ * CoroNet's default 128 KiB coroutine stack. Context owners can configure this
+ * through coro_context_create_ex(); the TurboScript CLI uses 512 KiB.
  */
 CXX_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx);
 

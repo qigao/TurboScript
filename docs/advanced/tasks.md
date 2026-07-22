@@ -105,6 +105,10 @@ coro_context_destroy(coro);
 - 现有同步脚本和 `modules/coro` generator API 不变；`task.*` 是新增接口。
 - `turbo_script_set_coro_context()` 从 timer-only 适配入口扩展为 timer + task 的共同 CoroNet 入口；自定义 timer executor 不能替代 task 所需的 CoroNet scheduler。
 - timer 保持串行、不重叠语义；需要并发 I/O 的 timer callback 可快速 `task.spawn()` 后返回。
+- `ws.*` 在 managed task 内按 task 隔离连接；多个 task 可并行调用同名的
+  `ws.connect/send/recv/close`，不会覆盖彼此的 socket。root 环境中的 `ws.*` 仍保持
+  原有单连接语义。task WebSocket 注册表最多同时持有 256 条连接，满时连接失败；
+  `task.cancel()` 可中断等待中的 WebSocket connect/send/recv。
 - 迁移成本集中在需要后台任务的宿主：绑定并驱动 CoroNet context，并在消费结果后 release。
 - 回滚时可移除 `task.*` 注册、task scheduler 生命周期和 CLI task 计数检查；不涉及脚本数据格式迁移，timer 与手动 coro 模块仍可独立工作。
 

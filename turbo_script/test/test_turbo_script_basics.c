@@ -46,6 +46,37 @@ spec("turbo_script_basics") {
       turbo_script_free(ctx);
     }
 
+    it("should parse JSON into native object and list values") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_not_null(ctx);
+
+      check_int_eq(turbo_script_run(
+                       ctx,
+                       "data = json.parse(\"{\\\"name\\\":\\\"market\\\",\\\"levels\\\":[1,2,3],"
+                       "\\\"meta\\\":{\\\"active\\\":true},\\\"id\\\":9007199254740991}\");"
+                       "json_name = data.name;"
+                       "json_levels = data.levels.length();"
+                       "json_active = data.meta.active;"
+                       "json_id_is_int = is_int64(data.id);"),
+                   0);
+      check_str_eq(ts_get_str(ctx, "json_name"), "market");
+      check_float_eq(ts_get_num(ctx, "json_levels"), 3.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "json_active"), 1.0, 0.001);
+      check_float_eq(ts_get_num(ctx, "json_id_is_int"), 1.0, 0.001);
+
+      turbo_script_free(ctx);
+    }
+
+    it("should reject invalid JSON without returning a partial value") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      check_not_null(ctx);
+
+      check_int_lt(turbo_script_run(ctx, "data = json.parse(\"{bad json]\");"), 0);
+      check_not_null(strstr(turbo_script_get_error(ctx), "invalid JSON document"));
+
+      turbo_script_free(ctx);
+    }
+
     it("should support prefixed binding helpers without breaking old ones") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);

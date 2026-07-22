@@ -916,12 +916,24 @@ static int ts_oop_receiver_can_assign_temp(ts_mir_compiler_t *c, exprtk_node_t *
 static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   exprtk_node_t *rhs = node->data.assignment.value;
   if (rhs && rhs->type == EXPRTK_NODE_NEW && rhs->data.new_expr.class_name) {
+    if (ts_oop_call_args_need_value_bridge(c, rhs->data.new_expr.arg_count,
+                                           rhs->data.new_expr.args)) {
+      MIR_reg_t res = ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+      ts_mir_set_var_class(c, node->data.assignment.name, rhs->data.new_expr.class_name);
+      return res;
+    }
     MIR_reg_t res = ts_emit_oop_new_assign(c, node->data.assignment.name, rhs);
     ts_mir_set_var_class(c, node->data.assignment.name, rhs->data.new_expr.class_name);
     return res;
   }
   if (rhs && rhs->type == EXPRTK_NODE_FUNCTION_CALL && rhs->data.function.name &&
       ts_mir_is_known_class_name(c, rhs->data.function.name)) {
+    if (ts_oop_call_args_need_value_bridge(c, rhs->data.function.arg_count,
+                                           rhs->data.function.args)) {
+      MIR_reg_t res = ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+      ts_mir_set_var_class(c, node->data.assignment.name, rhs->data.function.name);
+      return res;
+    }
     MIR_reg_t res = ts_emit_oop_class_call_assign(c, node->data.assignment.name, rhs);
     ts_mir_set_var_class(c, node->data.assignment.name, rhs->data.function.name);
     return res;

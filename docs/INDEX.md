@@ -48,6 +48,9 @@
 - **[并发 HTTP Task](../examples/task_parallel_http.tbs)**
   使用 `task.spawn` 和 `task.join` 并发等待多个 HTTP 请求
 
+- **[Polymarket 多频道 Task](../examples/polymarket_multi_channel.tbs)**
+  使用独立 managed task 并发订阅 market（多个资产）与 sports WebSocket 频道
+
 ### DataBind 示例
 
 - **[类包装模式](../examples/test_data_bind_class_wrapping.tbs)**  
