@@ -23,7 +23,7 @@
 
 typedef exprtk_value_t (*exprtk_builtin_fn)(
     size_t argc, exprtk_value_t *args,
-    exprtk_env_t *env, mem_pool_t *arena);
+    exprtk_env_t *env, mem_pool_t *scratch);
 
 typedef struct {
     const char *name;
@@ -41,28 +41,28 @@ struct exprtk_module_s {
  * ========================================================================= */
 
 static inline exprtk_value_t exprtk_val_num(double v) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_NUMBER;
     val.data.number = v;
     return val;
 }
 
 static inline exprtk_value_t exprtk_val_int(int64_t v) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_INTEGER;
     val.data.integer = v;
     return val;
 }
 
 static inline exprtk_value_t exprtk_val_bool(int v) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_BOOL;
     val.data.boolean = v ? 1 : 0;
     return val;
 }
 
 static inline exprtk_value_t exprtk_val_vec(double *data, size_t size) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_VECTOR;
     val.data.vector.data = data;
     val.data.vector.size = size;
@@ -70,14 +70,14 @@ static inline exprtk_value_t exprtk_val_vec(double *data, size_t size) {
 }
 
 static inline exprtk_value_t exprtk_val_str(tstr_v v) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_STRING;
     val.data.string = v;
     return val;
 }
 
 static inline exprtk_value_t exprtk_val_bytes(tstr_v v) {
-    exprtk_value_t val;
+    exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_BYTES;
     val.data.bytes = v;
     return val;
@@ -184,6 +184,25 @@ static inline exprtk_value_t exprtk_val_typed_array(exprtk_typed_array_kind_t ki
 exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index);
 
 /* =========================================================================
+ * Script value ownership
+ *
+ * Borrowed constructors above are valid only for the immediate call.  Values
+ * crossing an env/container/task boundary must use copy/retain/release.  The
+ * retain operation is for mem_buffer-backed scalar/vector payloads; containers
+ * cross owner boundaries through copy_to_pool/copy_to_env.
+ * ========================================================================= */
+
+int exprtk_value_copy_to_pool(exprtk_value_t value, mem_pool_t *pool,
+                              exprtk_value_t *out);
+int exprtk_value_copy_to_env(exprtk_value_t value, exprtk_env_t *env,
+                             exprtk_value_t *out);
+exprtk_value_t exprtk_value_retain(exprtk_value_t value);
+exprtk_value_t exprtk_value_borrow(exprtk_value_t value);
+void exprtk_value_release_storage(exprtk_value_t *value);
+void exprtk_value_destroy(exprtk_value_t *value);
+void exprtk_values_destroy(exprtk_value_t *values, size_t count);
+
+/* =========================================================================
  * Map helpers — O(1) hash table backed map
  *
  * Implementation lives in exprtk_map.c (needs MIR HTAB internals).
@@ -193,7 +212,7 @@ exprtk_value_t  exprtk_val_map(void);
 exprtk_value_t  exprtk_val_object(void);
 int             exprtk_value_is_object_like(const exprtk_value_t *value);
 exprtk_value_t  exprtk_map_get(const exprtk_value_t *map, const char *key);
-void            exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value);
+int             exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value);
 int             exprtk_map_has(const exprtk_value_t *map, const char *key);
 int             exprtk_map_delete(exprtk_value_t *map, const char *key);
 size_t          exprtk_map_count(const exprtk_value_t *map);
@@ -221,10 +240,12 @@ static inline exprtk_value_t exprtk_val_list_empty(void) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_LIST;
+    val.ownership = EXPRTK_VALUE_OWNED;
     val.data.list.items = NULL;
     val.data.list.count = 0;
     val.data.list.capacity = 0;
     val.data.list.heap_owned = 0;
+    val.data.list.value_pool = NULL;
     return val;
 }
 
@@ -238,10 +259,12 @@ static inline exprtk_value_t exprtk_val_list_ex(exprtk_value_t *items, size_t n,
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_LIST;
+    val.ownership = heap_owned ? EXPRTK_VALUE_OWNED : EXPRTK_VALUE_BORROWED;
     val.data.list.items = items;
     val.data.list.count = n;
     val.data.list.capacity = n;
     val.data.list.heap_owned = heap_owned;
+    val.data.list.value_pool = NULL;
     return val;
 }
 
@@ -249,52 +272,13 @@ static inline exprtk_value_t exprtk_val_list(exprtk_value_t *items, size_t n) {
     return exprtk_val_list_ex(items, n, 1);
 }
 
-static inline void exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
-    if (list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) return;
-    if (list->data.list.count >= list->data.list.capacity) {
-        size_t new_cap = list->data.list.capacity ? list->data.list.capacity * 2 : 4;
-        turbo_vec_t vec;
-        int rc;
-
-        if (list->data.list.heap_owned) {
-            vec.data = list->data.list.items;
-            vec.size = list->data.list.count;
-            vec.capacity = list->data.list.capacity;
-            vec.elem_size = sizeof(exprtk_value_t);
-        } else {
-            if (turbo_vec_init(&vec, sizeof(exprtk_value_t)) != TURBO_OK) return;
-            rc = turbo_vec_reserve(&vec, new_cap);
-            if (rc != TURBO_OK) {
-                turbo_vec_destroy(&vec);
-                return;
-            }
-            if (list->data.list.items && list->data.list.count > 0) {
-                memcpy(vec.data, list->data.list.items,
-                       list->data.list.count * sizeof(exprtk_value_t));
-                vec.size = list->data.list.count;
-            }
-        }
-
-        if (turbo_vec_reserve(&vec, new_cap) != TURBO_OK ||
-            turbo_vec_push(&vec, &item) != TURBO_OK) {
-            if (!list->data.list.heap_owned) turbo_vec_destroy(&vec);
-            return;
-        }
-
-        list->data.list.items = (exprtk_value_t *)vec.data;
-        list->data.list.count = vec.size;
-        list->data.list.capacity = vec.capacity;
-        list->data.list.heap_owned = 1;
-        return;
-    }
-    list->data.list.items[list->data.list.count++] = item;
-}
+int exprtk_list_push(exprtk_value_t *list, exprtk_value_t item);
 
 static inline exprtk_value_t exprtk_list_get(const exprtk_value_t *list, size_t idx) {
     if ((list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET) ||
         idx >= list->data.list.count)
         return exprtk_val_num(0);
-    return list->data.list.items[idx];
+    return exprtk_value_borrow(list->data.list.items[idx]);
 }
 
 #endif /* EXPRTK_MODULE_H */

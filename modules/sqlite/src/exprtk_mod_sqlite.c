@@ -99,12 +99,12 @@ static char *sqlite_arena_cstr(mem_pool_t *arena, tstr_v value) {
   return buf;
 }
 
-static int sqlite_copy_text(exprtk_env_t *env, const unsigned char *text,
+static int sqlite_copy_text(mem_pool_t *pool, const unsigned char *text,
                             char **out, size_t *out_len) {
   size_t len = text ? strlen((const char *)text) : 0;
   char *copy;
-  if (!env || !out || !out_len) return 0;
-  copy = mem_alloc(&env->arena, len + 1);
+  if (!pool || !out || !out_len) return 0;
+  copy = mem_alloc(pool, len + 1);
   if (!copy) return 0;
   if (len) memcpy(copy, text, len);
   copy[len] = '\0';
@@ -114,13 +114,13 @@ static int sqlite_copy_text(exprtk_env_t *env, const unsigned char *text,
 }
 
 static exprtk_value_t sqlite_make_string(exprtk_env_t *env, const char *text, size_t len) {
-  char *buf;
+  exprtk_value_t value = SQLITE_ZERO;
   if (!env) return SQLITE_ZERO;
-  buf = mem_alloc(&env->arena, len + 1);
-  if (!buf) return SQLITE_ZERO;
-  if (len) memcpy(buf, text, len);
-  buf[len] = '\0';
-  return exprtk_val_str(tstr_v_from_buf(buf, len));
+  if (exprtk_value_copy_to_env(
+          exprtk_val_str(tstr_v_from_buf((char *)(text ? text : ""), len)), env,
+          &value) != 0)
+    return SQLITE_ZERO;
+  return value;
 }
 
 static int sqlite_valid_ident(const char *name) {
@@ -194,12 +194,18 @@ static double sqlite_cosine_raw(const double *a, size_t an,
 static exprtk_value_t sqlite_rag_result_to_object(sqlite_ud_t *ud,
                                                   const sqlite_rag_result_t *row) {
   exprtk_value_t obj = exprtk_val_object();
+  exprtk_value_t source;
+  exprtk_value_t text;
   exprtk_map_set(&obj, "id", exprtk_val_int(row->id));
   exprtk_map_set(&obj, "score", exprtk_val_num(row->score));
   exprtk_map_set(&obj, "vector_score", exprtk_val_num(row->vector_score));
   exprtk_map_set(&obj, "fts_score", exprtk_val_num(row->fts_score));
-  exprtk_map_set(&obj, "source", sqlite_make_string(ud->env, row->source, row->source_len));
-  exprtk_map_set(&obj, "text", sqlite_make_string(ud->env, row->text, row->text_len));
+  source = sqlite_make_string(ud->env, row->source, row->source_len);
+  text = sqlite_make_string(ud->env, row->text, row->text_len);
+  exprtk_map_set(&obj, "source", source);
+  exprtk_map_set(&obj, "text", text);
+  exprtk_value_destroy(&source);
+  exprtk_value_destroy(&text);
   return obj;
 }
 
@@ -225,7 +231,7 @@ static void sqlite_top_insert(sqlite_rag_result_t *top, size_t *top_count, size_
 
 /* == API functions ======================================================== */
 
-static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.open: expected string path");
@@ -258,7 +264,7 @@ static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args, void *us
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = (double)handle};
 }
 
-static exprtk_value_t fn_sqlite_close(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_close(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     SQLITE_CTX_ERROR(ud, "sqlite.close: expected number handle");
@@ -268,7 +274,7 @@ static exprtk_value_t fn_sqlite_close(size_t argc, exprtk_value_t *args, void *u
   return SQLITE_ZERO;
 }
 
-static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.exec: expected (number, string)");
@@ -304,7 +310,7 @@ static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args, void *us
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = (double)sqlite3_changes(h->db)};
 }
 
-static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc < 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: expected (number, string [, number])");
@@ -338,43 +344,47 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, voi
     return SQLITE_ZERO;
   }
 
-  size_t cap = 64;
-  size_t len = 0;
-  double *data = mem_alloc(&ud->env->arena, cap * sizeof(double));
-  if (!data) {
+  turbo_vec_t data = {0};
+  if (turbo_vec_init(&data, sizeof(double)) != TURBO_OK ||
+      turbo_vec_reserve(&data, 64) != TURBO_OK) {
+    if (data.data) turbo_vec_destroy(&data);
     sqlite3_finalize(stmt);
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
     return SQLITE_ZERO;
   }
 
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    if (len >= cap) {
-      cap *= 2;
-      double *new_data = mem_alloc(&ud->env->arena, cap * sizeof(double));
-      if (!new_data) {
-        sqlite3_finalize(stmt);
-        SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
-        return SQLITE_ZERO;
-      }
-      memcpy(new_data, data, len * sizeof(double));
-      data = new_data;
+    double element = sqlite3_column_double(stmt, col_idx);
+    if (turbo_vec_push(&data, &element) != TURBO_OK) {
+      turbo_vec_destroy(&data);
+      sqlite3_finalize(stmt);
+      SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
+      return SQLITE_ZERO;
     }
-    data[len++] = sqlite3_column_double(stmt, col_idx);
   }
 
   sqlite3_finalize(stmt);
 
   if (rc != SQLITE_DONE) {
+    turbo_vec_destroy(&data);
     strncpy(h->error_msg, sqlite3_errmsg(h->db), sizeof(h->error_msg) - 1);
     h->error_msg[sizeof(h->error_msg) - 1] = '\0';
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: step failed");
     return SQLITE_ZERO;
   }
 
-  return (exprtk_value_t){EXPRTK_VAL_VECTOR, .data.vector = {.data = data, .size = len}};
+  exprtk_value_t result = SQLITE_ZERO;
+  if (exprtk_value_copy_to_env(
+          exprtk_val_vec((double *)data.data, data.size), ud->env, &result) != 0) {
+    turbo_vec_destroy(&data);
+    SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
+    return SQLITE_ZERO;
+  }
+  turbo_vec_destroy(&data);
+  return result;
 }
 
-static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: expected (number, string)");
@@ -412,7 +422,7 @@ static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args, 
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = result};
 }
 
-static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     SQLITE_CTX_ERROR(ud, "sqlite.error: expected number handle");
@@ -429,61 +439,58 @@ static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args, void *u
   if (len == 0)
     return SQLITE_ZERO;
 
-  char *buf = mem_alloc(&ud->env->arena, len + 1);
-  if (!buf) return SQLITE_ZERO;
-  memcpy(buf, h->error_msg, len);
-  buf[len] = '\0';
-
-  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = {buf, len}};
+  exprtk_value_t value;
+  if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(h->error_msg, len)),
+                               ud->env, &value) != 0)
+    return SQLITE_ZERO;
+  return value;
 }
 
-static exprtk_value_t fn_sqlite_fts5_available(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_fts5_available(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   (void)args;
   (void)user_data;
   if (argc != 0) return SQLITE_ZERO;
   return exprtk_val_num(sqlite3_compileoption_used("ENABLE_FTS5") ? 1.0 : 0.0);
 }
 
-static exprtk_value_t fn_sqlite_vec_blob(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_vec_blob(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   const double *vec;
   size_t n;
   size_t len;
-  char *buf;
+  exprtk_value_t result = SQLITE_ZERO;
   if (argc != 1 || !sqlite_value_as_vector(args[0], &vec, &n) || args[0].type != EXPRTK_VAL_VECTOR) {
     SQLITE_CTX_ERROR(ud, "sqlite.vec_blob: expected vector");
     return SQLITE_ZERO;
   }
   len = n * sizeof(double);
-  buf = mem_alloc(&ud->env->arena, len);
-  if (!buf && len > 0) {
+  if (exprtk_value_copy_to_env(
+          exprtk_val_bytes(tstr_v_from_buf((char *)vec, len)), ud->env, &result) != 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.vec_blob: OOM");
     return SQLITE_ZERO;
   }
-  if (len) memcpy(buf, vec, len);
-  return exprtk_val_bytes(tstr_v_from_buf(buf, len));
+  return result;
 }
 
-static exprtk_value_t fn_sqlite_vec_from_blob(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_vec_from_blob(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   size_t n;
-  double *vec;
+  exprtk_value_t result = SQLITE_ZERO;
   if (argc != 1 || args[0].type != EXPRTK_VAL_BYTES ||
       args[0].data.bytes.len % sizeof(double) != 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.vec_from_blob: expected embedding blob");
     return SQLITE_ZERO;
   }
   n = args[0].data.bytes.len / sizeof(double);
-  vec = mem_alloc(&ud->env->arena, n * sizeof(double));
-  if (!vec && n > 0) {
+  if (exprtk_value_copy_to_env(
+          exprtk_val_vec((double *)args[0].data.bytes.data, n), ud->env, &result) != 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.vec_from_blob: OOM");
     return SQLITE_ZERO;
   }
-  if (n) memcpy(vec, args[0].data.bytes.data, n * sizeof(double));
-  return exprtk_val_vec(vec, n);
+  return result;
 }
 
-static exprtk_value_t fn_sqlite_vec_cosine(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_vec_cosine(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   const double *a;
   const double *b;
@@ -497,7 +504,7 @@ static exprtk_value_t fn_sqlite_vec_cosine(size_t argc, exprtk_value_t *args, vo
   return exprtk_val_num(sqlite_cosine_raw(a, an, b, bn));
 }
 
-static exprtk_value_t fn_sqlite_embedding_init(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_embedding_init(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   char *table;
@@ -519,7 +526,7 @@ static exprtk_value_t fn_sqlite_embedding_init(size_t argc, exprtk_value_t *args
   return exprtk_val_num(sqlite_exec_sql(h, sql) == SQLITE_OK ? 1.0 : 0.0);
 }
 
-static exprtk_value_t fn_sqlite_embedding_put(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_embedding_put(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   sqlite3_stmt *stmt = NULL;
@@ -559,7 +566,7 @@ static exprtk_value_t fn_sqlite_embedding_put(size_t argc, exprtk_value_t *args,
   return exprtk_val_num(1.0);
 }
 
-static exprtk_value_t fn_sqlite_embedding_search(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_embedding_search(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   sqlite3_stmt *stmt = NULL;
@@ -625,7 +632,7 @@ static exprtk_value_t fn_sqlite_embedding_search(size_t argc, exprtk_value_t *ar
   return list;
 }
 
-static exprtk_value_t fn_sqlite_rag_init(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_rag_init(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
@@ -652,7 +659,7 @@ static exprtk_value_t fn_sqlite_rag_init(size_t argc, exprtk_value_t *args, void
   return exprtk_val_num(1.0);
 }
 
-static exprtk_value_t fn_sqlite_rag_add(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_rag_add(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   sqlite3_stmt *stmt = NULL;
@@ -735,7 +742,7 @@ fail:
   return SQLITE_ZERO;
 }
 
-static exprtk_value_t fn_sqlite_rag_search(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_sqlite_rag_search(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
   sqlite_handle_t *h;
   sqlite3_stmt *stmt = NULL;
@@ -799,8 +806,8 @@ static exprtk_value_t fn_sqlite_rag_search(size_t argc, exprtk_value_t *args, vo
     }
     memset(&row, 0, sizeof(row));
     row.id = sqlite3_column_int64(stmt, 0);
-    sqlite_copy_text(ud->env, sqlite3_column_text(stmt, 1), &row.source, &row.source_len);
-    sqlite_copy_text(ud->env, sqlite3_column_text(stmt, 2), &row.text, &row.text_len);
+    sqlite_copy_text(ud->scratch, sqlite3_column_text(stmt, 1), &row.source, &row.source_len);
+    sqlite_copy_text(ud->scratch, sqlite3_column_text(stmt, 2), &row.text, &row.text_len);
     if (dim > 0 && (size_t)dim == query_n && bytes == dim * (int)sizeof(double) && blob) {
       row.vector_score = sqlite_cosine_raw(query_vec, query_n, (const double *)blob, (size_t)dim);
     }
@@ -859,7 +866,7 @@ void sqlite_load(void *p, void *e, void *s) {
   sqlite_ctx_t *ctx = (sqlite_ctx_t *)p;
   exprtk_env_t *env = (exprtk_env_t *)e;
   mem_pool_t *scratch = (mem_pool_t *)s;
-  if (!ctx || !env) return;
+  if (!ctx || !env || !scratch) return;
 
   sqlite_ud_t *ud = mem_alloc(&env->arena, sizeof(*ud));
   if (!ud) return;

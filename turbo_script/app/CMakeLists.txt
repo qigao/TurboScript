@@ -40,4 +40,22 @@ if(BUILD_TESTING)
             --file ${CMAKE_SOURCE_DIR}/examples/polymarket_patterns.tbs)
   set_tests_properties(example_polymarket_patterns_load
     PROPERTIES LABELS "examples;polymarket")
+
+  foreach(CORO_STACK_KIB IN ITEMS 0 512 1024)
+    add_test(
+      NAME turbo_script_cli_coro_stack_${CORO_STACK_KIB}
+      COMMAND $<TARGET_FILE:turbo_script_repl>
+              --coro-stack-kib ${CORO_STACK_KIB}
+              --eval "stack_override = 1;")
+    set_tests_properties(turbo_script_cli_coro_stack_${CORO_STACK_KIB}
+      PROPERTIES LABELS "turbo_script;cli;coro")
+  endforeach()
+
+  add_test(
+    NAME turbo_script_cli_coro_stack_rejects_small_value
+    COMMAND $<TARGET_FILE:turbo_script_repl>
+            --coro-stack-kib 1
+            --eval "stack_override = 1;")
+  set_tests_properties(turbo_script_cli_coro_stack_rejects_small_value
+    PROPERTIES LABELS "turbo_script;cli;coro" WILL_FAIL TRUE)
 endif()

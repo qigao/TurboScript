@@ -52,6 +52,9 @@ Unsupported lowering forms must return explicit errors. The host may explicitly 
 
 The environment is the single source of script-visible state. MIR-generated code must synchronize through the environment for variables and runtime values that outlive one execution.
 
+Runtime ownership classes, scenario profiles, quotas, and the callback-scoped
+WebSocket receive contract are specified in [Runtime Memory Policy](memory-policy.md).
+
 ## MIR Lowering
 
 The MIR backend handles:

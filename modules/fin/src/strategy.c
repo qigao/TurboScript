@@ -24,11 +24,7 @@ static void ts_bind_num(exprtk_env_t *env, const char *name, double val) {
 /** Bind a named vector (double array) into the TurboScript environment. */
 static void ts_bind_vec(exprtk_env_t *env, const char *name,
                      const double *data, size_t len) {
-    exprtk_value_t v;
-    v.type = EXPRTK_VAL_VECTOR;
-    v.data.vector.data = (double *)data;   /* cast away const — env doesn't own it */
-    v.data.vector.size = len;
-    exprtk_env_set(env, name, v);
+    exprtk_env_set(env, name, exprtk_val_vec((double *)data, len));
 }
 
 /** Read a scalar output variable written by the strategy script. */

@@ -35,7 +35,8 @@ static int rfg_arg_i64(exprtk_value_t v, int64_t *out) {
 static int rfg_arg_string(rfg_ud_t *ud, exprtk_value_t v, char **out) {
     char *buf;
     if (!ud || !out || v.type != EXPRTK_VAL_STRING) return 0;
-    buf = (char *)mem_alloc(ud->scratch ? ud->scratch : &ud->env->arena, v.data.string.len + 1);
+    if (!ud->scratch) return 0;
+    buf = (char *)mem_alloc(ud->scratch, v.data.string.len + 1);
     if (!buf) return 0;
     memcpy(buf, v.data.string.data, v.data.string.len);
     buf[v.data.string.len] = '\0';
@@ -50,8 +51,8 @@ static char *rfg_read_file_text(rfg_ud_t *ud, const char *path) {
     mem_pool_t *pool;
     char *buf;
 
-    if (!ud || !ud->env || !path) return NULL;
-    pool = ud->scratch ? ud->scratch : &ud->env->arena;
+    if (!ud || !ud->scratch || !path) return NULL;
+    pool = ud->scratch;
     f = fopen(path, "rb");
     if (!f) return NULL;
     if (fseek(f, 0, SEEK_END) != 0) {
@@ -90,13 +91,13 @@ static int rfg_arg_bytes(exprtk_value_t v, const uint8_t **out, size_t *out_len)
 }
 
 static exprtk_value_t rfg_string_n(rfg_ud_t *ud, const char *s, size_t len) {
-    char *buf;
+    exprtk_value_t result = rfg_zero();
     if (!ud || !ud->env) return exprtk_val_str(tstr_v_from_buf("", 0));
-    buf = (char *)mem_alloc(&ud->env->arena, len + 1);
-    if (!buf) return rfg_zero();
-    if (len && s) memcpy(buf, s, len);
-    buf[len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    if (exprtk_value_copy_to_env(
+            exprtk_val_str(tstr_v_from_buf((char *)(s ? s : ""), len)), ud->env,
+            &result) != 0)
+        return rfg_zero();
+    return result;
 }
 
 static exprtk_value_t rfg_string(rfg_ud_t *ud, const char *s) {
@@ -436,20 +437,20 @@ void rfg_ctx_destroy(void *p) {
     free(ctx);
 }
 
-static exprtk_value_t fn_version(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_version(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     (void)args;
     if (argc != 0) return rfg_zero();
     return rfg_string((rfg_ud_t *)ud_, ruleforge_get_version());
 }
 
-static exprtk_value_t fn_error(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_error(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     (void)args;
     if (argc != 0 || !ud || !ud->ctx) return rfg_zero();
     return rfg_string(ud, ud->ctx->error_msg);
 }
 
-static exprtk_value_t fn_kb_create(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_kb_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_knowledge_base_t kb = NULL;
     ruleforge_status_t st;
@@ -470,7 +471,7 @@ static exprtk_value_t fn_kb_create(size_t argc, exprtk_value_t *args, void *ud_)
     return exprtk_val_num((double)h);
 }
 
-static exprtk_value_t fn_kb_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_kb_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_kb(ud->ctx, h))
@@ -479,7 +480,7 @@ static exprtk_value_t fn_kb_destroy(size_t argc, exprtk_value_t *args, void *ud_
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_kb_load(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_kb_load(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_knowledge_base_t kb;
     char *source;
@@ -491,7 +492,7 @@ static exprtk_value_t fn_kb_load(size_t argc, exprtk_value_t *args, void *ud_) {
     return rfg_status(ruleforge_kb_load_drl(kb, source), ud);
 }
 
-static exprtk_value_t fn_kb_load_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_kb_load_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_knowledge_base_t kb;
     char *path;
@@ -503,7 +504,7 @@ static exprtk_value_t fn_kb_load_file(size_t argc, exprtk_value_t *args, void *u
     return rfg_status(ruleforge_kb_load_drl_file(kb, path, NULL, 0), ud);
 }
 
-static exprtk_value_t fn_kb_load_decision_table_csv(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_kb_load_decision_table_csv(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_knowledge_base_t kb;
     char *csv;
@@ -515,7 +516,7 @@ static exprtk_value_t fn_kb_load_decision_table_csv(size_t argc, exprtk_value_t 
     return rfg_status(ruleforge_kb_load_decision_table_csv(kb, csv), ud);
 }
 
-static exprtk_value_t fn_session_create(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session = NULL;
     ruleforge_knowledge_base_t kb;
@@ -541,7 +542,7 @@ static exprtk_value_t fn_session_create(size_t argc, exprtk_value_t *args, void 
     return exprtk_val_num((double)h);
 }
 
-static exprtk_value_t fn_session_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_session(ud->ctx, h))
@@ -550,7 +551,7 @@ static exprtk_value_t fn_session_destroy(size_t argc, exprtk_value_t *args, void
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_session_reset(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_reset(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_status_t st;
@@ -564,7 +565,7 @@ static exprtk_value_t fn_session_reset(size_t argc, exprtk_value_t *args, void *
     return rfg_status(st, ud);
 }
 
-static exprtk_value_t fn_session_fire_all(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_fire_all(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h, max_rules = -1, fired = 0;
@@ -576,7 +577,7 @@ static exprtk_value_t fn_session_fire_all(size_t argc, exprtk_value_t *args, voi
     return rfg_status_count(ud, ruleforge_session_fire_all_rules(session, max_rules, &fired), "fired", fired);
 }
 
-static exprtk_value_t fn_session_fact_count(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_fact_count(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -586,7 +587,7 @@ static exprtk_value_t fn_session_fact_count(size_t argc, exprtk_value_t *args, v
     return exprtk_val_int((int64_t)ruleforge_session_get_fact_count(session));
 }
 
-static exprtk_value_t fn_session_set_validation_mode(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_set_validation_mode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h, mode;
@@ -641,7 +642,7 @@ static exprtk_value_t rfg_data_bind_object_from_text(
 }
 
 #define RFG_DATA_BIND_OBJECT_TEXT_FN(fn_name, parse_fn, error_text)                   \
-    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, void *ud) {      \
+    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {      \
         return rfg_data_bind_object_from_text(argc, args, ud, error_text, parse_fn);  \
     }
 
@@ -655,8 +656,7 @@ RFG_DATA_BIND_OBJECT_TEXT_FN(fn_data_bind_object_from_xml,
     ruleforge_data_bind_object_from_xml,
     "rules_forge.data_bind_object_from_xml: expected (schema_path, type, xml)")
 
-static exprtk_value_t fn_data_bind_object_from_binary(size_t argc, exprtk_value_t *args,
-                                                       void *ud_) {
+static exprtk_value_t fn_data_bind_object_from_binary(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_object_t object = NULL;
     const uint8_t *data;
@@ -675,8 +675,7 @@ static exprtk_value_t fn_data_bind_object_from_binary(size_t argc, exprtk_value_
         ud, status, object, "rules_forge.data_bind_object: too many object handles");
 }
 
-static exprtk_value_t fn_data_bind_object_from_csv(size_t argc, exprtk_value_t *args,
-                                                    void *ud_) {
+static exprtk_value_t fn_data_bind_object_from_csv(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_object_t object = NULL;
     char *schema_path;
@@ -697,7 +696,7 @@ static exprtk_value_t fn_data_bind_object_from_csv(size_t argc, exprtk_value_t *
         ud, status, object, "rules_forge.data_bind_object: too many object handles");
 }
 
-static exprtk_value_t fn_data_bind_object_clone(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_data_bind_object_clone(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_object_t object;
     ruleforge_data_bind_object_t clone = NULL;
@@ -714,7 +713,7 @@ static exprtk_value_t fn_data_bind_object_clone(size_t argc, exprtk_value_t *arg
         "rules_forge.data_bind_object_clone: too many object handles");
 }
 
-static exprtk_value_t fn_data_bind_object_type(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_data_bind_object_type(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_object_t object;
     int h;
@@ -753,7 +752,7 @@ static exprtk_value_t rfg_data_bind_object_serialize_text(
 }
 
 #define RFG_DATA_BIND_OBJECT_SERIALIZE_TEXT_FN(fn_name, serialize_fn, error_text)     \
-    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, void *ud) {      \
+    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {      \
         return rfg_data_bind_object_serialize_text(                                  \
             argc, args, ud, error_text, serialize_fn);                               \
     }
@@ -772,12 +771,11 @@ RFG_DATA_BIND_OBJECT_SERIALIZE_TEXT_FN(fn_data_bind_object_serialize_csv,
     "rules_forge.data_bind_object_serialize_csv: expected valid object handle")
 
 static exprtk_value_t fn_data_bind_object_serialize_binary(size_t argc,
-                                                            exprtk_value_t *args,
-                                                            void *ud_) {
+                                                            exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_object_t object;
     uint8_t *serialized = NULL;
-    char *copy;
+    exprtk_value_t result = rfg_zero();
     size_t len = 0;
     ruleforge_status_t status;
     int h;
@@ -793,19 +791,18 @@ static exprtk_value_t fn_data_bind_object_serialize_binary(size_t argc,
         rfg_set_error(ud->ctx, NULL);
         return exprtk_val_bytes(tstr_v_from_buf("", 0));
     }
-    copy = len ? (char *)mem_alloc(&ud->env->arena, len) : NULL;
-    if (len && !copy) {
+    if (exprtk_value_copy_to_env(
+            exprtk_val_bytes(tstr_v_from_buf((char *)serialized, len)), ud->env,
+            &result) != 0) {
         ruleforge_data_bind_binary_free(serialized);
         rfg_set_error(ud->ctx, "rules_forge.data_bind_object_serialize_binary: OOM");
         return exprtk_val_bytes(tstr_v_from_buf("", 0));
     }
-    if (len) memcpy(copy, serialized, len);
     ruleforge_data_bind_binary_free(serialized);
-    return exprtk_val_bytes(tstr_v_from_buf(copy, len));
+    return result;
 }
 
-static exprtk_value_t fn_data_bind_object_destroy(size_t argc, exprtk_value_t *args,
-                                                   void *ud_) {
+static exprtk_value_t fn_data_bind_object_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) ||
@@ -816,7 +813,7 @@ static exprtk_value_t fn_data_bind_object_destroy(size_t argc, exprtk_value_t *a
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_session_add_fact_json(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_fact_json(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -842,8 +839,7 @@ static exprtk_value_t fn_session_add_fact_json(size_t argc, exprtk_value_t *args
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_fact_json_path(size_t argc, exprtk_value_t *args,
-                                                    void *ud_) {
+static exprtk_value_t fn_session_add_fact_json_path(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -872,8 +868,7 @@ static exprtk_value_t fn_session_add_fact_json_path(size_t argc, exprtk_value_t 
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_facts_json_path(size_t argc, exprtk_value_t *args,
-                                                     void *ud_) {
+static exprtk_value_t fn_session_add_facts_json_path(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -896,8 +891,7 @@ static exprtk_value_t fn_session_add_facts_json_path(size_t argc, exprtk_value_t
     }
 }
 
-static exprtk_value_t fn_session_add_fact_yaml(size_t argc, exprtk_value_t *args,
-                                                void *ud_) {
+static exprtk_value_t fn_session_add_fact_yaml(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -923,8 +917,7 @@ static exprtk_value_t fn_session_add_fact_yaml(size_t argc, exprtk_value_t *args
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_fact_yaml_path(size_t argc, exprtk_value_t *args,
-                                                     void *ud_) {
+static exprtk_value_t fn_session_add_fact_yaml_path(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -954,8 +947,7 @@ static exprtk_value_t fn_session_add_fact_yaml_path(size_t argc, exprtk_value_t 
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_facts_yaml_path(size_t argc, exprtk_value_t *args,
-                                                      void *ud_) {
+static exprtk_value_t fn_session_add_facts_yaml_path(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -978,7 +970,7 @@ static exprtk_value_t fn_session_add_facts_yaml_path(size_t argc, exprtk_value_t
     }
 }
 
-static exprtk_value_t fn_session_add_fact_json_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_fact_json_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -1009,7 +1001,7 @@ static exprtk_value_t fn_session_add_fact_json_file(size_t argc, exprtk_value_t 
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_fact_binary(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_fact_binary(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t fact = NULL;
@@ -1037,7 +1029,7 @@ static exprtk_value_t fn_session_add_fact_binary(size_t argc, exprtk_value_t *ar
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_session_add_facts_csv(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_facts_csv(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -1059,8 +1051,7 @@ static exprtk_value_t fn_session_add_facts_csv(size_t argc, exprtk_value_t *args
     }
 }
 
-static exprtk_value_t fn_session_add_facts_csv_path(size_t argc, exprtk_value_t *args,
-                                                    void *ud_) {
+static exprtk_value_t fn_session_add_facts_csv_path(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -1083,7 +1074,7 @@ static exprtk_value_t fn_session_add_facts_csv_path(size_t argc, exprtk_value_t 
     }
 }
 
-static exprtk_value_t fn_session_add_facts_csv_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_facts_csv_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -1110,7 +1101,7 @@ static exprtk_value_t fn_session_add_facts_csv_file(size_t argc, exprtk_value_t 
     }
 }
 
-static exprtk_value_t fn_session_add_facts_xml(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_facts_xml(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -1133,7 +1124,7 @@ static exprtk_value_t fn_session_add_facts_xml(size_t argc, exprtk_value_t *args
     }
 }
 
-static exprtk_value_t fn_session_add_facts_xml_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_add_facts_xml_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_fact_t *facts = NULL;
@@ -1161,8 +1152,7 @@ static exprtk_value_t fn_session_add_facts_xml_file(size_t argc, exprtk_value_t 
     }
 }
 
-static exprtk_value_t fn_session_add_data_bind_object(size_t argc, exprtk_value_t *args,
-                                                       void *ud_) {
+static exprtk_value_t fn_session_add_data_bind_object(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_data_bind_object_t object;
@@ -1274,7 +1264,7 @@ static exprtk_value_t rfg_stream_create(size_t argc, exprtk_value_t *args, void 
 }
 
 #define RFG_STREAM_CREATE_FN(fn_name, kind_value, error_text)                         \
-    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, void *ud) {       \
+    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {       \
         return rfg_stream_create(argc, args, ud, kind_value, error_text);              \
     }
 
@@ -1303,7 +1293,7 @@ RFG_STREAM_CREATE_FN(fn_stream_xml_create, RFG_STREAM_XML,
 RFG_STREAM_CREATE_FN(fn_stream_xml_path_all_create, RFG_STREAM_XML_PATH_ALL,
                      "rules_forge.stream_xml_path_all_create: expected (session, type, xml_path)")
 
-static exprtk_value_t fn_stream_feed(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_stream_feed(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_stream_t stream;
     const uint8_t *data;
@@ -1317,7 +1307,7 @@ static exprtk_value_t fn_stream_feed(size_t argc, exprtk_value_t *args, void *ud
     return rfg_status(ruleforge_data_bind_stream_feed(stream, data, len), ud);
 }
 
-static exprtk_value_t fn_stream_feed_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_stream_feed_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_stream_t stream;
     char *path;
@@ -1329,7 +1319,7 @@ static exprtk_value_t fn_stream_feed_file(size_t argc, exprtk_value_t *args, voi
     return rfg_status(ruleforge_data_bind_stream_feed_file(stream, path), ud);
 }
 
-static exprtk_value_t fn_stream_finish(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_stream_finish(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_data_bind_stream_t stream;
     ruleforge_fact_t *facts = NULL;
@@ -1348,7 +1338,7 @@ static exprtk_value_t fn_stream_finish(size_t argc, exprtk_value_t *args, void *
     }
 }
 
-static exprtk_value_t fn_stream_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_stream_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_stream(ud->ctx, h))
@@ -1357,7 +1347,7 @@ static exprtk_value_t fn_stream_destroy(size_t argc, exprtk_value_t *args, void 
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_session_query(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_query(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     ruleforge_query_result_t query = NULL;
@@ -1385,7 +1375,7 @@ static exprtk_value_t fn_session_query(size_t argc, exprtk_value_t *args, void *
     return exprtk_val_num((double)qh);
 }
 
-static exprtk_value_t fn_query_size(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_query_size(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_query_result_t query;
     int h;
@@ -1395,7 +1385,7 @@ static exprtk_value_t fn_query_size(size_t argc, exprtk_value_t *args, void *ud_
     return exprtk_val_int((int64_t)ruleforge_query_result_get_size(query));
 }
 
-static exprtk_value_t fn_query_fact(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_query_fact(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_query_result_t query;
     ruleforge_fact_t fact = NULL;
@@ -1421,7 +1411,7 @@ static exprtk_value_t fn_query_fact(size_t argc, exprtk_value_t *args, void *ud_
     return exprtk_val_num((double)fh);
 }
 
-static exprtk_value_t fn_query_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_query_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_query(ud->ctx, h))
@@ -1430,7 +1420,7 @@ static exprtk_value_t fn_query_destroy(size_t argc, exprtk_value_t *args, void *
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_fact_string(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_fact_string(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_fact_t fact;
     char *field;
@@ -1445,7 +1435,7 @@ static exprtk_value_t fn_fact_string(size_t argc, exprtk_value_t *args, void *ud
     if (!fact) return rfg_string(ud, "");
     st = ruleforge_fact_get_field_as_string(fact, field, stack_buf, sizeof(stack_buf), &needed);
     if (st == RFG_INVALID && needed >= sizeof(stack_buf)) {
-        buf = (char *)mem_alloc(&ud->env->arena, needed + 1);
+        buf = (char *)mem_alloc(ud->scratch, needed + 1);
         if (!buf) return rfg_zero();
         st = ruleforge_fact_get_field_as_string(fact, field, buf, needed + 1, &needed);
     }
@@ -1456,7 +1446,7 @@ static exprtk_value_t fn_fact_string(size_t argc, exprtk_value_t *args, void *ud
     return rfg_string(ud, buf);
 }
 
-static exprtk_value_t fn_fact_double(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_fact_double(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_fact_t fact;
     char *field;
@@ -1472,7 +1462,7 @@ static exprtk_value_t fn_fact_double(size_t argc, exprtk_value_t *args, void *ud
     return exprtk_val_num(value);
 }
 
-static exprtk_value_t fn_fact_int(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_fact_int(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_fact_t fact;
     char *field;
@@ -1488,7 +1478,7 @@ static exprtk_value_t fn_fact_int(size_t argc, exprtk_value_t *args, void *ud_) 
     return exprtk_val_int(value);
 }
 
-static exprtk_value_t fn_fact_bool(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_fact_bool(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_fact_t fact;
     char *field;
@@ -1504,7 +1494,7 @@ static exprtk_value_t fn_fact_bool(size_t argc, exprtk_value_t *args, void *ud_)
     return exprtk_val_bool(value != 0);
 }
 
-static exprtk_value_t fn_session_enable_tracing(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_enable_tracing(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h, enabled;
@@ -1528,7 +1518,7 @@ static exprtk_value_t rfg_session_string_call(rfg_ud_t *ud, ruleforge_stateful_s
     else
         st = ruleforge_session_get_memory_stats(session, buf, sizeof(stack_buf), &actual);
     if (st == RFG_INVALID && actual >= sizeof(stack_buf)) {
-        buf = (char *)mem_alloc(&ud->env->arena, actual + 1);
+        buf = (char *)mem_alloc(ud->scratch, actual + 1);
         if (!buf) return rfg_zero();
         if (kind == 0)
             st = ruleforge_session_get_execution_trace(session, include_network, buf, actual + 1, &actual);
@@ -1544,7 +1534,7 @@ static exprtk_value_t rfg_session_string_call(rfg_ud_t *ud, ruleforge_stateful_s
     return rfg_string(ud, buf);
 }
 
-static exprtk_value_t fn_session_trace(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_trace(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h, include_network = 0;
@@ -1556,7 +1546,7 @@ static exprtk_value_t fn_session_trace(size_t argc, exprtk_value_t *args, void *
     return rfg_session_string_call(ud, session, include_network, 0);
 }
 
-static exprtk_value_t fn_session_rule_performance(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_rule_performance(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -1566,7 +1556,7 @@ static exprtk_value_t fn_session_rule_performance(size_t argc, exprtk_value_t *a
     return rfg_session_string_call(ud, session, 0, 1);
 }
 
-static exprtk_value_t fn_session_clear_trace(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_clear_trace(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -1577,7 +1567,7 @@ static exprtk_value_t fn_session_clear_trace(size_t argc, exprtk_value_t *args, 
     return rfg_status(ruleforge_session_clear_trace(session), ud);
 }
 
-static exprtk_value_t fn_session_memory_used(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_memory_used(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -1586,7 +1576,7 @@ static exprtk_value_t fn_session_memory_used(size_t argc, exprtk_value_t *args, 
     return exprtk_val_int(session ? ruleforge_session_get_memory_used(session) : -1);
 }
 
-static exprtk_value_t fn_session_memory_peak(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_memory_peak(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -1595,7 +1585,7 @@ static exprtk_value_t fn_session_memory_peak(size_t argc, exprtk_value_t *args, 
     return exprtk_val_int(session ? ruleforge_session_get_memory_peak(session) : -1);
 }
 
-static exprtk_value_t fn_session_memory_stats(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_session_memory_stats(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_stateful_session_t session;
     int h;
@@ -1706,7 +1696,7 @@ static exprtk_value_t rfg_continuous_result_value(rfg_ud_t *ud, ruleforge_status
     return value;
 }
 
-static exprtk_value_t fn_continuous_create(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_config_t config;
     ruleforge_continuous_session_t session = NULL;
@@ -1737,7 +1727,7 @@ static exprtk_value_t fn_continuous_create(size_t argc, exprtk_value_t *args, vo
     return exprtk_val_int(h);
 }
 
-static exprtk_value_t fn_continuous_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_continuous(ud->ctx, h))
@@ -1746,8 +1736,7 @@ static exprtk_value_t fn_continuous_destroy(size_t argc, exprtk_value_t *args, v
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_continuous_push_json(size_t argc, exprtk_value_t *args,
-                                              void *ud_) {
+static exprtk_value_t fn_continuous_push_json(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_result_t result = NULL;
@@ -1768,8 +1757,7 @@ static exprtk_value_t fn_continuous_push_json(size_t argc, exprtk_value_t *args,
     return rfg_continuous_result_value(ud, st, result, h);
 }
 
-static exprtk_value_t fn_continuous_push_yaml(size_t argc, exprtk_value_t *args,
-                                               void *ud_) {
+static exprtk_value_t fn_continuous_push_yaml(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_result_t result = NULL;
@@ -1792,8 +1780,7 @@ static exprtk_value_t fn_continuous_push_yaml(size_t argc, exprtk_value_t *args,
 }
 
 static exprtk_value_t fn_continuous_push_data_bind_object(size_t argc,
-                                                           exprtk_value_t *args,
-                                                           void *ud_) {
+                                                           exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_data_bind_object_t object;
@@ -1864,7 +1851,7 @@ static exprtk_value_t rfg_continuous_push_path(size_t argc, exprtk_value_t *args
 }
 
 #define RFG_CONTINUOUS_PUSH_PATH_FN(fn_name, kind_value, error_text)                 \
-    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, void *ud) {     \
+    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {     \
         return rfg_continuous_push_path(argc, args, ud, kind_value, error_text);     \
     }
 
@@ -1877,8 +1864,7 @@ RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_csv_path, RFG_CONTINUOUS_PATH_CSV
 RFG_CONTINUOUS_PUSH_PATH_FN(fn_continuous_push_xml_path, RFG_CONTINUOUS_PATH_XML,
     "rules_forge.continuous_push_xml_path: expected (session, type, xml, xml_path, event_id_field, event_time_field, entry_point)")
 
-static exprtk_value_t fn_continuous_advance_watermark(size_t argc, exprtk_value_t *args,
-                                                      void *ud_) {
+static exprtk_value_t fn_continuous_advance_watermark(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_result_t result = NULL;
@@ -1893,7 +1879,7 @@ static exprtk_value_t fn_continuous_advance_watermark(size_t argc, exprtk_value_
     return rfg_continuous_result_value(ud, st, result, h);
 }
 
-static exprtk_value_t fn_continuous_drain(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_drain(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_result_t result = NULL;
@@ -1907,7 +1893,7 @@ static exprtk_value_t fn_continuous_drain(size_t argc, exprtk_value_t *args, voi
     return rfg_continuous_result_value(ud, st, result, h);
 }
 
-static exprtk_value_t fn_continuous_acknowledge(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_acknowledge(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     int h;
@@ -1919,7 +1905,7 @@ static exprtk_value_t fn_continuous_acknowledge(size_t argc, exprtk_value_t *arg
     return rfg_status(ruleforge_continuous_acknowledge(session, (uint64_t)batch_id), ud);
 }
 
-static exprtk_value_t fn_continuous_metrics(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_metrics(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_metrics_t metrics;
@@ -1941,7 +1927,7 @@ static exprtk_value_t fn_continuous_metrics(size_t argc, exprtk_value_t *args, v
     return value;
 }
 
-static exprtk_value_t fn_continuous_result_output(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_result_output(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_result_t result;
     ruleforge_fact_t fact = NULL;
@@ -1957,7 +1943,7 @@ static exprtk_value_t fn_continuous_result_output(size_t argc, exprtk_value_t *a
     return exprtk_val_int(fact_h);
 }
 
-static exprtk_value_t fn_continuous_result_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_result_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_continuous_result(ud->ctx, h))
@@ -1966,8 +1952,7 @@ static exprtk_value_t fn_continuous_result_destroy(size_t argc, exprtk_value_t *
     return rfg_status(RFG_OK, ud);
 }
 
-static exprtk_value_t fn_continuous_stream_json_create(size_t argc, exprtk_value_t *args,
-                                                       void *ud_) {
+static exprtk_value_t fn_continuous_stream_json_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_data_bind_stream_t stream = NULL;
@@ -1995,8 +1980,7 @@ static exprtk_value_t fn_continuous_stream_json_create(size_t argc, exprtk_value
     return exprtk_val_int(stream_h);
 }
 
-static exprtk_value_t fn_continuous_stream_yaml_create(size_t argc, exprtk_value_t *args,
-                                                        void *ud_) {
+static exprtk_value_t fn_continuous_stream_yaml_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_session_t session;
     ruleforge_continuous_data_bind_stream_t stream = NULL;
@@ -2073,7 +2057,7 @@ static exprtk_value_t rfg_continuous_stream_path_create(size_t argc, exprtk_valu
 }
 
 #define RFG_CONTINUOUS_STREAM_PATH_FN(fn_name, kind_value, error_text)               \
-    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, void *ud) {      \
+    static exprtk_value_t fn_name(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {      \
         return rfg_continuous_stream_path_create(argc, args, ud, kind_value,          \
                                                  error_text);                         \
     }
@@ -2091,7 +2075,7 @@ RFG_CONTINUOUS_STREAM_PATH_FN(fn_continuous_stream_xml_path_create,
     RFG_CONTINUOUS_PATH_XML,
     "rules_forge.continuous_stream_xml_path_create: expected (session, type, xml_path, event_id_field, event_time_field, entry_point)")
 
-static exprtk_value_t fn_continuous_stream_feed(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_stream_feed(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_data_bind_stream_t stream;
     const uint8_t *data;
@@ -2104,7 +2088,7 @@ static exprtk_value_t fn_continuous_stream_feed(size_t argc, exprtk_value_t *arg
     return rfg_status(ruleforge_continuous_data_bind_stream_feed(stream, data, len), ud);
 }
 
-static exprtk_value_t fn_continuous_stream_feed_file(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_stream_feed_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_data_bind_stream_t stream;
     char *path;
@@ -2116,7 +2100,7 @@ static exprtk_value_t fn_continuous_stream_feed_file(size_t argc, exprtk_value_t
     return rfg_status(ruleforge_continuous_data_bind_stream_feed_file(stream, path), ud);
 }
 
-static exprtk_value_t fn_continuous_stream_finish(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_stream_finish(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     ruleforge_continuous_data_bind_stream_t stream;
     ruleforge_continuous_result_t result = NULL;
@@ -2131,7 +2115,7 @@ static exprtk_value_t fn_continuous_stream_finish(size_t argc, exprtk_value_t *a
     return rfg_continuous_result_value(ud, st, result, continuous_h);
 }
 
-static exprtk_value_t fn_continuous_stream_destroy(size_t argc, exprtk_value_t *args, void *ud_) {
+static exprtk_value_t fn_continuous_stream_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud_) {
     rfg_ud_t *ud = (rfg_ud_t *)ud_;
     int h;
     if (!ud || argc != 1 || !rfg_arg_int(args[0], &h) || !rfg_get_continuous_stream(ud->ctx, h))
@@ -2145,12 +2129,12 @@ void rfg_plugin_load(void *p, void *e, void *s) {
     exprtk_env_t *env = (exprtk_env_t *)e;
     mem_pool_t *scratch = (mem_pool_t *)s;
     rfg_ud_t *ud;
-    if (!ctx || !env) return;
+    if (!ctx || !env || !scratch) return;
     ud = (rfg_ud_t *)mem_alloc(&env->arena, sizeof(*ud));
     if (!ud) return;
     ud->ctx = ctx;
     ud->env = env;
-    ud->scratch = scratch ? scratch : &env->arena;
+    ud->scratch = scratch;
 
     exprtk_env_register_func(env, "rules_forge.version", fn_version, ud);
     exprtk_env_register_func(env, "rules_forge.error", fn_error, ud);

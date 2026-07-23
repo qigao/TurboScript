@@ -52,17 +52,14 @@ static exprtk_value_t parser_null(void) {
 }
 
 static exprtk_value_t parser_string_value(exprtk_env_t *env, const char *text) {
-    size_t len;
-    char *copy;
+    exprtk_value_t value;
+    exprtk_value_t borrowed;
 
     if (!env) return exprtk_val_str(tstr_v_from_buf("", 0));
     if (!text) text = "";
-    len = strlen(text);
-    copy = (char *)mem_alloc(&env->arena, len + 1);
-    if (!copy) return PARSER_ZERO;
-    memcpy(copy, text, len);
-    copy[len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(copy, len));
+    borrowed = exprtk_val_str(tstr_v_from_buf(text, strlen(text)));
+    if (exprtk_value_copy_to_env(borrowed, env, &value) != 0) return PARSER_ZERO;
+    return value;
 }
 
 static inline char *parser_arena_cstr(mem_pool_t *arena, tstr_v sv) {
@@ -95,8 +92,7 @@ static exprtk_value_t parser_read_file(parser_ud_t *ud, exprtk_value_t path_valu
     size_t read_size;
 
     if (!ud || !ud->env || path_value.type != EXPRTK_VAL_STRING) return result;
-    path = parser_arena_cstr(ud->scratch ? ud->scratch : &ud->env->arena,
-                             path_value.data.string);
+    path = parser_arena_cstr(ud->scratch, path_value.data.string);
     if (!path) return result;
     file = fopen(path, "rb");
     if (!file) return result;
@@ -109,7 +105,7 @@ static exprtk_value_t parser_read_file(parser_ud_t *ud, exprtk_value_t path_valu
         fclose(file);
         return result;
     }
-    buffer = (char *)mem_alloc(&ud->env->arena, (size_t)size + 1);
+    buffer = (char *)mem_alloc(ud->scratch, (size_t)size + 1);
     if (!buffer) {
         fclose(file);
         return result;
@@ -117,10 +113,13 @@ static exprtk_value_t parser_read_file(parser_ud_t *ud, exprtk_value_t path_valu
     read_size = fread(buffer, 1, (size_t)size, file);
     fclose(file);
     buffer[read_size] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buffer, read_size));
+    if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(buffer, read_size)),
+                                 ud->env, &result) != 0)
+        return PARSER_ZERO;
+    return result;
 }
 
-static exprtk_value_t fn_ini_get(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_ini_get(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     turbo_ini_t *ini = NULL;
     char *section;
@@ -150,7 +149,7 @@ static exprtk_value_t fn_ini_get(size_t argc, exprtk_value_t *args, void *user_d
     return result;
 }
 
-static exprtk_value_t fn_dotenv_load(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_dotenv_load(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     char *path;
     int overwrite = 1;
@@ -163,8 +162,7 @@ static exprtk_value_t fn_dotenv_load(size_t argc, exprtk_value_t *args, void *us
     return exprtk_val_num((double)turbo_dotenv_load(path, overwrite != 0));
 }
 
-static exprtk_value_t fn_dotenv_load_default(size_t argc, exprtk_value_t *args,
-                                             void *user_data) {
+static exprtk_value_t fn_dotenv_load_default(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     int overwrite = 1;
 
@@ -238,24 +236,30 @@ static exprtk_value_t parser_toml_table_to_expr(parser_ud_t *ud, const turbo_tom
         const char *raw_key = turbo_toml_key(table, i, &key_len);
         if (!raw_key || key_len < 0) continue;
 
-        char *key = (char *)mem_alloc(&ud->env->arena, (size_t)key_len + 1);
+        char *key = (char *)mem_alloc(ud->scratch, (size_t)key_len + 1);
         if (!key) continue;
         memcpy(key, raw_key, (size_t)key_len);
         key[key_len] = '\0';
 
         if (turbo_toml_table(table, key)) {
             turbo_toml_t *child = turbo_toml_table(table, key);
-            exprtk_map_set(&result, key, parser_toml_table_to_expr(ud, child));
+            exprtk_value_t converted = parser_toml_table_to_expr(ud, child);
+            exprtk_map_set(&result, key, converted);
+            exprtk_value_destroy(&converted);
             continue;
         }
 
         if (turbo_toml_array(table, key)) {
             turbo_toml_array_t *child = turbo_toml_array(table, key);
-            exprtk_map_set(&result, key, parser_toml_array_to_expr(ud, child));
+            exprtk_value_t converted = parser_toml_array_to_expr(ud, child);
+            exprtk_map_set(&result, key, converted);
+            exprtk_value_destroy(&converted);
             continue;
         }
 
-        exprtk_map_set(&result, key, parser_toml_scalar_to_expr(ud, table, key));
+        exprtk_value_t converted = parser_toml_scalar_to_expr(ud, table, key);
+        exprtk_map_set(&result, key, converted);
+        exprtk_value_destroy(&converted);
     }
 
     return result;
@@ -274,13 +278,17 @@ static exprtk_value_t parser_toml_array_to_expr(parser_ud_t *ud, const turbo_tom
 
         if (turbo_toml_array_table(array, i)) {
             turbo_toml_t *table = turbo_toml_array_table(array, i);
-            exprtk_list_push(&result, parser_toml_table_to_expr(ud, table));
+            exprtk_value_t converted = parser_toml_table_to_expr(ud, table);
+            exprtk_list_push(&result, converted);
+            exprtk_value_destroy(&converted);
             continue;
         }
 
         if (turbo_toml_array_array(array, i)) {
             turbo_toml_array_t *sub = turbo_toml_array_array(array, i);
-            exprtk_list_push(&result, parser_toml_array_to_expr(ud, sub));
+            exprtk_value_t converted = parser_toml_array_to_expr(ud, sub);
+            exprtk_list_push(&result, converted);
+            exprtk_value_destroy(&converted);
             continue;
         }
 
@@ -335,7 +343,7 @@ static exprtk_value_t parser_toml_parse_text(parser_ud_t *ud, tstr_v text) {
     return result;
 }
 
-static exprtk_value_t fn_toml_parse(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_toml_parse(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     if (!ud || argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
         return parser_null();
@@ -343,7 +351,7 @@ static exprtk_value_t fn_toml_parse(size_t argc, exprtk_value_t *args, void *use
     return parser_toml_parse_text(ud, args[0].data.string);
 }
 
-static exprtk_value_t fn_toml_parse_file(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_toml_parse_file(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     exprtk_value_t text;
 
@@ -436,7 +444,7 @@ static int parser_cmd_add_section_args(parser_ud_t *ud, turbo_cmd_parser_t *pars
     return 0;
 }
 
-static exprtk_value_t fn_cmd_parse(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_cmd_parse(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     turbo_cmd_parser_t *parser = NULL;
     parser_cmd_arg_t arg_values[PARSER_CMD_MAX_ARGS];
@@ -463,11 +471,11 @@ static exprtk_value_t fn_cmd_parse(size_t argc, exprtk_value_t *args, void *user
     spec = args[0];
     argv_v = args[1];
     if (argc >= 3 && args[2].type == EXPRTK_VAL_STRING) {
-        app_name = parser_arena_cstr(&ud->env->arena, args[2].data.string);
+        app_name = parser_arena_cstr(ud->scratch, args[2].data.string);
         if (!app_name) app_name = "app";
     }
     if (argc >= 4 && args[3].type == EXPRTK_VAL_STRING) {
-        version = parser_arena_cstr(&ud->env->arena, args[3].data.string);
+        version = parser_arena_cstr(ud->scratch, args[3].data.string);
         if (!version) version = "1.0";
     }
     if (argc >= 5) colors = parser_value_truthy(args[4]);
@@ -475,14 +483,14 @@ static exprtk_value_t fn_cmd_parse(size_t argc, exprtk_value_t *args, void *user
     memset(arg_values, 0, sizeof(arg_values));
     memset(string_values, 0, sizeof(string_values));
 
-    parse_argv = mem_alloc(&ud->env->arena,
+    parse_argv = mem_alloc(ud->scratch,
                            sizeof(char *) * (argv_v.data.list.count ? argv_v.data.list.count : 1));
     if (!parse_argv) return parser_null();
 
     for (i = 0; i < argv_v.data.list.count; ++i) {
         exprtk_value_t arg_v = exprtk_list_get(&argv_v, i);
         if (arg_v.type != EXPRTK_VAL_STRING) return parser_null();
-        parse_argv[i] = parser_arena_cstr(&ud->env->arena, arg_v.data.string);
+        parse_argv[i] = parser_arena_cstr(ud->scratch, arg_v.data.string);
         if (!parse_argv[i]) return parser_null();
         ++parse_argc;
     }
@@ -605,7 +613,7 @@ static int parser_datetime_from_map(const exprtk_value_t *map, turbo_datetime_t 
  * datetime.parse(text: string) -> datetime|null
  * Parse common datetime strings into a native datetime value.
  */
-static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     turbo_datetime_t dt;
 
@@ -619,7 +627,7 @@ static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args, void 
  * datetime.to_time(value: string|datetime|object|map) -> number
  * Convert datetime text, native datetime, or compatible field data to Unix epoch seconds.
  */
-static exprtk_value_t fn_datetime_to_time(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_datetime_to_time(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     turbo_datetime_t dt;
     time_t ts;
     (void)user_data;
@@ -644,7 +652,7 @@ static exprtk_value_t fn_datetime_to_time(size_t argc, exprtk_value_t *args, voi
  * datetime.format_rfc822(timestamp: number) -> string
  * Format seconds since Unix epoch as an HTTP/RFC-822 date.
  */
-static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     parser_ud_t *ud = (parser_ud_t *)user_data;
     char buf[64];
     time_t ts;
@@ -673,7 +681,7 @@ void parser_load(void *p, void *e, void *s) {
     exprtk_env_t *env = (exprtk_env_t *)e;
     mem_pool_t *scratch = (mem_pool_t *)s;
     
-    if (!ctx || !env) return;
+    if (!ctx || !env || !scratch) return;
     
     /* Allocate user data */
     parser_ud_t *ud = (parser_ud_t *)mem_alloc(&env->arena, sizeof(parser_ud_t));

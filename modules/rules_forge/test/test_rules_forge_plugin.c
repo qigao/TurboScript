@@ -32,7 +32,7 @@ static exprtk_value_t call_native(exprtk_env_t *env, const char *name,
                                   size_t argc, exprtk_value_t *args) {
     exprtk_func_t *fn = find_native(env, name);
     if (!fn) return exprtk_val_num(-999.0);
-    return fn->data.native.fn(argc, args, fn->data.native.user_data);
+    return fn->data.native.fn(argc, args, env, fn->data.native.user_data);
 }
 
 static char *make_rule_path(const char *path) {

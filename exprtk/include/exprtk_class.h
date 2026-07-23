@@ -465,7 +465,7 @@ CXX_C_API void exprtk_instance_destroy(exprtk_instance_t *instance);
  * @return exprtk_value_t of type EXPRTK_VAL_CLASS
  */
 static inline exprtk_value_t exprtk_val_class(exprtk_class_t *klass) {
-    exprtk_value_t v;
+    exprtk_value_t v = {0};
     v.type = EXPRTK_VAL_CLASS;
     v.data.class_val.klass = klass;
     return v;
@@ -477,7 +477,7 @@ static inline exprtk_value_t exprtk_val_class(exprtk_class_t *klass) {
  * @return exprtk_value_t of type EXPRTK_VAL_INSTANCE
  */
 static inline exprtk_value_t exprtk_val_instance(exprtk_instance_t *instance) {
-    exprtk_value_t v;
+    exprtk_value_t v = {0};
     v.type = EXPRTK_VAL_INSTANCE;
     v.data.instance_val.instance = instance;
     return v;
@@ -491,7 +491,7 @@ static inline exprtk_value_t exprtk_val_instance(exprtk_instance_t *instance) {
  */
 static inline exprtk_value_t exprtk_val_bound_method(exprtk_instance_t *instance, 
                                                        exprtk_func_t *method) {
-    exprtk_value_t v;
+    exprtk_value_t v = {0};
     v.type = EXPRTK_VAL_BOUND_METHOD;
     v.data.bound_method_val.instance = instance;
     v.data.bound_method_val.method = method;

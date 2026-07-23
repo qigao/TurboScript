@@ -10,8 +10,7 @@
 static coro_registry_t *g_registry;
 
 static exprtk_value_t test_generator(size_t argc,
-                                     exprtk_value_t *args,
-                                     void *user_data) {
+                                     exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_ctx_t *ctx = coro_get_current();
 
     (void)argc;

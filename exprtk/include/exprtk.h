@@ -42,9 +42,18 @@ CXX_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_
 // Environment management
 CXX_C_API void exprtk_env_init(exprtk_env_t *env);
 CXX_C_API void exprtk_env_free(exprtk_env_t *env);
+/**
+ * Store a value in an environment owner domain. Borrowed and cross-domain
+ * values are copied. An owned mem_buffer payload already belonging to this
+ * environment may be adopted; callers must then treat the argument as moved.
+ */
 CXX_C_API void exprtk_env_set(exprtk_env_t *env, const char *name, exprtk_value_t value);
 CXX_C_API void exprtk_env_set_local(exprtk_env_t *env, const char *name, exprtk_value_t value);
+/** Return a borrowed value invalidated by replacement or environment release. */
 CXX_C_API exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name);
+/** Return an independently owned value; destroy it unless ownership is moved. */
+CXX_C_API exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value,
+                                                    exprtk_env_t *dst_env);
 CXX_C_API int exprtk_env_has(exprtk_env_t *env, const char *name);
 CXX_C_API void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native_fn fn,
                                         void *user_data);
@@ -69,7 +78,14 @@ CXX_C_API exprtk_builtin_fn exprtk_registry_find(const char *name);
  * Called by the evaluator for NODE_FUNCTION_CALL.
  */
 CXX_C_API exprtk_value_t exprtk_call_internal(const char *name, size_t argc, exprtk_value_t *args,
-                                              exprtk_env_t *env, mem_pool_t *arena);
+                                              exprtk_env_t *env);
+
+/**
+ * Invoke a builtin with an ephemeral scratch pool and promote its result into
+ * @p env. Builtins must not retain scratch pointers after returning.
+ */
+CXX_C_API exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
+                                             exprtk_value_t *args, exprtk_env_t *env);
 
 CXX_C_API exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env);
 
@@ -165,7 +181,7 @@ CXX_C_API exprtk_node_t *exprtk_node_copy(const exprtk_node_t *src, mem_pool_t *
 CXX_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_t type);
 CXX_C_API void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *env,
                                 int is_constant);
-CXX_C_API void exprtk_env_init_local(exprtk_env_t *env);
+CXX_C_API void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent);
 
 /* =========================================================================
  * Coroutine API

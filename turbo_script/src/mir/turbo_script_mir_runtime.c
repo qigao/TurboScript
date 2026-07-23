@@ -36,6 +36,14 @@ double ts_mir_numeric_value(exprtk_value_t val) {
   return 0.0;
 }
 
+static double ts_mir_take_numeric_value(exprtk_value_t *value) {
+  double result;
+  if (!value) return 0.0;
+  result = ts_mir_numeric_value(*value);
+  exprtk_value_destroy(value);
+  return result;
+}
+
 void ts_mir_promote_env_error(turbo_script_ctx_t *ctx) {
   exprtk_env_t *env;
   if (!ctx) return;
@@ -60,9 +68,7 @@ double ts_mir_load_var(void *ctx_ptr, const char *name) {
 
 void ts_mir_store_var(void *ctx_ptr, const char *name, double value) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  exprtk_value_t val;
-  val.type = EXPRTK_VAL_NUMBER;
-  val.data.number = value;
+  exprtk_value_t val = exprtk_val_num(value);
   exprtk_env_set(&ctx->env, name, val);
 }
 
@@ -203,38 +209,37 @@ static exprtk_value_t ts_mir_call_bridge(void *ctx_ptr, const char *name, size_t
   exprtk_value_t args[16];
   if (argc > 16) argc = 16;
   for (size_t i = 0; i < argc; i++) {
-    args[i].type = EXPRTK_VAL_NUMBER;
-    args[i].data.number = argv[i];
+    args[i] = exprtk_val_num(argv[i]);
   }
-  return exprtk_call_internal(name, argc, args, &ctx->env, &ctx->env.arena);
+  return exprtk_call_internal(name, argc, args, &ctx->env);
 }
 
 double ts_mir_call0(void *ctx_ptr, const char *name) {
   exprtk_value_t r = ts_mir_call_bridge(ctx_ptr, name, 0, NULL);
-  return ts_mir_numeric_value(r);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_call1(void *ctx_ptr, const char *name, double a0) {
   double argv[1] = {a0};
   exprtk_value_t r = ts_mir_call_bridge(ctx_ptr, name, 1, argv);
-  return ts_mir_numeric_value(r);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_call2(void *ctx_ptr, const char *name, double a0, double a1) {
   double argv[2] = {a0, a1};
   exprtk_value_t r = ts_mir_call_bridge(ctx_ptr, name, 2, argv);
-  return ts_mir_numeric_value(r);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_call3(void *ctx_ptr, const char *name, double a0, double a1, double a2) {
   double argv[3] = {a0, a1, a2};
   exprtk_value_t r = ts_mir_call_bridge(ctx_ptr, name, 3, argv);
-  return ts_mir_numeric_value(r);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_calln(void *ctx_ptr, const char *name, int64_t argc, double *argv) {
   exprtk_value_t r = ts_mir_call_bridge(ctx_ptr, name, (size_t)argc, argv);
-  return ts_mir_numeric_value(r);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_call_assign(void *ctx_ptr, const char *target_name, const char *name,
@@ -249,16 +254,18 @@ double ts_mir_call_assign(void *ctx_ptr, const char *target_name, const char *na
 
 double ts_mir_call_native(void *ctx_ptr, void *fn_ptr, void *user_data, int64_t argc,
                           double *argv) {
-  (void)ctx_ptr;
+  turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_native_fn fn = (exprtk_native_fn)fn_ptr;
   exprtk_value_t args[16];
   if (argc > 16) argc = 16;
   for (int64_t i = 0; i < argc; i++) {
-    args[i].type = EXPRTK_VAL_NUMBER;
-    args[i].data.number = argv[i];
+    args[i] = exprtk_val_num(argv[i]);
   }
-  exprtk_value_t r = fn((size_t)argc, args, user_data);
-  return ts_mir_numeric_value(r);
+  exprtk_env_t *env = ts_task_execution_env(ctx);
+  exprtk_value_t raw = fn((size_t)argc, args, env, user_data);
+  exprtk_value_t result = exprtk_value_clone_to_env(raw, env);
+  exprtk_value_destroy(&raw);
+  return ts_mir_take_numeric_value(&result);
 }
 
 double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *argv) {
@@ -267,11 +274,10 @@ double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *ar
   exprtk_value_t args[16];
   if (argc > 16) argc = 16;
   for (int64_t i = 0; i < argc; i++) {
-    args[i].type = EXPRTK_VAL_NUMBER;
-    args[i].data.number = argv[i];
+    args[i] = exprtk_val_num(argv[i]);
   }
-  exprtk_value_t r = fn((size_t)argc, args, &ctx->env, &ctx->env.arena);
-  return ts_mir_numeric_value(r);
+  exprtk_value_t r = exprtk_call_builtin(fn, (size_t)argc, args, &ctx->env);
+  return ts_mir_take_numeric_value(&r);
 }
 
 double ts_mir_vec_get(void *ctx_ptr, const char *name, double index) {

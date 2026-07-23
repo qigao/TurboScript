@@ -16,6 +16,7 @@ typedef struct turbo_script_compiled_s turbo_script_compiled_t;
 typedef struct coro_context_s coro_context_t;
 typedef struct coro_cancel_token_s coro_cancel_token_t;
 typedef struct exprtk_value_s exprtk_value_t;
+typedef struct exprtk_env_s exprtk_env_t;
 
 /** Callback executed by a TurboScript timer executor on the context owner thread. */
 typedef void (*turbo_script_executor_task_fn)(void *arg1, void *arg2);
@@ -50,15 +51,47 @@ typedef struct {
   size_t bound;
 } turbo_script_value_map_iterator_t;
 
-#define TURBO_SCRIPT_VERSION_MAJOR 1
+#define TURBO_SCRIPT_VERSION_MAJOR 3
 #define TURBO_SCRIPT_VERSION_MINOR 0
 #define TURBO_SCRIPT_VERSION_PATCH 0
-#define TURBO_SCRIPT_VERSION_STRING "1.0.0"
+#define TURBO_SCRIPT_VERSION_STRING "3.0.0"
+#define TURBO_SCRIPT_NATIVE_ABI_VERSION 3
 
 typedef enum {
   TURBO_SCRIPT_INIT_DEFAULT = 0,
   TURBO_SCRIPT_INIT_BARE = 1,
 } turbo_script_init_flags_t;
+
+/** Runtime memory profiles. Each profile has bounded, fail-fast defaults. */
+typedef enum {
+  TURBO_SCRIPT_MEMORY_BATCH = 0,
+  TURBO_SCRIPT_MEMORY_INTERACTIVE,
+  TURBO_SCRIPT_MEMORY_SERVICE,
+  TURBO_SCRIPT_MEMORY_STREAMING,
+  TURBO_SCRIPT_MEMORY_SANDBOX,
+} turbo_script_memory_profile_t;
+
+/**
+ * @brief Memory ownership and quota policy for one TurboScript context.
+ *
+ * Limits are boundary quotas in bytes. External-value limits are checked before
+ * copying; task and context retention limits are checked at completion/run
+ * boundaries. A zero limit is invalid and the policy is copied by the context.
+ */
+typedef struct {
+  turbo_script_memory_profile_t profile;
+  size_t max_context_bytes;
+  size_t max_task_bytes;
+  size_t max_external_value_bytes;
+  size_t scratch_trim_threshold_bytes;
+} turbo_script_memory_policy_t;
+
+typedef struct {
+  size_t context_bytes;
+  size_t task_bytes;
+  size_t scratch_bytes;
+  size_t peak_context_bytes;
+} turbo_script_memory_stats_t;
 
 typedef enum {
   TURBO_SCRIPT_ERROR_NONE = 0,
@@ -80,6 +113,24 @@ typedef enum {
  * init.
  */
 CXX_C_API turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags);
+
+/** Fill @p policy with the bounded defaults for @p profile. */
+CXX_C_API int turbo_script_memory_policy_init(turbo_script_memory_profile_t profile,
+                                              turbo_script_memory_policy_t *policy);
+
+/**
+ * @brief Replace the context memory policy.
+ *
+ * This operation fails while managed tasks or timers are active, after a hard
+ * memory limit has been exceeded, or when the new limits are already below
+ * current usage. There is no compatibility/unbounded mode.
+ */
+CXX_C_API int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
+                                             const turbo_script_memory_policy_t *policy);
+
+/** Return a point-in-time memory usage snapshot. */
+CXX_C_API int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
+                                            turbo_script_memory_stats_t *stats);
 
 /**
  * @brief Get Turbo Script ABI/API version string.
@@ -109,9 +160,10 @@ CXX_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
  * The CoroNet context is borrowed and must outlive the TurboScript context,
  * all accepted callbacks, and all managed tasks. This compatibility API records errors on @p ctx;
  * use turbo_script_set_executor() when the caller needs a return code.
- * Script callbacks with deep class or collection call graphs may need more than
- * CoroNet's default 128 KiB coroutine stack. Context owners can configure this
- * through coro_context_create_ex(); the TurboScript CLI uses 512 KiB.
+ * Script callbacks with deep class or collection call graphs may need a larger
+ * coroutine stack. Context owners can configure this through
+ * coro_context_create_ex(). The TurboScript CLI passes stack_size == 0 by
+ * default so TurboUtils owns the default; --coro-stack-kib sets an override.
  */
 CXX_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx);
 
@@ -257,9 +309,13 @@ CXX_C_API int ts_bind_vec(turbo_script_ctx_t *ctx, const char *name, const doubl
 
 /**
  * @brief Native function signature for user-registered functions.
+ *
+ * @p env is the exact invocation environment and owns returned arena-backed
+ * values. Native ABI v3 includes managed exprtk_value_t ownership metadata;
+ * callbacks compiled for older layouts are not adapted.
  */
 typedef exprtk_value_t (*turbo_script_func_t)(size_t arg_count, exprtk_value_t *args,
-                                              void *user_data);
+                                              exprtk_env_t *env, void *user_data);
 
 /**
  * @brief Register a native C function callable from script.

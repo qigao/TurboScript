@@ -361,8 +361,8 @@ static exprtk_value_t fn_integrate(size_t argc, exprtk_value_t *args, exprtk_env
 
     exprtk_value_t vx_a = exprtk_val_num(a);
     exprtk_value_t vx_b = exprtk_val_num(b);
-    exprtk_value_t v_a = exprtk_call_internal(f_name, 1, &vx_a, env, arena);
-    exprtk_value_t v_b = exprtk_call_internal(f_name, 1, &vx_b, env, arena);
+    exprtk_value_t v_a = exprtk_call_internal(f_name, 1, &vx_a, env);
+    exprtk_value_t v_b = exprtk_call_internal(f_name, 1, &vx_b, env);
     sum = v_a.data.number + v_b.data.number;
 
     for (int i = 1; i < n; ++i) {
@@ -370,7 +370,7 @@ static exprtk_value_t fn_integrate(size_t argc, exprtk_value_t *args, exprtk_env
         break;
       double x = a + i * h;
       exprtk_value_t vx_val = exprtk_val_num(x);
-      exprtk_value_t v_x = exprtk_call_internal(f_name, 1, &vx_val, env, arena);
+      exprtk_value_t v_x = exprtk_call_internal(f_name, 1, &vx_val, env);
       sum += (i % 2 == 0 ? 2.0 : 4.0) * v_x.data.number;
     }
     return exprtk_val_num((h / 3.0) * sum);
@@ -393,8 +393,8 @@ static exprtk_value_t fn_derivative(size_t argc, exprtk_value_t *args, exprtk_en
 
     exprtk_value_t v1_arg = exprtk_val_num(x + h);
     exprtk_value_t v2_arg = exprtk_val_num(x - h);
-    exprtk_value_t v1 = exprtk_call_internal(f_name, 1, &v1_arg, env, arena);
-    exprtk_value_t v2 = exprtk_call_internal(f_name, 1, &v2_arg, env, arena);
+    exprtk_value_t v1 = exprtk_call_internal(f_name, 1, &v1_arg, env);
+    exprtk_value_t v2 = exprtk_call_internal(f_name, 1, &v2_arg, env);
 
     return exprtk_val_num((v1.data.number - v2.data.number) / (2.0 * h));
   }

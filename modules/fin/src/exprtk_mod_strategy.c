@@ -61,10 +61,7 @@ static double env_get_num(exprtk_env_t *env, const char *name, double def) {
 }
 
 static void env_set_num(exprtk_env_t *env, const char *name, double val) {
-  exprtk_value_t v;
-  v.type = EXPRTK_VAL_NUMBER;
-  v.data.number = val;
-  exprtk_env_set(env, name, v);
+  exprtk_env_set(env, name, exprtk_val_num(val));
 }
 
 /* =========================================================================
@@ -1397,4 +1394,3 @@ exprtk_value_t fn_walk_forward(size_t argc, exprtk_value_t *args, exprtk_env_t *
   exprtk_map_set(&m, "num_windows", exprtk_val_num(0.0));
   return m;
 }
-

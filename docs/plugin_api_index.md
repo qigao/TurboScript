@@ -38,7 +38,7 @@ Count: 6
 - `http.post`
 - `ws.close`
 - `ws.connect`
-- `ws.recv`
+- `ws.consume`
 - `ws.send`
 
 ## sqlite plugin (`sqlite`)

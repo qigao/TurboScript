@@ -9,6 +9,7 @@
 #include "exprtk_grammar_gen.h"
 #include "exprtk_module.h"
 #include "exprtk_class.h"
+#include "turbo_str.h"
 #include <string.h>
 #include <math.h>
 #include <stdlib.h>
@@ -36,6 +37,38 @@ static int eval_value_truthy(exprtk_value_t value) {
         value.type == EXPRTK_VAL_INSTANCE || value.type == EXPRTK_VAL_BOUND_METHOD)
         return 1;
     return 0;
+}
+
+static int eval_value_is_owned_container(exprtk_value_t value) {
+    return value.ownership == EXPRTK_VALUE_OWNED &&
+           (value.type == EXPRTK_VAL_MAP || value.type == EXPRTK_VAL_OBJECT ||
+            value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET);
+}
+
+static exprtk_value_t eval_promote_string(tstr_t text, const exprtk_node_t *node,
+                                          exprtk_env_t *env) {
+    exprtk_value_t result = { .type = EXPRTK_VAL_NULL };
+    size_t len;
+
+    if (!text) return throw_error(env, node, "failed to allocate string value");
+    len = tstr_len(text);
+    if (env) {
+        if (exprtk_value_copy_to_env(
+                exprtk_val_str(tstr_v_from_buf(text, len)), env, &result) != 0) {
+            tstr_free(text);
+            return result;
+        }
+    } else {
+        char *copy = (char *)mem_alloc(node->arena, len + 1U);
+        if (!copy) {
+            tstr_free(text);
+            return result;
+        }
+        memcpy(copy, text, len + 1U);
+        result = exprtk_val_str(tstr_v_from_buf(copy, len));
+    }
+    tstr_free(text);
+    return result;
 }
 
 static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
@@ -231,7 +264,7 @@ static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
 }
 
 exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!node || (env && env->aborted)) return zero;
 
     if (env) {
@@ -259,21 +292,19 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
         case EXPRTK_NODE_TEMPLATE_STRING: {
             const char *str = node->data.template_string.template_str;
             size_t len = node->data.template_string.len;
-            char *result_buf = NULL;
+            tstr_t result_buf = tstr_new();
             size_t result_len = 0;
-            size_t result_cap = 0;
+            if (!result_buf)
+                return throw_error(env, node, "failed to allocate template string");
 
 #define APPEND_STR(s, slen) do { \
-    if (result_len + (slen) + 1 > result_cap) { \
-        result_cap = (result_cap == 0) ? 64 : result_cap * 2; \
-        if (result_cap < result_len + (slen) + 1) result_cap = result_len + (slen) + 1; \
-        char *new_buf = (char*)mem_alloc(node->arena, result_cap); \
-        if (result_buf) memcpy(new_buf, result_buf, result_len); \
-        result_buf = new_buf; \
+    tstr_t next_buf = tstr_cat_len(result_buf, (s), (slen)); \
+    if (!next_buf) { \
+        tstr_free(result_buf); \
+        return throw_error(env, node, "failed to grow template string"); \
     } \
-    memcpy(result_buf + result_len, (s), (slen)); \
-    result_len += (slen); \
-    result_buf[result_len] = '\0'; \
+    result_buf = next_buf; \
+    result_len = tstr_len(result_buf); \
 } while(0)
 
             size_t i = 0;
@@ -342,6 +373,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                 } else if (expr_val.type == EXPRTK_VAL_LIST) {
                                     APPEND_STR("[list]", 6);
                                 }
+                                exprtk_value_destroy(&expr_val);
                                 exprtk_free(expr_node);
                             }
                             free(expr_str);
@@ -353,15 +385,9 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     i++;
                 }
             }
-            if (!result_buf) {
-                result_buf = (char*)mem_alloc(node->arena, 1);
-                result_buf[0] = '\0';
-            }
-            tstr_v sv;
-            sv.data = result_buf;
-            sv.len = result_len;
 #undef APPEND_STR
-            return exprtk_val_str(sv);
+            (void)result_len;
+            return eval_promote_string(result_buf, node, env);
         }
         case EXPRTK_NODE_VARIABLE: {
             const char *name = node->data.variable.name;
@@ -377,12 +403,14 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
         case EXPRTK_NODE_ASSIGNMENT: {
             exprtk_value_t val = exprtk_eval(node->data.assignment.value, env);
             exprtk_env_set(env, node->data.assignment.name, val);
-            return val;
+            if (eval_value_is_owned_container(val)) exprtk_value_destroy(&val);
+            return exprtk_env_get(env, node->data.assignment.name);
         }
         case EXPRTK_NODE_CONSTANT_DECL: {
             exprtk_value_t val = exprtk_eval(node->data.assignment.value, env);
             exprtk_env_set_constant(env, node->data.assignment.name, val);
-            return val;
+            if (eval_value_is_owned_container(val)) exprtk_value_destroy(&val);
+            return exprtk_env_get(env, node->data.assignment.name);
         }
         case EXPRTK_NODE_IF: {
             exprtk_value_t cond_val = exprtk_eval(node->data.if_stmt.condition, env);
@@ -489,7 +517,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             return zero;
         }
         case EXPRTK_NODE_BINARY_OP: {
-            exprtk_value_t l_val = {EXPRTK_VAL_NUMBER, {0.0}};
+            exprtk_value_t l_val = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
             if (node->data.binary.left) {
                 l_val = exprtk_eval(node->data.binary.left, env);
                 if (env && env->flow != exprtk_FLOW_NORMAL) return zero;
@@ -566,12 +594,19 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     return throw_error(env, node, "Type error: cannot stringify %s and %s",
                                        type_name(l_val.type), type_name(r_val.type));
 
+                if (l_len > SIZE_MAX - r_len)
+                    return throw_error(env, node, "String concatenation is too large");
                 size_t new_len = l_len + r_len;
-                char *new_data = (char*)mem_alloc(node->arena, new_len + 1);
-                memcpy(new_data, l_data, l_len);
-                memcpy(new_data + l_len, r_data, r_len);
-                new_data[new_len] = '\0';
-                return exprtk_val_str(tstr_v_from_buf(new_data, new_len));
+                tstr_t joined = tstr_new_len(NULL, new_len);
+                if (!joined)
+                    return throw_error(env, node, "failed to allocate concatenated string");
+                memcpy(joined, l_data, l_len);
+                memcpy(joined + l_len, r_data, r_len);
+                joined[new_len] = '\0';
+                exprtk_value_t result = eval_promote_string(joined, node, env);
+                exprtk_value_destroy(&l_val);
+                exprtk_value_destroy(&r_val);
+                return result;
             }
 
             // STRING == STRING
@@ -741,17 +776,20 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     callee.data.bound_method_val.instance,
                     callee.data.bound_method_val.method,
                     actual_count, args, env);
+                exprtk_values_destroy(args, actual_count);
                 free(args);
                 return result;
             }
             if (callee.type == EXPRTK_VAL_FUNCTION && callee.data.function.body) {
                 exprtk_value_t result =
                     exprtk_call_function_value(callee, actual_count, args, env);
+                exprtk_values_destroy(args, actual_count);
                 free(args);
                 return result;
             }
 
-            exprtk_value_t result = exprtk_call_internal(node->data.function.name, actual_count, args, env, &env->arena);
+            exprtk_value_t result = exprtk_call_internal(node->data.function.name, actual_count, args, env);
+            exprtk_values_destroy(args, actual_count);
             free(args);
             return result;
         }
@@ -866,7 +904,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                         char full_name[256];
                         snprintf(full_name, sizeof(full_name), "%s.%s",
                                  mc.obj_node->data.variable.name, mc.method);
-                        mc_result = exprtk_call_internal(full_name, mc_argc, mc_args, env, &env->arena);
+                        mc_result = exprtk_call_internal(full_name, mc_argc, mc_args, env);
                     } else {
                         mc_result = throw_error(env, node, "Method call '%s' is invalid for %s",
                                                 mc.method ? mc.method : "<null>",
@@ -874,6 +912,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     }
                     break;
             }
+            exprtk_values_destroy(mc_args, mc_argc);
             free(mc_args);
             return mc_result;
         }
@@ -911,12 +950,40 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             if (!vals && actual_count == 0) return zero;
             if (actual_count == 0) { free(vals); return zero; }
 
-            double *data = (double*)mem_alloc(&env->arena, actual_count * sizeof(double));
-            for (size_t i = 0; i < actual_count; ++i) {
-                data[i] = val_to_double(vals[i]);
+            turbo_vec_t vector_data;
+            if (turbo_vec_init(&vector_data, sizeof(double)) != TURBO_OK) {
+                exprtk_values_destroy(vals, actual_count);
+                free(vals);
+                return throw_error(env, node, "failed to allocate vector value");
             }
+            if (turbo_vec_reserve(&vector_data, actual_count) != TURBO_OK) {
+                turbo_vec_destroy(&vector_data);
+                exprtk_values_destroy(vals, actual_count);
+                free(vals);
+                return throw_error(env, node, "failed to allocate vector value");
+            }
+            for (size_t i = 0; i < actual_count; ++i) {
+                double element = val_to_double(vals[i]);
+                if (turbo_vec_push(&vector_data, &element) != TURBO_OK) {
+                    turbo_vec_destroy(&vector_data);
+                    exprtk_values_destroy(vals, actual_count);
+                    free(vals);
+                    return throw_error(env, node, "failed to build vector value");
+                }
+            }
+            exprtk_value_t result = zero;
+            exprtk_value_t borrowed = exprtk_val_vec(
+                (double *)vector_data.data, vector_data.size);
+            if (exprtk_value_copy_to_env(borrowed, env, &result) != 0) {
+                turbo_vec_destroy(&vector_data);
+                exprtk_values_destroy(vals, actual_count);
+                free(vals);
+                return zero;
+            }
+            turbo_vec_destroy(&vector_data);
+            exprtk_values_destroy(vals, actual_count);
             free(vals);
-            return exprtk_val_vec(data, actual_count);
+            return result;
         }
         case EXPRTK_NODE_INDEX: {
             exprtk_value_t arr = exprtk_eval(node->data.index_access.array, env);
@@ -936,7 +1003,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 if (idx < 0 || idx >= (int)arr.data.list.count) {
                     return throw_error(env, node, "List index %d out of bounds [0, %zu)", idx, arr.data.list.count);
                 }
-                return arr.data.list.items[idx];
+                return exprtk_value_borrow(arr.data.list.items[idx]);
             }
             if (arr.type == EXPRTK_VAL_TYPED_ARRAY &&
                 (idx_val.type == EXPRTK_VAL_NUMBER || idx_val.type == EXPRTK_VAL_INTEGER)) {
@@ -981,11 +1048,18 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             if (end > (int)arr.data.vector.size) end = (int)arr.data.vector.size;
             if (start > end) return throw_error(env, node, "Invalid slice range [%d:%d]", start, end);
             size_t count = (size_t)(end - start);
+            exprtk_value_t slice = exprtk_val_vec(
+                count ? arr.data.vector.data + start : NULL, count);
+            if (env) {
+                exprtk_value_t owned = { .type = EXPRTK_VAL_NULL };
+                if (exprtk_value_copy_to_env(slice, env, &owned) != 0)
+                    return throw_error(env, node, "Out of memory creating slice");
+                exprtk_value_destroy(&arr);
+                return owned;
+            }
             double *data = (double*)mem_alloc(node->arena, count * sizeof(double));
             if (!data) return throw_error(env, node, "Out of memory creating slice");
-            for (size_t i = 0; i < count; ++i) {
-                data[i] = arr.data.vector.data[start + i];
-            }
+            memcpy(data, slice.data.vector.data, count * sizeof(double));
             return exprtk_val_vec(data, count);
         }
         case EXPRTK_NODE_MAP_LITERAL: {
@@ -999,13 +1073,23 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                         const char *k;
                         exprtk_value_t v;
                         while (exprtk_map_iter_next(&it, &k, &v)) {
-                            exprtk_map_set(&map, k, v);
+                            if (exprtk_map_set(&map, k, v) != 0) {
+                                exprtk_value_destroy(&other);
+                                exprtk_value_destroy(&map);
+                                return throw_error(env, node, "failed to spread map value");
+                            }
                         }
                     }
+                    exprtk_value_destroy(&other);
                 } else {
                     exprtk_value_t val = exprtk_eval(node->data.map_literal.values[i], env);
                     if (env && env->flow != exprtk_FLOW_NORMAL) return map;
-                    exprtk_map_set(&map, node->data.map_literal.keys[i], val);
+                    if (exprtk_map_set(&map, node->data.map_literal.keys[i], val) != 0) {
+                        exprtk_value_destroy(&val);
+                        exprtk_value_destroy(&map);
+                        return throw_error(env, node, "failed to store map value");
+                    }
+                    exprtk_value_destroy(&val);
                 }
             }
             return map;
@@ -1065,7 +1149,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                         return throw_method_access_error(env, node, member, static_method);
                     }
                     // For static methods, we don't bind 'this'
-                    exprtk_value_t func_val;
+                    exprtk_value_t func_val = {0};
                     func_val.type = EXPRTK_VAL_FUNCTION;
                     func_val.data.function.arg_params = static_method->data.script.arg_params;
                     func_val.data.function.arg_count = static_method->data.script.arg_count;
@@ -1364,8 +1448,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 env->flow = exprtk_FLOW_NORMAL;
 
                 exprtk_env_t catch_env;
-                exprtk_env_init_local(&catch_env);
-                catch_env.parent = env;
+                exprtk_env_init_child(&catch_env, env);
                 catch_env.eval_node = env->eval_node;
                 catch_env.exec_script_body = env->exec_script_body;
                 catch_env.max_recursion = env->max_recursion;
@@ -1401,7 +1484,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
         case EXPRTK_NODE_FUNCTION_EXPRESSION: {
             /* Create a function value that captures the current environment */
-            exprtk_value_t val;
+            exprtk_value_t val = {0};
             val.type = EXPRTK_VAL_FUNCTION;
             val.data.function.arg_params = node->data.func_def.arg_params;
             val.data.function.arg_count  = node->data.func_def.arg_count;
@@ -1487,6 +1570,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                             node->data.super_expr.arg_count,
                                                             env, &actual_count);
                     if (env->flow != exprtk_FLOW_NORMAL || env->aborted) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return zero;
                     }
@@ -1494,11 +1578,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     exprtk_func_t *method = exprtk_class_lookup_method_typed(
                         parent, node->data.super_expr.member, 1, actual_count, args);
                     if (!method) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return throw_error(env, node, "Parent class has no static method '%s'",
                                            node->data.super_expr.member);
                     }
                     if (!can_access_method(env, method, node)) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return throw_method_access_error(env, node,
                                                          node->data.super_expr.member,
@@ -1506,6 +1592,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     }
 
                     exprtk_value_t result = eval_script_function(method, actual_count, args, env, env);
+                    exprtk_values_destroy(args, actual_count);
                     free(args);
                     return result;
                 }
@@ -1536,7 +1623,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                      method);
                 }
 
-                exprtk_value_t func_val;
+                exprtk_value_t func_val = {0};
                 func_val.type = EXPRTK_VAL_FUNCTION;
                 func_val.data.function.arg_params = method->data.script.arg_params;
                 func_val.data.function.arg_count = method->data.script.arg_count;
@@ -1572,6 +1659,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                         node->data.super_expr.arg_count,
                                                         env, &actual_count);
                 if (env->flow != exprtk_FLOW_NORMAL || env->aborted) {
+                    exprtk_values_destroy(args, actual_count);
                     free(args);
                     return zero;
                 }
@@ -1579,12 +1667,14 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 exprtk_func_t *constructor =
                     eval_find_constructor_typed(parent, actual_count, args);
                 if (!constructor) {
+                    exprtk_values_destroy(args, actual_count);
                     free(args);
                     return zero;
                 }
 
                 exprtk_value_t result =
                     eval_script_function(constructor, actual_count, args, env, env);
+                exprtk_values_destroy(args, actual_count);
                 free(args);
                 return result;
             } else {
@@ -1594,6 +1684,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                             node->data.super_expr.arg_count,
                                                             env, &actual_count);
                     if (env->flow != exprtk_FLOW_NORMAL || env->aborted) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return zero;
                     }
@@ -1602,11 +1693,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     exprtk_func_t *method = exprtk_class_lookup_method_typed(
                         parent, node->data.super_expr.member, 0, actual_count, args);
                     if (!method) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return throw_error(env, node, "Parent class has no method '%s'",
                                            node->data.super_expr.member);
                     }
                     if (!can_access_method(env, method, node)) {
+                        exprtk_values_destroy(args, actual_count);
                         free(args);
                         return throw_method_access_error(env, node,
                                                          node->data.super_expr.member,
@@ -1614,6 +1707,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     }
 
                     exprtk_value_t result = eval_script_function(method, actual_count, args, env, env);
+                    exprtk_values_destroy(args, actual_count);
                     free(args);
                     return result;
                 }

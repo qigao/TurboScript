@@ -137,8 +137,6 @@ typedef struct {
     exprtk_env_t *env;
 } exprtk_class_clone_ctx_t;
 
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
-
 static void exprtk_clone_instance_field(const char *name, exprtk_value_t *value,
                                         void *user_data) {
     exprtk_instance_clone_ctx_t *ctx = (exprtk_instance_clone_ctx_t*)user_data;
@@ -146,6 +144,7 @@ static void exprtk_clone_instance_field(const char *name, exprtk_value_t *value,
 
     exprtk_value_t cloned = exprtk_value_clone_to_env(*value, ctx->env);
     exprtk_instance_set_field(ctx->instance, name, cloned);
+    exprtk_value_destroy(&cloned);
 }
 
 static void exprtk_clone_class_static_field(const char *name, exprtk_value_t *value,
@@ -162,6 +161,7 @@ static void exprtk_clone_class_static_field(const char *name, exprtk_value_t *va
     }
 
     exprtk_class_set_static_field(ctx->klass, name, cloned);
+    exprtk_value_destroy(&cloned);
 }
 
 static void exprtk_clone_class_static_fields(exprtk_class_t *source,
@@ -185,105 +185,36 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
     if (!dst_env) return value;
 
     switch (value.type) {
-        case EXPRTK_VAL_STRING: {
-            if (!value.data.string.data) return value;
-            char *buf = (char*)mem_alloc(&dst_env->arena, value.data.string.len + 1);
-            if (!buf) {
-                tstr_v empty = {0};
-                return exprtk_val_str(empty);
-            }
-            memcpy(buf, value.data.string.data, value.data.string.len);
-            buf[value.data.string.len] = '\0';
-            tstr_v copied;
-            copied.data = buf;
-            copied.len = value.data.string.len;
-            return exprtk_val_str(copied);
-        }
-        case EXPRTK_VAL_BIGINT: {
-            if (!value.data.bigint.text.data) return value;
-            char *buf = (char*)mem_alloc(&dst_env->arena, value.data.bigint.text.len + 1);
-            if (!buf) return exprtk_val_bigint(tstr_v_from_cstr(""));
-            memcpy(buf, value.data.bigint.text.data, value.data.bigint.text.len);
-            buf[value.data.bigint.text.len] = '\0';
-            return exprtk_val_bigint(tstr_v_from_buf(buf, value.data.bigint.text.len));
-        }
+        case EXPRTK_VAL_STRING:
+        case EXPRTK_VAL_BYTES:
+        case EXPRTK_VAL_BIGINT:
         case EXPRTK_VAL_ENUM:
-        case EXPRTK_VAL_FLAGS: {
-            char *type_buf = NULL;
-            char *symbol_buf = NULL;
-            tstr_v type_name = {0};
-            tstr_v symbol = {0};
-            if (value.data.enum_val.type_name.data) {
-                type_buf = (char*)mem_alloc(&dst_env->arena, value.data.enum_val.type_name.len + 1);
-                if (type_buf) {
-                    memcpy(type_buf, value.data.enum_val.type_name.data, value.data.enum_val.type_name.len);
-                    type_buf[value.data.enum_val.type_name.len] = '\0';
-                    type_name = tstr_v_from_buf(type_buf, value.data.enum_val.type_name.len);
-                }
-            }
-            if (value.data.enum_val.symbol.data) {
-                symbol_buf = (char*)mem_alloc(&dst_env->arena, value.data.enum_val.symbol.len + 1);
-                if (symbol_buf) {
-                    memcpy(symbol_buf, value.data.enum_val.symbol.data, value.data.enum_val.symbol.len);
-                    symbol_buf[value.data.enum_val.symbol.len] = '\0';
-                    symbol = tstr_v_from_buf(symbol_buf, value.data.enum_val.symbol.len);
-                }
-            }
-            return exprtk_val_enum(type_name, symbol, value.data.enum_val.value,
-                                   value.type == EXPRTK_VAL_FLAGS);
-        }
-        case EXPRTK_VAL_BYTES: {
-            if (!value.data.bytes.data) return value;
-            char *buf = (char*)mem_alloc(&dst_env->arena, value.data.bytes.len);
-            if (!buf && value.data.bytes.len > 0) {
-                tstr_v empty = {0};
-                return exprtk_val_bytes(empty);
-            }
-            if (value.data.bytes.len > 0) memcpy(buf, value.data.bytes.data, value.data.bytes.len);
-            tstr_v copied;
-            copied.data = buf;
-            copied.len = value.data.bytes.len;
-            return exprtk_val_bytes(copied);
-        }
-        case EXPRTK_VAL_VECTOR: {
-            if (!value.data.vector.data || value.data.vector.size == 0) return value;
-            double *data = (double*)mem_alloc(&dst_env->arena, value.data.vector.size * sizeof(double));
-            if (!data) return exprtk_val_vec(NULL, 0);
-            memcpy(data, value.data.vector.data, value.data.vector.size * sizeof(double));
-            return exprtk_val_vec(data, value.data.vector.size);
-        }
+        case EXPRTK_VAL_FLAGS:
+        case EXPRTK_VAL_VECTOR:
         case EXPRTK_VAL_TYPED_ARRAY: {
-            size_t elem_size = 0;
-            void *data;
-            if (!value.data.typed_array.data || value.data.typed_array.count == 0) return value;
-            switch (value.data.typed_array.kind) {
-                case EXPRTK_TYPED_I32: elem_size = sizeof(int32_t); break;
-                case EXPRTK_TYPED_I64: elem_size = sizeof(int64_t); break;
-                case EXPRTK_TYPED_F32: elem_size = sizeof(float); break;
-                case EXPRTK_TYPED_F64: elem_size = sizeof(double); break;
-                default: return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
-            }
-            data = mem_alloc(&dst_env->arena, value.data.typed_array.count * elem_size);
-            if (!data) return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
-            memcpy(data, value.data.typed_array.data, value.data.typed_array.count * elem_size);
-            return exprtk_val_typed_array(value.data.typed_array.kind, data,
-                                          value.data.typed_array.count, 0);
+            exprtk_value_t copied = {0};
+            if (exprtk_value_copy_to_env(value, dst_env, &copied) == 0) return copied;
+            copied.type = EXPRTK_VAL_NULL;
+            return copied;
         }
         case EXPRTK_VAL_LIST:
         case EXPRTK_VAL_SET: {
             exprtk_value_t cloned = value.type == EXPRTK_VAL_SET ? exprtk_val_set_empty()
                                                                  : exprtk_val_list_empty();
             if (!value.data.list.items || value.data.list.count == 0) return cloned;
-
-            exprtk_value_t *items =
-                (exprtk_value_t*)mem_alloc(&dst_env->arena, value.data.list.count * sizeof(exprtk_value_t));
-            if (!items) return cloned;
-
             for (size_t i = 0; i < value.data.list.count; ++i) {
-                items[i] = exprtk_value_clone_to_env(value.data.list.items[i], dst_env);
+                exprtk_value_t child = exprtk_value_clone_to_env(
+                    exprtk_value_borrow(value.data.list.items[i]), dst_env);
+                if (dst_env->aborted || exprtk_list_push(&cloned, child) != 0) {
+                    exprtk_value_destroy(&child);
+                    exprtk_value_destroy(&cloned);
+                    dst_env->aborted = 1;
+                    snprintf(dst_env->error_msg, sizeof(dst_env->error_msg),
+                             "failed to clone list value");
+                    return (exprtk_value_t){ .type = EXPRTK_VAL_NULL };
+                }
+                exprtk_value_destroy(&child);
             }
-            cloned = exprtk_val_list_ex(items, value.data.list.count, 0);
-            if (value.type == EXPRTK_VAL_SET) cloned.type = EXPRTK_VAL_SET;
             return cloned;
         }
         case EXPRTK_VAL_MAP:
@@ -296,7 +227,16 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
             exprtk_value_t child;
             while (exprtk_map_iter_next(&it, &key, &child)) {
                 exprtk_value_t cloned_child = exprtk_value_clone_to_env(child, dst_env);
-                exprtk_map_set(&cloned, key, cloned_child);
+                if (dst_env->aborted ||
+                    exprtk_map_set(&cloned, key, cloned_child) != 0) {
+                    exprtk_value_destroy(&cloned_child);
+                    exprtk_value_destroy(&cloned);
+                    dst_env->aborted = 1;
+                    snprintf(dst_env->error_msg, sizeof(dst_env->error_msg),
+                             "failed to clone map value");
+                    return (exprtk_value_t){ .type = EXPRTK_VAL_NULL };
+                }
+                exprtk_value_destroy(&cloned_child);
             }
             return cloned;
         }
@@ -381,6 +321,12 @@ static int exprtk_value_is_reference_type(exprtk_value_t value) {
 static exprtk_value_t exprtk_value_store_to_env(exprtk_value_t value, exprtk_env_t *dst_env) {
     if (exprtk_value_is_reference_type(value)) return value;
 
+    if (value.ownership == EXPRTK_VALUE_OWNED &&
+        (value.storage || value.storage_aux) &&
+        (!value.storage || mem_buffer_pool(value.storage) == &dst_env->arena) &&
+        (!value.storage_aux || mem_buffer_pool(value.storage_aux) == &dst_env->arena))
+        return value;
+
     /* Containers own their storage but retain object identity for nested reference
      * values. This is required for collections of observers, callbacks, and class
      * instances; deep-cloning those elements would change identity and can bind
@@ -396,7 +342,7 @@ static exprtk_value_t exprtk_value_store_to_env(exprtk_value_t value, exprtk_env
         stored.data.list.capacity = value.data.list.count;
         for (size_t i = 0; i < value.data.list.count; ++i)
             stored.data.list.items[i] = exprtk_value_store_to_env(
-                value.data.list.items[i], dst_env);
+                exprtk_value_borrow(value.data.list.items[i]), dst_env);
         return stored;
     }
     if (exprtk_value_is_object_like(&value)) {
@@ -405,8 +351,11 @@ static exprtk_value_t exprtk_value_store_to_env(exprtk_value_t value, exprtk_env
         exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
         const char *key;
         exprtk_value_t child;
-        while (exprtk_map_iter_next(&it, &key, &child))
-            exprtk_map_set(&stored, key, exprtk_value_store_to_env(child, dst_env));
+        while (exprtk_map_iter_next(&it, &key, &child)) {
+            exprtk_value_t stored_child = exprtk_value_store_to_env(child, dst_env);
+            exprtk_map_set(&stored, key, stored_child);
+            exprtk_value_destroy(&stored_child);
+        }
         return stored;
     }
     return exprtk_value_clone_to_env(value, dst_env);
@@ -548,13 +497,16 @@ void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *e
                 exprtk_node_t *child = el->data.spread.child;
                 if (child->type == EXPRTK_NODE_VARIABLE) {
                     size_t rest_sz = (rhs_idx < rhs.data.vector.size) ? (rhs.data.vector.size - rhs_idx) : 0;
-                    double *rest_data = (double*)mem_alloc(target->arena, rest_sz * sizeof(double));
-                    if (rest_sz > 0) {
-                        memcpy(rest_data, rhs.data.vector.data + rhs_idx, rest_sz * sizeof(double));
-                    }
-                    exprtk_value_t rest_val = exprtk_val_vec(rest_data, rest_sz);
-                    if (is_constant) exprtk_env_set_constant(env, child->data.variable.name, rest_val);
-                    else exprtk_env_set(env, child->data.variable.name, rest_val);
+                    exprtk_value_t rest_val;
+                    if (exprtk_value_copy_to_env(
+                            exprtk_val_vec(rest_sz ? rhs.data.vector.data + rhs_idx : NULL,
+                                           rest_sz),
+                            env, &rest_val) != 0)
+                        return;
+                    if (is_constant)
+                        exprtk_env_set_constant(env, child->data.variable.name, rest_val);
+                    else
+                        exprtk_env_set(env, child->data.variable.name, rest_val);
                     rhs_idx = rhs.data.vector.size;
                 }
             } else if (el->type == EXPRTK_NODE_NULL) {
@@ -595,6 +547,7 @@ void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *e
                 }
             }
             eval_destructure(rest_node, rest_map, env, is_constant);
+            exprtk_value_destroy(&rest_map);
         }
     } else if (target->type == EXPRTK_NODE_SPREAD) {
         exprtk_node_t *child = target->data.spread.child;
@@ -606,7 +559,7 @@ void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *e
 }
 
 // Symbol Table Implementation
-void exprtk_env_init_local(exprtk_env_t *env) {
+static void exprtk_env_init_storage(exprtk_env_t *env) {
     if (env) {
         memset(env, 0, sizeof(exprtk_env_t));
 
@@ -634,6 +587,7 @@ void exprtk_env_init_local(exprtk_env_t *env) {
         env->max_nodes = 100000;
         env->curr_nodes = 0;
         env->aborted = 0;
+        env->max_external_value_bytes = 4U * 1024U * 1024U;
 
         // Error reporting
         env->error_msg[0] = '\0';
@@ -642,9 +596,21 @@ void exprtk_env_init_local(exprtk_env_t *env) {
     }
 }
 
+void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent) {
+    if (!env || !parent) return;
+    exprtk_env_init_storage(env);
+    env->parent = parent;
+    env->eval_node = parent->eval_node;
+    env->exec_script_body = parent->exec_script_body;
+    env->max_recursion = parent->max_recursion;
+    env->max_loop_iterations = parent->max_loop_iterations;
+    env->max_nodes = parent->max_nodes;
+    env->max_external_value_bytes = parent->max_external_value_bytes;
+}
+
 void exprtk_env_init(exprtk_env_t *env) {
     if (env) {
-        exprtk_env_init_local(env);
+        exprtk_env_init_storage(env);
 
         // Built-in constants (set_constant calls env_set internally)
         exprtk_env_set_constant(env, "pi", exprtk_val_num(3.14159265358979323846));
@@ -665,7 +631,8 @@ exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
     if (!new_env) return NULL;
 
     // Initialize with hash table
-    exprtk_env_init_local(new_env);
+    exprtk_env_init_storage(new_env);
+    new_env->max_external_value_bytes = env->max_external_value_bytes;
     new_env->eval_node = env->eval_node;
     new_env->exec_script_body = env->exec_script_body;
 
@@ -711,9 +678,11 @@ static void exprtk_release_map_value(exprtk_value_t *map, exprtk_release_state_t
     if (!ptr_set_mark_seen(&state->maps, map->data.map.htab)) return;
 
     exprtk_map_iter_t it = exprtk_map_iter_begin(map);
+    const char *key;
     exprtk_value_t child;
-    while (exprtk_map_iter_next(&it, NULL, &child)) {
-        exprtk_release_value(&child, state);
+    while (exprtk_map_iter_next(&it, &key, &child)) {
+        exprtk_value_t *slot = exprtk_map_get_ptr(map, key);
+        if (slot) exprtk_release_value(slot, state);
     }
 
     exprtk_map_free(map);
@@ -742,6 +711,11 @@ static void exprtk_release_list_value(exprtk_value_t *list, exprtk_release_state
     list->data.list.count = 0;
     list->data.list.capacity = 0;
     list->data.list.heap_owned = 0;
+    if (list->data.list.value_pool) {
+        mem_destroy(list->data.list.value_pool);
+        free(list->data.list.value_pool);
+        list->data.list.value_pool = NULL;
+    }
 }
 
 static void exprtk_release_oop_field(exprtk_value_t *value, void *user_data) {
@@ -759,6 +733,8 @@ static void exprtk_release_owned_instance(exprtk_instance_t *instance,
 
 static void exprtk_release_value(exprtk_value_t *value, exprtk_release_state_t *state) {
     if (!value || !state) return;
+
+    exprtk_value_release_storage(value);
 
     switch (value->type) {
         case EXPRTK_VAL_LIST:
@@ -878,7 +854,7 @@ void exprtk_env_free(exprtk_env_t *env) {
 }
 
 exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name) {
-    exprtk_value_t val = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t val = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!env || !name) return val;
 
     exprtk_env_t *curr_env = env;
@@ -888,7 +864,7 @@ exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name) {
         exprtk_var_entry_t result;
 
         if (HTAB_OP(exprtk_var_entry_t, do)(htab, key, HTAB_FIND, &result)) {
-            return result.value;
+            return exprtk_value_borrow(result.value);
         }
         curr_env = curr_env->parent;
     }
@@ -934,8 +910,9 @@ void exprtk_env_import_vars(exprtk_env_t *dst, exprtk_env_t *src) {
         if (!entry.name || exprtk_env_has_local_var(dst, entry.name)) continue;
         if (strcmp(entry.name, "this") == 0) continue;
 
-        exprtk_env_set_local(dst, entry.name, entry.value);
-        if (entry.is_constant) exprtk_env_set_constant(dst, entry.name, entry.value);
+        exprtk_env_set_local(dst, entry.name, exprtk_value_borrow(entry.value));
+        if (entry.is_constant)
+            exprtk_env_set_constant(dst, entry.name, exprtk_value_borrow(entry.value));
     }
 }
 
@@ -1219,7 +1196,7 @@ static exprtk_node_t *eval_param_binding_node(exprtk_node_t *param) {
 exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
                                            exprtk_value_t *args, exprtk_env_t *parent_env,
                                            exprtk_env_t *caller_env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!func || !func->is_script || !parent_env || !caller_env) return zero;
 
     caller_env->curr_recursion++;
@@ -1236,8 +1213,7 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
         return zero;
     }
 
-    exprtk_env_init_local(local_env);
-    local_env->parent = parent_env;
+    exprtk_env_init_child(local_env, parent_env);
     local_env->eval_node = caller_env->eval_node ? caller_env->eval_node : parent_env->eval_node;
     local_env->exec_script_body =
         caller_env->exec_script_body ? caller_env->exec_script_body : parent_env->exec_script_body;
@@ -1358,6 +1334,8 @@ exprtk_value_t* eval_expand_args(exprtk_node_t **nodes, size_t count, exprtk_env
             exprtk_value_t el = exprtk_env_eval_node(nodes[i]->data.spread.child, env);
             if (el.type == EXPRTK_VAL_VECTOR) {
                 if (!grow_value_array(&vals, &cap, actual + el.data.vector.size)) {
+                    exprtk_value_destroy(&el);
+                    exprtk_values_destroy(vals, actual);
                     free(vals);
                     *out_count = 0;
                     return NULL;
@@ -1365,17 +1343,32 @@ exprtk_value_t* eval_expand_args(exprtk_node_t **nodes, size_t count, exprtk_env
                 for (size_t j = 0; j < el.data.vector.size; ++j) {
                     vals[actual++] = exprtk_val_num(el.data.vector.data[j]);
                 }
+                exprtk_value_destroy(&el);
             } else if (el.type == EXPRTK_VAL_LIST) {
                 if (!grow_value_array(&vals, &cap, actual + el.data.list.count)) {
+                    exprtk_value_destroy(&el);
+                    exprtk_values_destroy(vals, actual);
                     free(vals);
                     *out_count = 0;
                     return NULL;
                 }
                 for (size_t j = 0; j < el.data.list.count; ++j) {
-                    vals[actual++] = el.data.list.items[j];
+                    if (exprtk_value_copy_to_env(
+                            exprtk_value_borrow(el.data.list.items[j]), env,
+                            &vals[actual]) != 0) {
+                        exprtk_value_destroy(&el);
+                        exprtk_values_destroy(vals, actual);
+                        free(vals);
+                        *out_count = 0;
+                        return NULL;
+                    }
+                    actual++;
                 }
+                exprtk_value_destroy(&el);
             } else {
                 if (!grow_value_array(&vals, &cap, actual + 1)) {
+                    exprtk_value_destroy(&el);
+                    exprtk_values_destroy(vals, actual);
                     free(vals);
                     *out_count = 0;
                     return NULL;
@@ -1384,6 +1377,7 @@ exprtk_value_t* eval_expand_args(exprtk_node_t **nodes, size_t count, exprtk_env
             }
         } else {
             if (!grow_value_array(&vals, &cap, actual + 1)) {
+                exprtk_values_destroy(vals, actual);
                 free(vals);
                 *out_count = 0;
                 return NULL;
@@ -1467,7 +1461,7 @@ exprtk_value_t eval_class_value_instantiation(exprtk_class_t *klass,
                                                      exprtk_node_t **arg_nodes,
                                                      size_t arg_count,
                                                      exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!klass || !env) return zero;
 
     if (exprtk_class_is_interface(klass)) {
@@ -1480,12 +1474,14 @@ exprtk_value_t eval_class_value_instantiation(exprtk_class_t *klass,
     size_t actual_count = 0;
     exprtk_value_t *args = eval_expand_args(arg_nodes, arg_count, env, &actual_count);
     if (env->flow != exprtk_FLOW_NORMAL || env->aborted) {
+        exprtk_values_destroy(args, actual_count);
         free(args);
         return zero;
     }
 
     exprtk_instance_t *instance = exprtk_instance_create(klass, &env->arena);
     if (!instance) {
+        exprtk_values_destroy(args, actual_count);
         free(args);
         return zero;
     }
@@ -1493,8 +1489,7 @@ exprtk_value_t eval_class_value_instantiation(exprtk_class_t *klass,
     exprtk_func_t *constructor = eval_find_constructor_typed(klass, actual_count, args);
     if (constructor) {
         exprtk_env_t ctor_env;
-        exprtk_env_init_local(&ctor_env);
-        ctor_env.parent = env;
+        exprtk_env_init_child(&ctor_env, env);
         ctor_env.eval_node = env->eval_node;
         ctor_env.exec_script_body = env->exec_script_body;
         ctor_env.current_class = klass;
@@ -1513,18 +1508,20 @@ exprtk_value_t eval_class_value_instantiation(exprtk_class_t *klass,
         exprtk_env_free(&ctor_env);
 
         if (env->flow != exprtk_FLOW_NORMAL || env->aborted) {
+            exprtk_values_destroy(args, actual_count);
             free(args);
             return zero;
         }
     }
 
+    exprtk_values_destroy(args, actual_count);
     free(args);
     return exprtk_val_instance(instance);
 }
 
 exprtk_value_t eval_class_instantiation(const char *class_name, exprtk_node_t **arg_nodes,
                                                size_t arg_count, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!class_name || !env) return zero;
 
     exprtk_class_t *klass = NULL;
@@ -1544,12 +1541,11 @@ exprtk_value_t eval_instance_script_method(exprtk_instance_t *instance,
                                                   size_t argc,
                                                   exprtk_value_t *args,
                                                   exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!instance || !method || !env) return zero;
 
     exprtk_env_t method_env;
-    exprtk_env_init_local(&method_env);
-    method_env.parent = env;
+    exprtk_env_init_child(&method_env, env);
     method_env.eval_node = env->eval_node;
     method_env.exec_script_body = env->exec_script_body;
     method_env.current_class = method->owner_class;
@@ -1569,7 +1565,7 @@ exprtk_value_t eval_instance_script_method(exprtk_instance_t *instance,
 }
 
 exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!node || !env || node->type != EXPRTK_NODE_CLASS_DEF) return zero;
 
     const char *class_name = node->data.class_def.name;
@@ -1648,6 +1644,7 @@ exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env)
                     method_node->data.field_decl.initializer != NULL,
                     method_node->data.field_decl.access_level);
             }
+            exprtk_value_destroy(&field_value);
             continue;
         }
         if (method_node->type != EXPRTK_NODE_METHOD) continue;
@@ -1757,7 +1754,7 @@ CXX_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, expr
 
 CXX_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const char *source_name,
                                                 exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!target_name || !source_name || !env) return zero;
 
     exprtk_class_t *klass = NULL;
@@ -1773,7 +1770,7 @@ CXX_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const c
 
 CXX_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!class_name || !env) return zero;
 
     exprtk_class_t *klass = NULL;
@@ -1796,8 +1793,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, 
     exprtk_func_t *constructor = eval_find_constructor_typed(klass, argc, args);
     if (constructor) {
         exprtk_env_t ctor_env;
-        exprtk_env_init_local(&ctor_env);
-        ctor_env.parent = env;
+        exprtk_env_init_child(&ctor_env, env);
         ctor_env.eval_node = env->eval_node;
         ctor_env.exec_script_body = env->exec_script_body;
         ctor_env.current_class = klass;
@@ -1824,7 +1820,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class
                                                             const char *class_name, size_t argc,
                                                             exprtk_value_t *args,
                                                             exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (class_value.type != EXPRTK_VAL_CLASS || !class_value.data.class_val.klass || !env) {
         return zero;
     }
@@ -1845,8 +1841,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class
     exprtk_func_t *constructor = eval_find_constructor_typed(klass, argc, args);
     if (constructor) {
         exprtk_env_t ctor_env;
-        exprtk_env_init_local(&ctor_env);
-        ctor_env.parent = env;
+        exprtk_env_init_child(&ctor_env, env);
         ctor_env.eval_node = env->eval_node;
         ctor_env.exec_script_body = env->exec_script_body;
         ctor_env.current_class = klass;
@@ -1871,7 +1866,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class
 CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     exprtk_value_t *args = numeric_args_to_values(argc, argv);
     if (argc > 0 && !args) return zero;
 
@@ -1884,7 +1879,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
 CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !method_name || !env || (argc > 0 && !args)) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -1922,7 +1917,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
 CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!call_node || call_node->type != EXPRTK_NODE_MEMBER_CALL || !env) return zero;
 
     size_t actual_count = 0;
@@ -1947,7 +1942,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
 CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !expected_class_name || !method_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -1984,7 +1979,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
 CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, const exprtk_node_t *call_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !expected_class_name || !method_name || !call_node || !env) return zero;
     if (call_node->type != EXPRTK_NODE_MEMBER_CALL) return zero;
 
@@ -2054,7 +2049,7 @@ static uint64_t oop_method_arg_signature(size_t argc, const exprtk_value_t *args
 CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
     const char *object_name, const char *method_name, exprtk_oop_method_cache_t *cache,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !method_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2122,7 +2117,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_numeric(
 
 CXX_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_method, size_t argc,
                                                       exprtk_value_t *args, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (bound_method.type != EXPRTK_VAL_BOUND_METHOD || !env) return zero;
 
     return eval_instance_script_method(bound_method.data.bound_method_val.instance,
@@ -2132,7 +2127,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_metho
 
 CXX_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_value, size_t argc,
                                                     exprtk_value_t *args, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (function_value.type != EXPRTK_VAL_FUNCTION ||
         !function_value.data.function.body || !env) {
         return zero;
@@ -2159,7 +2154,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
                                                        const char *member_name,
                                                        const exprtk_node_t *object_node,
                                                        exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !member_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2214,7 +2209,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
             if (!can_access_method(env, method, object_node)) {
                 return throw_method_access_error(env, object_node, member_name, method);
             }
-            exprtk_value_t func_val = { EXPRTK_VAL_FUNCTION, {0} };
+            exprtk_value_t func_val = { .type = EXPRTK_VAL_FUNCTION };
             func_val.data.function.arg_params = method->data.script.arg_params;
             func_val.data.function.arg_count = method->data.script.arg_count;
             func_val.data.function.body = method->data.script.body;
@@ -2232,7 +2227,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
 CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
     const char *object_name, const char *member_name, exprtk_oop_field_cache_t *cache,
     const exprtk_node_t *object_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !member_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2328,7 +2323,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
             if (!can_access_method(env, method, object_node)) {
                 return throw_method_access_error(env, object_node, member_name, method);
             }
-            exprtk_value_t func_val = { EXPRTK_VAL_FUNCTION, {0} };
+            exprtk_value_t func_val = { .type = EXPRTK_VAL_FUNCTION };
             func_val.data.function.arg_params = method->data.script.arg_params;
             func_val.data.function.arg_count = method->data.script.arg_count;
             func_val.data.function.body = method->data.script.body;
@@ -2352,7 +2347,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member(const char *object_name, const ch
 CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
     const char *object_name, const char *member_name, double value,
     const exprtk_node_t *object_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !member_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2392,7 +2387,7 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
 CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
     const char *object_name, const char *member_name, double value,
     exprtk_oop_field_cache_t *cache, const exprtk_node_t *object_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !member_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2483,7 +2478,7 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_numeric(const char *object_name,
 
 CXX_C_API exprtk_value_t exprtk_oop_instanceof_name(const char *object_name,
                                                     const char *class_name, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !class_name || !env) return zero;
 
     exprtk_value_t object = exprtk_env_get(env, object_name);
@@ -2588,7 +2583,7 @@ static int rt_dispatch_provider_method(mc_ctx_t *mc, exprtk_value_t *out) {
     call_args = mc_prepare_call_args(mc, stack_args, sizeof(stack_args) / sizeof(stack_args[0]));
     if (!call_args) return 0;
 
-    *out = exprtk_call_internal(full_name, call_argc, call_args, mc->env, mc->arena);
+    *out = exprtk_call_internal(full_name, call_argc, call_args, mc->env);
     if (call_args != stack_args) free(call_args);
     return 1;
 }
@@ -2676,7 +2671,10 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
     if (mc->obj.type == EXPRTK_VAL_LIST && strcmp(m, "pop") == 0 && mc->obj.data.list.count > 0) {
         exprtk_value_t var; const char *vn;
         if (mc_get_var(mc, &var, &vn) && var.type == EXPRTK_VAL_LIST && var.data.list.count > 0) {
-            exprtk_value_t popped = var.data.list.items[var.data.list.count - 1];
+            exprtk_value_t popped = exprtk_value_clone_to_env(
+                exprtk_value_borrow(var.data.list.items[var.data.list.count - 1]),
+                mc->env);
+            if (mc->env->aborted) return exprtk_val_num(0.0);
             var.data.list.count--;
             exprtk_env_set(mc->env, vn, var);
             return popped;
@@ -2702,14 +2700,19 @@ exprtk_value_t eval_list_method(mc_ctx_t *mc) {
     }
 
     if (strcmp(m, "reverse") == 0) {
-        exprtk_value_t *items = env
-            ? (exprtk_value_t*)mem_alloc(&env->arena, mc->obj.data.list.count * sizeof(exprtk_value_t))
-            : (exprtk_value_t*)malloc(mc->obj.data.list.count * sizeof(exprtk_value_t));
-        if (items) {
-            for (size_t i = 0; i < mc->obj.data.list.count; ++i)
-                items[i] = mc->obj.data.list.items[mc->obj.data.list.count - 1 - i];
-            return exprtk_val_list_ex(items, mc->obj.data.list.count, env ? 0 : 1);
+        exprtk_value_t reversed = mc->obj.type == EXPRTK_VAL_SET
+                                      ? exprtk_val_set_empty()
+                                      : exprtk_val_list_empty();
+        for (size_t i = 0; i < mc->obj.data.list.count; ++i) {
+            if (exprtk_list_push(
+                    &reversed,
+                    exprtk_value_borrow(
+                        mc->obj.data.list.items[mc->obj.data.list.count - 1 - i])) != 0) {
+                exprtk_value_destroy(&reversed);
+                return throw_error(env, mc->obj_node, "failed to reverse list");
+            }
         }
+        return reversed;
     }
 
     return unknown_method_error(mc, mc->obj.type == EXPRTK_VAL_SET ? "set" : "list");
@@ -2726,14 +2729,14 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
 
     if (exprtk_map_has(&mc->obj, m)) {
         exprtk_value_t callee = exprtk_map_get(&mc->obj, m);
-        exprtk_value_t result = { EXPRTK_VAL_NUMBER, {0.0} };
+        exprtk_value_t result = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
         if (eval_callable_value(callee, m, mc->argc, mc->args, mc->env, &result)) {
             return result;
         }
     }
 
     {
-        exprtk_value_t result = { EXPRTK_VAL_NUMBER, {0.0} };
+        exprtk_value_t result = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
         if (rt_dispatch_provider_method(mc, &result)) {
             return result;
         }
@@ -2743,33 +2746,29 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
         return exprtk_val_num((double)exprtk_map_count(&mc->obj));
 
     if (strcmp(m, "keys") == 0) {
-        size_t count = exprtk_map_count(&mc->obj);
-        exprtk_value_t *items = mc->env
-            ? (exprtk_value_t*)mem_alloc(&mc->env->arena, count * sizeof(exprtk_value_t))
-            : (exprtk_value_t*)malloc(count * sizeof(exprtk_value_t));
-        if (items) {
-            exprtk_map_iter_t it = exprtk_map_iter_begin(&mc->obj);
-            const char *key; size_t idx = 0;
-            while (exprtk_map_iter_next(&it, &key, NULL)) {
-                tstr_v sv; sv.data = (char*)key; sv.len = strlen(key);
-                items[idx++] = exprtk_val_str(sv);
+        exprtk_value_t list = exprtk_val_list_empty();
+        exprtk_map_iter_t it = exprtk_map_iter_begin(&mc->obj);
+        const char *key;
+        while (exprtk_map_iter_next(&it, &key, NULL)) {
+            if (exprtk_list_push(&list, exprtk_val_str(tstr_v_from_cstr(key))) != 0) {
+                exprtk_value_destroy(&list);
+                return exprtk_val_list_empty();
             }
-            return exprtk_val_list_ex(items, idx, mc->env ? 0 : 1);
         }
+        return list;
     }
 
     if (strcmp(m, "values") == 0) {
-        size_t count = exprtk_map_count(&mc->obj);
-        exprtk_value_t *items = mc->env
-            ? (exprtk_value_t*)mem_alloc(&mc->env->arena, count * sizeof(exprtk_value_t))
-            : (exprtk_value_t*)malloc(count * sizeof(exprtk_value_t));
-        if (items) {
-            exprtk_map_iter_t it = exprtk_map_iter_begin(&mc->obj);
-            exprtk_value_t val; size_t idx = 0;
-            while (exprtk_map_iter_next(&it, NULL, &val))
-                items[idx++] = val;
-            return exprtk_val_list_ex(items, idx, mc->env ? 0 : 1);
+        exprtk_value_t list = exprtk_val_list_empty();
+        exprtk_map_iter_t it = exprtk_map_iter_begin(&mc->obj);
+        exprtk_value_t val;
+        while (exprtk_map_iter_next(&it, NULL, &val)) {
+            if (exprtk_list_push(&list, val) != 0) {
+                exprtk_value_destroy(&list);
+                return exprtk_val_list_empty();
+            }
         }
+        return list;
     }
 
     if (strcmp(m, "has") == 0 && mc->argc > 0 && mc->args[0].type == EXPRTK_VAL_STRING) {
@@ -2797,7 +2796,7 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
 }
 
 exprtk_value_t eval_string_method(mc_ctx_t *mc) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     const char *m = mc->method;
     exprtk_value_t stack_args[8];
 
@@ -2820,7 +2819,7 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
     exprtk_value_t result = zero;
     int handled = 0;
     if (fn) {
-        result = fn(call_argc, call_args, mc->env, mc->arena);
+        result = exprtk_call_builtin(fn, call_argc, call_args, mc->env);
         handled = 1;
     } else {
         /* Inline implementations for essential methods when registry is empty */
@@ -3253,7 +3252,7 @@ exprtk_value_t eval_decimal_method(mc_ctx_t *mc) {
 }
 
 exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     const char *m = mc->method;
     exprtk_value_t stack_args[8];
 
@@ -3324,7 +3323,7 @@ exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
     exprtk_value_t result = zero;
     int handled = 0;
     if (fn) {
-        result = fn(call_argc, call_args, mc->env, mc->arena);
+        result = exprtk_call_builtin(fn, call_argc, call_args, mc->env);
         handled = 1;
     } else {
         /* Inline implementations for basic vector ops */
@@ -3364,7 +3363,7 @@ exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
 CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !method_name || !env || (argc > 0 && !args)) return zero;
 
     mc_ctx_t mc = {
@@ -3404,7 +3403,7 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
             if (written < 0 || (size_t)written >= sizeof(full_name)) {
                 return throw_error(env, object_node, "Qualified function name is too long");
             }
-            return exprtk_call_internal(full_name, argc, args, env, &env->arena);
+            return exprtk_call_internal(full_name, argc, args, env);
         }
     }
 }
@@ -3412,7 +3411,7 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
 CXX_C_API exprtk_value_t exprtk_member_call_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     exprtk_value_t *args = numeric_args_to_values(argc, argv);
     if (argc > 0 && !args) return zero;
 
@@ -3425,7 +3424,7 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_numeric(
 CXX_C_API exprtk_value_t exprtk_member_call_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!call_node || call_node->type != EXPRTK_NODE_MEMBER_CALL || !env) return zero;
 
     size_t actual_count = 0;

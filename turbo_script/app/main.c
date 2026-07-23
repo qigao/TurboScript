@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
+#include <stdint.h>
 #include <stdatomic.h>
 #include "turbo_coro_context.h"
 #include "CoroNet/turbo_coro_object_pool.h"
@@ -9,13 +10,31 @@
 #include "turbo_script.h"
 #include "turbo_thread.h"
 
-enum { TURBO_SCRIPT_CORO_STACK_SIZE = 512 * 1024 };
+enum {
+    TURBO_SCRIPT_CORO_POOL_INITIAL_CAPACITY = 16,
+    TURBO_SCRIPT_CORO_POOL_MAX_CAPACITY = 1024,
+    TURBO_SCRIPT_CORO_STACK_MIN_KIB = 32,
+    TURBO_SCRIPT_CORO_STACK_MAX_KIB = 1024,
+    TURBO_SCRIPT_BYTES_PER_KIB = 1024
+};
 
-static coro_context_t *create_script_coro_context(void) {
+static int parse_coro_stack_size(int64_t stack_kib, size_t *stack_size) {
+    if (!stack_size) return -1;
+    if (stack_kib == 0) {
+        *stack_size = 0;
+        return 0;
+    }
+    if (stack_kib < TURBO_SCRIPT_CORO_STACK_MIN_KIB ||
+        stack_kib > TURBO_SCRIPT_CORO_STACK_MAX_KIB) return -1;
+    *stack_size = (size_t)stack_kib * TURBO_SCRIPT_BYTES_PER_KIB;
+    return 0;
+}
+
+static coro_context_t *create_script_coro_context(size_t stack_size) {
     const coro_object_pool_config_t pool_config = {
-        16,
-        1024,
-        TURBO_SCRIPT_CORO_STACK_SIZE,
+        TURBO_SCRIPT_CORO_POOL_INITIAL_CAPACITY,
+        TURBO_SCRIPT_CORO_POOL_MAX_CAPACITY,
+        stack_size,
     };
     return coro_context_create_ex(NULL, &pool_config);
 }
@@ -146,14 +165,26 @@ int main(int argc, char **argv) {
     char *eval_str = NULL;
     char *file_path = NULL;
     bool enable_jit_stats = false;
+    int64_t coro_stack_kib = 0;
+    size_t coro_stack_size = 0;
 
     turbo_cmd_parser_t *parser = turbo_cmd_create("TurboScript REPL", "1.0");
     turbo_cmd_add_string(parser, &eval_str, "eval", "e", "Evaluate a string of code and exit");
     turbo_cmd_add_string(parser, &file_path, "file", "f", "Run the given script file and exit");
     turbo_cmd_add_flag(parser, &enable_jit_stats, "jit-stats", "", "Enable JIT statistics collection and print at exit");
+    turbo_cmd_add_integer(parser, &coro_stack_kib, "coro-stack-kib", "",
+                          "Coroutine stack override in KiB (0=TurboUtils default; 32-1024)");
     
     turbo_cmd_parse(parser, argc, argv, true);
     turbo_cmd_destroy(parser);
+
+    if (parse_coro_stack_size(coro_stack_kib, &coro_stack_size) != 0) {
+        fprintf(stderr,
+                "Invalid --coro-stack-kib value: expected 0 or an integer from %d to %d.\n",
+                TURBO_SCRIPT_CORO_STACK_MIN_KIB,
+                TURBO_SCRIPT_CORO_STACK_MAX_KIB);
+        return 2;
+    }
 
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
     if (!ctx) {
@@ -168,7 +199,7 @@ int main(int argc, char **argv) {
     }
 
     if (eval_str || file_path) {
-        coro_context_t *coro_ctx = create_script_coro_context();
+        coro_context_t *coro_ctx = create_script_coro_context(coro_stack_size);
         if (!coro_ctx) {
             fprintf(stderr, "Failed to initialize the timer event loop.\n");
             turbo_script_free(ctx);
@@ -193,7 +224,7 @@ int main(int argc, char **argv) {
 #endif
     printf("Type 'exit' or 'quit' to exit.\n");
 
-    coro_context_t *repl_coro_ctx = create_script_coro_context();
+    coro_context_t *repl_coro_ctx = create_script_coro_context(coro_stack_size);
     repl_runtime_t repl_runtime;
     if (!repl_coro_ctx) {
         fprintf(stderr, "Failed to initialize the REPL event loop.\n");

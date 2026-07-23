@@ -666,7 +666,14 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
         if (update_existing && klass->instance_field_owners)
             klass->instance_field_owners[index] = owner_class ? owner_class : klass;
         if (update_existing && klass->instance_field_defaults && klass->instance_field_has_default) {
-            klass->instance_field_defaults[index] = default_value;
+            exprtk_value_t stored_default = { .type = EXPRTK_VAL_NULL };
+            if (has_default && exprtk_value_copy_to_pool(
+                                   exprtk_value_borrow(default_value), klass->arena,
+                                   &stored_default) != 0)
+                return 0;
+            if (klass->instance_field_has_default[index])
+                exprtk_value_destroy(&klass->instance_field_defaults[index]);
+            klass->instance_field_defaults[index] = stored_default;
             klass->instance_field_has_default[index] = has_default ? 1 : 0;
         }
         if (out_index) *out_index = index;
@@ -729,11 +736,17 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
     char *field_name = class_copy_string(klass->arena, name);
     if (!field_name) return 0;
 
+    exprtk_value_t stored_default = { .type = EXPRTK_VAL_NULL };
+    if (has_default && exprtk_value_copy_to_pool(
+                           exprtk_value_borrow(default_value), klass->arena,
+                           &stored_default) != 0)
+        return 0;
+
     index = klass->instance_field_count++;
     klass->instance_field_names[index] = field_name;
     klass->instance_field_access_levels[index] = access_level;
     klass->instance_field_owners[index] = owner_class ? owner_class : klass;
-    klass->instance_field_defaults[index] = default_value;
+    klass->instance_field_defaults[index] = stored_default;
     klass->instance_field_has_default[index] = has_default ? 1 : 0;
     if (out_index) *out_index = index;
     return 1;
@@ -1507,7 +1520,7 @@ int exprtk_class_get_static_field(
 
     field_entry_t entry;
     if (field_table_find(klass->static_fields, name, &entry)) {
-        *out_value = entry.value;
+        *out_value = exprtk_value_borrow(entry.value);
         return 1;
     }
 
@@ -1543,7 +1556,11 @@ void exprtk_class_set_static_field(
     const char *name,
     exprtk_value_t value)
 {
+    exprtk_value_t stored;
     if (!klass || !name || !klass->static_fields) return;
+    if (exprtk_value_copy_to_pool(exprtk_value_borrow(value), klass->arena,
+                                  &stored) != 0)
+        return;
 
     HTAB(field_entry_t) *htab = (HTAB(field_entry_t) *)klass->static_fields;
 
@@ -1551,19 +1568,23 @@ void exprtk_class_set_static_field(
     field_entry_t result;
     search.name = (char *)name;
     if (HTAB_OP(field_entry_t, do)(htab, search, HTAB_FIND, &result)) {
-        result.value = value;
+        exprtk_value_destroy(&result.value);
+        result.value = stored;
         HTAB_OP(field_entry_t, do)(htab, result, HTAB_REPLACE, &result);
         return;
     }
 
     size_t name_len = strlen(name);
     char *field_name = (char *)mem_alloc(klass->arena, name_len + 1);
-    if (!field_name) return;
+    if (!field_name) {
+        exprtk_value_destroy(&stored);
+        return;
+    }
     memcpy(field_name, name, name_len + 1);
 
     field_entry_t entry;
     entry.name = field_name;
-    entry.value = value;
+    entry.value = stored;
     entry.access_level = EXPRTK_ACCESS_PUBLIC;
     entry.owner_class = klass;
 
@@ -1577,14 +1598,19 @@ void exprtk_class_declare_static_field(
     exprtk_value_t value,
     int access_level)
 {
+    exprtk_value_t stored;
     if (!klass || !name || !klass->static_fields) return;
+    if (exprtk_value_copy_to_pool(exprtk_value_borrow(value), klass->arena,
+                                  &stored) != 0)
+        return;
 
     HTAB(field_entry_t) *htab = (HTAB(field_entry_t) *)klass->static_fields;
     field_entry_t search;
     field_entry_t result;
     search.name = (char *)name;
     if (HTAB_OP(field_entry_t, do)(htab, search, HTAB_FIND, &result)) {
-        result.value = value;
+        exprtk_value_destroy(&result.value);
+        result.value = stored;
         result.access_level = access_level;
         result.owner_class = klass;
         HTAB_OP(field_entry_t, do)(htab, result, HTAB_REPLACE, &result);
@@ -1593,12 +1619,15 @@ void exprtk_class_declare_static_field(
 
     size_t name_len = strlen(name);
     char *field_name = (char *)mem_alloc(klass->arena, name_len + 1);
-    if (!field_name) return;
+    if (!field_name) {
+        exprtk_value_destroy(&stored);
+        return;
+    }
     memcpy(field_name, name, name_len + 1);
 
     field_entry_t entry;
     entry.name = field_name;
-    entry.value = value;
+    entry.value = stored;
     entry.access_level = access_level;
     entry.owner_class = klass;
 
@@ -1714,11 +1743,23 @@ void exprtk_class_destroy(exprtk_class_t *klass) {
     }
     if (klass->static_fields) {
         HTAB(field_entry_t) *static_fields_htab = (HTAB(field_entry_t) *)klass->static_fields;
+        HTAB_EL(field_entry_t) *entries =
+            VARR_ADDR(HTAB_EL(field_entry_t), static_fields_htab->els);
+        for (htab_size_t i = 0; i < static_fields_htab->els_bound; ++i) {
+            if (entries[i].hash != HTAB_DELETED_HASH)
+                exprtk_value_destroy(&entries[i].el.value);
+        }
         HTAB_OP(field_entry_t, destroy)(&static_fields_htab);
     }
     if (klass->abstract_methods) {
         HTAB(method_entry_t) *abstract_methods_htab = (HTAB(method_entry_t) *)klass->abstract_methods;
         HTAB_OP(method_entry_t, destroy)(&abstract_methods_htab);
+    }
+    if (klass->instance_field_defaults && klass->instance_field_has_default) {
+        for (size_t i = 0; i < klass->instance_field_count; ++i) {
+            if (klass->instance_field_has_default[i])
+                exprtk_value_destroy(&klass->instance_field_defaults[i]);
+        }
     }
     free(klass->instance_field_names);
     free(klass->instance_field_access_levels);
@@ -1757,109 +1798,21 @@ static exprtk_value_t instance_clone_stored_value(exprtk_instance_t *instance,
     if (!arena) return value;
 
     switch (value.type) {
-        case EXPRTK_VAL_STRING: {
-            char *copy;
-            if (!value.data.string.data) return value;
-            copy = (char *)mem_alloc(arena, value.data.string.len + 1);
-            if (!copy) return exprtk_val_str((tstr_v){0});
-            memcpy(copy, value.data.string.data, value.data.string.len);
-            copy[value.data.string.len] = '\0';
-            return exprtk_val_str(tstr_v_from_buf(copy, value.data.string.len));
-        }
-        case EXPRTK_VAL_BIGINT: {
-            char *copy;
-            if (!value.data.bigint.text.data) return value;
-            copy = (char *)mem_alloc(arena, value.data.bigint.text.len + 1);
-            if (!copy) return exprtk_val_bigint((tstr_v){0});
-            memcpy(copy, value.data.bigint.text.data, value.data.bigint.text.len);
-            copy[value.data.bigint.text.len] = '\0';
-            return exprtk_val_bigint(tstr_v_from_buf(copy, value.data.bigint.text.len));
-        }
+        case EXPRTK_VAL_STRING:
+        case EXPRTK_VAL_BIGINT:
         case EXPRTK_VAL_ENUM:
-        case EXPRTK_VAL_FLAGS: {
-            tstr_v type_name = {0};
-            tstr_v symbol = {0};
-            if (value.data.enum_val.type_name.data) {
-                char *copy = (char *)mem_alloc(arena, value.data.enum_val.type_name.len + 1);
-                if (copy) {
-                    memcpy(copy, value.data.enum_val.type_name.data,
-                           value.data.enum_val.type_name.len);
-                    copy[value.data.enum_val.type_name.len] = '\0';
-                    type_name = tstr_v_from_buf(copy, value.data.enum_val.type_name.len);
-                }
-            }
-            if (value.data.enum_val.symbol.data) {
-                char *copy = (char *)mem_alloc(arena, value.data.enum_val.symbol.len + 1);
-                if (copy) {
-                    memcpy(copy, value.data.enum_val.symbol.data, value.data.enum_val.symbol.len);
-                    copy[value.data.enum_val.symbol.len] = '\0';
-                    symbol = tstr_v_from_buf(copy, value.data.enum_val.symbol.len);
-                }
-            }
-            return exprtk_val_enum(type_name, symbol, value.data.enum_val.value,
-                                   value.type == EXPRTK_VAL_FLAGS);
-        }
-        case EXPRTK_VAL_BYTES: {
-            char *copy;
-            if (!value.data.bytes.data || value.data.bytes.len == 0) return value;
-            copy = (char *)mem_alloc(arena, value.data.bytes.len);
-            if (!copy) return exprtk_val_bytes((tstr_v){0});
-            memcpy(copy, value.data.bytes.data, value.data.bytes.len);
-            return exprtk_val_bytes(tstr_v_from_buf(copy, value.data.bytes.len));
-        }
-        case EXPRTK_VAL_VECTOR: {
-            double *copy;
-            if (!value.data.vector.data || value.data.vector.size == 0) return value;
-            copy = (double *)mem_alloc_array(arena, sizeof(*copy), value.data.vector.size);
-            if (!copy) return exprtk_val_vec(NULL, 0);
-            memcpy(copy, value.data.vector.data, value.data.vector.size * sizeof(*copy));
-            return exprtk_val_vec(copy, value.data.vector.size);
-        }
-        case EXPRTK_VAL_TYPED_ARRAY: {
-            size_t element_size;
-            void *copy;
-            if (!value.data.typed_array.data || value.data.typed_array.count == 0) return value;
-            switch (value.data.typed_array.kind) {
-                case EXPRTK_TYPED_I32: element_size = sizeof(int32_t); break;
-                case EXPRTK_TYPED_I64: element_size = sizeof(int64_t); break;
-                case EXPRTK_TYPED_F32: element_size = sizeof(float); break;
-                case EXPRTK_TYPED_F64: element_size = sizeof(double); break;
-                default: return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
-            }
-            copy = mem_alloc_array(arena, element_size, value.data.typed_array.count);
-            if (!copy)
-                return exprtk_val_typed_array(value.data.typed_array.kind, NULL, 0, 0);
-            memcpy(copy, value.data.typed_array.data,
-                   element_size * value.data.typed_array.count);
-            return exprtk_val_typed_array(value.data.typed_array.kind, copy,
-                                          value.data.typed_array.count, 0);
-        }
+        case EXPRTK_VAL_FLAGS:
+        case EXPRTK_VAL_BYTES:
+        case EXPRTK_VAL_VECTOR:
+        case EXPRTK_VAL_TYPED_ARRAY:
         case EXPRTK_VAL_LIST:
-        case EXPRTK_VAL_SET: {
-            exprtk_value_t stored = value.type == EXPRTK_VAL_SET
-                                        ? exprtk_val_set_empty()
-                                        : exprtk_val_list_empty();
-            if (!value.data.list.items || value.data.list.count == 0) return stored;
-            stored.data.list.items = (exprtk_value_t *)mem_alloc_array(
-                arena, sizeof(*stored.data.list.items), value.data.list.count);
-            if (!stored.data.list.items) return stored;
-            stored.data.list.count = value.data.list.count;
-            stored.data.list.capacity = value.data.list.count;
-            for (size_t i = 0; i < value.data.list.count; ++i)
-                stored.data.list.items[i] = instance_clone_stored_value(
-                    instance, value.data.list.items[i]);
-            return stored;
-        }
+        case EXPRTK_VAL_SET:
         case EXPRTK_VAL_MAP:
         case EXPRTK_VAL_OBJECT: {
-            exprtk_value_t stored = value.type == EXPRTK_VAL_OBJECT
-                                        ? exprtk_val_object()
-                                        : exprtk_val_map();
-            exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
-            const char *key;
-            exprtk_value_t child;
-            while (exprtk_map_iter_next(&it, &key, &child))
-                exprtk_map_set(&stored, key, instance_clone_stored_value(instance, child));
+            exprtk_value_t stored = { .type = EXPRTK_VAL_NULL };
+            if (exprtk_value_copy_to_pool(exprtk_value_borrow(value), arena,
+                                          &stored) != 0)
+                return (exprtk_value_t){ .type = EXPRTK_VAL_NULL };
             return stored;
         }
         case EXPRTK_VAL_CLASS: {
@@ -1876,7 +1829,7 @@ static exprtk_value_t instance_clone_stored_value(exprtk_instance_t *instance,
             if (klass && klass->arena != arena)
                 klass = exprtk_class_clone_to_arena(klass, arena);
             copy = exprtk_instance_create(klass, arena);
-            if (!copy) return (exprtk_value_t){EXPRTK_VAL_NULL, {0}};
+            if (!copy) return (exprtk_value_t){ .type = EXPRTK_VAL_NULL };
             instance_clone_fields_ctx_t clone_ctx = {copy};
             exprtk_instance_foreach_named_field(source, instance_clone_field, &clone_ctx);
             return exprtk_val_instance(copy);
@@ -1897,20 +1850,8 @@ static exprtk_value_t instance_clone_stored_value(exprtk_instance_t *instance,
     }
 }
 
-static void instance_release_stored_maps(exprtk_value_t value) {
-    if (value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET) {
-        for (size_t i = 0; i < value.data.list.count; ++i)
-            instance_release_stored_maps(value.data.list.items[i]);
-    } else if (exprtk_value_is_object_like(&value)) {
-        exprtk_map_iter_t it = exprtk_map_iter_begin(&value);
-        const char *key;
-        exprtk_value_t child;
-        while (exprtk_map_iter_next(&it, &key, &child)) {
-            (void)key;
-            instance_release_stored_maps(child);
-        }
-        exprtk_map_free(&value);
-    }
+static void instance_release_stored_value(exprtk_value_t value) {
+    exprtk_value_destroy(&value);
 }
 
 exprtk_instance_t *exprtk_instance_create(
@@ -1971,7 +1912,7 @@ int exprtk_instance_get_field(
     if (class_find_instance_field_index(instance->klass, name, &index) &&
         index < instance->field_slot_count &&
         instance->field_slot_used && instance->field_slot_used[index]) {
-        *out_value = instance->field_slots[index];
+        *out_value = exprtk_value_borrow(instance->field_slots[index]);
         return 1;
     }
 
@@ -1984,7 +1925,7 @@ int exprtk_instance_get_field(
     search.name = (char *)name;
     
     if (HTAB_OP(field_entry_t, do)(htab, search, HTAB_FIND, &result)) {
-        *out_value = result.value;
+        *out_value = exprtk_value_borrow(result.value);
         return 1;
     }
 
@@ -2026,7 +1967,7 @@ void exprtk_instance_set_field(
                    instance_ensure_slot_capacity(instance, slot_index + 1);
     if (has_slot) {
         int was_used = instance->field_slot_used[slot_index] ? 1 : 0;
-        if (was_used) instance_release_stored_maps(instance->field_slots[slot_index]);
+        if (was_used) instance_release_stored_value(instance->field_slots[slot_index]);
         instance->field_slots[slot_index] = stored;
         instance->field_slot_used[slot_index] = 1;
         if (slot_index + 1 > instance->field_slot_count) {
@@ -2041,6 +1982,7 @@ void exprtk_instance_set_field(
     field_entry_t result;
     search.name = (char *)name;
     if (HTAB_OP(field_entry_t, do)(htab, search, HTAB_FIND, &result)) {
+        if (!has_slot) instance_release_stored_value(result.value);
         result.value = stored;
         HTAB_OP(field_entry_t, do)(htab, result, HTAB_REPLACE, &result);
         return;
@@ -2169,6 +2111,12 @@ void exprtk_instance_destroy(exprtk_instance_t *instance) {
     // Free hash table
     if (instance->fields) {
         HTAB(field_entry_t) *fields_htab = (HTAB(field_entry_t) *)instance->fields;
+        HTAB_EL(field_entry_t) *entries =
+            VARR_ADDR(HTAB_EL(field_entry_t), fields_htab->els);
+        for (htab_size_t i = 0; i < fields_htab->els_bound; ++i) {
+            if (entries[i].hash != HTAB_DELETED_HASH)
+                exprtk_value_destroy(&entries[i].el.value);
+        }
         HTAB_OP(field_entry_t, destroy)(&fields_htab);
     }
     free(instance->field_slots);

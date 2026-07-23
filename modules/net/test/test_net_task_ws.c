@@ -126,12 +126,12 @@ spec("net_task_ws") {
                "market_task = task.spawn(() => {"
                "  if (ws.connect(\"ws://127.0.0.1:%d/market\") == 0) throw \"market connect\";"
                "  if (ws.send(\"market-subscribe\") == 0) throw \"market send\";"
-               "  var reply = ws.recv(%d); ws.close(); return reply;"
+               "  var reply = ws.consume(%d, (message) => message); ws.close(); return reply;"
                "});"
                "sports_task = task.spawn(() => {"
                "  if (ws.connect(\"ws://127.0.0.1:%d/sports\") == 0) throw \"sports connect\";"
                "  if (ws.send(\"sports-subscribe\") == 0) throw \"sports send\";"
-               "  var reply = ws.recv(%d); ws.close(); return reply;"
+               "  var reply = ws.consume(%d, (message) => message); ws.close(); return reply;"
                "});",
                port, NET_TASK_WS_RECV_TIMEOUT_MS, port, NET_TASK_WS_RECV_TIMEOUT_MS);
 
@@ -157,7 +157,7 @@ spec("net_task_ws") {
       coro_context_destroy(coro_ctx);
     }
 
-    it("cancels a task waiting in ws.recv") {
+    it("cancels a task waiting in ws.consume") {
       net_task_ws_server_t state = {0};
       coro_context_t *coro_ctx = coro_context_create(NULL);
       turbo_script_ctx_t *script_ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
@@ -184,7 +184,7 @@ spec("net_task_ws") {
                "waiting_task = task.spawn(() => {"
                "  if (ws.connect(\"ws://127.0.0.1:%d/hold\") == 0) throw \"hold connect\";"
                "  if (ws.send(\"hold\") == 0) throw \"hold send\";"
-               "  var reply = ws.recv(%d); ws.close(); return reply;"
+               "  var reply = ws.consume(%d, (message) => message); ws.close(); return reply;"
                "});"
                "cancel_task = task.spawn(() => {"
                "  task.sleep(20); return task.cancel(waiting_task);"
@@ -204,6 +204,55 @@ spec("net_task_ws") {
       check_int_eq(state.handler_count, 1);
       check_int_eq(state.hold_count, 1);
       check_int_eq(state.handler_errors, 0);
+
+      net_task_ws_stop_server(coro_ctx, server);
+      check_true(coro_socket_server_is_stopped(server));
+      coro_socket_destroy(server);
+      turbo_script_free(script_ctx);
+      coro_context_destroy(coro_ctx);
+    }
+
+    it("fails a task when a frame exceeds the external value quota") {
+      net_task_ws_server_t state = {0};
+      coro_context_t *coro_ctx = coro_context_create(NULL);
+      turbo_script_ctx_t *script_ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_memory_policy_t policy;
+      coro_socket_t *server;
+      char script[1024];
+      int port;
+
+      check_not_null(coro_ctx);
+      check_not_null(script_ctx);
+      if (!coro_ctx || !script_ctx) return;
+
+      check_int_eq(turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy), 0);
+      policy.max_external_value_bytes = 4;
+      check_int_eq(turbo_script_set_memory_policy(script_ctx, &policy), 0);
+      state.coro_ctx = coro_ctx;
+      turbo_script_set_coro_context(script_ctx, coro_ctx);
+      check_int_eq(turbo_script_load_plugin(script_ctx, "net"), 0);
+      server = net_task_ws_listen(coro_ctx, &state, &port);
+      check_not_null(server);
+      if (!server) {
+        turbo_script_free(script_ctx);
+        coro_context_destroy(coro_ctx);
+        return;
+      }
+
+      snprintf(script, sizeof(script),
+               "quota_task = task.spawn(() => {"
+               "  if (ws.connect(\"ws://127.0.0.1:%d/market\") == 0) throw \"connect\";"
+               "  if (ws.send(\"market-subscribe\") == 0) throw \"send\";"
+               "  return ws.consume(%d, (message) => message);"
+               "});",
+               port, NET_TASK_WS_RECV_TIMEOUT_MS);
+
+      check_int_eq(turbo_script_run(script_ctx, script), 0);
+      net_task_ws_run_until(coro_ctx, script_ctx, NET_TASK_WS_TIMEOUT_MS);
+      check_size_eq(turbo_script_task_active_count(script_ctx), 0);
+      check_size_eq(turbo_script_task_failed_count(script_ctx), 1);
+      check_int_eq(turbo_script_run(script_ctx, "quota_state = task.status(quota_task);"), 0);
+      check_str_eq(ts_get_str(script_ctx, "quota_state"), "failed");
 
       net_task_ws_stop_server(coro_ctx, server);
       check_true(coro_socket_server_is_stopped(server));

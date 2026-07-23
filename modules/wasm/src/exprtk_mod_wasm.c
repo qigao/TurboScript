@@ -77,7 +77,7 @@ static void wasm_set_handle_error(wasm_ud_t *ud, wasm_handle_t *h, const char *m
 
 /* == API functions ======================================================== */
 
-static exprtk_value_t fn_wasm_open(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_wasm_open(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   wasm_ud_t *ud = (wasm_ud_t *)user_data;
   turbo_wasm_config_t cfg;
   turbo_wasm_vm_t *vm;
@@ -127,7 +127,7 @@ static exprtk_value_t fn_wasm_open(size_t argc, exprtk_value_t *args, void *user
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = (double)handle};
 }
 
-static exprtk_value_t fn_wasm_close(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_wasm_close(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   wasm_ud_t *ud = (wasm_ud_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     wasm_set_ctx_error(ud, "wasm.close: expected number handle");
@@ -137,7 +137,7 @@ static exprtk_value_t fn_wasm_close(size_t argc, exprtk_value_t *args, void *use
   return WASM_ZERO;
 }
 
-static exprtk_value_t fn_wasm_call(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_wasm_call(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   wasm_ud_t *ud = (wasm_ud_t *)user_data;
   wasm_handle_t *h;
   int handle_id;
@@ -231,12 +231,11 @@ static exprtk_value_t fn_wasm_call(size_t argc, exprtk_value_t *args, void *user
   return WASM_ZERO;
 }
 
-static exprtk_value_t fn_wasm_last_error(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_wasm_last_error(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   wasm_ud_t *ud = (wasm_ud_t *)user_data;
   wasm_handle_t *h = NULL;
   const char *msg;
   size_t len;
-  char *out;
 
   if (argc == 1 && args[0].type == EXPRTK_VAL_NUMBER) {
     h = wasm_handle_get(ud->ctx, (int)args[0].data.number);
@@ -250,11 +249,13 @@ static exprtk_value_t fn_wasm_last_error(size_t argc, exprtk_value_t *args, void
     return WASM_ZERO;
 
   len = strlen(msg);
-  out = (char *)mem_alloc(&ud->env->arena, len + 1);
-  if (!out)
-    return WASM_ZERO;
-  memcpy(out, msg, len + 1);
-  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = {out, len}};
+  {
+    exprtk_value_t value;
+    if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(msg, len)),
+                                 ud->env, &value) != 0)
+      return WASM_ZERO;
+    return value;
+  }
 }
 
 /* == Loader =============================================================== */
@@ -280,4 +281,3 @@ void wasm_load(void *p, void *e, void *s) {
   exprtk_env_register_func(env, "wasm.close", fn_wasm_close, ud);
   exprtk_env_register_func(env, "wasm.last_error", fn_wasm_last_error, ud);
 }
-

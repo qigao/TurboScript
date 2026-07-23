@@ -701,12 +701,12 @@ static exprtk_value_t exprtk_call_callable(exprtk_value_t callable, size_t argc,
                                                                     : sizeof(fn_name) - 1;
         memcpy(fn_name, callable.data.string.data, len);
         fn_name[len] = '\0';
-        return exprtk_call_internal(fn_name, argc, args, env, arena);
+        return exprtk_call_internal(fn_name, argc, args, env);
     }
 
     if (callable.type == EXPRTK_VAL_FUNCTION) {
         exprtk_env_set_local(env, temp_name, callable);
-        return exprtk_call_internal(temp_name, argc, args, env, arena);
+        return exprtk_call_internal(temp_name, argc, args, env);
     }
 
     return exprtk_val_num(0);
@@ -902,7 +902,7 @@ static int stream_dispatch_provider_member(exprtk_value_t stream, const char *me
     call_args[0] = stream;
     for (size_t i = 0; i < argc; ++i) call_args[i + 1] = args[i];
 
-    *out = exprtk_call_internal(fn_name, total_argc, call_args, env, arena);
+    *out = exprtk_call_internal(fn_name, total_argc, call_args, env);
     if (call_args != stack_args) free(call_args);
     return 1;
 }

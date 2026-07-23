@@ -68,9 +68,6 @@ struct ts_task_scheduler_s {
   int closing;
 };
 
-/* ExprTK uses this internally when function results cross environment arenas. */
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
-
 static void ts_task_entry(coro_t *co, void *arg);
 static int ts_task_reset_job(ts_task_job_t *job);
 
@@ -286,13 +283,13 @@ static void ts_task_release_cancel_lifetime(ts_task_job_t *job) {
 }
 
 static void ts_task_init_env(ts_task_job_t *job, turbo_script_ctx_t *ctx) {
-  exprtk_env_init_local(&job->env);
-  job->env.parent = &ctx->env;
+  exprtk_env_init_child(&job->env, &ctx->env);
   job->env.eval_node = ctx->env.eval_node;
   job->env.exec_script_body = ctx->env.exec_script_body;
   job->env.max_recursion = ctx->env.max_recursion;
   job->env.max_loop_iterations = ctx->env.max_loop_iterations;
   job->env.max_nodes = ctx->env.max_nodes;
+  job->env.max_external_value_bytes = ctx->memory_policy.max_external_value_bytes;
   job->env_initialized = 1;
 }
 
@@ -518,6 +515,12 @@ static void ts_task_entry(coro_t *co, void *arg) {
   job->env.curr_recursion = 0;
   job->env.error_msg[0] = '\0';
   job->result = exprtk_call_function_value(job->callback, 0, NULL, &job->env);
+  if (mem_pool_total_used(&job->env.arena) > ctx->memory_policy.max_task_bytes) {
+    job->native_failed = 1;
+    job->env.aborted = 1;
+    ts_task_copy_error(job->error, sizeof(job->error),
+                       "task result exceeded the configured memory quota");
+  }
   cancelled = ts_task_is_cancelled(job);
   failed = job->native_failed || job->env.aborted || job->env.flow != exprtk_FLOW_NORMAL;
   if (cancelled)
@@ -543,7 +546,47 @@ static void ts_task_entry(coro_t *co, void *arg) {
   ts_context_release(ctx);
 }
 
-static exprtk_value_t ts_task_spawn_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+size_t ts_task_memory_used(turbo_script_ctx_t *ctx) {
+  ts_task_scheduler_t *scheduler;
+  size_t total = 0;
+  size_t i;
+  if (!ctx || !ctx->task_scheduler) return 0;
+  scheduler = ctx->task_scheduler;
+  turbo_mutex_lock(&scheduler->mutex);
+  for (i = 0; i < scheduler->capacity; ++i) {
+    ts_task_job_t *job = &scheduler->jobs[i];
+    size_t used;
+    if (!job->env_initialized) continue;
+    used = mem_pool_total_used(&job->env.arena);
+    if (total > SIZE_MAX - used) {
+      total = SIZE_MAX;
+      break;
+    }
+    total += used;
+  }
+  turbo_mutex_unlock(&scheduler->mutex);
+  return total;
+}
+
+size_t ts_task_memory_max_used(turbo_script_ctx_t *ctx) {
+  ts_task_scheduler_t *scheduler;
+  size_t maximum = 0;
+  size_t i;
+  if (!ctx || !ctx->task_scheduler) return 0;
+  scheduler = ctx->task_scheduler;
+  turbo_mutex_lock(&scheduler->mutex);
+  for (i = 0; i < scheduler->capacity; ++i) {
+    ts_task_job_t *job = &scheduler->jobs[i];
+    size_t used;
+    if (!job->env_initialized) continue;
+    used = mem_pool_total_used(&job->env.arena);
+    if (used > maximum) maximum = used;
+  }
+  turbo_mutex_unlock(&scheduler->mutex);
+  return maximum;
+}
+
+static exprtk_value_t ts_task_spawn_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   int64_t id;
   if (argc != 1 || args[0].type != EXPRTK_VAL_FUNCTION)
@@ -554,7 +597,7 @@ static exprtk_value_t ts_task_spawn_fn(size_t argc, exprtk_value_t *args, void *
   return exprtk_val_int(id);
 }
 
-static exprtk_value_t ts_task_yield_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_yield_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_job_t *job = ts_task_current(ctx);
   (void)args;
@@ -572,7 +615,7 @@ static exprtk_value_t ts_task_yield_fn(size_t argc, exprtk_value_t *args, void *
   return exprtk_val_num(0.0);
 }
 
-static exprtk_value_t ts_task_sleep_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_sleep_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_job_t *job = ts_task_current(ctx);
   const coro_cancel_token_t *token;
@@ -611,7 +654,7 @@ static exprtk_value_t ts_task_sleep_fn(size_t argc, exprtk_value_t *args, void *
   return exprtk_val_num(0.0);
 }
 
-static exprtk_value_t ts_task_status_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_status_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_scheduler_t *scheduler = ctx->task_scheduler;
   ts_task_job_t *job;
@@ -627,7 +670,7 @@ static exprtk_value_t ts_task_status_fn(size_t argc, exprtk_value_t *args, void 
   return exprtk_val_str(tstr_v_from_cstr(name));
 }
 
-static exprtk_value_t ts_task_error_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_error_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_scheduler_t *scheduler = ctx->task_scheduler;
   exprtk_env_t *dst = ts_task_execution_env(ctx);
@@ -750,7 +793,7 @@ static exprtk_value_t ts_task_result_value(turbo_script_ctx_t *ctx, int64_t id, 
   return result;
 }
 
-static exprtk_value_t ts_task_result_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_result_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   int64_t id;
   if (argc != 1 || ts_task_to_id(args[0], &id) != 0)
@@ -759,7 +802,7 @@ static exprtk_value_t ts_task_result_fn(size_t argc, exprtk_value_t *args, void 
   return ts_task_result_value(ctx, id, 0);
 }
 
-static exprtk_value_t ts_task_join_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_join_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   int64_t id;
   if (argc != 1 || ts_task_to_id(args[0], &id) != 0)
@@ -768,7 +811,7 @@ static exprtk_value_t ts_task_join_fn(size_t argc, exprtk_value_t *args, void *u
   return ts_task_result_value(ctx, id, 1);
 }
 
-static exprtk_value_t ts_task_release_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_release_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_scheduler_t *scheduler = ctx->task_scheduler;
   ts_task_job_t *job;
@@ -794,7 +837,7 @@ static exprtk_value_t ts_task_release_fn(size_t argc, exprtk_value_t *args, void
   return exprtk_val_bool(1);
 }
 
-static exprtk_value_t ts_task_cancel_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_cancel_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_task_scheduler_t *scheduler = ctx->task_scheduler;
   coro_cancel_source_t *source;
@@ -889,7 +932,7 @@ static size_t ts_task_shutdown_jobs(ts_task_scheduler_t *scheduler, int *request
   return cancelled;
 }
 
-static exprtk_value_t ts_task_shutdown_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_shutdown_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   int request_error;
   size_t cancelled;
@@ -905,7 +948,7 @@ static exprtk_value_t ts_task_shutdown_fn(size_t argc, exprtk_value_t *args, voi
   return exprtk_val_int((int64_t)cancelled);
 }
 
-static exprtk_value_t ts_task_active_count_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_task_active_count_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   (void)args;
   if (argc != 0)

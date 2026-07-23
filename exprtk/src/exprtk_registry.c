@@ -16,7 +16,7 @@ static size_t g_registry_cap = 0;
 static int g_registry_ready = 0;
 
 static exprtk_value_t exprtk_call_undefined(exprtk_env_t *env, const char *name) {
-    exprtk_value_t zero = { EXPRTK_VAL_NUMBER, {0.0} };
+    exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
 
     if (!env) return zero;
 
@@ -209,9 +209,30 @@ exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env) {
     return exprtk_registry_find(name);
 }
 
+exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
+                                   exprtk_value_t *args, exprtk_env_t *env) {
+    mem_pool_t scratch;
+    exprtk_value_t raw;
+    exprtk_value_t promoted;
+
+    if (!fn || !env || mem_init(&scratch, 0) != 0) {
+        promoted = exprtk_val_num(0.0);
+        if (env) {
+            env->aborted = 1;
+            snprintf(env->error_msg, sizeof(env->error_msg),
+                     "failed to initialize builtin scratch storage");
+        }
+        return promoted;
+    }
+    raw = fn(argc, args, env, &scratch);
+    promoted = exprtk_value_clone_to_env(raw, env);
+    exprtk_value_destroy(&raw);
+    mem_destroy(&scratch);
+    return promoted;
+}
+
 exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
-                                    exprtk_value_t *args, exprtk_env_t *env,
-                                    mem_pool_t *arena) {
+                                    exprtk_value_t *args, exprtk_env_t *env) {
     exprtk_value_t stack_args[8];
     int normalized_needs_free = 0;
     exprtk_value_t *normalized_args = normalize_numeric_args(args, argc, stack_args, 8, &normalized_needs_free);
@@ -229,7 +250,11 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
                         if (normalized_needs_free) free(normalized_args);
                         return result;
                     } else {
-                        exprtk_value_t result = f->data.native.fn(argc, normalized_args, f->data.native.user_data);
+                        exprtk_value_t raw =
+                            f->data.native.fn(argc, normalized_args, env,
+                                              f->data.native.user_data);
+                        exprtk_value_t result = exprtk_value_clone_to_env(raw, env);
+                        exprtk_value_destroy(&raw);
                         if (normalized_needs_free) free(normalized_args);
                         return result;
                     }
@@ -266,7 +291,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
         /* Try non-namespaced first */
         exprtk_builtin_fn mod_fn = mod_cache_find(env, name);
         if (mod_fn) {
-            exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
+            exprtk_value_t result = exprtk_call_builtin(mod_fn, argc, builtin_args, env);
             if (normalized_needs_free) free(normalized_args);
             return result;
         }
@@ -276,7 +301,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
         if (dot) {
             mod_fn = mod_find_in_named_module(env, name, (size_t)(dot - name), dot + 1);
             if (mod_fn) {
-                exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
+                exprtk_value_t result = exprtk_call_builtin(mod_fn, argc, builtin_args, env);
                 if (normalized_needs_free) free(normalized_args);
                 return result;
             }
@@ -287,7 +312,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
     /* Try full name first (e.g., "vec.reverse") */
     exprtk_builtin_fn mod_fn = exprtk_registry_find(name);
     if (mod_fn) {
-        exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
+        exprtk_value_t result = exprtk_call_builtin(mod_fn, argc, builtin_args, env);
         if (normalized_needs_free) free(normalized_args);
         return result;
     }
@@ -298,7 +323,7 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
     if (final_dot && is_global_compat_namespace(name, (size_t)(final_dot - name))) {
         mod_fn = exprtk_registry_find(final_dot + 1);
         if (mod_fn) {
-            exprtk_value_t result = mod_fn(argc, builtin_args, env, arena);
+            exprtk_value_t result = exprtk_call_builtin(mod_fn, argc, builtin_args, env);
             if (normalized_needs_free) free(normalized_args);
             return result;
         }

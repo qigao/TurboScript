@@ -165,10 +165,12 @@ class SubscriptionCommand implements Command {
             if (subscription.length() > 0 && ws.send(subscription) == 0)
                 throw "Polymarket " + this.source + " subscription failed";
 
-            var message = ws.recv(15000);
-            if (typeof(message) != "string")
+            var consumed = ws.consume(15000, (message) => {
+                this.process_message(message);
+                return 1;
+            });
+            if (consumed == 0)
                 throw "Polymarket " + this.source + " channel timed out";
-            this.process_message(message);
 
             ws.close();
             connected = false;
@@ -220,8 +222,8 @@ class SubscriptionCommand implements Command {
         return 0;
     }
 
-    // Bounded long-run loop. Both duration_ms and max_events are hard limits,
-    // because received frame strings remain arena-backed for the script context.
+    // Bounded operational loop. Incoming frames are callback-scoped; duration
+    // and event limits control the subscription rather than arena retention.
     execute_until(options) {
         this.validate_long_run_options(options);
         var started = monotonic_ms();
@@ -253,17 +255,13 @@ class SubscriptionCommand implements Command {
                     recv_timeout = remaining;
                 }
 
-                var message = ws.recv(recv_timeout);
-                if (typeof(message) != "string") {
+                var consumed = ws.consume(recv_timeout, (message) => {
+                    this.process_message(message);
+                    return 1;
+                });
+                if (consumed == 0) {
                     retry_receive = true;
                     break;
-                }
-
-                try {
-                    this.process_message(message);
-                } catch (error) {
-                    ws.close();
-                    throw error;
                 }
             }
 

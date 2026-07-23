@@ -209,6 +209,95 @@ static void clear_error(turbo_script_ctx_t *ctx) {
   set_error_msg(ctx, NULL);
 }
 
+static int ts_memory_policy_valid(const turbo_script_memory_policy_t *policy) {
+  return policy && policy->profile >= TURBO_SCRIPT_MEMORY_BATCH &&
+         policy->profile <= TURBO_SCRIPT_MEMORY_SANDBOX &&
+         policy->max_context_bytes > 0 && policy->max_task_bytes > 0 &&
+         policy->max_external_value_bytes > 0 &&
+         policy->scratch_trim_threshold_bytes > 0 &&
+         policy->max_external_value_bytes <= policy->max_task_bytes &&
+         policy->max_task_bytes <= policy->max_context_bytes;
+}
+
+int turbo_script_memory_policy_init(turbo_script_memory_profile_t profile,
+                                    turbo_script_memory_policy_t *policy) {
+  static const turbo_script_memory_policy_t policies[] = {
+      {TURBO_SCRIPT_MEMORY_BATCH, 512U * 1024U * 1024U, 64U * 1024U * 1024U,
+       16U * 1024U * 1024U, 4U * 1024U * 1024U},
+      {TURBO_SCRIPT_MEMORY_INTERACTIVE, 128U * 1024U * 1024U, 16U * 1024U * 1024U,
+       4U * 1024U * 1024U, 512U * 1024U},
+      {TURBO_SCRIPT_MEMORY_SERVICE, 256U * 1024U * 1024U, 16U * 1024U * 1024U,
+       4U * 1024U * 1024U, 512U * 1024U},
+      {TURBO_SCRIPT_MEMORY_STREAMING, 128U * 1024U * 1024U, 8U * 1024U * 1024U,
+       1U * 1024U * 1024U, 256U * 1024U},
+      {TURBO_SCRIPT_MEMORY_SANDBOX, 32U * 1024U * 1024U, 4U * 1024U * 1024U,
+       256U * 1024U, 64U * 1024U},
+  };
+  if (!policy || profile < TURBO_SCRIPT_MEMORY_BATCH ||
+      profile > TURBO_SCRIPT_MEMORY_SANDBOX)
+    return -1;
+  *policy = policies[(size_t)profile];
+  return 0;
+}
+
+int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
+                                  turbo_script_memory_stats_t *stats) {
+  size_t root_bytes;
+  size_t task_bytes;
+  size_t scratch_bytes;
+  size_t total;
+  if (!ctx || !stats) return -1;
+  root_bytes = mem_pool_total_used(&ctx->env.arena);
+  task_bytes = ts_task_memory_used(ctx);
+  scratch_bytes = mem_pool_total_used(&ctx->scratch_arena);
+  if (root_bytes > SIZE_MAX - task_bytes || root_bytes + task_bytes > SIZE_MAX - scratch_bytes)
+    return -1;
+  total = root_bytes + task_bytes + scratch_bytes;
+  if (total > ctx->peak_context_bytes) ctx->peak_context_bytes = total;
+  stats->context_bytes = root_bytes;
+  stats->task_bytes = task_bytes;
+  stats->scratch_bytes = scratch_bytes;
+  stats->peak_context_bytes = ctx->peak_context_bytes;
+  return 0;
+}
+
+int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
+                                   const turbo_script_memory_policy_t *policy) {
+  turbo_script_memory_stats_t stats;
+  if (!ctx || !ts_memory_policy_valid(policy)) return -1;
+  if (ctx->memory_exhausted || turbo_script_task_active_count(ctx) != 0 ||
+      turbo_script_timer_active_count(ctx) != 0)
+    return -1;
+  if (turbo_script_get_memory_stats(ctx, &stats) != 0 ||
+      stats.context_bytes > policy->max_context_bytes ||
+      stats.task_bytes > policy->max_context_bytes - stats.context_bytes ||
+      ts_task_memory_max_used(ctx) > policy->max_task_bytes ||
+      stats.scratch_bytes > policy->max_context_bytes)
+    return -1;
+  ctx->memory_policy = *policy;
+  ctx->env.max_external_value_bytes = policy->max_external_value_bytes;
+  return 0;
+}
+
+int ts_memory_finish_run(turbo_script_ctx_t *ctx, int result) {
+  turbo_script_memory_stats_t stats;
+  if (!ctx) return -1;
+  if (mem_pool_total_used(&ctx->scratch_arena) >=
+      ctx->memory_policy.scratch_trim_threshold_bytes) {
+    mem_reset(&ctx->scratch_arena);
+    mem_trim(&ctx->scratch_arena);
+  }
+  if (turbo_script_get_memory_stats(ctx, &stats) != 0 ||
+      stats.context_bytes > ctx->memory_policy.max_context_bytes ||
+      stats.task_bytes > ctx->memory_policy.max_context_bytes - stats.context_bytes) {
+    ctx->memory_exhausted = 1;
+    set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "memory policy: context quota exceeded");
+    ctx->env.aborted = 1;
+    return -1;
+  }
+  return result;
+}
+
 /* Zero-value shorthand */
 #define TS_ZERO ((exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 0.0})
 #define TS_ERROR(ctx, code, msg)                                                                   \
@@ -502,7 +591,7 @@ static int ts_lookup_named_script_function(exprtk_env_t *env, const char *name, 
     exprtk_func_t *fn = env->funcs;
     while (fn) {
       if (fn->is_script && fn->name && strcmp(fn->name, name) == 0) {
-        exprtk_value_t val;
+        exprtk_value_t val = {0};
         val.type = EXPRTK_VAL_FUNCTION;
         val.data.function.arg_params = fn->data.script.arg_params;
         val.data.function.arg_count = fn->data.script.arg_count;
@@ -549,7 +638,7 @@ static exprtk_value_t ts_rebind_function_closures(exprtk_value_t value, exprtk_e
   return value;
 }
 
-static exprtk_value_t ts_export(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_export(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   exprtk_value_t value;
   exprtk_env_t *import_env = ctx ? ctx->current_import_env : NULL;
@@ -752,7 +841,7 @@ static exprtk_value_t ts_import_script_common(turbo_script_ctx_t *ctx, const cha
   return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
 }
 
-static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
     TS_ERROR(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "import: expected 1 string arg");
@@ -784,7 +873,7 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, void *user_da
   return TS_ZERO;
 }
 
-static exprtk_value_t ts_import_module(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_import_module(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   char *name = NULL;
 
@@ -806,7 +895,7 @@ static exprtk_value_t ts_import_module(size_t argc, exprtk_value_t *args, void *
   return ts_import_script_common(ctx, name, 1);
 }
 
-static exprtk_value_t ts_print(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_print(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   (void)user_data;
   for (size_t i = 0; i < argc; ++i) {
     if (i > 0) printf(" ");
@@ -952,7 +1041,13 @@ turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
 
   atomic_init(&ctx->ref_count, 1U);
   atomic_init(&ctx->closing, 0);
+  if (turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_SERVICE,
+                                      &ctx->memory_policy) != 0) {
+    free(ctx);
+    return NULL;
+  }
   exprtk_env_init(&ctx->env);
+  ctx->env.max_external_value_bytes = ctx->memory_policy.max_external_value_bytes;
   mem_init(&ctx->scratch_arena, 4096);
 
   if (ts_timer_scheduler_init(ctx, TS_TIMER_DEFAULT_CAPACITY) != 0) {
@@ -1004,6 +1099,11 @@ int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
 int turbo_script_run(turbo_script_ctx_t *ctx, const char *script) {
   if (!ctx) return -1;
   if (atomic_load_explicit(&ctx->closing, memory_order_acquire)) return -1;
+  if (ctx->memory_exhausted) {
+    set_error(ctx, TURBO_SCRIPT_ERROR_STATE,
+              "memory policy: context is exhausted and must be recreated");
+    return -1;
+  }
   if (!script) {
     set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "script is NULL");
     return -1;
@@ -1013,7 +1113,7 @@ int turbo_script_run(turbo_script_ctx_t *ctx, const char *script) {
   if (ts_prepare_expr(ctx, script) != 0) {
     return -1;
   }
-  return turbo_script_run_mir_interp(ctx, script);
+  return ts_memory_finish_run(ctx, turbo_script_run_mir_interp(ctx, script));
 }
 
 int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script) {
@@ -1100,7 +1200,12 @@ int turbo_script_exec(turbo_script_ctx_t *ctx, turbo_script_compiled_t *compiled
     return -1;
   }
 
-  return turbo_script_run_mir_interp(ctx, compiled->source);
+  if (ctx->memory_exhausted) {
+    set_error(ctx, TURBO_SCRIPT_ERROR_STATE,
+              "memory policy: context is exhausted and must be recreated");
+    return -1;
+  }
+  return ts_memory_finish_run(ctx, turbo_script_run_mir_interp(ctx, compiled->source));
 }
 
 bool turbo_script_value_as_bool(exprtk_value_t val) {
@@ -1191,12 +1296,11 @@ void ts_bind_num(turbo_script_ctx_t *ctx, const char *name, double value) {
 
 void ts_bind_str(turbo_script_ctx_t *ctx, const char *name, const char *value) {
   if (!ctx || !name || !value) return;
-  char *buf = tstr_v_to_arena(tstr_v_from_cstr(value), &ctx->env.arena);
-  if (buf) {
-    size_t len = strlen(buf);
-    exprtk_value_t v = {EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
-    exprtk_env_set(&ctx->env, name, v);
-  }
+  exprtk_value_t owned;
+  if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_cstr(value)), &ctx->env,
+                               &owned) != 0)
+    return;
+  exprtk_env_set(&ctx->env, name, owned);
 }
 
 double ts_get_num(turbo_script_ctx_t *ctx, const char *name) {
@@ -1216,11 +1320,10 @@ turbo_script_error_code_t turbo_script_get_error_code(turbo_script_ctx_t *ctx) {
 
 int ts_bind_vec(turbo_script_ctx_t *ctx, const char *name, const double *data, size_t len) {
   if (!ctx || !name || !data || len == 0) return -1;
-  double *buf = (double *)mem_alloc(&ctx->env.arena, len * sizeof(double));
-  if (!buf) return -1;
-  memcpy(buf, data, len * sizeof(double));
-  exprtk_value_t v = {EXPRTK_VAL_VECTOR, .data.vector = {buf, len}};
-  exprtk_env_set(&ctx->env, name, v);
+  exprtk_value_t owned;
+  if (exprtk_value_copy_to_env(exprtk_val_vec((double *)data, len), &ctx->env, &owned) != 0)
+    return -1;
+  exprtk_env_set(&ctx->env, name, owned);
   return 0;
 }
 

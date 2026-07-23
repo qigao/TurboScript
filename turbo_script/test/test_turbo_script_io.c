@@ -1,4 +1,4 @@
-﻿#include "../src/turbo_script_internal.h"
+#include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
 #include "turbo_fs.h"
@@ -25,7 +25,7 @@ static void ts_test_make_name(char *buf, size_t buf_size, const char *prefix, co
   snprintf(buf, buf_size, "%s_%lu%s", prefix, ts_test_nonce(), tail);
 }
 
-static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   (void)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 0.0};

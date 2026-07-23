@@ -59,6 +59,12 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   int owns_ast = provided_ast == NULL;
 
   if (!ctx) return -1;
+  if (ctx->memory_exhausted) {
+    ctx->error_code = TURBO_SCRIPT_ERROR_STATE;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "memory policy: context is exhausted and must be recreated");
+    return -1;
+  }
   ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   ctx->error_msg[0] = '\0';
   if (!ast && !script) {
@@ -353,6 +359,12 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
   uint64_t exec_start_time = 0;
   
   if (!ctx) return -1;
+  if (ctx->memory_exhausted) {
+    ctx->error_code = TURBO_SCRIPT_ERROR_STATE;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "memory policy: context is exhausted and must be recreated");
+    return -1;
+  }
   ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   ctx->error_msg[0] = '\0';
   if (!script) {
@@ -384,7 +396,7 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
       ctx->jit_stats.total_exec_time_us += ts_get_time_us() - exec_start_time;
     }
     
-    return result;
+    return ts_memory_finish_run(ctx, result);
   }
 
   // 记录缓存未命中
@@ -416,5 +428,5 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
     ctx->jit_stats.total_exec_time_us += ts_get_time_us() - exec_start_time;
   }
   
-  return result;
+  return ts_memory_finish_run(ctx, result);
 }

@@ -337,7 +337,7 @@ spec("SIMD Computation") {
       exprtk_value_t vec_arg = {.type = EXPRTK_VAL_VECTOR,
                                 .data.vector = {.data = input, .size = 5}};
 
-      exprtk_value_t result = exprtk_call_internal("vec.reverse", 1, &vec_arg, &env, &env.arena);
+      exprtk_value_t result = exprtk_call_internal("vec.reverse", 1, &vec_arg, &env);
 
       printf("Result type: %d (expected %d for VECTOR)\n", result.type, EXPRTK_VAL_VECTOR);
       if (result.type == EXPRTK_VAL_NUMBER) {
@@ -374,7 +374,7 @@ spec("SIMD Computation") {
 
       exprtk_value_t arg = {.type = EXPRTK_VAL_NUMBER, .data.number = 5.0};
 
-      exprtk_value_t result = exprtk_call_internal("vec.range", 1, &arg, &env, &env.arena);
+      exprtk_value_t result = exprtk_call_internal("vec.range", 1, &arg, &env);
 
       printf("Result type: %d (expected %d for VECTOR)\n", result.type, EXPRTK_VAL_VECTOR);
       if (result.type == EXPRTK_VAL_NUMBER) {

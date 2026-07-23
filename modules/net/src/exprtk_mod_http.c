@@ -43,25 +43,24 @@ static exprtk_value_t net_null_value(void) {
 }
 
 static exprtk_value_t net_make_string_value(exprtk_env_t *env, const char *data, size_t len) {
-  char *buf = mem_alloc(&env->arena, len + 1);
-  if (!buf) return NET_ZERO;
-
-  if (data && len > 0) {
-    memcpy(buf, data, len);
+  exprtk_value_t value;
+  exprtk_value_t borrowed = exprtk_val_str(tstr_v_from_buf(data ? data : "", len));
+  if (!env || (!data && len != 0)) return NET_ZERO;
+  if (len > env->max_external_value_bytes) {
+    env->aborted = 1;
+    snprintf(env->error_msg, sizeof(env->error_msg),
+             "network value size %zu exceeds quota %zu", len,
+             env->max_external_value_bytes);
+    return NET_ZERO;
   }
-  buf[len] = '\0';
-  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
+  if (exprtk_value_copy_to_env(borrowed, env, &value) != 0)
+    return NET_ZERO;
+  return value;
 }
 
 static exprtk_value_t copy_response_body(http_response_t *resp, exprtk_env_t *env) {
   if (resp && resp->status_code >= 200 && resp->status_code < 300 && resp->body) {
-    char *buf = mem_alloc(&env->arena, resp->body_len + 1);
-    if (buf) {
-      memcpy(buf, resp->body, resp->body_len);
-      buf[resp->body_len] = '\0';
-      return (exprtk_value_t){EXPRTK_VAL_STRING,
-                              .data.string = tstr_v_from_buf(buf, resp->body_len)};
-    }
+    return net_make_string_value(env, resp->body, resp->body_len);
   }
   return NET_ZERO;
 }
@@ -266,7 +265,9 @@ static exprtk_value_t net_json_to_exprtk_value(http_ud_t *ud, const json_value_t
       exprtk_value_t list = exprtk_val_list_empty();
       size_t count = turbo_json_array_size(value);
       for (i = 0; i < count; i++) {
-        exprtk_list_push(&list, net_json_to_exprtk_value(ud, turbo_json_array_get(value, i)));
+        exprtk_value_t item = net_json_to_exprtk_value(ud, turbo_json_array_get(value, i));
+        (void)exprtk_list_push(&list, item);
+        exprtk_value_destroy(&item);
       }
       return list;
     }
@@ -275,8 +276,9 @@ static exprtk_value_t net_json_to_exprtk_value(http_ud_t *ud, const json_value_t
       size_t count = turbo_json_object_size(value);
       for (i = 0; i < count; i++) {
         const char *key = turbo_json_object_key(value, i);
-        exprtk_map_set(&map, key ? key : "",
-                       net_json_to_exprtk_value(ud, turbo_json_object_value(value, i)));
+        exprtk_value_t item = net_json_to_exprtk_value(ud, turbo_json_object_value(value, i));
+        exprtk_map_set(&map, key ? key : "", item);
+        exprtk_value_destroy(&item);
       }
       return map;
     }
@@ -315,7 +317,9 @@ static exprtk_value_t net_response_headers_map(http_ud_t *ud, http_response_t *r
       *colon = '\0';
       name = net_trim_ascii(entry);
       value = net_trim_ascii(colon + 1);
-      exprtk_map_set(&headers, name, net_make_string_value(ud->env, value, strlen(value)));
+      exprtk_value_t header_value = net_make_string_value(ud->env, value, strlen(value));
+      exprtk_map_set(&headers, name, header_value);
+      exprtk_value_destroy(&header_value);
     }
     line = &buf[i + 1];
   }
@@ -339,13 +343,21 @@ static exprtk_value_t net_response_data_value(http_ud_t *ud, http_response_t *re
 
 static exprtk_value_t net_error_response_value(http_ud_t *ud, const char *error) {
   exprtk_value_t result = exprtk_val_map();
+  exprtk_value_t text;
+  exprtk_value_t headers;
 
   exprtk_map_set(&result, "status", exprtk_val_num(0.0));
-  exprtk_map_set(&result, "body", net_make_string_value(ud->env, "", 0));
-  exprtk_map_set(&result, "headers", exprtk_val_map());
+  text = net_make_string_value(ud->env, "", 0);
+  exprtk_map_set(&result, "body", text);
+  exprtk_value_destroy(&text);
+  headers = exprtk_val_map();
+  exprtk_map_set(&result, "headers", headers);
+  exprtk_value_destroy(&headers);
   exprtk_map_set(&result, "data", net_null_value());
   if (error && error[0]) {
-    exprtk_map_set(&result, "error", net_make_string_value(ud->env, error, strlen(error)));
+    text = net_make_string_value(ud->env, error, strlen(error));
+    exprtk_map_set(&result, "error", text);
+    exprtk_value_destroy(&text);
   } else {
     exprtk_map_set(&result, "error", net_null_value());
   }
@@ -355,15 +367,26 @@ static exprtk_value_t net_error_response_value(http_ud_t *ud, const char *error)
 
 static exprtk_value_t net_response_value(http_ud_t *ud, http_response_t *resp) {
   exprtk_value_t result = exprtk_val_map();
+  exprtk_value_t body;
+  exprtk_value_t error;
+  exprtk_value_t headers;
+  exprtk_value_t data;
 
   exprtk_map_set(&result, "status", exprtk_val_num(resp ? (double)resp->status_code : 0.0));
-  exprtk_map_set(&result, "body",
-                 net_make_string_value(ud->env, resp && resp->body ? resp->body : "",
-                                       resp && resp->body ? resp->body_len : 0));
-  exprtk_map_set(&result, "headers", net_response_headers_map(ud, resp));
-  exprtk_map_set(&result, "data", net_response_data_value(ud, resp));
+  body = net_make_string_value(ud->env, resp && resp->body ? resp->body : "",
+                               resp && resp->body ? resp->body_len : 0);
+  exprtk_map_set(&result, "body", body);
+  exprtk_value_destroy(&body);
+  headers = net_response_headers_map(ud, resp);
+  exprtk_map_set(&result, "headers", headers);
+  exprtk_value_destroy(&headers);
+  data = net_response_data_value(ud, resp);
+  exprtk_map_set(&result, "data", data);
+  exprtk_value_destroy(&data);
   if (resp && resp->error && resp->error[0]) {
-    exprtk_map_set(&result, "error", net_make_string_value(ud->env, resp->error, strlen(resp->error)));
+    error = net_make_string_value(ud->env, resp->error, strlen(resp->error));
+    exprtk_map_set(&result, "error", error);
+    exprtk_value_destroy(&error);
   } else {
     exprtk_map_set(&result, "error", net_null_value());
   }
@@ -469,7 +492,7 @@ static void net_apply_request_options(http_ud_t *ud, http_client_t *client,
 
 static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr_v url_sv,
                                        const tstr_v *body_sv, const exprtk_value_t *options,
-                                       int structured_response) {
+                                       int structured_response, exprtk_env_t *env) {
   http_client_t *client;
   http_response_t *resp;
   const char **headers = NULL;
@@ -479,8 +502,12 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
   size_t body_len = 0;
   exprtk_value_t ret = NET_ZERO;
   http_request_control_t control = HTTP_REQUEST_CONTROL_DEFAULT;
+  http_ud_t call_ud;
 
   if (!ud || !ud->env) return NET_ZERO;
+  call_ud = *ud;
+  call_ud.env = env;
+  ud = &call_ud;
 
   client = http_client_create(NULL);
   if (!client) {
@@ -514,28 +541,30 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
   return ret;
 }
 
-static exprtk_value_t fn_http_get(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_http_get(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
 
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
-    return net_http_request(ud, HTTP_GET, args[0].data.string, NULL, NULL, 0);
+    return net_http_request(ud, HTTP_GET, args[0].data.string, NULL, NULL, 0, env);
   }
   if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_MAP) {
-    return net_http_request(ud, HTTP_GET, args[0].data.string, NULL, &args[1], 1);
+    return net_http_request(ud, HTTP_GET, args[0].data.string, NULL, &args[1], 1, env);
   }
 
   return NET_ZERO;
 }
 
-static exprtk_value_t fn_http_post(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_http_post(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
 
   if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING) {
-    return net_http_request(ud, HTTP_POST, args[0].data.string, &args[1].data.string, NULL, 0);
+    return net_http_request(ud, HTTP_POST, args[0].data.string, &args[1].data.string, NULL, 0,
+                            env);
   }
   if (argc == 3 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING &&
       args[2].type == EXPRTK_VAL_MAP) {
-    return net_http_request(ud, HTTP_POST, args[0].data.string, &args[1].data.string, &args[2], 1);
+    return net_http_request(ud, HTTP_POST, args[0].data.string, &args[1].data.string, &args[2], 1,
+                            env);
   }
 
   return NET_ZERO;
@@ -543,7 +572,7 @@ static exprtk_value_t fn_http_post(size_t argc, exprtk_value_t *args, void *user
 
 /* == Script functions: WebSocket ========================================= */
 
-static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
   const coro_cancel_token_t *owner;
   coro_cancel_registration_t *cancel_registration = NULL;
@@ -621,7 +650,7 @@ fail:
   return NET_ZERO;
 }
 
-static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
   const coro_cancel_token_t *owner;
   coro_cancel_registration_t *cancel_registration = NULL;
@@ -660,7 +689,7 @@ static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, void *user_d
   return NET_ONE;
 }
 
-static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
   const coro_cancel_token_t *owner;
   const coro_cancel_token_t *cancel_token;
@@ -670,10 +699,15 @@ static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_d
   char *resp = NULL;
   size_t len = 0;
   int r;
-  char *buf;
+  exprtk_value_t message;
+  exprtk_value_t result;
+  exprtk_env_t *call_env;
 
-  if (!ud || !ud->ctx || argc > 1) return NET_ZERO;
-  if (argc == 1 && args[0].type != EXPRTK_VAL_NUMBER) return NET_ZERO;
+  if (!ud || !ud->ctx || argc != 2 || args[0].type != EXPRTK_VAL_NUMBER ||
+      args[1].type != EXPRTK_VAL_FUNCTION)
+    return NET_ZERO;
+  call_env = env;
+  if (!call_env) return NET_ZERO;
   owner = turbo_script_current_task_cancel_token();
   client = net_ctx_current_ws_client(ud->ctx, owner);
   if (!client) {
@@ -681,7 +715,7 @@ static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_d
     return NET_ZERO;
   }
 
-  if (argc == 1) timeout_ms = (int)args[0].data.number;
+  timeout_ms = (int)args[0].data.number;
 
   if (timeout_ms < 0) {
     net_set_error(ud->ctx, "ws recv timeout must be non-negative");
@@ -709,20 +743,27 @@ static exprtk_value_t fn_ws_recv(size_t argc, exprtk_value_t *args, void *user_d
     return NET_ZERO;
   }
 
-  buf = mem_alloc(&ud->env->arena, len + 1);
-  if (!buf) {
+  if (len > call_env->max_external_value_bytes) {
     coro_socket_free_recv(resp);
-    net_set_error(ud->ctx, "response alloc failed");
+    net_set_error(ud->ctx, "ws frame exceeds the configured external-value quota");
+    call_env->aborted = 1;
+    snprintf(call_env->error_msg, sizeof(call_env->error_msg),
+             "ws.consume: frame size %zu exceeds quota %zu", len,
+             call_env->max_external_value_bytes);
     return NET_ZERO;
   }
-  memcpy(buf, resp, len);
-  buf[len] = '\0';
+
+  /* The transport buffer is borrowed only for this callback. Script function
+   * argument binding copies it into the callback-local environment; only a
+   * value explicitly returned by the callback may escape into the task env. */
+  message = exprtk_val_str(tstr_v_from_buf(resp, len));
+  result = exprtk_call_function_value(args[1], 1, &message, call_env);
   coro_socket_free_recv(resp);
   net_set_error(ud->ctx, "");
-  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
+  return result;
 }
 
-static exprtk_value_t fn_ws_close(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_ws_close(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
   const coro_cancel_token_t *owner;
   coro_socket_t **slot;
@@ -757,6 +798,6 @@ void net_load(void *p, void *e, void *s) {
   exprtk_env_register_func(env, "http.post", fn_http_post, ud);
   exprtk_env_register_func(env, "ws.connect", fn_ws_connect, ud);
   exprtk_env_register_func(env, "ws.send", fn_ws_send, ud);
-  exprtk_env_register_func(env, "ws.recv", fn_ws_recv, ud);
+  exprtk_env_register_func(env, "ws.consume", fn_ws_consume, ud);
   exprtk_env_register_func(env, "ws.close", fn_ws_close, ud);
 }

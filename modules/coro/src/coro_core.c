@@ -11,8 +11,7 @@
 
 enum {
     CORO_REGISTRY_INITIAL_CAPACITY = 16,
-    CORO_REGISTRY_MAX_CAPACITY = 1024,
-    CORO_DEFAULT_STACK_SIZE = 64 * 1024
+    CORO_REGISTRY_MAX_CAPACITY = 1024
 };
 
 static int coro_legacy_status(coro_state_t state) {
@@ -71,8 +70,7 @@ static void coro_entry_point(coro_t *co, void *arg) {
     result = exprtk_call_internal(ctx->func_name,
                                   ctx->resume_argc,
                                   ctx->resume_args,
-                                  ctx->env,
-                                  &ctx->env->arena);
+                                  ctx->env);
 
     if (ctx->env->flow == exprtk_FLOW_THROW) {
         const char *message = ctx->env->error_msg[0] != '\0'
@@ -102,7 +100,7 @@ coro_registry_t *coro_registry_create(void) {
 
     config.initial_capacity = CORO_REGISTRY_INITIAL_CAPACITY;
     config.max_capacity = CORO_REGISTRY_MAX_CAPACITY;
-    config.stack_size = CORO_DEFAULT_STACK_SIZE;
+    config.stack_size = 0;
     config.storage_size = 0;
     config.alloc_fn = NULL;
     config.free_fn = NULL;
@@ -215,7 +213,7 @@ static coro_ctx_t *coro_ctx_create_impl(exprtk_env_t *env,
         ctx->pooled = 1;
     } else {
         coro_opts_t opts = coro_OPTS_DEFAULT;
-        opts.stack_size = stack_size == 0 ? CORO_DEFAULT_STACK_SIZE : stack_size;
+        opts.stack_size = stack_size;
         opts.user_data = ctx;
         ctx->coro = coro_create(coro_entry_point, ctx, &opts);
     }

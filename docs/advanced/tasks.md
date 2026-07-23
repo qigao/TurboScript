@@ -106,11 +106,11 @@ coro_context_destroy(coro);
 - `turbo_script_set_coro_context()` 从 timer-only 适配入口扩展为 timer + task 的共同 CoroNet 入口；自定义 timer executor 不能替代 task 所需的 CoroNet scheduler。
 - timer 保持串行、不重叠语义；需要并发 I/O 的 timer callback 可快速 `task.spawn()` 后返回。
 - `ws.*` 在 managed task 内按 task 隔离连接；多个 task 可并行调用同名的
-  `ws.connect/send/recv/close`，不会覆盖彼此的 socket。root 环境中的 `ws.*` 仍保持
+  `ws.connect/send/consume/close`，不会覆盖彼此的 socket。root 环境中的 `ws.*` 仍保持
   原有单连接语义。task WebSocket 注册表最多同时持有 256 条连接，满时连接失败；
-  `task.cancel()` 可中断等待中的 WebSocket connect/send/recv。
-- `ws.recv()` 返回的帧字符串由当前 TurboScript context 的 arena 持有，context 销毁前
-  不会逐帧回收。持续订阅必须同时设置运行时限与事件数内存配额；仓库中的
+  `task.cancel()` 可中断等待中的 WebSocket connect/send/consume。
+- `ws.consume(timeout, callback)` 将帧限制在 callback 生命周期内；只有 callback
+  明确返回的值才逃逸到 task 环境并计入 task 配额。仓库中的
   [Polymarket long-run 示例](../../examples/polymarket_multi_channel_long_run.tbs)
   展示了有界接收、有限重连、同步 Observer 背压与采样输出。
 - 迁移成本集中在需要后台任务的宿主：绑定并驱动 CoroNet context，并在消费结果后 release。

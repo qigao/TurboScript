@@ -29,7 +29,6 @@
 /* Internal registry */
 void exprtk_registry_init(void);
 exprtk_builtin_fn exprtk_registry_find(const char *name);
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 exprtk_value_t exprtk_env_eval_node(const exprtk_node_t *node, exprtk_env_t *env);
 exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env);
 void exprtk_env_import_vars(exprtk_env_t *dst, exprtk_env_t *src);

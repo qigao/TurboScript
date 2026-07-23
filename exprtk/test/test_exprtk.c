@@ -62,7 +62,7 @@ static double value_to_double(exprtk_value_t val) {
     return 0.0;
 }
 /* Helper for native function testing */
-static exprtk_value_t native_double(size_t argc, exprtk_value_t *args, void *ud) {
+static exprtk_value_t native_double(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {
     (void)ud;
     if (argc == 1) {
         double val = value_to_double(args[0]);
@@ -71,7 +71,7 @@ static exprtk_value_t native_double(size_t argc, exprtk_value_t *args, void *ud)
     return exprtk_val_num(0.0);
 }
 
-static exprtk_value_t sum_func(size_t argc, exprtk_value_t *args, void *ud) {
+static exprtk_value_t sum_func(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *ud) {
     (void)ud;
     double s = 0;
     for (size_t i = 0; i < argc; ++i) {
@@ -164,6 +164,193 @@ suite("exprtk_grammar") {
             const char *input = "var a = 5; var b = a * 2; b";
             exprtk_node_t *root = exprtk_parse(input, 0);
             check_float_eq(value_to_double(exprtk_eval(root, &env)), 10.0, 0.0001);
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+    }
+
+    group("Managed value ownership") {
+        it("should retain borrowed env values and reclaim replaced storage") {
+            exprtk_env_t env;
+            exprtk_value_t first;
+            exprtk_value_t second;
+            exprtk_value_t borrowed;
+            mem_buffer_t *first_storage;
+
+            exprtk_env_init(&env);
+            check_int_eq(exprtk_value_copy_to_env(
+                             exprtk_val_str(tstr_v_from_cstr("first")), &env, &first),
+                         0);
+            first_storage = first.storage;
+            check_not_null(first_storage);
+            check_int_eq(first.ownership, EXPRTK_VALUE_OWNED);
+            check_size_eq((size_t)mem_buffer_ref_count(first_storage), 1U);
+
+            exprtk_env_set_local(&env, "a", first);
+            borrowed = exprtk_env_get(&env, "a");
+            check_int_eq(borrowed.ownership, EXPRTK_VALUE_BORROWED);
+            exprtk_env_set_local(&env, "b", borrowed);
+            check_size_eq((size_t)mem_buffer_ref_count(first_storage), 2U);
+
+            check_int_eq(exprtk_value_copy_to_env(
+                             exprtk_val_str(tstr_v_from_cstr("second")), &env, &second),
+                         0);
+            exprtk_env_set_local(&env, "a", second);
+            check_size_eq((size_t)mem_buffer_ref_count(first_storage), 1U);
+            borrowed = exprtk_env_get(&env, "b");
+            check_str_eq(borrowed.data.string.data, "first");
+
+            exprtk_env_free(&env);
+        }
+
+        it("should copy managed payloads across environment pools") {
+            exprtk_env_t source;
+            exprtk_env_t destination;
+            exprtk_value_t original;
+            exprtk_value_t copied;
+
+            exprtk_env_init(&source);
+            exprtk_env_init(&destination);
+            check_int_eq(exprtk_value_copy_to_env(
+                             exprtk_val_str(tstr_v_from_cstr("cross-env")),
+                             &source, &original),
+                         0);
+            copied = exprtk_value_clone_to_env(original, &destination);
+            check_not_null(copied.storage);
+            check_ptr_ne(copied.storage, original.storage);
+            check_ptr_eq(mem_buffer_pool(copied.storage), &destination.arena);
+            check_str_eq(copied.data.string.data, "cross-env");
+
+            exprtk_value_destroy(&copied);
+            exprtk_value_destroy(&original);
+            exprtk_env_free(&destination);
+            exprtk_env_free(&source);
+        }
+
+        it("should give maps and lists independent managed payloads") {
+            exprtk_value_t map = exprtk_val_map();
+            exprtk_value_t list = exprtk_val_list_empty();
+            exprtk_value_t first;
+            exprtk_value_t second;
+            mem_buffer_t *first_storage;
+
+            exprtk_map_set(&map, "name", exprtk_val_str(tstr_v_from_cstr("alpha")));
+            first = exprtk_map_get(&map, "name");
+            first_storage = first.storage;
+            check_not_null(first_storage);
+            check_int_eq(first.ownership, EXPRTK_VALUE_BORROWED);
+            exprtk_map_set(&map, "name", exprtk_val_str(tstr_v_from_cstr("beta")));
+            check_size_eq((size_t)mem_buffer_ref_count(first_storage), 0U);
+            second = exprtk_map_get(&map, "name");
+            check_str_eq(second.data.string.data, "beta");
+
+            check_int_eq(exprtk_list_push(
+                             &list, exprtk_val_str(tstr_v_from_cstr("item"))),
+                         0);
+            first = exprtk_list_get(&list, 0);
+            check_not_null(first.storage);
+            check_int_eq(first.ownership, EXPRTK_VALUE_BORROWED);
+            check_int_eq(exprtk_list_push(&list, first), 0);
+            check_size_eq((size_t)mem_buffer_ref_count(first.storage), 2U);
+
+            exprtk_value_destroy(&list);
+            exprtk_value_destroy(&map);
+        }
+
+        it("should manage vector and typed-array payloads with mem buffers") {
+            exprtk_env_t env;
+            double vector_data[] = {1.0, 2.0, 3.0};
+            int32_t typed_data[] = {4, 5, 6};
+            exprtk_value_t vector;
+            exprtk_value_t typed;
+
+            exprtk_env_init(&env);
+            check_int_eq(exprtk_value_copy_to_env(
+                             exprtk_val_vec(vector_data, 3), &env, &vector),
+                         0);
+            check_not_null(vector.storage);
+            check_ptr_eq(mem_buffer_pool(vector.storage), &env.arena);
+            check_ptr_ne(vector.data.vector.data, vector_data);
+            check_float_eq(vector.data.vector.data[2], 3.0, 0.0001);
+
+            check_int_eq(exprtk_value_copy_to_env(
+                             exprtk_val_typed_array(EXPRTK_TYPED_I32, typed_data, 3, 0),
+                             &env, &typed),
+                         0);
+            check_not_null(typed.storage);
+            check_ptr_eq(mem_buffer_pool(typed.storage), &env.arena);
+            check_ptr_ne(typed.data.typed_array.data, typed_data);
+            check_int_eq(((int32_t *)typed.data.typed_array.data)[1], 5);
+
+            exprtk_value_destroy(&typed);
+            exprtk_value_destroy(&vector);
+            exprtk_env_free(&env);
+        }
+
+        it("should recycle repeated builtin result storage") {
+            const size_t warmup_runs = 8U;
+            const size_t steady_runs = 512U;
+            exprtk_env_t env;
+            exprtk_node_t *root;
+            exprtk_value_t result;
+            size_t allocated_after_warmup;
+
+            exprtk_env_init(&env);
+            exprtk_env_add_module(&env, exprtk_module_string());
+            exprtk_registry_init();
+            root = exprtk_parse("payload = str_repeat(\"x\", 4096); payload", 0);
+            check_not_null(root);
+
+            for (size_t i = 0; i < warmup_runs; ++i) {
+                result = exprtk_eval(root, &env);
+                check_int_eq(env.aborted, 0);
+                check_int_eq(result.type, EXPRTK_VAL_STRING);
+                check_size_eq(result.data.string.len, 4096U);
+            }
+            allocated_after_warmup = mem_pool_total_allocated(&env.arena);
+
+            for (size_t i = 0; i < steady_runs; ++i) {
+                result = exprtk_eval(root, &env);
+                check_int_eq(env.aborted, 0);
+            }
+            check_size_eq(mem_pool_total_allocated(&env.arena),
+                          allocated_after_warmup);
+
+            exprtk_free(root);
+            exprtk_env_free(&env);
+        }
+
+        it("should recycle repeated concatenation and template storage") {
+            const size_t warmup_runs = 8U;
+            const size_t steady_runs = 512U;
+            exprtk_env_t env;
+            exprtk_node_t *root;
+            exprtk_value_t result;
+            size_t allocated_after_warmup;
+
+            exprtk_env_init(&env);
+            root = exprtk_parse(
+                "source = \"market\"; kind = \"book\"; seen = 42; "
+                "line = source + \" [\" + kind + \"] #\" + seen; "
+                "rendered = `${line}:ok`; rendered",
+                0);
+            check_not_null(root);
+
+            for (size_t i = 0; i < warmup_runs; ++i) {
+                result = exprtk_eval(root, &env);
+                check_int_eq(env.aborted, 0);
+                check_int_eq(result.type, EXPRTK_VAL_STRING);
+                check_str_eq(result.data.string.data, "market [book] #42:ok");
+            }
+            allocated_after_warmup = mem_pool_total_allocated(&env.arena);
+
+            for (size_t i = 0; i < steady_runs; ++i) {
+                result = exprtk_eval(root, &env);
+                check_int_eq(env.aborted, 0);
+            }
+            check_size_eq(mem_pool_total_allocated(&env.arena),
+                          allocated_after_warmup);
+
             exprtk_free(root);
             exprtk_env_free(&env);
         }

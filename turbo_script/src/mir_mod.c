@@ -29,7 +29,7 @@ static MIR_item_t mir_get_global_item(MIR_context_t ctx, const char *name) {
   return NULL;
 }
 
-static exprtk_value_t ts_mir_load(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_mir_load(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
     return exprtk_val_num(0);
@@ -67,7 +67,7 @@ static exprtk_value_t ts_mir_load(size_t argc, exprtk_value_t *args, void *user_
   return exprtk_val_num(1.0);
 }
 
-static exprtk_value_t ts_mir_call(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_mir_call(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   if (argc < 1 || args[0].type != EXPRTK_VAL_STRING)
     return exprtk_val_num(0);

@@ -1,4 +1,4 @@
-﻿#include "../src/turbo_script_internal.h"
+#include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
 #include "turbo_fs.h"
@@ -25,7 +25,7 @@ static void ts_test_make_name(char *buf, size_t buf_size, const char *prefix, co
   snprintf(buf, buf_size, "%s_%lu%s", prefix, ts_test_nonce(), tail);
 }
 
-static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   (void)user_data;
   if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 0.0};
@@ -35,6 +35,29 @@ static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, void *us
 
 
 spec("turbo_script_basics") {
+  describe("Memory policy") {
+    it("should provide bounded profiles and report usage") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_memory_policy_t policy;
+      turbo_script_memory_stats_t stats;
+
+      check_not_null(ctx);
+      check_int_eq(turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy), 0);
+      check_true(policy.max_external_value_bytes > 0);
+      check_true(policy.max_external_value_bytes <= policy.max_task_bytes);
+      check_true(policy.max_task_bytes <= policy.max_context_bytes);
+      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), 0);
+      check_int_eq(turbo_script_run(ctx, "memory_policy_probe = \"ok\";"), 0);
+      check_int_eq(turbo_script_get_memory_stats(ctx, &stats), 0);
+      check_true(stats.context_bytes > 0);
+      check_true(stats.peak_context_bytes >= stats.context_bytes);
+
+      policy.max_external_value_bytes = 0;
+      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), -1);
+      turbo_script_free(ctx);
+    }
+  }
+
   describe("Basics") {
     it("should execute math scripts") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);

@@ -235,8 +235,7 @@ void test_nested_scope_performance() {
 
   for (int i = 1; i < 10; i++) {
     scopes[i] = malloc(sizeof(exprtk_env_t));
-    exprtk_env_init_local(scopes[i]);
-    scopes[i]->parent = scopes[i - 1];
+    exprtk_env_init_child(scopes[i], scopes[i - 1]);
 
     // Add 100 variables per scope
     for (int j = 0; j < 100; j++) {

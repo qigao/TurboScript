@@ -444,7 +444,7 @@ static void ts_timer_execute_posted(void *arg1, void *arg2) {
   ts_context_release(ctx);
 }
 
-static exprtk_value_t ts_timer_after_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_after_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   uint64_t delay;
   int64_t id;
@@ -458,7 +458,7 @@ static exprtk_value_t ts_timer_after_fn(size_t argc, exprtk_value_t *args, void 
   return exprtk_val_int(id);
 }
 
-static exprtk_value_t ts_timer_every_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_every_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   uint64_t interval;
   int64_t id;
@@ -472,7 +472,7 @@ static exprtk_value_t ts_timer_every_fn(size_t argc, exprtk_value_t *args, void 
   return exprtk_val_int(id);
 }
 
-static exprtk_value_t ts_timer_cron_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_cron_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   turbo_cron_expr_t cron;
   time_t next;
@@ -497,7 +497,7 @@ static exprtk_value_t ts_timer_cron_fn(size_t argc, exprtk_value_t *args, void *
   return exprtk_val_int(id);
 }
 
-static exprtk_value_t ts_timer_cancel_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_cancel_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_timer_scheduler_t *scheduler = ctx->timer_scheduler;
   ts_timer_job_t *job;
@@ -528,7 +528,7 @@ static exprtk_value_t ts_timer_cancel_fn(size_t argc, exprtk_value_t *args, void
   return exprtk_val_bool(1);
 }
 
-static exprtk_value_t ts_timer_status_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_status_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_timer_scheduler_t *scheduler = ctx->timer_scheduler;
   ts_timer_job_t *job;
@@ -544,7 +544,7 @@ static exprtk_value_t ts_timer_status_fn(size_t argc, exprtk_value_t *args, void
   return exprtk_val_str(tstr_v_from_cstr(name));
 }
 
-static exprtk_value_t ts_timer_error_fn(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t ts_timer_error_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
   ts_timer_scheduler_t *scheduler = ctx->timer_scheduler;
   ts_timer_job_t *job;

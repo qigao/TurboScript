@@ -35,7 +35,7 @@ static exprtk_value_t coro_str(const char *text) {
 /* ========================================================================
  * coro.create(func_name, [stack_size])
  * ======================================================================== */
-static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     /* Validate arguments */
@@ -89,7 +89,7 @@ static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, void *us
 /* ========================================================================
  * coro.resume(co_id, [...args])
  * ======================================================================== */
-static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     /* Validate arguments - accept both INTEGER and NUMBER */
@@ -151,7 +151,7 @@ static exprtk_value_t fn_coro_resume(size_t argc, exprtk_value_t *args, void *us
 /* ========================================================================
  * coro.yield(value)
  * ======================================================================== */
-exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, void *user_data) {
+exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_mod_t *mod = (coro_mod_t *)user_data;
     coro_ctx_t *ctx = NULL;
     
@@ -215,7 +215,7 @@ exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, void *user_data)
 /* ========================================================================
  * coro.status(co_id)
  * ======================================================================== */
-static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     if (argc < 1) {
@@ -251,7 +251,7 @@ static exprtk_value_t fn_coro_status(size_t argc, exprtk_value_t *args, void *us
 /* ========================================================================
  * coro.destroy(co_id)
  * ======================================================================== */
-static exprtk_value_t fn_coro_destroy(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t fn_coro_destroy(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
     coro_mod_t *mod = (coro_mod_t *)user_data;
     
     if (argc < 1) {

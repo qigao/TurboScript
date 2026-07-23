@@ -74,6 +74,9 @@ struct turbo_script_ctx_s {
   exprtk_env_t *current_import_env;
   char error_msg[1024];
   turbo_script_error_code_t error_code;
+  turbo_script_memory_policy_t memory_policy;
+  size_t peak_context_bytes;
+  int memory_exhausted;
 
   /* Timer callbacks are posted onto this borrowed serialized executor. */
   turbo_script_executor_t executor;
@@ -121,7 +124,6 @@ struct turbo_script_compiled_s {
 };
 
 exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script);
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 
 /* Built-in module accessors */
 void turbo_script_register_modules(void);
@@ -155,5 +157,12 @@ exprtk_env_t *ts_task_execution_env(turbo_script_ctx_t *ctx);
 
 /* Returns the cooperative cancellation token owned by the current managed task. */
 const coro_cancel_token_t *ts_task_cancel_token(turbo_script_ctx_t *ctx);
+
+/* Point-in-time bytes retained by managed task environments. */
+size_t ts_task_memory_used(turbo_script_ctx_t *ctx);
+size_t ts_task_memory_max_used(turbo_script_ctx_t *ctx);
+
+/* Apply scratch reclamation and hard context quota checks after execution. */
+int ts_memory_finish_run(turbo_script_ctx_t *ctx, int result);
 
 #endif /* TURBO_SCRIPT_INTERNAL_H */

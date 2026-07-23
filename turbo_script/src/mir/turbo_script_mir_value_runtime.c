@@ -7,6 +7,7 @@
 #include "exprtk_class.h"
 #include "exprtk_grammar.h"
 #include "exprtk_module.h"
+#include "turbo_str.h"
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -15,7 +16,6 @@
 #include <time.h>
 
 exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env);
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 exprtk_value_t throw_error(exprtk_env_t *env, const exprtk_node_t *node, const char *fmt, ...);
 exprtk_value_t throw_method_access_error(exprtk_env_t *env, const exprtk_node_t *node,
                                          const char *method_name, exprtk_func_t *method);
@@ -118,7 +118,12 @@ double ts_mir_map_value_assign(void *ctx_ptr, const char *target_name, void *nod
       exprtk_map_free(&map);
       return 0.0;
     }
-    exprtk_map_set(&map, key, value);
+    if (exprtk_map_set(&map, key, value) != 0) {
+      exprtk_value_destroy(&value);
+      exprtk_value_destroy(&map);
+      return 0.0;
+    }
+    exprtk_value_destroy(&value);
   }
 
   exprtk_env_set(&ctx->env, target_name, map);
@@ -187,6 +192,11 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
                                  exprtk_value_t *out);
 static exprtk_value_t *ts_mir_runtime_call_value_args(exprtk_node_t *call_node, exprtk_env_t *env,
                                                    size_t *out_count);
+
+static void ts_mir_runtime_value_args_free(exprtk_value_t *args, size_t count) {
+  exprtk_values_destroy(args, count);
+  free(args);
+}
 
 static int ts_mir_runtime_value_text(exprtk_value_t value, char *buf, size_t buf_size,
                                      const char **out_data, size_t *out_len) {
@@ -482,19 +492,30 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     const char *r_data = NULL;
     size_t l_len = 0;
     size_t r_len = 0;
-    char *data = NULL;
+    tstr_t data = NULL;
+    exprtk_value_t promoted = { .type = EXPRTK_VAL_NULL };
 
     if (!ts_mir_runtime_value_text(lhs, l_buf, sizeof(l_buf), &l_data, &l_len) ||
         !ts_mir_runtime_value_text(rhs, r_buf, sizeof(r_buf), &r_data, &r_len)) {
       return 0;
     }
 
-    data = (char *)mem_alloc(&env->arena, l_len + r_len + 1);
+    if (l_len > SIZE_MAX - r_len) return 0;
+    data = tstr_new_len(NULL, l_len + r_len);
     if (!data) return 0;
     if (l_len > 0) memcpy(data, l_data, l_len);
     if (r_len > 0) memcpy(data + l_len, r_data, r_len);
     data[l_len + r_len] = '\0';
-    *out = exprtk_val_str(tstr_v_from_buf(data, l_len + r_len));
+    if (exprtk_value_copy_to_env(
+            exprtk_val_str(tstr_v_from_buf(data, l_len + r_len)), env,
+            &promoted) != 0) {
+      tstr_free(data);
+      return 0;
+    }
+    tstr_free(data);
+    exprtk_value_destroy(&lhs);
+    exprtk_value_destroy(&rhs);
+    *out = promoted;
     return 1;
   }
 
@@ -564,57 +585,43 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
   }
 }
 
-static int ts_mir_template_append(exprtk_env_t *env, char **buf, size_t *len, size_t *cap,
-                                  const char *data, size_t data_len) {
-  char *next;
-  size_t needed;
+static int ts_mir_template_append(tstr_t *buf, const char *data, size_t data_len) {
+  tstr_t next;
 
-  if (!env || !buf || !len || !cap || (!data && data_len > 0)) return 0;
-  needed = *len + data_len + 1;
-  if (needed > *cap) {
-    size_t next_cap = *cap ? *cap * 2 : 64;
-    while (next_cap < needed) next_cap *= 2;
-    next = (char *)mem_alloc(&env->arena, next_cap);
-    if (!next) return 0;
-    if (*buf && *len > 0) memcpy(next, *buf, *len);
-    *buf = next;
-    *cap = next_cap;
-  }
-  if (data_len > 0) memcpy(*buf + *len, data, data_len);
-  *len += data_len;
-  (*buf)[*len] = '\0';
+  if (!buf || !*buf || (!data && data_len > 0)) return 0;
+  next = tstr_cat_len(*buf, data, data_len);
+  if (!next) return 0;
+  *buf = next;
   return 1;
 }
 
-static int ts_mir_template_append_value(exprtk_env_t *env, char **buf, size_t *len,
-                                        size_t *cap, exprtk_value_t value) {
+static int ts_mir_template_append_value(tstr_t *buf, exprtk_value_t value) {
   char num_buf[64];
   int n;
 
   switch (value.type) {
   case EXPRTK_VAL_INTEGER:
     n = snprintf(num_buf, sizeof(num_buf), "%lld", (long long)value.data.integer);
-    return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
+    return n >= 0 && ts_mir_template_append(buf, num_buf, (size_t)n);
   case EXPRTK_VAL_NUMBER:
     n = snprintf(num_buf, sizeof(num_buf), "%g", value.data.number);
-    return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
+    return n >= 0 && ts_mir_template_append(buf, num_buf, (size_t)n);
   case EXPRTK_VAL_BOOL:
     return value.data.boolean
-               ? ts_mir_template_append(env, buf, len, cap, "true", 4)
-               : ts_mir_template_append(env, buf, len, cap, "false", 5);
+               ? ts_mir_template_append(buf, "true", 4)
+               : ts_mir_template_append(buf, "false", 5);
   case EXPRTK_VAL_STRING:
-    return ts_mir_template_append(env, buf, len, cap, value.data.string.data,
-                                  value.data.string.len);
+    return ts_mir_template_append(buf, value.data.string.data, value.data.string.len);
   case EXPRTK_VAL_BYTES:
     n = snprintf(num_buf, sizeof(num_buf), "bytes(%zu)", value.data.bytes.len);
-    return n >= 0 && ts_mir_template_append(env, buf, len, cap, num_buf, (size_t)n);
+    return n >= 0 && ts_mir_template_append(buf, num_buf, (size_t)n);
   case EXPRTK_VAL_UUID:
     if (turbo_uuid_format(&value.data.uuid, num_buf, sizeof(num_buf)) != TURBO_OK) return 0;
-    return ts_mir_template_append(env, buf, len, cap, num_buf, strlen(num_buf));
+    return ts_mir_template_append(buf, num_buf, strlen(num_buf));
   case EXPRTK_VAL_DATETIME: {
     time_t ts = turbo_datetime_to_time(&value.data.datetime);
     if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, num_buf, sizeof(num_buf)) < 0) return 0;
-    return ts_mir_template_append(env, buf, len, cap, num_buf, strlen(num_buf));
+    return ts_mir_template_append(buf, num_buf, strlen(num_buf));
   }
   case EXPRTK_VAL_DATE:
   case EXPRTK_VAL_TIME:
@@ -623,20 +630,20 @@ static int ts_mir_template_append_value(exprtk_env_t *env, char **buf, size_t *l
     const char *text = NULL;
     size_t text_len = 0;
     if (!ts_mir_runtime_value_text(value, num_buf, sizeof(num_buf), &text, &text_len)) return 0;
-    return ts_mir_template_append(env, buf, len, cap, text, text_len);
+    return ts_mir_template_append(buf, text, text_len);
   }
   case EXPRTK_VAL_NULL:
-    return ts_mir_template_append(env, buf, len, cap, "null", 4);
+    return ts_mir_template_append(buf, "null", 4);
   case EXPRTK_VAL_VECTOR:
-    return ts_mir_template_append(env, buf, len, cap, "[vector]", 8);
+    return ts_mir_template_append(buf, "[vector]", 8);
   case EXPRTK_VAL_MAP:
-    return ts_mir_template_append(env, buf, len, cap, "[map]", 5);
+    return ts_mir_template_append(buf, "[map]", 5);
   case EXPRTK_VAL_OBJECT:
-    return ts_mir_template_append(env, buf, len, cap, "[object]", 8);
+    return ts_mir_template_append(buf, "[object]", 8);
   case EXPRTK_VAL_LIST:
-    return ts_mir_template_append(env, buf, len, cap, "[list]", 6);
+    return ts_mir_template_append(buf, "[list]", 6);
   default:
-    return ts_mir_template_append(env, buf, len, cap, "", 0);
+    return ts_mir_template_append(buf, "", 0);
   }
 }
 
@@ -645,14 +652,15 @@ static int ts_mir_runtime_template_value(exprtk_node_t *node, exprtk_env_t *env,
   const char *str;
   size_t len;
   size_t i = 0;
-  char *result = NULL;
-  size_t result_len = 0;
-  size_t result_cap = 0;
+  tstr_t result = NULL;
+  exprtk_value_t promoted = { .type = EXPRTK_VAL_NULL };
 
   if (!node || !env || !out || node->type != EXPRTK_NODE_TEMPLATE_STRING) return 0;
   str = node->data.template_string.template_str;
   len = node->data.template_string.len;
   if (!str) return 0;
+  result = tstr_new();
+  if (!result) return 0;
 
   while (i < len) {
     if (str[i] == '$' && i + 1 < len && str[i + 1] == '{') {
@@ -667,39 +675,55 @@ static int ts_mir_runtime_template_value(exprtk_node_t *node, exprtk_env_t *env,
           depth--;
         i++;
       }
-      if (depth != 0) return 0;
+      if (depth != 0) {
+        tstr_free(result);
+        return 0;
+      }
       if (i - 1 > expr_start) {
         size_t expr_len = i - 1 - expr_start;
         char *expr_str = (char *)malloc(expr_len + 1);
         exprtk_node_t *expr_node;
-        exprtk_value_t expr_value;
+        exprtk_value_t expr_value = {0};
         int ok;
-        if (!expr_str) return 0;
+        if (!expr_str) {
+          tstr_free(result);
+          return 0;
+        }
         memcpy(expr_str, str + expr_start, expr_len);
         expr_str[expr_len] = '\0';
         expr_node = exprtk_parse(expr_str, expr_len);
         free(expr_str);
-        if (!expr_node) return 0;
+        if (!expr_node) {
+          tstr_free(result);
+          return 0;
+        }
         ok = ts_mir_runtime_value_arg(expr_node, env, &expr_value) &&
-             ts_mir_template_append_value(env, &result, &result_len, &result_cap, expr_value);
+             ts_mir_template_append_value(&result, expr_value);
+        exprtk_value_destroy(&expr_value);
         exprtk_free(expr_node);
-        if (!ok) return 0;
+        if (!ok) {
+          tstr_free(result);
+          return 0;
+        }
       }
       continue;
     }
 
-    if (!ts_mir_template_append(env, &result, &result_len, &result_cap, &str[i], 1)) {
+    if (!ts_mir_template_append(&result, &str[i], 1)) {
+      tstr_free(result);
       return 0;
     }
     i++;
   }
 
-  if (!result) {
-    result = (char *)mem_alloc(&env->arena, 1);
-    if (!result) return 0;
-    result[0] = '\0';
+  if (exprtk_value_copy_to_env(
+          exprtk_val_str(tstr_v_from_buf(result, tstr_len(result))), env,
+          &promoted) != 0) {
+    tstr_free(result);
+    return 0;
   }
-  *out = exprtk_val_str(tstr_v_from_buf(result, result_len));
+  tstr_free(result);
+  *out = promoted;
   return 1;
 }
 
@@ -713,8 +737,7 @@ static int ts_mir_runtime_try_catch_value(exprtk_node_t *node, exprtk_env_t *env
   if (env->flow == exprtk_FLOW_THROW) {
     exprtk_env_t catch_env;
     env->flow = exprtk_FLOW_NORMAL;
-    exprtk_env_init_local(&catch_env);
-    catch_env.parent = env;
+    exprtk_env_init_child(&catch_env, env);
     catch_env.eval_node = env->eval_node;
     catch_env.exec_script_body = env->exec_script_body;
     catch_env.max_recursion = env->max_recursion;
@@ -1040,19 +1063,19 @@ static int ts_mir_runtime_super_value(exprtk_node_t *node, exprtk_env_t *env,
       exprtk_func_t *method =
           exprtk_class_lookup_method_typed(parent, node->data.super_expr.member, 1, argc, args);
       if (!method) {
-        free(args);
+        ts_mir_runtime_value_args_free(args, argc);
         *out = throw_error(env, node, "Parent class has no static method '%s'",
                            node->data.super_expr.member);
         return 1;
       }
       if (!can_access_method(env, method, node)) {
-        free(args);
+        ts_mir_runtime_value_args_free(args, argc);
         *out = throw_method_access_error(env, node, node->data.super_expr.member, method);
         return 1;
       }
 
       *out = eval_script_function(method, argc, args, env, env);
-      free(args);
+      ts_mir_runtime_value_args_free(args, argc);
       return 1;
     }
 
@@ -1119,13 +1142,13 @@ static int ts_mir_runtime_super_value(exprtk_node_t *node, exprtk_env_t *env,
 
     exprtk_func_t *constructor = eval_find_constructor_typed(parent, argc, args);
     if (!constructor) {
-      free(args);
+      ts_mir_runtime_value_args_free(args, argc);
       *out = zero;
       return 1;
     }
 
     *out = eval_script_function(constructor, argc, args, env, env);
-    free(args);
+    ts_mir_runtime_value_args_free(args, argc);
     return 1;
   }
 
@@ -1137,19 +1160,19 @@ static int ts_mir_runtime_super_value(exprtk_node_t *node, exprtk_env_t *env,
     exprtk_func_t *method =
         exprtk_class_lookup_method_typed(parent, node->data.super_expr.member, 0, argc, args);
     if (!method) {
-      free(args);
+      ts_mir_runtime_value_args_free(args, argc);
       *out = throw_error(env, node, "Parent class has no method '%s'",
                          node->data.super_expr.member);
       return 1;
     }
     if (!can_access_method(env, method, node)) {
-      free(args);
+      ts_mir_runtime_value_args_free(args, argc);
       *out = throw_method_access_error(env, node, node->data.super_expr.member, method);
       return 1;
     }
 
     *out = eval_script_function(method, argc, args, env, env);
-    free(args);
+    ts_mir_runtime_value_args_free(args, argc);
     return 1;
   }
 
@@ -1381,7 +1404,14 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
         !ts_mir_runtime_value_arg(node->data.assignment.value, env, out)) {
       return 0;
     }
-    exprtk_env_set(env, node->data.assignment.name, *out);
+    {
+      int destroy_container = out->ownership == EXPRTK_VALUE_OWNED &&
+          (out->type == EXPRTK_VAL_MAP || out->type == EXPRTK_VAL_OBJECT ||
+           out->type == EXPRTK_VAL_LIST || out->type == EXPRTK_VAL_SET);
+      exprtk_env_set(env, node->data.assignment.name, *out);
+      if (destroy_container) exprtk_value_destroy(out);
+    }
+    *out = exprtk_env_get(env, node->data.assignment.name);
     return 1;
 
   case EXPRTK_NODE_CONSTANT_DECL:
@@ -1389,7 +1419,14 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
         !ts_mir_runtime_value_arg(node->data.assignment.value, env, out)) {
       return 0;
     }
-    exprtk_env_set_constant(env, node->data.assignment.name, *out);
+    {
+      int destroy_container = out->ownership == EXPRTK_VALUE_OWNED &&
+          (out->type == EXPRTK_VAL_MAP || out->type == EXPRTK_VAL_OBJECT ||
+           out->type == EXPRTK_VAL_LIST || out->type == EXPRTK_VAL_SET);
+      exprtk_env_set_constant(env, node->data.assignment.name, *out);
+      if (destroy_container) exprtk_value_destroy(out);
+    }
+    *out = exprtk_env_get(env, node->data.assignment.name);
     return 1;
 
   case EXPRTK_NODE_DESTRUCTURING_ASSIGNMENT:
@@ -1505,8 +1542,8 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     if (!node->data.function.name) return 0;
     args = ts_mir_runtime_call_value_args(node, env, &argc);
     if (!args && node->data.function.arg_count > 0) return 0;
-    *out = exprtk_call_internal(node->data.function.name, argc, args, env, &env->arena);
-    free(args);
+    *out = exprtk_call_internal(node->data.function.name, argc, args, env);
+    ts_mir_runtime_value_args_free(args, argc);
     return !env->aborted;
   }
 
@@ -1532,8 +1569,8 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
           ts_resolves_core_compat_func(full_name)) {
         args = ts_mir_runtime_call_value_args(node, env, &argc);
         if (!args && node->data.member_call.arg_count > 0) return 0;
-        *out = exprtk_call_internal(full_name, argc, args, env, &env->arena);
-        free(args);
+        *out = exprtk_call_internal(full_name, argc, args, env);
+        ts_mir_runtime_value_args_free(args, argc);
         return !env->aborted;
       }
 
@@ -1584,7 +1621,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     size_t actual = 0;
     size_t cap = 0;
     exprtk_value_t *vals = NULL;
-    double *data = NULL;
+    turbo_vec_t vector_data = {0};
 
     for (size_t i = 0; i < node->data.vector.count; ++i) {
       exprtk_value_t value;
@@ -1592,11 +1629,14 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
 
       if (element && element->type == EXPRTK_NODE_SPREAD) {
         if (!ts_mir_runtime_value_arg(element->data.spread.child, env, &value)) {
+          exprtk_values_destroy(vals, actual);
           free(vals);
           return 0;
         }
         if (value.type == EXPRTK_VAL_VECTOR) {
           if (!ts_mir_value_array_grow(&vals, &cap, actual + value.data.vector.size)) {
+            exprtk_value_destroy(&value);
+            exprtk_values_destroy(vals, actual);
             free(vals);
             return 0;
           }
@@ -1605,42 +1645,75 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
           }
         } else if (value.type == EXPRTK_VAL_LIST) {
           if (!ts_mir_value_array_grow(&vals, &cap, actual + value.data.list.count)) {
+            exprtk_value_destroy(&value);
+            exprtk_values_destroy(vals, actual);
             free(vals);
             return 0;
           }
           for (size_t j = 0; j < value.data.list.count; ++j) {
-            vals[actual++] = value.data.list.items[j];
+            exprtk_value_t copied;
+            if (exprtk_value_copy_to_env(value.data.list.items[j], env, &copied) != 0) {
+              exprtk_value_destroy(&value);
+              exprtk_values_destroy(vals, actual);
+              free(vals);
+              return 0;
+            }
+            vals[actual++] = copied;
           }
         } else {
           if (!ts_mir_value_array_grow(&vals, &cap, actual + 1)) {
+            exprtk_value_destroy(&value);
+            exprtk_values_destroy(vals, actual);
             free(vals);
             return 0;
           }
           vals[actual++] = value;
+          memset(&value, 0, sizeof(value));
         }
+        exprtk_value_destroy(&value);
         continue;
       }
 
-      if (!ts_mir_runtime_value_arg(element, env, &value) ||
-          !ts_mir_value_array_grow(&vals, &cap, actual + 1)) {
+      if (!ts_mir_runtime_value_arg(element, env, &value)) {
+        exprtk_values_destroy(vals, actual);
+        free(vals);
+        return 0;
+      }
+      if (!ts_mir_value_array_grow(&vals, &cap, actual + 1)) {
+        exprtk_value_destroy(&value);
+        exprtk_values_destroy(vals, actual);
         free(vals);
         return 0;
       }
       vals[actual++] = value;
     }
 
-    if (actual > 0) {
-      data = (double *)mem_alloc(&env->arena, actual * sizeof(double));
-      if (!data) {
+    if (turbo_vec_init(&vector_data, sizeof(double)) != TURBO_OK ||
+        turbo_vec_reserve(&vector_data, actual) != TURBO_OK) {
+      if (vector_data.data) turbo_vec_destroy(&vector_data);
+      exprtk_values_destroy(vals, actual);
+      free(vals);
+      return 0;
+    }
+    for (size_t i = 0; i < actual; ++i) {
+      double element_value = ts_mir_numeric_value(vals[i]);
+      if (turbo_vec_push(&vector_data, &element_value) != TURBO_OK) {
+        turbo_vec_destroy(&vector_data);
+        exprtk_values_destroy(vals, actual);
         free(vals);
         return 0;
       }
-      for (size_t i = 0; i < actual; ++i) {
-        data[i] = ts_mir_numeric_value(vals[i]);
-      }
     }
+    if (exprtk_value_copy_to_env(
+            exprtk_val_vec((double *)vector_data.data, vector_data.size), env, out) != 0) {
+      turbo_vec_destroy(&vector_data);
+      exprtk_values_destroy(vals, actual);
+      free(vals);
+      return 0;
+    }
+    turbo_vec_destroy(&vector_data);
+    exprtk_values_destroy(vals, actual);
     free(vals);
-    *out = exprtk_val_vec(data, actual);
     return 1;
   }
 
@@ -1653,7 +1726,12 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
         exprtk_map_free(&map);
         return 0;
       }
-      exprtk_map_set(&map, node->data.map_literal.keys[i], value);
+      if (exprtk_map_set(&map, node->data.map_literal.keys[i], value) != 0) {
+        exprtk_value_destroy(&value);
+        exprtk_value_destroy(&map);
+        return 0;
+      }
+      exprtk_value_destroy(&value);
     }
     *out = map;
     return 1;
@@ -1732,31 +1810,53 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       return 0;
     }
 
-    if (start < 0 || end < start) return 0;
+    if (start < 0 || end < start) {
+      exprtk_value_destroy(&array);
+      exprtk_value_destroy(&start_value);
+      exprtk_value_destroy(&end_value);
+      return 0;
+    }
     if (array.type == EXPRTK_VAL_VECTOR) {
-      if ((size_t)end > array.data.vector.size) return 0;
-      size_t count = (size_t)(end - start);
-      double *data = NULL;
-      if (count > 0) {
-        data = (double *)mem_alloc(&env->arena, count * sizeof(double));
-        if (!data) return 0;
-        memcpy(data, array.data.vector.data + start, count * sizeof(double));
+      if ((size_t)end > array.data.vector.size) {
+        exprtk_value_destroy(&array);
+        exprtk_value_destroy(&start_value);
+        exprtk_value_destroy(&end_value);
+        return 0;
       }
-      *out = exprtk_val_vec(data, count);
-      return 1;
+      size_t count = (size_t)(end - start);
+      int copied = exprtk_value_copy_to_env(
+          exprtk_val_vec(count ? array.data.vector.data + start : NULL, count), env, out) == 0;
+      exprtk_value_destroy(&array);
+      exprtk_value_destroy(&start_value);
+      exprtk_value_destroy(&end_value);
+      return copied;
     }
     if (array.type == EXPRTK_VAL_LIST) {
-      if ((size_t)end > array.data.list.count) return 0;
-      size_t count = (size_t)(end - start);
-      exprtk_value_t *items = NULL;
-      if (count > 0) {
-        items = (exprtk_value_t *)mem_alloc(&env->arena, count * sizeof(exprtk_value_t));
-        if (!items) return 0;
-        memcpy(items, array.data.list.items + start, count * sizeof(exprtk_value_t));
+      if ((size_t)end > array.data.list.count) {
+        exprtk_value_destroy(&array);
+        exprtk_value_destroy(&start_value);
+        exprtk_value_destroy(&end_value);
+        return 0;
       }
-      *out = exprtk_val_list_ex(items, count, 0);
+      exprtk_value_t list = exprtk_val_list_empty();
+      for (size_t i = (size_t)start; i < (size_t)end; ++i) {
+        if (exprtk_list_push(&list, exprtk_value_borrow(array.data.list.items[i])) != 0) {
+          exprtk_value_destroy(&list);
+          exprtk_value_destroy(&array);
+          exprtk_value_destroy(&start_value);
+          exprtk_value_destroy(&end_value);
+          return 0;
+        }
+      }
+      exprtk_value_destroy(&array);
+      exprtk_value_destroy(&start_value);
+      exprtk_value_destroy(&end_value);
+      *out = list;
       return 1;
     }
+    exprtk_value_destroy(&array);
+    exprtk_value_destroy(&start_value);
+    exprtk_value_destroy(&end_value);
     return 0;
   }
 
@@ -1866,12 +1966,13 @@ static exprtk_value_t *ts_mir_runtime_call_value_args(exprtk_node_t *call_node, 
       exprtk_value_t spread;
       if (!ts_mir_runtime_value_arg(arg->data.spread.child, env, &spread)) {
         if (!env->aborted && env->error_msg[0] == '\0') ts_mir_value_arg_error(env, arg);
-        free(vals);
+        ts_mir_runtime_value_args_free(vals, actual);
         return NULL;
       }
       if (spread.type == EXPRTK_VAL_VECTOR) {
         if (!ts_mir_value_array_grow(&vals, &cap, actual + spread.data.vector.size)) {
-          free(vals);
+          exprtk_value_destroy(&spread);
+          ts_mir_runtime_value_args_free(vals, actual);
           return NULL;
         }
         for (size_t j = 0; j < spread.data.vector.size; ++j) {
@@ -1879,29 +1980,39 @@ static exprtk_value_t *ts_mir_runtime_call_value_args(exprtk_node_t *call_node, 
         }
       } else if (spread.type == EXPRTK_VAL_LIST) {
         if (!ts_mir_value_array_grow(&vals, &cap, actual + spread.data.list.count)) {
-          free(vals);
+          exprtk_value_destroy(&spread);
+          ts_mir_runtime_value_args_free(vals, actual);
           return NULL;
         }
         for (size_t j = 0; j < spread.data.list.count; ++j) {
-          vals[actual++] = spread.data.list.items[j];
+          exprtk_value_t copied;
+          if (exprtk_value_copy_to_env(spread.data.list.items[j], env, &copied) != 0) {
+            exprtk_value_destroy(&spread);
+            ts_mir_runtime_value_args_free(vals, actual);
+            return NULL;
+          }
+          vals[actual++] = copied;
         }
       } else {
         if (!ts_mir_value_array_grow(&vals, &cap, actual + 1)) {
-          free(vals);
+          exprtk_value_destroy(&spread);
+          ts_mir_runtime_value_args_free(vals, actual);
           return NULL;
         }
         vals[actual++] = spread;
+        memset(&spread, 0, sizeof(spread));
       }
+      exprtk_value_destroy(&spread);
       continue;
     }
 
     if (!ts_mir_value_array_grow(&vals, &cap, actual + 1)) {
-      free(vals);
+      ts_mir_runtime_value_args_free(vals, actual);
       return NULL;
     }
     if (!ts_mir_runtime_value_arg(arg, env, &vals[actual])) {
       if (!env->aborted && env->error_msg[0] == '\0') ts_mir_value_arg_error(env, arg);
-      free(vals);
+      ts_mir_runtime_value_args_free(vals, actual);
       return NULL;
     }
     actual++;
@@ -1933,9 +2044,9 @@ double ts_mir_call_value_assign(void *ctx_ptr, const char *target_name, const ch
     return 0.0;
   }
 
-  result = exprtk_call_internal(name, argc, args, &ctx->env, &ctx->env.arena);
+  result = exprtk_call_internal(name, argc, args, &ctx->env);
   exprtk_env_set(&ctx->env, target_name, result);
-  free(args);
+  ts_mir_runtime_value_args_free(args, argc);
   if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted)
     ts_mir_promote_env_error(ctx);
   return ts_mir_numeric_value(result);
@@ -1964,6 +2075,7 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_node_t *node = (exprtk_node_t *)node_ptr;
   exprtk_value_t result;
+  double numeric_result;
 
   if (!ctx || !node) return 0.0;
   if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
@@ -1975,7 +2087,9 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
 
   if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted)
     ts_mir_promote_env_error(ctx);
-  return ts_mir_numeric_value(result);
+  numeric_result = ts_mir_numeric_value(result);
+  exprtk_value_destroy(&result);
+  return numeric_result;
 }
 
 exprtk_value_t turbo_script_mir_eval_node(const exprtk_node_t *node, exprtk_env_t *env) {
@@ -2019,7 +2133,7 @@ static exprtk_value_t ts_mir_await_result(exprtk_value_t value) {
       return exprtk_map_get(&value, "value");
     }
   }
-  return value;
+  return exprtk_value_borrow(value);
 }
 
 static int ts_mir_eval_await_arg(exprtk_node_t *node, exprtk_env_t *env, exprtk_value_t *out) {
@@ -2031,8 +2145,8 @@ static int ts_mir_eval_await_arg(exprtk_node_t *node, exprtk_env_t *env, exprtk_
   if (node->type == EXPRTK_NODE_FUNCTION_CALL && node->data.function.name) {
     args = ts_mir_runtime_call_value_args(node, env, &argc);
     if (!args && node->data.function.arg_count > 0) return 0;
-    *out = exprtk_call_internal(node->data.function.name, argc, args, env, &env->arena);
-    free(args);
+    *out = exprtk_call_internal(node->data.function.name, argc, args, env);
+    ts_mir_runtime_value_args_free(args, argc);
     return env->flow == exprtk_FLOW_NORMAL && !env->aborted;
   }
 
@@ -2043,6 +2157,8 @@ double ts_mir_await_value(void *ctx_ptr, void *arg_node_ptr) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_node_t *arg_node = (exprtk_node_t *)arg_node_ptr;
   exprtk_value_t value;
+  exprtk_value_t awaited;
+  double result;
 
   if (!ctx || !arg_node) return 0.0;
   if (!ts_mir_eval_await_arg(arg_node, &ctx->env, &value)) {
@@ -2052,16 +2168,20 @@ double ts_mir_await_value(void *ctx_ptr, void *arg_node_ptr) {
     return 0.0;
   }
 
-  value = ts_mir_await_result(value);
+  awaited = ts_mir_await_result(value);
   if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted)
     ts_mir_promote_env_error(ctx);
-  return ts_mir_numeric_value(value);
+  result = ts_mir_numeric_value(awaited);
+  exprtk_value_destroy(&value);
+  return result;
 }
 
 double ts_mir_await_assign(void *ctx_ptr, const char *target_name, void *arg_node_ptr) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_node_t *arg_node = (exprtk_node_t *)arg_node_ptr;
   exprtk_value_t value;
+  exprtk_value_t awaited;
+  double result;
 
   if (!ctx || !target_name || !arg_node) return 0.0;
   if (!ts_mir_eval_await_arg(arg_node, &ctx->env, &value)) {
@@ -2071,17 +2191,19 @@ double ts_mir_await_assign(void *ctx_ptr, const char *target_name, void *arg_nod
     return 0.0;
   }
 
-  value = ts_mir_await_result(value);
-  exprtk_env_set(&ctx->env, target_name, value);
+  awaited = ts_mir_await_result(value);
+  result = ts_mir_numeric_value(awaited);
+  exprtk_env_set(&ctx->env, target_name, awaited);
+  exprtk_value_destroy(&value);
   if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted)
     ts_mir_promote_env_error(ctx);
-  return ts_mir_numeric_value(value);
+  return result;
 }
 
 double ts_mir_function_expr_assign(void *ctx_ptr, const char *target_name, void *node_ptr) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_node_t *node = (exprtk_node_t *)node_ptr;
-  exprtk_value_t value;
+  exprtk_value_t value = {0};
 
   if (!ctx || !target_name || !node || node->type != EXPRTK_NODE_FUNCTION_EXPRESSION)
     return 0.0;

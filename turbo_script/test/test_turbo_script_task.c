@@ -7,14 +7,15 @@
 
 #include <stdio.h>
 
-enum { TASK_TEST_CORO_STACK_SIZE = 512 * 1024 };
+enum { TASK_TEST_DEEP_STACK_OVERRIDE_BYTES = 512 * 1024 };
 
-static turbo_script_ctx_t *task_test_context(coro_context_t **coro_out) {
+static turbo_script_ctx_t *task_test_context_with_stack(coro_context_t **coro_out,
+                                                        size_t stack_size) {
   turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
   const coro_object_pool_config_t pool_config = {
       16,
       1024,
-      TASK_TEST_CORO_STACK_SIZE,
+      stack_size,
   };
   coro_context_t *coro_ctx = coro_context_create_ex(NULL, &pool_config);
   if (!ctx || !coro_ctx) {
@@ -25,6 +26,10 @@ static turbo_script_ctx_t *task_test_context(coro_context_t **coro_out) {
   turbo_script_set_coro_context(ctx, coro_ctx);
   *coro_out = coro_ctx;
   return ctx;
+}
+
+static turbo_script_ctx_t *task_test_context(coro_context_t **coro_out) {
+  return task_test_context_with_stack(coro_out, 0);
 }
 
 static void task_test_destroy(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx) {
@@ -73,9 +78,10 @@ spec("turbo_script_task") {
       task_test_destroy(ctx, coro_ctx);
     }
 
-    it("runs a deep GoF-style object graph on the configured coroutine stack") {
+    it("runs a deep GoF-style object graph on an explicit stack override") {
       coro_context_t *coro_ctx = NULL;
-      turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
+      turbo_script_ctx_t *ctx = task_test_context_with_stack(
+          &coro_ctx, TASK_TEST_DEEP_STACK_OVERRIDE_BYTES);
       check_not_null(ctx);
 
       check_int_eq(task_test_run(ctx,
@@ -305,6 +311,35 @@ spec("turbo_script_task") {
       check_int_eq(task_test_run(ctx, "value = task.result(second);"), 0);
       check_float_eq(ts_get_num(ctx, "released"), 1.0, 0.001);
       check_float_eq(ts_get_num(ctx, "value"), 8.0, 0.001);
+      task_test_destroy(ctx, coro_ctx);
+    }
+
+    it("fails and releases task environments at the configured quota boundary") {
+      coro_context_t *coro_ctx = NULL;
+      turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
+      turbo_script_memory_policy_t policy;
+      turbo_script_memory_stats_t retained;
+      turbo_script_memory_stats_t released;
+      check_not_null(ctx);
+
+      check_int_eq(turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy), 0);
+      policy.max_task_bytes = 1024;
+      policy.max_external_value_bytes = 512;
+      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), 0);
+      check_int_eq(task_test_run(ctx,
+                                 "oversized = task.spawn(() => str_repeat(\"x\", 4096));"),
+                   0);
+      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
+      check_size_eq(turbo_script_task_failed_count(ctx), 1);
+      check_int_eq(turbo_script_get_memory_stats(ctx, &retained), 0);
+      check_true(retained.task_bytes > 0);
+      check_int_eq(task_test_run(ctx, "oversized_state = task.status(oversized);"
+                                      "oversized_release = task.release(oversized);"),
+                   0);
+      check_str_eq(ts_get_str(ctx, "oversized_state"), "failed");
+      check_float_eq(ts_get_num(ctx, "oversized_release"), 1.0, 0.001);
+      check_int_eq(turbo_script_get_memory_stats(ctx, &released), 0);
+      check_size_eq(released.task_bytes, 0);
       task_test_destroy(ctx, coro_ctx);
     }
 

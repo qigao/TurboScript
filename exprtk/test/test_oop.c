@@ -98,9 +98,9 @@ spec("OOP runtime") {
             check_double_eq(value_to_double(*slot), 1.0, TEST_TOLERANCE);
 
             exprtk_instance_set_field(box.data.instance_val.instance, "other",
-                                      (exprtk_value_t){ EXPRTK_VAL_NUMBER, {2.0} });
+                                      (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 2.0 });
             exprtk_instance_set_field(box.data.instance_val.instance, "value",
-                                      (exprtk_value_t){ EXPRTK_VAL_NUMBER, {42.0} });
+                                      (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 42.0 });
 
             exprtk_value_t *updated_slot =
                 exprtk_instance_get_field_slot(box.data.instance_val.instance, "value");
@@ -150,9 +150,9 @@ spec("OOP runtime") {
             check_double_eq(value_to_double(*extra_slot), 21.0, TEST_TOLERANCE);
 
             exprtk_instance_set_field(instance, "extra",
-                                      (exprtk_value_t){ EXPRTK_VAL_NUMBER, {2.0} });
+                                      (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 2.0 });
             exprtk_instance_set_field(instance, "base",
-                                      (exprtk_value_t){ EXPRTK_VAL_NUMBER, {40.0} });
+                                      (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 40.0 });
             check_ptr_eq(exprtk_instance_get_field_slot(instance, "base"), base_slot);
             check_ptr_eq(exprtk_instance_get_field_slot(instance, "extra"), extra_slot);
 

@@ -344,6 +344,11 @@ typedef enum {
 } exprtk_value_type_t;
 
 typedef enum {
+  EXPRTK_VALUE_BORROWED = 0,
+  EXPRTK_VALUE_OWNED = 1
+} exprtk_value_ownership_t;
+
+typedef enum {
   EXPRTK_ACCESS_PUBLIC = 0,
   EXPRTK_ACCESS_PROTECTED = 1,
   EXPRTK_ACCESS_PRIVATE = 2
@@ -352,6 +357,15 @@ typedef enum {
 // Evaluation result type
 typedef struct exprtk_value_s {
   exprtk_value_type_t type;
+  /*
+   * Optional retained storage for strings, bytes, bigint, enum/flags, vectors,
+   * and typed arrays. A non-empty payload with a NULL handle is borrowed and
+   * must not cross an owner boundary without being copied. storage_aux is used
+   * by enum/flags values whose type and symbol are independent views.
+   */
+  mem_buffer_t *storage;
+  mem_buffer_t *storage_aux;
+  exprtk_value_ownership_t ownership;
   union {
     double number;
     tstr_v string;
@@ -378,6 +392,7 @@ typedef struct exprtk_value_s {
       size_t count;
       size_t capacity;
       int heap_owned;
+      mem_pool_t *value_pool;
     } list;
     struct {
       exprtk_node_t **arg_params; // parameter nodes
@@ -413,7 +428,8 @@ typedef struct exprtk_map_entry_s {
   exprtk_value_t value;
 } exprtk_map_entry_t;
 
-typedef exprtk_value_t (*exprtk_native_fn)(size_t arg_count, exprtk_value_t *args, void *user_data);
+typedef exprtk_value_t (*exprtk_native_fn)(size_t arg_count, exprtk_value_t *args,
+                                          struct exprtk_env_s *env, void *user_data);
 
 typedef struct exprtk_func_s {
   char *name;
@@ -491,6 +507,7 @@ typedef struct exprtk_env_s {
   int aborted;                       // Set to 1 if any safety limit is exceeded
   int last_line;                     // Line of last evaluated node
   int last_column;                   // Column of last evaluated node
+  size_t max_external_value_bytes;   // Maximum one-shot external/network value
   mem_pool_t arena;                // For persistent data like script function bodies
   exprtk_value_t error_value;        // Value thrown by throw statement
   struct exprtk_env_s *next_closure; // linked list of closure scopes to free

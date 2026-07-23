@@ -11,19 +11,8 @@
 
 typedef struct {
   turbo_hash_map_t entries;
+  mem_pool_t pool;
 } exprtk_map_storage_t;
-
-static char *exprtk_map_strdup(const char *text) {
-  size_t len;
-  char *copy;
-
-  if (!text) return NULL;
-  len = strlen(text);
-  copy = (char *)malloc(len + 1);
-  if (!copy) return NULL;
-  memcpy(copy, text, len + 1);
-  return copy;
-}
 
 static size_t exprtk_map_key_hash(const void *key, size_t key_size, void *ctx) {
   const char *text;
@@ -55,46 +44,22 @@ static bool exprtk_map_key_equal(const void *left, const void *right, size_t key
   return strcmp(lhs, rhs) == 0;
 }
 
-static void exprtk_map_value_free_owned_buffers(exprtk_value_t value) {
-  if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
-    free((void *)value.data.string.data);
-  } else if (value.type == EXPRTK_VAL_BYTES && value.data.bytes.data) {
-    free((void *)value.data.bytes.data);
-  }
-}
-
-static exprtk_value_t exprtk_map_value_copy(exprtk_value_t value) {
-  exprtk_value_t copy = value;
-
-  if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
-    char *str_copy = (char *)malloc(value.data.string.len + 1);
-    if (str_copy) {
-      memcpy(str_copy, value.data.string.data, value.data.string.len);
-      str_copy[value.data.string.len] = '\0';
-      copy.data.string.data = str_copy;
-    }
-  } else if (value.type == EXPRTK_VAL_BYTES && value.data.bytes.data) {
-    char *bytes_copy = (char *)malloc(value.data.bytes.len);
-    if (bytes_copy || value.data.bytes.len == 0) {
-      if (value.data.bytes.len > 0)
-        memcpy(bytes_copy, value.data.bytes.data, value.data.bytes.len);
-      copy.data.bytes.data = bytes_copy;
-    }
-  }
-
-  return copy;
-}
-
 static exprtk_map_storage_t *exprtk_map_storage_create(void) {
   exprtk_map_storage_t *storage = (exprtk_map_storage_t *)malloc(sizeof(*storage));
   if (!storage) return NULL;
+  if (mem_init(&storage->pool, 0) != 0) {
+    free(storage);
+    return NULL;
+  }
   if (turbo_hash_map_init(&storage->entries, sizeof(char *), sizeof(exprtk_value_t),
                           exprtk_map_key_hash, exprtk_map_key_equal, NULL) != TURBO_OK) {
+    mem_destroy(&storage->pool);
     free(storage);
     return NULL;
   }
   if (turbo_hash_map_reserve(&storage->entries, 8) != TURBO_OK) {
     turbo_hash_map_destroy(&storage->entries);
+    mem_destroy(&storage->pool);
     free(storage);
     return NULL;
   }
@@ -119,6 +84,7 @@ exprtk_value_t exprtk_val_map(void) {
   exprtk_value_t val;
   memset(&val, 0, sizeof(val));
   val.type = EXPRTK_VAL_MAP;
+  val.ownership = EXPRTK_VALUE_OWNED;
   val.data.map.htab = exprtk_map_storage_create();
   return val;
 }
@@ -142,10 +108,10 @@ exprtk_value_t exprtk_map_get(const exprtk_value_t *map, const char *key) {
     return exprtk_val_num(0);
   storage = (exprtk_map_storage_t *)map->data.map.htab;
   value = (exprtk_value_t *)turbo_hash_map_get(&storage->entries, &lookup);
-  return value ? *value : exprtk_val_num(0);
+  return value ? exprtk_value_borrow(*value) : exprtk_val_num(0);
 }
 
-void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
+int exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
   char *lookup = (char *)key;
   char *owned_key;
   exprtk_map_storage_t *storage;
@@ -153,30 +119,35 @@ void exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) 
   exprtk_value_t *slot;
 
   if (!exprtk_value_is_object_like(map) || !key)
-    return;
+    return -1;
+  if (exprtk_value_is_object_like(&value) &&
+      value.data.map.htab == map->data.map.htab)
+    return -1;
   if (!map->data.map.htab) {
     map->data.map.htab = exprtk_map_storage_create();
-    if (!map->data.map.htab) return;
+    if (!map->data.map.htab) return -1;
   }
 
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  value_copy = exprtk_map_value_copy(value);
+  if (exprtk_value_copy_to_pool(value, &storage->pool, &value_copy) != 0) return -1;
   slot = (exprtk_value_t *)turbo_hash_map_get(&storage->entries, &lookup);
   if (slot) {
-    exprtk_map_value_free_owned_buffers(*slot);
+    exprtk_value_destroy(slot);
     *slot = value_copy;
-    return;
+    return 0;
   }
 
-  owned_key = exprtk_map_strdup(key);
+  owned_key = mem_strdup(&storage->pool, key);
   if (!owned_key) {
-    exprtk_map_value_free_owned_buffers(value_copy);
-    return;
+    exprtk_value_destroy(&value_copy);
+    return -1;
   }
   if (turbo_hash_map_put(&storage->entries, &owned_key, &value_copy) != TURBO_OK) {
-    free(owned_key);
-    exprtk_map_value_free_owned_buffers(value_copy);
+    mem_free(&storage->pool, owned_key);
+    exprtk_value_destroy(&value_copy);
+    return -1;
   }
+  return 0;
 }
 
 int exprtk_map_has(const exprtk_value_t *map, const char *key) {
@@ -205,8 +176,8 @@ int exprtk_map_delete(exprtk_value_t *map, const char *key) {
   if (turbo_hash_map_remove(&storage->entries, &lookup, &removed) != TURBO_OK)
     return 0;
 
-  free(owned_key);
-  exprtk_map_value_free_owned_buffers(removed);
+  mem_free(&storage->pool, owned_key);
+  exprtk_value_destroy(&removed);
   return 1;
 }
 
@@ -244,11 +215,12 @@ void exprtk_map_free(exprtk_value_t *map) {
     char *const *key = (char *const *)key_slot;
     const exprtk_value_t *value = (const exprtk_value_t *)value_slot;
     if (!key || !value) continue;
-    free(*key);
-    exprtk_map_value_free_owned_buffers(*value);
+    mem_free(&storage->pool, *key);
+    exprtk_value_destroy((exprtk_value_t *)value);
   }
 
   turbo_hash_map_destroy(&storage->entries);
+  mem_destroy(&storage->pool);
   free(storage);
   map->data.map.htab = NULL;
 }
@@ -281,7 +253,7 @@ int exprtk_map_iter_next(exprtk_map_iter_t *it, const char **key, exprtk_value_t
     const exprtk_value_t *stored_value = (const exprtk_value_t *)value_slot;
     if (!stored_key || !stored_value) continue;
     if (key) *key = *stored_key;
-    if (value) *value = *stored_value;
+    if (value) *value = exprtk_value_borrow(*stored_value);
     return 1;
   }
   return 0;

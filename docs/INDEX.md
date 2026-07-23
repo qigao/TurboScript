@@ -36,6 +36,9 @@
 
 ### 基础示例
 
+- **[运行时内存策略](advanced/memory-policy.md)**
+  Context/task/external 配额、所有权边界与 callback-scoped WebSocket 消费
+
 - **[Lambda 和闭包](../examples/test_lambda.tbs)**  
   箭头函数、高阶函数、闭包、IIFE
 

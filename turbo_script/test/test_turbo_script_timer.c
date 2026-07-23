@@ -22,7 +22,7 @@ typedef struct {
   atomic_int inside_coro;
 } timer_coro_probe_t;
 
-static exprtk_value_t timer_coro_probe(size_t argc, exprtk_value_t *args, void *user_data) {
+static exprtk_value_t timer_coro_probe(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   timer_coro_probe_t *probe = (timer_coro_probe_t *)user_data;
   int current;
   int maximum;

@@ -1,6 +1,5 @@
-// Bounded multi-message Polymarket example.
-// Increase duration_ms for longer sessions, but keep max_events as a
-// context-lifetime memory quota for arena-backed received frames.
+// Bounded multi-message Polymarket example. WebSocket frames are processed in
+// ws.consume callbacks, so increasing duration does not retain every frame.
 import("./polymarket_patterns.tbs");
 
 class SamplingPreviewObserver implements EventObserver {

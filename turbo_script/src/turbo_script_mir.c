@@ -16,7 +16,6 @@
 #include <string.h>
 
 exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env);
-exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst_env);
 exprtk_value_t throw_error(exprtk_env_t *env, const exprtk_node_t *node, const char *fmt, ...);
 exprtk_value_t throw_method_access_error(exprtk_env_t *env, const exprtk_node_t *node,
                                          const char *method_name, exprtk_func_t *method);

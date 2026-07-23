@@ -41,7 +41,7 @@ static exprtk_value_t call_fn(exprtk_env_t *env, const char *name,
     exprtk_func_t *fn = env ? env->funcs : NULL;
     while (fn) {
         if (strcmp(fn->name, name) == 0 && !fn->is_script) {
-            return fn->data.native.fn(argc, args, fn->data.native.user_data);
+            return fn->data.native.fn(argc, args, env, fn->data.native.user_data);
         }
         fn = fn->next;
     }
