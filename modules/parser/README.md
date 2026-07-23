@@ -1,8 +1,8 @@
 # Parser Module
 
-`parser` handles configuration-oriented text formats. JSON, CSV, XML, TOON, TBE
-schema binding, validation, reflection, and structured streams belong to the
-`data_bind` module.
+`parser` handles configuration-oriented text formats. JSON, YAML, CSV, XML,
+Structured class mapping belongs to the `mapper` module. This module remains
+limited to configuration-oriented text parsing.
 
 ## API
 
@@ -14,8 +14,8 @@ schema binding, validation, reflection, and structured streams belong to the
 - `parser.cmd_parse(args, specification)` parses command-line arguments.
 
 The module intentionally contains no JSON, CSV, XML, TOON, schema-binding, or
-structured-file stream implementation. Load `data_bind` and use `data_bind.*`
-for structured data. See [Data Bind](../data_bind/README.md).
+structured-file stream implementation. Load `mapper` for typed JSON, YAML, and
+XML class mapping.
 
 ## Build And Test
 

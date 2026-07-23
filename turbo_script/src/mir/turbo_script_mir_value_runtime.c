@@ -1247,8 +1247,15 @@ static int ts_mir_runtime_member_set_value(exprtk_node_t *node, exprtk_env_t *en
         *out = throw_field_access_error(env, node, node->data.member_set.member, access);
         return 1;
       }
-      exprtk_instance_set_field(object.data.instance_val.instance, node->data.member_set.member,
-                                val);
+      {
+        char field_error[256];
+        if (!exprtk_instance_set_field_checked(
+                object.data.instance_val.instance, node->data.member_set.member,
+                val, field_error, sizeof(field_error))) {
+          *out = throw_error(env, node, "%s", field_error);
+          return 1;
+        }
+      }
       *out = val;
       return 1;
     }
@@ -1286,8 +1293,15 @@ static int ts_mir_runtime_member_set_value(exprtk_node_t *node, exprtk_env_t *en
       *out = throw_field_access_error(env, node, node->data.member_set.member, access);
       return 1;
     }
-    exprtk_instance_set_field(this_val.data.instance_val.instance, node->data.member_set.member,
-                              val);
+    {
+      char field_error[256];
+      if (!exprtk_instance_set_field_checked(
+              this_val.data.instance_val.instance, node->data.member_set.member,
+              val, field_error, sizeof(field_error))) {
+        *out = throw_error(env, node, "%s", field_error);
+        return 1;
+      }
+    }
     *out = val;
     return 1;
   }
@@ -1327,8 +1341,15 @@ static int ts_mir_runtime_member_set_value(exprtk_node_t *node, exprtk_env_t *en
       *out = throw_field_access_error(env, node, node->data.member_set.member, access);
       return 1;
     }
-    exprtk_instance_set_field(this_val.data.instance_val.instance, node->data.member_set.member,
-                              val);
+    {
+      char field_error[256];
+      if (!exprtk_instance_set_field_checked(
+              this_val.data.instance_val.instance, node->data.member_set.member,
+              val, field_error, sizeof(field_error))) {
+        *out = throw_error(env, node, "%s", field_error);
+        return 1;
+      }
+    }
     *out = val;
     return 1;
   }

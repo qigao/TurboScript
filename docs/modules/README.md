@@ -73,11 +73,19 @@ Internal implementation details of graph data structures.
 
 ## Other Modules
 
-### Parser / CSV / JSON / Datetime Module
-See [parser README](../../modules/parser/README.md) for CSV parsing, JSON querying/native mapping, datetime parsing, and TBE schema bind/emit/validate. See [csv_filter_expression.md](../csv_filter_expression.md) for CSV filter expressions.
+### OS Module
+See [OS module README](../../modules/os/README.md) for platform queries,
+shell-free child process management, default logger access, service controls,
+power controls, and in-process Cron schedules.
+
+### Parser / Mapper / Datetime Modules
+See [parser README](../../modules/parser/README.md) for configuration-oriented text parsing.
+See [Mapper README](../../modules/mapper/README.md) for class-first JSON/YAML/XML
+document mapping. See [csv_filter_expression.md](../csv_filter_expression.md)
+for CSV filter expressions.
 
 ### RulesForge Module
-See [rules_forge README](../../modules/rules_forge/README.md) for RulesForge knowledge-base/session handles, schema-bound JSON/CSV/XML fact insertion through DataBind, query access, tracing, and TurboScript RHS plugin loading.
+See [rules_forge README](../../modules/rules_forge/README.md) for RulesForge knowledge-base/session handles, external RulesForge DataBind-backed fact insertion, query access, tracing, and TurboScript RHS plugin loading.
 
 ### SQLite / RAG Module
 See [sqlite README](../../modules/sqlite/README.md) for SQLite SQL helpers, FTS5 probing, embedding BLOB storage, cosine search, and the `sqlite.rag_*` local RAG helpers.

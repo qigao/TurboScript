@@ -28,6 +28,7 @@ typedef struct {
     exprtk_value_t value;
     int access_level;
     exprtk_class_t *owner_class;
+    const char *declared_type;
 } field_entry_t;
 
 DEF_HTAB(field_entry_t)
@@ -256,6 +257,10 @@ static int class_identity_match_depth(exprtk_class_t *klass, exprtk_class_t *tar
 
     return -1;
 }
+
+static int instance_value_matches_field_type(exprtk_class_t *klass,
+                                              exprtk_value_t value,
+                                              const char *declared_type);
 
 static exprtk_class_t *method_resolve_declared_class(exprtk_func_t *method,
                                                      const char *declared_type) {
@@ -654,6 +659,7 @@ static int class_find_instance_field_index(exprtk_class_t *klass, const char *na
 static int class_append_instance_field(exprtk_class_t *klass, const char *name,
                                        exprtk_class_t *owner_class,
                                        int access_level,
+                                       const char *declared_type,
                                        exprtk_value_t default_value,
                                        int has_default,
                                        int update_existing,
@@ -665,6 +671,11 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
             klass->instance_field_access_levels[index] = access_level;
         if (update_existing && klass->instance_field_owners)
             klass->instance_field_owners[index] = owner_class ? owner_class : klass;
+        if (update_existing && klass->instance_field_types) {
+            klass->instance_field_types[index] = declared_type
+                ? class_copy_string(klass->arena, declared_type)
+                : NULL;
+        }
         if (update_existing && klass->instance_field_defaults && klass->instance_field_has_default) {
             exprtk_value_t stored_default = { .type = EXPRTK_VAL_NULL };
             if (has_default && exprtk_value_copy_to_pool(
@@ -700,6 +711,14 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
             klass->instance_field_access_levels = new_access;
             return 0;
         }
+        char **new_types =
+            (char **)realloc(klass->instance_field_types, new_capacity * sizeof(*new_types));
+        if (!new_types) {
+            klass->instance_field_names = new_names;
+            klass->instance_field_access_levels = new_access;
+            klass->instance_field_owners = new_owners;
+            return 0;
+        }
         exprtk_value_t *new_defaults =
             (exprtk_value_t *)realloc(klass->instance_field_defaults,
                                       new_capacity * sizeof(*new_defaults));
@@ -707,6 +726,7 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
             klass->instance_field_names = new_names;
             klass->instance_field_access_levels = new_access;
             klass->instance_field_owners = new_owners;
+            klass->instance_field_types = new_types;
             return 0;
         }
         unsigned char *new_has_default =
@@ -716,18 +736,21 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
             klass->instance_field_names = new_names;
             klass->instance_field_access_levels = new_access;
             klass->instance_field_owners = new_owners;
+            klass->instance_field_types = new_types;
             klass->instance_field_defaults = new_defaults;
             return 0;
         }
         for (size_t i = klass->instance_field_capacity; i < new_capacity; ++i) {
             new_access[i] = EXPRTK_ACCESS_PUBLIC;
             new_owners[i] = NULL;
+            new_types[i] = NULL;
             memset(&new_defaults[i], 0, sizeof(new_defaults[i]));
             new_has_default[i] = 0;
         }
         klass->instance_field_names = new_names;
         klass->instance_field_access_levels = new_access;
         klass->instance_field_owners = new_owners;
+        klass->instance_field_types = new_types;
         klass->instance_field_defaults = new_defaults;
         klass->instance_field_has_default = new_has_default;
         klass->instance_field_capacity = new_capacity;
@@ -746,6 +769,9 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
     klass->instance_field_names[index] = field_name;
     klass->instance_field_access_levels[index] = access_level;
     klass->instance_field_owners[index] = owner_class ? owner_class : klass;
+    klass->instance_field_types[index] = declared_type
+        ? class_copy_string(klass->arena, declared_type)
+        : NULL;
     klass->instance_field_defaults[index] = stored_default;
     klass->instance_field_has_default[index] = has_default ? 1 : 0;
     if (out_index) *out_index = index;
@@ -770,8 +796,11 @@ static int class_import_instance_fields(exprtk_class_t *klass, exprtk_class_t *s
         int has_default = source->instance_field_has_default
             ? source->instance_field_has_default[i]
             : 0;
+        const char *declared_type = source->instance_field_types
+            ? source->instance_field_types[i] : NULL;
         if (!class_append_instance_field(klass, source->instance_field_names[i], owner,
-                                         access_level, default_value, has_default, 0, NULL)) {
+                                         access_level, declared_type, default_value,
+                                         has_default, 0, NULL)) {
             return 0;
         }
     }
@@ -787,7 +816,7 @@ static int class_ensure_instance_field(exprtk_class_t *klass, const char *name,
                                        size_t *out_index) {
     if (!klass || !name) return 0;
     if (!class_sync_prototype_instance_fields(klass)) return 0;
-    return class_append_instance_field(klass, name, klass, EXPRTK_ACCESS_PUBLIC,
+    return class_append_instance_field(klass, name, klass, EXPRTK_ACCESS_PUBLIC, NULL,
                                        (exprtk_value_t){0}, 0, 0, out_index);
 }
 
@@ -959,6 +988,7 @@ exprtk_class_t *exprtk_class_create(
     klass->abstract_methods = abstract_methods_htab;
     klass->static_fields = static_fields_htab;
     klass->instance_field_names = NULL;
+    klass->instance_field_types = NULL;
     klass->instance_field_access_levels = NULL;
     klass->instance_field_owners = NULL;
     klass->instance_field_defaults = NULL;
@@ -1020,8 +1050,11 @@ exprtk_class_t *exprtk_class_clone_to_arena(exprtk_class_t *klass, mem_pool_t *a
         int has_default = klass->instance_field_has_default
             ? klass->instance_field_has_default[i]
             : 0;
+        const char *declared_type = klass->instance_field_types
+            ? klass->instance_field_types[i] : NULL;
         class_append_instance_field(copy, klass->instance_field_names[i], owner,
-                                    access_level, default_value, has_default, 1, NULL);
+                                    access_level, declared_type, default_value,
+                                    has_default, 1, NULL);
     }
     for (size_t i = 0; i < klass->interface_count; ++i) {
         exprtk_class_add_interface(copy,
@@ -1557,7 +1590,11 @@ void exprtk_class_set_static_field(
     exprtk_value_t value)
 {
     exprtk_value_t stored;
+    const char *declared_type;
     if (!klass || !name || !klass->static_fields) return;
+    declared_type = exprtk_class_get_static_field_type(klass, name);
+    if (declared_type && !instance_value_matches_field_type(klass, value, declared_type))
+        return;
     if (exprtk_value_copy_to_pool(exprtk_value_borrow(value), klass->arena,
                                   &stored) != 0)
         return;
@@ -1587,6 +1624,7 @@ void exprtk_class_set_static_field(
     entry.value = stored;
     entry.access_level = EXPRTK_ACCESS_PUBLIC;
     entry.owner_class = klass;
+    entry.declared_type = declared_type;
 
     HTAB_OP(field_entry_t, do)(htab, entry, HTAB_INSERT, &result);
     klass->static_field_version++;
@@ -1598,11 +1636,23 @@ void exprtk_class_declare_static_field(
     exprtk_value_t value,
     int access_level)
 {
+    exprtk_class_declare_static_field_typed(klass, name, NULL, value, access_level);
+}
+
+int exprtk_class_declare_static_field_typed(
+    exprtk_class_t *klass,
+    const char *name,
+    const char *declared_type,
+    exprtk_value_t value,
+    int access_level)
+{
     exprtk_value_t stored;
-    if (!klass || !name || !klass->static_fields) return;
+    if (!klass || !name || !klass->static_fields) return 0;
+    if (declared_type && !instance_value_matches_field_type(klass, value, declared_type))
+        return 0;
     if (exprtk_value_copy_to_pool(exprtk_value_borrow(value), klass->arena,
                                   &stored) != 0)
-        return;
+        return 0;
 
     HTAB(field_entry_t) *htab = (HTAB(field_entry_t) *)klass->static_fields;
     field_entry_t search;
@@ -1613,15 +1663,17 @@ void exprtk_class_declare_static_field(
         result.value = stored;
         result.access_level = access_level;
         result.owner_class = klass;
+        result.declared_type = declared_type
+            ? class_copy_string(klass->arena, declared_type) : NULL;
         HTAB_OP(field_entry_t, do)(htab, result, HTAB_REPLACE, &result);
-        return;
+        return 1;
     }
 
     size_t name_len = strlen(name);
     char *field_name = (char *)mem_alloc(klass->arena, name_len + 1);
     if (!field_name) {
         exprtk_value_destroy(&stored);
-        return;
+        return 0;
     }
     memcpy(field_name, name, name_len + 1);
 
@@ -1630,9 +1682,47 @@ void exprtk_class_declare_static_field(
     entry.value = stored;
     entry.access_level = access_level;
     entry.owner_class = klass;
+    entry.declared_type = declared_type
+        ? class_copy_string(klass->arena, declared_type) : NULL;
 
     HTAB_OP(field_entry_t, do)(htab, entry, HTAB_INSERT, &result);
     klass->static_field_version++;
+    return 1;
+}
+
+const char *exprtk_class_get_static_field_type(
+    exprtk_class_t *klass,
+    const char *name)
+{
+    field_entry_t entry;
+    if (!klass || !name) return NULL;
+    if (field_table_find(klass->static_fields, name, &entry))
+        return entry.declared_type;
+    if (klass->prototype)
+        return exprtk_class_get_static_field_type(klass->prototype, name);
+    return NULL;
+}
+
+int exprtk_class_set_static_field_checked(
+    exprtk_class_t *klass,
+    const char *name,
+    exprtk_value_t value,
+    char *error_msg,
+    size_t error_msg_len)
+{
+    const char *declared_type;
+    if (!klass || !name) return 0;
+    declared_type = exprtk_class_get_static_field_type(klass, name);
+    if (declared_type && !instance_value_matches_field_type(klass, value, declared_type)) {
+        if (error_msg && error_msg_len > 0) {
+            snprintf(error_msg, error_msg_len,
+                     "static field '%s' expects '%s' but received '%s'",
+                     name, declared_type, value_signature_type(value));
+        }
+        return 0;
+    }
+    exprtk_class_set_static_field(klass, name, value);
+    return 1;
 }
 
 int exprtk_class_get_static_field_access(
@@ -1661,10 +1751,45 @@ int exprtk_class_declare_instance_field(
     int has_default,
     int access_level)
 {
+    return exprtk_class_declare_instance_field_typed(
+        klass, name, NULL, default_value, has_default, access_level);
+}
+
+int exprtk_class_declare_instance_field_typed(
+    exprtk_class_t *klass,
+    const char *name,
+    const char *declared_type,
+    exprtk_value_t default_value,
+    int has_default,
+    int access_level)
+{
     if (!klass || !name) return 0;
+    if (declared_type && has_default &&
+        !instance_value_matches_field_type(klass, default_value, declared_type))
+        return 0;
     if (!class_sync_prototype_instance_fields(klass)) return 0;
-    return class_append_instance_field(klass, name, klass, access_level,
+    return class_append_instance_field(klass, name, klass, access_level, declared_type,
                                        default_value, has_default, 1, NULL);
+}
+
+const char *exprtk_class_get_instance_field_type(
+    exprtk_class_t *klass,
+    const char *name)
+{
+    size_t index = 0;
+    if (!klass || !name || !class_sync_prototype_instance_fields(klass) ||
+        !class_find_instance_field_index(klass, name, &index) ||
+        !klass->instance_field_types) {
+        return NULL;
+    }
+    return klass->instance_field_types[index];
+}
+
+int exprtk_class_has_instance_field(exprtk_class_t *klass, const char *name)
+{
+    size_t index = 0;
+    return klass && name && class_sync_prototype_instance_fields(klass) &&
+           class_find_instance_field_index(klass, name, &index);
 }
 
 int exprtk_class_get_instance_field_access(
@@ -1762,11 +1887,13 @@ void exprtk_class_destroy(exprtk_class_t *klass) {
         }
     }
     free(klass->instance_field_names);
+    free(klass->instance_field_types);
     free(klass->instance_field_access_levels);
     free(klass->instance_field_owners);
     free(klass->instance_field_defaults);
     free(klass->instance_field_has_default);
     klass->instance_field_names = NULL;
+    klass->instance_field_types = NULL;
     klass->instance_field_access_levels = NULL;
     klass->instance_field_owners = NULL;
     klass->instance_field_defaults = NULL;
@@ -1955,8 +2082,13 @@ void exprtk_instance_set_field(
     exprtk_value_t value)
 {
     exprtk_value_t stored;
+    const char *declared_type;
     if (!instance || !name) return;
     if (!instance->fields) return;
+    declared_type = exprtk_class_get_instance_field_type(instance->klass, name);
+    if (declared_type && !instance_value_matches_field_type(
+            instance->klass, value, declared_type))
+        return;
 
     stored = instance_clone_stored_value(instance, value);
 
@@ -2000,10 +2132,69 @@ void exprtk_instance_set_field(
     entry.value = stored;
     entry.access_level = EXPRTK_ACCESS_PUBLIC;
     entry.owner_class = instance->klass;
+    entry.declared_type = NULL;
 
     // Store in hash table
     HTAB_OP(field_entry_t, do)(htab, entry, HTAB_INSERT, &result);
     if (!has_slot) instance->field_version++;
+}
+
+static int instance_value_matches_field_type(exprtk_class_t *klass,
+                                              exprtk_value_t value,
+                                              const char *declared_type) {
+    exprtk_class_t *value_class = NULL;
+    if (!klass || !declared_type) return 1;
+    if (value.type == EXPRTK_VAL_NULL) return 1;
+    if (strcmp(declared_type, "any") == 0) return 1;
+    if (strcmp(declared_type, "number") == 0 || strcmp(declared_type, "float") == 0)
+        return value.type == EXPRTK_VAL_NUMBER;
+    if (strcmp(declared_type, "int") == 0 || strcmp(declared_type, "int64") == 0 ||
+        strcmp(declared_type, "integer") == 0)
+        return value.type == EXPRTK_VAL_INTEGER;
+    if (strcmp(declared_type, "bool") == 0 || strcmp(declared_type, "boolean") == 0)
+        return value.type == EXPRTK_VAL_BOOL;
+    if (strcmp(declared_type, "string") == 0) return value.type == EXPRTK_VAL_STRING;
+    if (strcmp(declared_type, "bytes") == 0) return value.type == EXPRTK_VAL_BYTES;
+    if (strcmp(declared_type, "map") == 0)
+        return value.type == EXPRTK_VAL_MAP || value.type == EXPRTK_VAL_OBJECT;
+    if (strcmp(declared_type, "object") == 0) return value.type == EXPRTK_VAL_OBJECT;
+    if (strcmp(declared_type, "list") == 0 || strcmp(declared_type, "array") == 0)
+        return value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET ||
+               value.type == EXPRTK_VAL_VECTOR;
+    if (strcmp(declared_type, "class") == 0) return value.type == EXPRTK_VAL_CLASS;
+    if (strcmp(declared_type, "instance") == 0) return value.type == EXPRTK_VAL_INSTANCE;
+    if (strcmp(declared_type, "function") == 0)
+        return value.type == EXPRTK_VAL_FUNCTION || value.type == EXPRTK_VAL_BOUND_METHOD;
+    if (strcmp(declared_type, "null") == 0) return value.type == EXPRTK_VAL_NULL;
+
+    if (value.type == EXPRTK_VAL_INSTANCE && value.data.instance_val.instance)
+        value_class = value.data.instance_val.instance->klass;
+    else if (value.type == EXPRTK_VAL_CLASS && value.data.class_val.klass)
+        value_class = value.data.class_val.klass;
+    return value_class && class_name_match_depth(value_class, declared_type) >= 0;
+}
+
+int exprtk_instance_set_field_checked(
+    exprtk_instance_t *instance,
+    const char *name,
+    exprtk_value_t value,
+    char *error_msg,
+    size_t error_msg_len)
+{
+    const char *declared_type;
+    if (!instance || !name) return 0;
+    declared_type = exprtk_class_get_instance_field_type(instance->klass, name);
+    if (declared_type && !instance_value_matches_field_type(
+            instance->klass, value, declared_type)) {
+        if (error_msg && error_msg_len > 0) {
+            snprintf(error_msg, error_msg_len,
+                     "field '%s' expects '%s' but received '%s'",
+                     name, declared_type, value_signature_type(value));
+        }
+        return 0;
+    }
+    exprtk_instance_set_field(instance, name, value);
+    return 1;
 }
 
 void exprtk_instance_foreach_field(

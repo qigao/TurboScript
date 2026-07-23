@@ -67,7 +67,7 @@ The MIR backend handles:
 - vectors, maps, lists, strings, and templates
 - destructuring, indexing, slicing, and member access
 - class/interface declarations, constructors, methods, fields, `super`, `instanceof`, overload dispatch, and access checks
-- parser/data binding and plugin function calls through helper dispatch
+- parser/mapper and plugin function calls through helper dispatch
 
 Hot paths should stay in MIR instructions where possible. Dynamic or host-owned behavior should be represented as explicit runtime helper calls.
 
@@ -97,12 +97,14 @@ Plugin namespaces must resolve by registered module name. They must not fall thr
 
 ## Data Binding
 
-`modules/parser` owns JSON/CSV parsing and TBE schema binding:
+`modules/mapper` owns class-first JSON, YAML, and XML mapping:
 
-- `json.parse`, `json.stringify`
-- `json.bind`, `json.bind_all`, `json.emit`, `json.validate`, `json.validate_ex`
-- `csv.bind`, `csv.bind_all`, `csv.emit`, `csv.validate`, `csv.validate_ex`
-- schema text and schema handle entry points
+- `mapper.read_json`, `mapper.read_yaml`, `mapper.read_xml`
+- `mapper.write_json`, `mapper.write_yaml`, `mapper.write_xml`
+
+TurboScript class field declarations are the type source. The mapper uses
+TurboUtils `turbo_parser.h` for document syntax and never loads a separate
+schema or codec. `modules/parser` remains limited to configuration text.
 
 `ts`, `ta`, and `fin` should consume canonical runtime values from parser/data binding instead of owning independent parsing semantics.
 

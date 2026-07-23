@@ -65,7 +65,7 @@ Lookup priority:
 10. **Duration**: Millisecond duration returned by `duration.parse(text)`.
 11. **Vector**: Array of numbers (e.g., `[1, 2, 3]`).
 12. **Map**: Explicit script key-value container (e.g., `map{name: "Alice", age: 30}`).
-13. **Object**: Host/parser/data_bind plain record object with field access.
+13. **Object**: Host/parser plain record object with field access.
 14. **List**: Heterogeneous array of any values (e.g., `list("hello", 42, [1,2])`).
 15. **RegExp Object**: Regular expression object created with `RegExp("...")` or `/.../flags`.
 16. **Null**: Absence of a value (`null` or `nil`).
@@ -169,7 +169,7 @@ datetime("Sat, 04 Mar 2006 13:27:54 GMT").year // → 2006
 | Layer | How registered | Examples |
 |---|---|---|
 | **Global registry** | `exprtk_module_t` sorted array — always available | `sin`, `sum`, `read_file`, `now`, `date`, `os_name` |
-| **TurboScript plugins** | `import("name")` 或 `turbo_script_load_plugin(ctx, "name")` 动态加载 | `csv.*`, `json.*`, `ta.*`, `ts.*`, `vec.*`, `http.*`, `strategy.*`, `data_bind.*` |
+| **TurboScript plugins** | `import("name")` 或 `turbo_script_load_plugin(ctx, "name")` 动态加载 | `csv.*`, `json.*`, `mapper.*`, `ta.*`, `ts.*`, `vec.*`, `http.*`, `strategy.*` |
 ---
 
 ## Variables & Assignment

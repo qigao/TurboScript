@@ -808,13 +808,13 @@ This contract is a compatibility rule for the current DSL. Future strict APIs sh
 | `is_string(x)` | Check for string value | 1 if string, else 0 |
 | `is_vector(x)` | Check for numeric vector | 1 if vector, else 0 |
 | `is_map(x)` | Check for script `map` | 1 if map, else 0 |
-| `is_object(x)` | Check for host/parser/data_bind plain object | 1 if object, else 0 |
+| `is_object(x)` | Check for host/parser plain object | 1 if object, else 0 |
 | `is_list(x)` | Check for heterogeneous list | 1 if list, else 0 |
 | `is_null(x)` | Check for null | 1 if null, else 0 |
 
-Parser and data binding APIs return plain objects for JSON objects, XML query
-nodes, schema reflection records, and schema-bound records/unions. Script
-`map{...}` literals and TBE `map<K,V>` fields remain `map` values.
+Parser APIs return plain objects for dynamic JSON objects and XML query nodes.
+`mapper.read_*` returns typed class instances. Script `map{...}` literals remain
+`map` values.
 
 | Function | Description | Example |
 |----------|-------------|---------|
@@ -844,71 +844,23 @@ nodes, schema reflection records, and schema-bound records/unions. Script
 
 `datetime.parse`, `datetime.to_time`, and `datetime.format_rfc822` are exported
 by the script parser module and use TurboNet's datetime parser/format helpers.
-TBE schema scalars `datetime`, `date`, `time`, `duration`, `decimal`, `bigint`,
-and `money` are implemented in
-`tbe/data_bind`; DataBind uses TurboUtils::Parser directly and binds JSON/XML/CSV/YAML
-text to native runtime values. Schema emit writes them back as strings.
-
-The `data_bind` module requires DataBind 1.10.0 or newer. Its C API provides
-`data_bind_value_clone()` for callers that need an independently owned deep
-copy of a `DataBindValue` tree, including nested object/list/set/map values,
-bytes, UUID and temporal values, decimal, bigint, and money. TurboScript does
-not expose raw `DataBindValue` handles: plugin results and synchronous stream
-callback records are converted immediately into environment-owned script
-values, so script code does not need to clone or free the C tree.
-
-For retained values and cross-format serialization, DataBind also exposes owned
-object handles:
+`datetime.parse`, `date.parse`, `time.parse`, `duration.parse`, and
+`decimal.parse` produce native runtime values. Structured document mapping is
+provided by `mapper`, whose class-first API is backed by TurboUtils
+`turbo_parser.h`:
 
 | Function | Description |
 |----------|-------------|
-| `data_bind.object_from_binary(codec, type, bytes)` | Create an object from TBE binary |
-| `data_bind.object_from_json(codec, type, json)` | Create an object from JSON |
-| `data_bind.object_from_yaml(codec, type, yaml)` | Create an object from YAML |
-| `data_bind.object_from_xml(codec, type, xml)` | Create an object from XML |
-| `data_bind.object_from_csv(codec, type, csv, row)` | Create an object from a zero-based CSV data row |
-| `data_bind.object_clone(object)` | Deep-copy an object using the same codec association |
-| `data_bind.object_type(object)` | Return the schema type name |
-| `data_bind.object_value(object)` | Convert the retained value to an environment-owned script value |
-| `data_bind.object_serialize_json/yaml/xml/csv(object)` | Return serialized text |
-| `data_bind.object_serialize_binary(object)` | Return schema-specific TBE `bytes` |
-| `data_bind.object_close(object)` | Release an object handle |
+| `mapper.read_json(Class, text)` | Parse JSON into a typed class instance |
+| `mapper.read_yaml(Class, text)` | Parse YAML into a typed class instance |
+| `mapper.read_xml(Class, text)` | Parse XML into a typed class instance |
+| `mapper.write_json(instance)` | Serialize an instance as JSON |
+| `mapper.write_yaml(instance)` | Serialize an instance as YAML |
+| `mapper.write_xml(instance)` | Serialize an instance as XML |
 
-Object handles retain an association with their creating codec because binary
-serialization needs the schema. Close objects before the codec. Closing a codec
-also closes all associated object and stream handles, so those handles must not
-be used afterward. CSV emits an RFC 4180 header plus one row; Binary is not
-self-describing and must be read with a compatible schema and type name.
-
-The `data_bind` module exposes YAML with the same DOM and buffered stream models
-as JSON and XML:
-
-| Function | Description |
-|----------|-------------|
-| `data_bind.yaml(handle, type, yaml)` | Bind the YAML root |
-| `data_bind.yaml_all(handle, type, yaml)` | Bind every item in a root sequence |
-| `data_bind.yaml_ypath(handle, type, yaml, ypath)` | Bind the first YPATH match |
-| `data_bind.yaml_ypath_all(handle, type, yaml, ypath)` | Bind all YPATH matches |
-| `data_bind.yaml_path(...)` / `yaml_all_path(...)` | Bind YAML from a file path |
-| `data_bind.validate_yaml(...)` / `validate_yaml_path(...)` | Strictly validate a root or YPATH match |
-| `data_bind.sax.yaml*` | Bind buffered YAML text or files |
-| `data_bind.sax.yaml*_create(...)` | Create a chunk-fed buffered YAML stream |
-| `data_bind.sax.set_callback(stream, fn)` | Receive `(record, index)` before `finish()` |
-
-For callbacks, `false` or `0` continues, `true` or a positive number stops later
-notifications, and a negative number fails the stream. `data_bind.sax.finish()`
-still returns the final bound object or list. The `data_bind.dom.yaml*` names are
-aliases for the non-streaming YAML functions. In script APIs, `yaml_path` denotes
-a file path; YPATH selection uses the explicit `yaml_ypath` names.
-
-Schema string fields can also use field formats, for example
-`[format(ipaddr)] string ip;` or `[format(url)] string href;`. These validate
-JSON/CSV/XML/YAML/default text but still bind as normal strings. Supported formats:
-`ipaddr`, `ip`, `cidr`, `hostname`, `domain`, `email`, `url`, `uri`,
-`macaddr`, `mac`, `semver`, `hex`, `base64`, `base64url`, `currency`,
-`json_pointer`, `jsonpath`, `xpath`, `cron`, `color`, `mime`, and `regex`.
-`regex` validates patterns through the built-in regex engine.
-`schema.fields(...)` exposes the field `format` when present.
+Class field declarations are the only type source. JSON and YAML reject unknown
+fields and declared-type mismatches; missing fields retain class defaults.
+Unsupported values fail fast instead of being coerced or silently omitted.
 
 ---
 

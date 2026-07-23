@@ -104,17 +104,16 @@ var nested = map{
 
 ### Plain Object
 
-Plain object 是由 `parser`、`data_bind` 等宿主模块产出的动态 record 值。它不通过 `map{...}` 字面量创建，但日常脚本访问方式与 record 类似：
+Plain object 是由宿主或 parser 模块产出的动态 record 值。需要强类型文档映射时，先声明 TurboScript class，再使用 `mapper`：
 
 ```javascript
-import("parser");
-
-var user = json.parse("{\"name\":\"Alice\",\"age\":30}");
+class User { name: string; age: int64; }
+var user = mapper.read_json(User, "{\"name\":\"Alice\",\"age\":30}");
 print(user.name);        // "Alice"
 print(user["age"]);      // 30
 ```
 
-schema 绑定记录、JSON object、XML 查询节点和 schema reflection 结果使用 plain object；脚本主动创建键值容器或 TBE `map<K,V>` 字段仍使用 `map`。
+需要字段类型和跨格式序列化时使用 class instance；脚本主动创建键值容器时使用 `map`。
 
 ### 日期时间（Datetime）
 
@@ -208,7 +207,7 @@ typeof(decimal.parse("123.45"))  // "decimal"
 typeof("hello")     // "string"
 typeof([1,2,3])     // "vector"
 typeof(map{a: 1})   // "map"
-// json.parse("{\"a\":1}") 的 typeof(...) 为 "object"
+// mapper.read_json(...) 返回 class instance
 typeof(null)        // "null"
 
 is_number(42)       // 1 (true)
@@ -841,7 +840,7 @@ import("vec");
 import("net");
 import("sqlite");
 import("fin");
-import("data_bind");
+import("mapper");
 ```
 
 ### 模块命名空间

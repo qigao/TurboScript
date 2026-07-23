@@ -160,7 +160,14 @@ static void exprtk_clone_class_static_field(const char *name, exprtk_value_t *va
         cloned = exprtk_value_clone_to_env(*value, ctx->env);
     }
 
-    exprtk_class_set_static_field(ctx->klass, name, cloned);
+    {
+        int access = exprtk_class_get_static_field_access(
+            ctx->source, name, NULL);
+        const char *declared_type = exprtk_class_get_static_field_type(
+            ctx->source, name);
+        exprtk_class_declare_static_field_typed(
+            ctx->klass, name, declared_type, cloned, access);
+    }
     exprtk_value_destroy(&cloned);
 }
 
@@ -1635,12 +1642,19 @@ exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env)
             }
 
             if (method_node->data.field_decl.is_static) {
-                exprtk_class_declare_static_field(
-                    klass, method_node->data.field_decl.name, field_value,
-                    method_node->data.field_decl.access_level);
+                if (!exprtk_class_declare_static_field_typed(
+                        klass, method_node->data.field_decl.name,
+                        method_node->data.field_decl.declared_type, field_value,
+                        method_node->data.field_decl.access_level)) {
+                    exprtk_value_destroy(&field_value);
+                    return throw_error(env, method_node,
+                                       "Invalid default value for static field '%s'",
+                                       method_node->data.field_decl.name);
+                }
             } else {
-                exprtk_class_declare_instance_field(
-                    klass, method_node->data.field_decl.name, field_value,
+                exprtk_class_declare_instance_field_typed(
+                    klass, method_node->data.field_decl.name,
+                    method_node->data.field_decl.declared_type, field_value,
                     method_node->data.field_decl.initializer != NULL,
                     method_node->data.field_decl.access_level);
             }
@@ -2367,7 +2381,11 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
             return throw_field_access_error(env, object_node, member_name, access);
         }
 
-        exprtk_instance_set_field(instance, member_name, field_value);
+        char field_error[256];
+        if (!exprtk_instance_set_field_checked(instance, member_name, field_value,
+                                               field_error, sizeof(field_error))) {
+            return throw_error(env, object_node, "%s", field_error);
+        }
         return field_value;
     }
     if (object.type == EXPRTK_VAL_CLASS) {
@@ -2378,7 +2396,12 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
             return throw_field_access_error(env, object_node, member_name, access);
         }
 
-        exprtk_class_set_static_field(klass, member_name, field_value);
+        {
+            char field_error[256];
+            if (!exprtk_class_set_static_field_checked(
+                    klass, member_name, field_value, field_error, sizeof(field_error)))
+                return throw_error(env, object_node, "%s", field_error);
+        }
         return field_value;
     }
     return zero;
@@ -2408,7 +2431,11 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
                 return throw_field_access_error(env, object_node, member_name,
                                                 cache->access_level);
             }
-            *cache->slot = field_value;
+            char field_error[256];
+            if (!exprtk_instance_set_field_checked(instance, member_name, field_value,
+                                                   field_error, sizeof(field_error))) {
+                return throw_error(env, object_node, "%s", field_error);
+            }
             return field_value;
         }
 
@@ -2418,13 +2445,14 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
         if (!can_access_declared_field(env, field_owner, access, object_node, member_name)) {
             return throw_field_access_error(env, object_node, member_name, access);
         }
-        exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
-        if (slot) {
-            *slot = field_value;
-        } else {
-            exprtk_instance_set_field(instance, member_name, field_value);
-            slot = exprtk_instance_get_field_slot(instance, member_name);
+        {
+            char field_error[256];
+            if (!exprtk_instance_set_field_checked(instance, member_name, field_value,
+                                                   field_error, sizeof(field_error))) {
+                return throw_error(env, object_node, "%s", field_error);
+            }
         }
+        exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
         if (cache && slot) {
             cache->owner = instance;
             cache->field_owner = field_owner;
@@ -2445,7 +2473,12 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
                 return throw_field_access_error(env, object_node, member_name,
                                                 cache->access_level);
             }
-            *cache->slot = field_value;
+            {
+                char field_error[256];
+                if (!exprtk_class_set_static_field_checked(
+                        klass, member_name, field_value, field_error, sizeof(field_error)))
+                    return throw_error(env, object_node, "%s", field_error);
+            }
             return field_value;
         }
 
@@ -2454,7 +2487,12 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
         if (!can_access_declared_field(env, field_owner, access, object_node, member_name)) {
             return throw_field_access_error(env, object_node, member_name, access);
         }
-        exprtk_class_set_static_field(klass, member_name, field_value);
+        {
+            char field_error[256];
+            if (!exprtk_class_set_static_field_checked(
+                    klass, member_name, field_value, field_error, sizeof(field_error)))
+                return throw_error(env, object_node, "%s", field_error);
+        }
         exprtk_value_t *slot = exprtk_class_get_static_field_slot(klass, member_name, NULL);
         if (cache && slot) {
             cache->owner = klass;

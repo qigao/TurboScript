@@ -6,7 +6,7 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     SOURCES ${SOURCE_FILE}
     LIBS turbo_script TurboUtils::TinyTest TurboNet::CoroNet exprtk ta mir_static
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-    DEPENDS data_bind_tbs fin_tbs ta_tbs ts_tbs parser_tbs net_tbs coro_tbs
+    DEPENDS mapper_tbs fin_tbs ta_tbs ts_tbs parser_tbs net_tbs coro_tbs
     FOLDER turbo_script)
   add_custom_command(
     TARGET ${TARGET_NAME} POST_BUILD
@@ -14,7 +14,7 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ta_tbs>     $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ts_tbs>     $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:parser_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:data_bind_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:mapper_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>    $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:coro_tbs>   $<TARGET_FILE_DIR:${TARGET_NAME}>)
 endmacro()
@@ -41,12 +41,12 @@ macro(add_mir_test TARGET_NAME SOURCE_FILE)
     SOURCES ${SOURCE_FILE}
     LIBS turbo_script TurboUtils::TinyTest exprtk mir_static
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-    DEPENDS data_bind_tbs
+    DEPENDS mapper_tbs
     FOLDER turbo_script)
   add_custom_command(
     TARGET ${TARGET_NAME} POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:data_bind_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>)
+            $<TARGET_FILE:mapper_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>)
 endmacro()
 
 add_mir_test(test_turbo_script_mir_core     test_turbo_script_mir_core.c)

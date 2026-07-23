@@ -254,7 +254,7 @@ import("ta");       // 技术分析
 import("vec");      // 高级向量操作
 import("net");      // HTTP/WebSocket
 import("sqlite");   // 数据库访问
-import("data_bind");// 二进制 TBE 模式 JIT 解析
+import("mapper");   // 基于 class 的 JSON/YAML/XML 映射
 ```
 
 ---

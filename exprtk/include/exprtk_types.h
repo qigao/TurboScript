@@ -226,6 +226,7 @@ struct exprtk_node_s {
     } method;
     struct {
       char *name;                      // 字段名
+      char *declared_type;             // 声明类型；NULL 表示动态字段
       exprtk_node_t *initializer;      // 初始值表达式，可为 NULL
       int is_static;                   // 是否为静态字段
       int access_level;                // public/protected/private

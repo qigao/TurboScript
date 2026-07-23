@@ -52,13 +52,16 @@ Count: 6
 - `sqlite.query_col`
 - `sqlite.query_scalar`
 
-## data_bind plugin (`data_bind`)
+## mapper plugin (`mapper`)
 
-Count: 3
+Count: 6
 
-- `data_bind.create`
-- `data_bind.parse`
-- `data_bind.close`
+- `mapper.read_json`
+- `mapper.read_yaml`
+- `mapper.read_xml`
+- `mapper.write_json`
+- `mapper.write_yaml`
+- `mapper.write_xml`
 
 ## fuzzy plugin (`fuzzy`)
 

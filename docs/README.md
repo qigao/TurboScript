@@ -51,7 +51,7 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 ### Built-in Libraries
 - **Math & matrix**: Scalar math, statistics, dense matrix helpers, linear algebra
 - **String**: UTF-8 text operations, parsing, formatting, templates
-- **Parser/Data bind**: CSV, JSON, XML, TBE schema bind/emit/validate with plain object results
+- **Parser/Mapper**: configuration text parsing plus class-first JSON/YAML/XML mapping
 - **Time series / TA / finance**: Rolling windows, indicators, risk metrics, portfolio helpers
 - **File I/O**: Read/write files, directory operations
 - **Date/Time**: Parsing, formatting, timestamps
@@ -118,14 +118,15 @@ TurboScript comes with a rich set of optional modules:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
-| `parser` / `csv` / `json` | CSV parsing, JSON querying, TBE schema bind/emit/validate | [parser README](../modules/parser/README.md) |
+| `parser` | Configuration-oriented text parsing (INI, dotenv, TOML, command line) | [parser README](../modules/parser/README.md) |
+| `mapper` | Class-first JSON/YAML/XML serialization through `turbo_parser.h` | [mapper README](../modules/mapper/README.md) |
 | `ta` | Technical analysis indicators | [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) |
 | `fin` / `strategy` | Risk metrics, strategy context, portfolio helpers | [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) |
 | `vec` | Advanced vector operations | [vec_cheatsheet.md](vec_cheatsheet.md) |
 | `net` | HTTP/WebSocket networking | [modules/net.md](modules/net.md) |
 | `sqlite` | Database access | [modules/sqlite.md](modules/sqlite.md) |
-| `data_bind` | Binary parsing using JIT-compiled TBE schemas | [modules/data_bind/README.md](../modules/data_bind/README.md) |
-| `rules_forge` | Rules engine integration, DataBind-backed facts, TurboScript RHS plugin loading | [rules_forge README](../modules/rules_forge/README.md) |
+| `rules_forge` | Rules engine integration and TurboScript RHS plugin loading | [rules_forge README](../modules/rules_forge/README.md) |
+| `os` | Platform information, shell-free child processes, logging, service and power management | [os README](../modules/os/README.md) |
 | `wasm` | WebAssembly execution | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
 
 ---

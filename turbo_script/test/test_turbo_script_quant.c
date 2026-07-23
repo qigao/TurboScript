@@ -448,52 +448,6 @@ spec("turbo_script_quant") {
     }
   }
 
-  describe("TA Indicators and DataBind Vectors") {
-    it("should compute SMA and RSI on mocked Polymarket data") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq(turbo_script_load_plugin(ctx, "data_bind"), 0);
-
-      // Mocked Polymarket history JSON (array of objects with 'p' field)
-      const char *mock_history = "["
-                                 "{\"p\":0.51},{\"p\":0.52},{\"p\":0.53},{\"p\":0.54},{\"p\":0.55},"
-                                 "{\"p\":0.56},{\"p\":0.57},{\"p\":0.58},{\"p\":0.59},{\"p\":0.60}"
-                                 "]";
-      ts_bind_str(ctx, "history_json", mock_history);
-
-      const char *script = "codec = data_bind.create_from_text("
-                           "\"message Price { double p; }\");"
-                           "rows = data_bind.json_all(codec, \"Price\", history_json);"
-                           "prices = rows.stream().map(r => r.p).toVector();"
-                           "sma3 = ta.sma(prices, 3);"
-                           "rsi5 = ta.rsi(prices, 5);"
-                           "last_price = prices[9];"
-                           "last_sma = sma3[9];"
-                           "last_rsi = rsi5[9];"
-                           "data_bind.close(codec);"
-                           "res = last_sma;";
-
-      int run_res = turbo_script_run(ctx, script);
-      if (run_res != 0) printf("TA Test Run Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(run_res, 0);
-
-      double lp = ts_get_num(ctx, "last_price");
-      printf("  Last Price: %g\n", lp);
-      check_float_eq(lp, 0.60, 0.001);
-
-      double ls = ts_get_num(ctx, "res");
-      printf("  SMA(3): %g\n", ls);
-      check_float_eq(ls, 0.59, 0.001);
-
-      double rsi_val = ts_get_num(ctx, "last_rsi");
-      printf("  RSI(5): %g\n", rsi_val);
-      check_float_gt(rsi_val, 0.0);
-      check_float_eq(rsi_val, 100.0, 0.1);
-
-      turbo_script_free(ctx);
-    }
-  }
-
   describe("Compile/Exec Separation") {
     it("should compile once and exec twice with different x") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);

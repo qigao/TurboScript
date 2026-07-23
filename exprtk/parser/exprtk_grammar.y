@@ -1995,6 +1995,7 @@ field_def(A) ::= VARIABLE(Name) SEMICOLON. {
     A = exprtk_node_new(ctx, EXPRTK_NODE_FIELD_DECL);
     if (A) {
         A->data.field_decl.name = exprtk_strdup(ctx, Name.start, Name.length);
+        A->data.field_decl.declared_type = NULL;
         A->data.field_decl.initializer = NULL;
         A->data.field_decl.is_static = 0;
         A->data.field_decl.access_level = EXPRTK_ACCESS_PUBLIC;
@@ -2006,6 +2007,33 @@ field_def(A) ::= VARIABLE(Name) EQUAL expr(Init) SEMICOLON. {
     A = exprtk_node_new(ctx, EXPRTK_NODE_FIELD_DECL);
     if (A) {
         A->data.field_decl.name = exprtk_strdup(ctx, Name.start, Name.length);
+        A->data.field_decl.declared_type = NULL;
+        A->data.field_decl.initializer = Init;
+        A->data.field_decl.is_static = 0;
+        A->data.field_decl.access_level = EXPRTK_ACCESS_PUBLIC;
+        exprtk_node_set_pos(A, &Name);
+    }
+}
+
+field_def(A) ::= VARIABLE(Name) COLON method_type_name(Type) SEMICOLON. {
+    A = exprtk_node_new(ctx, EXPRTK_NODE_FIELD_DECL);
+    if (A && Type) {
+        A->data.field_decl.name = exprtk_strdup(ctx, Name.start, Name.length);
+        A->data.field_decl.declared_type = exprtk_strdup(ctx,
+            Type->data.variable.name, strlen(Type->data.variable.name));
+        A->data.field_decl.initializer = NULL;
+        A->data.field_decl.is_static = 0;
+        A->data.field_decl.access_level = EXPRTK_ACCESS_PUBLIC;
+        exprtk_node_set_pos(A, &Name);
+    }
+}
+
+field_def(A) ::= VARIABLE(Name) COLON method_type_name(Type) EQUAL expr(Init) SEMICOLON. {
+    A = exprtk_node_new(ctx, EXPRTK_NODE_FIELD_DECL);
+    if (A && Type) {
+        A->data.field_decl.name = exprtk_strdup(ctx, Name.start, Name.length);
+        A->data.field_decl.declared_type = exprtk_strdup(ctx,
+            Type->data.variable.name, strlen(Type->data.variable.name));
         A->data.field_decl.initializer = Init;
         A->data.field_decl.is_static = 0;
         A->data.field_decl.access_level = EXPRTK_ACCESS_PUBLIC;

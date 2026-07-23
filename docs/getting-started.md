@@ -252,7 +252,7 @@ import("ta");       // Technical analysis
 import("vec");      // Advanced vector operations
 import("net");      // HTTP/WebSocket
 import("sqlite");   // Database access
-import("data_bind");// Binary TBE schema JIT parsing
+import("mapper");   // Class-first JSON/YAML/XML mapping
 ```
 
 ---

@@ -39,7 +39,8 @@ class EventBus {
 
 class MarketMessageStrategy implements MessageStrategy {
     decode(message) {
-        var payload = json.parse(message);
+        // Unmodeled payloads remain raw; typed documents use mapper.read_json.
+        var payload = message;
         return map{
             source: "market",
             kind: "data",
@@ -63,7 +64,8 @@ class SportsMessageStrategy implements MessageStrategy {
                 bytes: len(message)
             };
         }
-        var payload = json.parse(message);
+        // Unmodeled payloads remain raw; typed documents use mapper.read_json.
+        var payload = message;
         return map{
             source: "sports",
             kind: "data",

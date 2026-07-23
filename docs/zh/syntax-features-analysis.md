@@ -23,7 +23,7 @@ TurboScript 已经从表达式求值器演进为一门动态类型脚本语言�
 | vector | `[1, 2, 3]` | 数值数组，适合统计和 TA 运算 |
 | list | `list("x", 1, map{})` | 异构集合 |
 | map | `map{name: "Alice"}` | 键值结构 |
-| object | parser/data_bind 返回值 | 宿主模块产出的 plain record object |
+| object | parser 返回值 | 宿主模块产出的 plain record object |
 | null | `null`, `nil` | 空值 |
 | class value / instance | `Counter`, `Counter(1)` | OOP 运行时值 |
 
@@ -229,36 +229,20 @@ var ok = s instanceof Shape;
 - `_name` 私有约定仍保留兼容，但新代码应优先使用显式 `private` / `protected`。
 - JIT/MIR 通过 runtime helper lowering 执行 OOP；不支持形式报错，不静默回退到解释器。
 
-## 模块与数据绑定
+## Mapper 模块
 
 模块通过 `import("name")` 加载，函数以命名空间暴露：
 
 ```javascript
-import("parser");
+import("mapper");
 
-var schema_id = schema.parse(schema_text);
-var data = json.parse(json_text);
-
-var rows = csv.bind_all_schema(schema_id, csv_text, "Order");
-var row = json.bind_schema(schema_id, json_text, "Order");
-var ok = json.validate(schema_text, json_text, "Order");
-
-schema.close(schema_id);
+class Order { id: int64; total: number; }
+var row = mapper.read_json(Order, json_text);
+var output = mapper.write_yaml(row);
 ```
 
-当前 parser 模块已完成 JSON/CSV/XML schema binding 主线：
-
-- `json.bind` / `json.bind_all` / `json.emit` / `json.validate` / `json.validate_ex`
-- `json.parse` / `json.stringify`
-- `csv.bind` / `csv.bind_all` / `csv.emit` / `csv.validate` / `csv.validate_ex`
-- `xml.bind` / `xml.bind_all` / `xml.validate` / `xml.validate_ex`
-- schema text 与 schema handle 两种入口
-- record/composite/group、fixed array、list、set、map
-- scalar、enum、flags、union
-- optional/default 字段
-
-绑定失败不会制造伪有效值：非法 scalar、非法 record、错误 container shape 会绑定失败；`bind_all` 跳过无法绑定的元素，`validate_ex` 返回诊断。
-通用 JSON 映射已支持：JSON object/array 可直接转换为脚本 `object`/`list`，脚本 scalar、plain object、`map`、`list`、`vector` 可通过 `json.stringify` 输出 JSON。schema record、union、XML 查询节点和 schema reflection 结果也使用 plain object；TBE `map<K,V>` 字段仍使用脚本 `map` 表达 schema map 容器。
+`mapper` 使用 class 字段声明作为唯一类型来源，支持 JSON/YAML/XML 的读取和写回。
+读取时拒绝 JSON/YAML 未声明字段和类型不匹配值；缺少字段保留 class 默认值。
 
 ## MIR 解释器与 JIT 一致性
 

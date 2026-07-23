@@ -921,39 +921,7 @@ spec("turbo_script_mir_core") {
       turbo_script_free(ctx_jit);
     }
 
-    it("should match interpreter for DataBind JSON and CSV bindings") {
-      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx_interp, "data_bind"), 0);
-      check_int_eq(turbo_script_load_plugin(ctx_jit, "data_bind"), 0);
-      const char *script =
-          "schema = \"message Trade { double price; uint32 qty; string symbol; }\";"
-          "codec = data_bind.create_from_text(schema);"
-          "one = \"{\\\"symbol\\\":\\\"AAPL\\\",\\\"price\\\":10.5,\\\"qty\\\":2}\";"
-          "many = \"[{\\\"symbol\\\":\\\"AAPL\\\",\\\"price\\\":10.5,\\\"qty\\\":2},"
-          "{\\\"symbol\\\":\\\"MSFT\\\",\\\"price\\\":20,\\\"qty\\\":3}]\";"
-          "csv_text = \"symbol,price,qty\\nAAPL,10.5,2\\nMSFT,20,3\";"
-          "trade = data_bind.json(codec, \"Trade\", one);"
-          "rows = data_bind.json_all(codec, \"Trade\", many);"
-          "csv_row = data_bind.csv(codec, \"Trade\", csv_text, 0);"
-          "result = trade.price * trade.qty + rows[1].price * rows[1].qty + csv_row.qty;"
-          "data_bind.close(codec);";
-      int interp_result = turbo_script_run(ctx_interp, script);
-      int jit_result = turbo_script_run_jit(ctx_jit, script);
-      if (interp_result != 0)
-        printf("DataBind interpreter error: %s\n", turbo_script_get_error(ctx_interp));
-      if (jit_result != 0)
-        printf("DataBind JIT error: %s\n", turbo_script_get_error(ctx_jit));
-      check_int_eq(interp_result, 0);
-      check_int_eq(jit_result, 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 83.0, EPS);
-      turbo_script_free(ctx_interp);
-      turbo_script_free(ctx_jit);
-    }
   }
-
-  /* ===== Phase 5: Unsupported-node rejection tests ===== */
 
   describe("unsupported nodes") {
 

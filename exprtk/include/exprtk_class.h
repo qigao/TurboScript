@@ -52,6 +52,7 @@ struct exprtk_class_s {
     void *static_fields;             /* HTAB(field_entry_t)* - static fields */
     void *abstract_methods;          /* HTAB(exprtk_method_entry_t)* - unresolved abstract methods */
     char **instance_field_names;      /* Canonical instance field layout for slot access */
+    char **instance_field_types;      /* NULL for legacy dynamic fields */
     int *instance_field_access_levels;
     struct exprtk_class_s **instance_field_owners;
     exprtk_value_t *instance_field_defaults;
@@ -282,6 +283,27 @@ CXX_C_API void exprtk_class_declare_static_field(
     int access_level
 );
 
+CXX_C_API int exprtk_class_declare_static_field_typed(
+    exprtk_class_t *klass,
+    const char *name,
+    const char *declared_type,
+    exprtk_value_t value,
+    int access_level
+);
+
+CXX_C_API const char *exprtk_class_get_static_field_type(
+    exprtk_class_t *klass,
+    const char *name
+);
+
+CXX_C_API int exprtk_class_set_static_field_checked(
+    exprtk_class_t *klass,
+    const char *name,
+    exprtk_value_t value,
+    char *error_msg,
+    size_t error_msg_len
+);
+
 CXX_C_API int exprtk_class_get_static_field_access(
     exprtk_class_t *klass,
     const char *name,
@@ -294,6 +316,25 @@ CXX_C_API int exprtk_class_declare_instance_field(
     exprtk_value_t default_value,
     int has_default,
     int access_level
+);
+
+CXX_C_API int exprtk_class_declare_instance_field_typed(
+    exprtk_class_t *klass,
+    const char *name,
+    const char *declared_type,
+    exprtk_value_t default_value,
+    int has_default,
+    int access_level
+);
+
+CXX_C_API const char *exprtk_class_get_instance_field_type(
+    exprtk_class_t *klass,
+    const char *name
+);
+
+CXX_C_API int exprtk_class_has_instance_field(
+    exprtk_class_t *klass,
+    const char *name
 );
 
 CXX_C_API int exprtk_class_get_instance_field_access(
@@ -366,6 +407,14 @@ CXX_C_API void exprtk_instance_set_field(
     exprtk_instance_t *instance,
     const char *name,
     exprtk_value_t value
+);
+
+CXX_C_API int exprtk_instance_set_field_checked(
+    exprtk_instance_t *instance,
+    const char *name,
+    exprtk_value_t value,
+    char *error_msg,
+    size_t error_msg_len
 );
 
 typedef void (*exprtk_instance_field_visitor_t)(exprtk_value_t *value, void *user_data);

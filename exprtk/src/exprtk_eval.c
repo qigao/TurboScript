@@ -1260,7 +1260,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     }
                     exprtk_value_t val = exprtk_eval(node->data.member_set.value, env);
                     if (env && env->flow != exprtk_FLOW_NORMAL) return zero;
-                    exprtk_class_set_static_field(parent, node->data.member_set.member, val);
+                    {
+                        char field_error[256];
+                        if (!exprtk_class_set_static_field_checked(
+                                parent, node->data.member_set.member, val,
+                                field_error, sizeof(field_error)))
+                            return throw_error(env, node, "%s", field_error);
+                    }
                     return val;
                 }
 
@@ -1280,8 +1286,14 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                     node->data.member_set.member,
                                                     access);
                 }
-                exprtk_instance_set_field(this_val.data.instance_val.instance,
-                                          node->data.member_set.member, val);
+                {
+                    char field_error[256];
+                    if (!exprtk_instance_set_field_checked(
+                            this_val.data.instance_val.instance,
+                            node->data.member_set.member, val,
+                            field_error, sizeof(field_error)))
+                        return throw_error(env, node, "%s", field_error);
+                }
                 return val;
             }
 
@@ -1312,7 +1324,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                         access);
                     }
 
-                    exprtk_instance_set_field(instance, node->data.member_set.member, val);
+                    {
+                        char field_error[256];
+                        if (!exprtk_instance_set_field_checked(
+                                instance, node->data.member_set.member, val,
+                                field_error, sizeof(field_error)))
+                            return throw_error(env, node, "%s", field_error);
+                    }
                     return val;
                 }
                 if (var_val.type == EXPRTK_VAL_CLASS) {
@@ -1328,7 +1346,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                         access);
                     }
 
-                    exprtk_class_set_static_field(klass, node->data.member_set.member, val);
+                    {
+                        char field_error[256];
+                        if (!exprtk_class_set_static_field_checked(
+                                klass, node->data.member_set.member, val,
+                                field_error, sizeof(field_error)))
+                            return throw_error(env, node, "%s", field_error);
+                    }
                     return val;
                 }
             }
@@ -1351,7 +1375,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                                     access);
                 }
 
-                exprtk_instance_set_field(instance, node->data.member_set.member, val);
+                {
+                    char field_error[256];
+                    if (!exprtk_instance_set_field_checked(
+                            instance, node->data.member_set.member, val,
+                            field_error, sizeof(field_error)))
+                        return throw_error(env, node, "%s", field_error);
+                }
                 return val;
             }
 

@@ -41,7 +41,7 @@ The language should revolve around a small number of primary value shapes:
 - `number`: scalar numeric computation
 - `string`: text, paths, dates, messages
 - `vector`: dense numeric arrays for math and time-series work
-- `object`: host/parser/data_bind plain records and schema-bound data
+- `object`: host/parser plain records and dynamic data
 - `map`: explicit script key-value containers and schema map fields
 - `class`/`instance`: domain objects, interfaces, and encapsulated behavior
 - `null`: explicit absence

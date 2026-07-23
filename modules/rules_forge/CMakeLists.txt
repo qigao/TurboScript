@@ -36,8 +36,6 @@ if(WIN32)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:RulesForge::rules_forge> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboUtils::DataBind> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboUtils::Parser> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboUtils::Core> $<TARGET_FILE_DIR:${TARGET_NAME}>)

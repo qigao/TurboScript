@@ -580,11 +580,11 @@ var formatted = format_date_utc(parsed, "%Y-%m-%d %H:%M:%S"); // "2024-01-01 12:
 | `is_string(x)` | 判断字符串 | 字符串为 1，否则为 0 |
 | `is_vector(x)` | 判断数值 vector | vector 为 1，否则为 0 |
 | `is_map(x)` | 判断脚本 `map` | map 为 1，否则为 0 |
-| `is_object(x)` | 判断 parser/data_bind 等宿主模块产出的 plain object | object 为 1，否则为 0 |
+| `is_object(x)` | 判断 parser 等宿主模块产出的 plain object | object 为 1，否则为 0 |
 | `is_list(x)` | 判断异构 list | list 为 1，否则为 0 |
 | `is_null(x)` | 判断 null | null 为 1，否则为 0 |
 
-JSON object、XML 查询节点、schema reflection 记录和 schema-bound record/union 返回 plain object。脚本 `map{...}` 字面量和 TBE `map<K,V>` 字段仍是 `map`。
+JSON object 和 XML 查询节点返回 plain object；`mapper.read_*` 返回带字段类型的 class instance。脚本 `map{...}` 字面量仍是 `map`。
 
 | 函数 | 说明 | 示例 |
 |----------|-------------|---------|
@@ -612,17 +612,19 @@ JSON object、XML 查询节点、schema reflection 记录和 schema-bound record
 | `decimal.to_string(d)` / `d.to_string()` | decimal 格式化为规范化文本 | `decimal.to_string(price)` |
 
 `datetime.parse`、`datetime.to_time`、`datetime.format_rfc822` 由脚本 parser 模块导出，
-底层使用 TurboNet 的 datetime parser/format helper。TBE schema 标量
-`datetime`、`date`、`time`、`duration`、`decimal`、`bigint`、`money` 在 `tbe/data_bind` 中实现；DataBind 直接使用
-TurboUtils::Parser，把 JSON/XML/CSV 文本绑定为原生运行时值。schema emit 会把它们写回字符串。
+底层使用 TurboNet 的 datetime parser/format helper。结构化文档映射由 `mapper` 提供：
 
-schema 字符串字段也可以使用字段格式，例如 `[format(ipaddr)] string ip;` 或
-`[format(url)] string href;`。这些格式只做 JSON/CSV/XML/default 文本校验，
-绑定结果仍是普通字符串。支持的格式包括 `ipaddr`、`ip`、`cidr`、`hostname`、
-`domain`、`email`、`url`、`uri`、`macaddr`、`mac`、`semver`、`hex`、`base64`、
-`base64url`、`currency`、`json_pointer`、`jsonpath`、`xpath`、`cron`、`color`、
-`mime` 和 `regex`；`regex` 通过内置正则引擎编译校验。`schema.fields(...)` 会在字段存在格式时返回
-`format`。
+| 函数 | 说明 |
+|----------|-------------|
+| `mapper.read_json(Class, text)` | 读取 JSON 为 class instance |
+| `mapper.read_yaml(Class, text)` | 读取 YAML 为 class instance |
+| `mapper.read_xml(Class, text)` | 读取 XML 为 class instance |
+| `mapper.write_json(instance)` | 输出 JSON |
+| `mapper.write_yaml(instance)` | 输出 YAML |
+| `mapper.write_xml(instance)` | 输出 XML |
+
+class 字段声明是唯一类型来源。JSON/YAML 未声明字段或类型不匹配时快速失败，
+缺失字段保留 class 默认值。
 
 ---
 

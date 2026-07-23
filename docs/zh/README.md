@@ -43,14 +43,14 @@ TurboScript 面向需要内嵌脚本能力的宿主应用，而不是完整替�
 - **数字**：64 位浮点数
 - **字符串**：UTF-8，支持模板字符串
 - **向量**：高效的数值数组
-- **对象**：parser/data_bind API 返回的 plain record
+- **对象**：parser API 返回的 plain record，class instance 表达强类型对象
 - **映射**：基于哈希表的键值存储
 - **列表**：异构集合
 
 ### 内置库
 - **数学与矩阵**：标量数学、统计、矩阵辅助函数、线性代数
 - **字符串**：UTF-8 文本操作、解析、格式化、模板
-- **Parser/Data bind**：CSV、JSON、XML、TBE schema bind/emit/validate，返回 plain object 结果
+- **Parser/Mapper**：配置文本解析，以及基于 class 的 JSON/YAML/XML 映射
 - **时间序列 / TA / 金融**：rolling/window、技术指标、风险指标、组合辅助函数
 - **文件 I/O**：读写文件、目录操作
 - **日期/时间**：解析、格式化、时间戳
@@ -117,14 +117,15 @@ TurboScript 提供了丰富的可选模块：
 
 | 模块 | 说明 | 文档 |
 |--------|-------------|---------------|
-| `parser` / `csv` / `json` | CSV 解析、JSON 查询、TBE schema bind/emit/validate | [parser README](../../modules/parser/README.md) |
+| `parser` | 面向配置的文本解析（INI、dotenv、TOML、命令行） | [parser README](../../modules/parser/README.md) |
+| `mapper` | 基于 class 的 JSON/YAML/XML 映射 | [mapper README](../../modules/mapper/README.md) |
 | `ta` | 技术分析指标 | [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) |
 | `fin` / `strategy` | 风险指标、策略上下文、组合辅助函数 | [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) |
 | `vec` | 高级向量操作 | [vec_cheatsheet.md](../vec_cheatsheet.md) |
 | `net` | HTTP/WebSocket 网络 | [modules/net.md](../modules/net.md) |
 | `sqlite` | 数据库访问 | [modules/sqlite.md](../modules/sqlite.md) |
-| `data_bind` | 基于 JIT 编译 TBE 模式的二进制解析 | [../../modules/data_bind/README.md](../../modules/data_bind/README.md) |
-| `rules_forge` | 规则引擎集成、DataBind-backed fact、TurboScript RHS 插件加载 | [rules_forge README](../../modules/rules_forge/README.md) |
+| `rules_forge` | 规则引擎集成、外部 RulesForge fact、TurboScript RHS 插件加载 | [rules_forge README](../../modules/rules_forge/README.md) |
+| `os` | 平台信息、无 shell 子进程、日志、服务和电源管理 | [os README](../../modules/os/README.md) |
 | `wasm` | WebAssembly 执行 | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
 
 ---

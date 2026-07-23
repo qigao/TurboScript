@@ -102,21 +102,18 @@ var nested = map{
 
 ### Plain Object
 
-Plain objects are dynamic record values produced by host modules such as
-`parser` and `data_bind`. They are not created with `map{...}` literals, but
-they support the same field operations for day-to-day scripting:
+Plain objects are dynamic record values produced by host and parser modules.
+For typed document mapping, declare a TurboScript class and use `mapper`:
 
 ```javascript
-import("parser");
-
-var user = json.parse("{\"name\":\"Alice\",\"age\":30}");
+class User { name: string; age: int64; }
+var user = mapper.read_json(User, "{\"name\":\"Alice\",\"age\":30}");
 print(user.name);        // "Alice"
 print(user["age"]);      // 30
 ```
 
-Use plain objects for schema-bound records and parsed JSON/XML records. Use
-`map` when the script itself needs an explicit key-value container, including
-TBE `map<K,V>` fields.
+Use class instances when fields need declared types and cross-format mapping.
+Use `map` when the script itself needs an explicit key-value container.
 
 ### Datetime
 
@@ -211,7 +208,7 @@ typeof(decimal.parse("123.45"))  // "decimal"
 typeof("hello")     // "string"
 typeof([1,2,3])     // "vector"
 typeof(map{a: 1})   // "map"
-// json.parse("{\"a\":1}") has typeof(...) == "object"
+// mapper.read_json(...) returns a typed class instance
 typeof(null)        // "null"
 
 is_number(42)       // 1 (true)
@@ -227,7 +224,7 @@ is_decimal(decimal.parse("123.45")) // 1 (true)
 is_string("hi")     // 1 (true)
 is_vector([1,2])    // 1 (true)
 is_map(map{})       // 1 (true)
-is_object(obj)      // 1 for host/parser/data_bind plain objects
+is_object(obj)      // 1 for host/parser plain objects
 is_null(null)       // 1 (true)
 ```
 
@@ -901,7 +898,7 @@ import("vec");
 import("net");
 import("sqlite");
 import("fin");
-import("data_bind");
+import("mapper");
 ```
 
 ### Module Namespaces

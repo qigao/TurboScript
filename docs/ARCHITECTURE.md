@@ -73,11 +73,15 @@ Core built-ins live under `exprtk/src` and optional extensions live under `modul
 Important module groups:
 
 - `core`, `math`, `stats`, `string`, `regex`, `io`
-- `parser`: JSON/CSV parsing plus TBE schema bind/emit/validate
+- `parser`: configuration-oriented text parsing
+- `mapper`: class-first JSON/YAML/XML mapping through `turbo_parser.h`
 - `ts`, `ta`, `fin`: time-series, technical analysis, and finance helpers
 - `net`, `sqlite`, `wasm`, and other plugin modules
 
-Parser/data binding is the canonical path for structured JSON/CSV/TBE values. Data analysis modules should consume those runtime values rather than reimplement parsing semantics.
+The mapper is the canonical path for structured JSON/YAML/XML values. TurboScript
+class field declarations are the type metadata and TurboUtils `turbo_parser.h`
+owns document syntax. Data modules should consume typed class instances rather
+than introducing a second schema format.
 
 ## Error Policy
 

@@ -80,7 +80,7 @@ install(
           fin_tbs
           ts_tbs
           sqlite_tbs
-          data_bind_tbs
+          mapper_tbs
           img_tbs
           coro_tbs
           parser_tbs
@@ -88,6 +88,7 @@ install(
           hash_tbs
           fuzzy_tbs
           rules_forge_tbs
+          os_tbs
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
