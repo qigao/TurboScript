@@ -287,6 +287,10 @@ static int ts_class_has_public_instance_field_hint(ts_mir_compiler_t *c,
     if (entry->type == EXPRTK_NODE_FIELD_DECL && entry->data.field_decl.name &&
         strcmp(entry->data.field_decl.name, member_name) == 0 &&
         !entry->data.field_decl.is_static) {
+      /* Explicitly typed fields must use the value bridge. The numeric slot
+       * stores only doubles and cannot preserve string, bool, map, or integer
+       * value identity for the class type checker. */
+      if (entry->data.field_decl.declared_type) return 0;
       return entry->data.field_decl.access_level == EXPRTK_ACCESS_PUBLIC ? 1 : -1;
     }
   }

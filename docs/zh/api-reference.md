@@ -591,7 +591,7 @@ JSON object 和 XML 查询节点返回 plain object；`mapper.read_*` 返回带�
 | `to_num(s)` | 字符串转数字 | `to_num("123.45")` → `123.45` |
 | `to_str(x)` | 数字转字符串 | `to_str(42)` → `"42"` |
 | `to_int(s)` | 字符串转整数 | `to_int("99")` → `99` |
-| `to_bool(s)` | 字符串转布尔值 | `to_bool("true")` → `1` |
+| `to_bool(s)` | 字符串转布尔值 | `to_bool("true")` → `true` |
 | `uuid(text)` | 解析标准 UUID 文本为原生 UUID 值 | `uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001")` |
 | `uuid4()` / `uuid7()` | 生成 UUID v4 / v7 | `uuid7()` |
 | `uuid_string(id)` / `id.to_string()` | UUID 转 canonical 文本 | `uuid_string(uuid4())` |

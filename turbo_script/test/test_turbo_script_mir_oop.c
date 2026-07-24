@@ -430,6 +430,26 @@ spec("turbo_script_mir_oop") {
 
   describe("OOP helper lowering") {
 
+    it("should assign to typed bool fields from to_bool") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "class Result {"
+                           "  value: bool;"
+                           "  get() { return this.value; }"
+                           "};"
+                           "result = Result();"
+                           "result.value = to_bool(\"YES\");"
+                           "flag = result.get();";
+
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_float_eq(ts_get_num(ctx_interp, "flag"), 1.0, EPS);
+      check_float_eq(ts_get_num(ctx_jit, "flag"), 1.0, EPS);
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
     it("should match interpreter for bound methods stored in variables") {
       turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
@@ -1042,6 +1062,48 @@ spec("turbo_script_mir_oop") {
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
+    }
+
+    it("should preserve typed class field values through JIT assignments") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "class Result {"
+                           "  text: string;"
+                           "  flag: bool;"
+                           "  count: int64;"
+                           "  details: map;"
+                           "};"
+                           "payload = Result();"
+                           "payload.text = \"ok\";"
+                           "payload.flag = true;"
+                           "payload.count = 7;"
+                           "payload.details = map { value: 42 };"
+                           "text_value = payload.text;"
+                           "result = payload.flag * 100 + payload.count + payload.details.value;";
+
+      check_int_eq(turbo_script_run(ctx_interp, script), 0);
+      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
+      check_str_eq(ts_get_str(ctx_jit, "text_value"), ts_get_str(ctx_interp, "text_value"));
+      check_str_eq(ts_get_str(ctx_jit, "text_value"), "ok");
+      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
+      check_double_eq(ts_get_num(ctx_jit, "result"), 149.0, EPS);
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should preserve values returned by dynamically imported OS functions") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "import(\"os\");"
+                           "class Result { platform: string; };"
+                           "payload = Result();"
+                           "payload.platform = os.platform_name();"
+                           "result = payload.platform;";
+
+      check_int_eq(turbo_script_run_jit(ctx, script), 0);
+      check_int_eq((int)(strlen(ts_get_str(ctx, "result")) > 0), 1);
+
+      turbo_script_free(ctx);
     }
 
     it("should match interpreter for OOP predicates on returned values") {

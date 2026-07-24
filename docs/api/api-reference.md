@@ -821,7 +821,7 @@ Parser APIs return plain objects for dynamic JSON objects and XML query nodes.
 | `to_num(s)` | String to number | `to_num("123.45")` → `123.45` |
 | `to_str(x)` | Number to string | `to_str(42)` → `"42"` |
 | `to_int(s)` | String to integer | `to_int("99")` → `99` |
-| `to_bool(s)` | String to boolean | `to_bool("true")` → `1` |
+| `to_bool(s)` | String to boolean | `to_bool("true")` → `true` |
 | `uuid(text)` | Parse standard UUID text into a native UUID value | `uuid("01890f3e-5c5a-7cc2-9f2b-8b7f47f0c001")` |
 | `uuid4()` | Generate a random version 4 UUID | `uuid4()` |
 | `uuid7()` | Generate a time-ordered version 7 UUID | `uuid7()` |

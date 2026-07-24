@@ -1678,11 +1678,21 @@ suite("exprtk_grammar") {
     group("Error Reporting") {
         it("should parse booleans case-insensitively") {
             exprtk_env_t env;
+            exprtk_value_t result;
             exprtk_env_init(&env);
             exprtk_env_add_module(&env, exprtk_module_string());
-            exprtk_node_t *root = exprtk_parse("to_bool(\"TRUE\") + to_bool(\"No\")", 0);
+            exprtk_node_t *root = exprtk_parse("to_bool(\"TRUE\")", 0);
             check_not_null(root);
-            check_float_eq(value_to_double(exprtk_eval(root, &env)), 1.0, 0.001);
+            result = exprtk_eval(root, &env);
+            check_int_eq(result.type, EXPRTK_VAL_BOOL);
+            check_true(result.data.boolean);
+            exprtk_free(root);
+
+            root = exprtk_parse("to_bool(\"No\")", 0);
+            check_not_null(root);
+            result = exprtk_eval(root, &env);
+            check_int_eq(result.type, EXPRTK_VAL_BOOL);
+            check_false(result.data.boolean);
             exprtk_free(root);
             exprtk_env_free(&env);
         }

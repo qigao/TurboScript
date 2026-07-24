@@ -363,6 +363,7 @@ static int ts_call_name_needs_value_eval(const char *name) {
          ts_name_starts_with(name, "json.") ||
          ts_name_starts_with(name, "xml.") ||
          ts_name_starts_with(name, "csv.") ||
+         ts_name_starts_with(name, "os.") ||
          ts_name_starts_with(name, "map.") ||
          ts_name_starts_with(name, "parser.json_") ||
          ts_name_starts_with(name, "parser.xml_") ||
@@ -1778,6 +1779,11 @@ MIR_reg_t ts_compile_expr(ts_mir_compiler_t *c, exprtk_node_t *node) {
     if (node->data.member_set.object &&
         node->data.member_set.object->type == EXPRTK_NODE_VARIABLE &&
         node->data.member_set.member && node->data.member_set.value) {
+      if (!ts_oop_member_can_use_num_slot(
+              c, node->data.member_set.object->data.variable.name,
+              node->data.member_set.member)) {
+        return ts_emit_runtime_value_node(c, node);
+      }
       return ts_emit_oop_member_set(c, node->data.member_set.object->data.variable.name,
                                     node->data.member_set.member, node->data.member_set.object,
                                     node->data.member_set.value);

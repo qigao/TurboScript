@@ -2074,14 +2074,14 @@ static exprtk_value_t fn_to_double(size_t argc, exprtk_value_t *args, exprtk_env
     return fn_to_num(argc, args, env, arena);
 }
 
-/* to_bool(str) → number: parse "true"/"false"/"yes"/"no"/"1"/"0" */
+/* to_bool(str) -> bool: parse "true"/"false"/"yes"/"no"/"1"/"0" */
 static exprtk_value_t fn_to_bool(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
-        return exprtk_val_num(0);
+        return exprtk_val_bool(0);
     bool val = false;
     mod_to_bool_v(args[0].data.string, &val);
-    return exprtk_val_num(val ? 1.0 : 0.0);
+    return exprtk_val_bool(val);
 }
 
 /* format(fmt, ...) → string: sprintf-style formatting (%d %f %g %s %%) */
