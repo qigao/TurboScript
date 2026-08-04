@@ -247,7 +247,15 @@ int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
   size_t scratch_bytes;
   size_t total;
   if (!ctx || !stats) return -1;
+  /* Closure snapshots (function expressions, isolated imports, class closures)
+   * are attached to the root env closure chain and retained until the context
+   * is destroyed. Count their arenas so the context quota covers them too. */
   root_bytes = mem_pool_total_used(&ctx->env.arena);
+  for (const exprtk_env_t *closure = ctx->env.next_closure; closure;
+       closure = closure->next_closure) {
+    if (root_bytes > SIZE_MAX - mem_pool_total_used(&closure->arena)) return -1;
+    root_bytes += mem_pool_total_used(&closure->arena);
+  }
   task_bytes = ts_task_memory_used(ctx);
   scratch_bytes = mem_pool_total_used(&ctx->scratch_arena);
   if (root_bytes > SIZE_MAX - task_bytes || root_bytes + task_bytes > SIZE_MAX - scratch_bytes)
@@ -282,6 +290,13 @@ int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
 int ts_memory_finish_run(turbo_script_ctx_t *ctx, int result) {
   turbo_script_memory_stats_t stats;
   if (!ctx) return -1;
+  /* Reclaim captured closure scopes created by this thread that no live
+   * function value references. Short-lived closures created during this run
+   * are freed here instead of accumulating on the root closure chain until
+   * the context is destroyed. The sweep only touches snapshots owned by the
+   * calling thread, so concurrent timer/task callbacks on the event-loop
+   * thread are never disturbed. */
+  exprtk_env_sweep_closures(&ctx->env);
   if (mem_pool_total_used(&ctx->scratch_arena) >=
       ctx->memory_policy.scratch_trim_threshold_bytes) {
     mem_reset(&ctx->scratch_arena);
@@ -1148,6 +1163,7 @@ int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script) {
     }
   }
 
+  exprtk_env_sweep_closures(&ctx->env);
   return ret;
 }
 

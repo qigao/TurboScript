@@ -32,13 +32,18 @@ target_link_libraries(${TARGET_NAME}
   PRIVATE exprtk RulesForge::rules_forge)
 
 if(WIN32)
-  add_custom_command(TARGET ${TARGET_NAME} POST_BUILD
+  add_custom_target(${TARGET_NAME}_runtime_deps
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:RulesForge::rules_forge> $<TARGET_FILE_DIR:${TARGET_NAME}>
+            $<TARGET_FILE:RulesForge::rules_forge> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboUtils::Parser> $<TARGET_FILE_DIR:${TARGET_NAME}>
+            $<TARGET_FILE:TurboUtils::Parser> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboUtils::Core> $<TARGET_FILE_DIR:${TARGET_NAME}>)
+            $<TARGET_FILE:TurboUtils::Core> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboUtils::DataBind> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+    COMMENT "Synchronizing RulesForge runtime dependencies"
+    VERBATIM)
+  add_dependencies(${TARGET_NAME} ${TARGET_NAME}_runtime_deps)
 endif()
 
 set_target_properties(${TARGET_NAME}

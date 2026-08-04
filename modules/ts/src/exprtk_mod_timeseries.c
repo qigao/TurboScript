@@ -6,7 +6,6 @@
 #include "ts_internal.h"
 #include "ts.h"
 
-
 static exprtk_value_t fn_ts_diff(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                  mem_pool_t *arena) {
   (void)env;
@@ -192,37 +191,6 @@ static exprtk_value_t fn_ts_match_returns(size_t argc, exprtk_value_t *args, exp
   return exprtk_val_num(0);
 }
 
-static exprtk_value_t fn_ts_dwt(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
-                                 mem_pool_t *arena) {
-  (void)env;
-  if (argc >= 2 && args[0].type == EXPRTK_VAL_VECTOR) {
-    size_t n = args[0].data.vector.size;
-    size_t levels = (size_t)args[1].data.number;
-    double *approx = MEM_ALLOC_ARRAY(arena, double, n);
-    double *detail = MEM_ALLOC_ARRAY(arena, double, n * levels);
-    if (approx && detail) {
-      if (exprtk_ts_dwt(args[0].data.vector.data, n, levels, approx, detail, arena))
-        return exprtk_val_vec(approx, n);
-    }
-  }
-  return exprtk_val_num(0);
-}
-
-static exprtk_value_t fn_ts_emd(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
-                                 mem_pool_t *arena) {
-  (void)env;
-  if (argc >= 2 && args[0].type == EXPRTK_VAL_VECTOR) {
-    size_t n = args[0].data.vector.size;
-    size_t max_imfs = (size_t)args[1].data.number;
-    double *imfs = MEM_ALLOC_ARRAY(arena, double, n * max_imfs);
-    if (imfs) {
-      if (exprtk_ts_emd(args[0].data.vector.data, n, max_imfs, imfs, arena))
-        return exprtk_val_vec(imfs, n * max_imfs);
-    }
-  }
-  return exprtk_val_num(0);
-}
-
 static exprtk_value_t fn_ts_coint(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                    mem_pool_t *arena) {
   (void)env;
@@ -317,8 +285,6 @@ static const exprtk_func_entry_t timeseries_entries[] = {
     {"coint", fn_ts_coint},
     {"cum_return", fn_ts_cum_return},
     {"diff", fn_ts_diff},
-    {"dwt", fn_ts_dwt},
-    {"emd", fn_ts_emd},
     {"ewm_mean", fn_ts_ewm_mean},
     {"ewm_std", fn_ts_ewm_std},
     {"expanding_mean", fn_ts_expanding_mean},

@@ -56,6 +56,21 @@ spec("turbo_script_basics") {
       check_int_eq(turbo_script_set_memory_policy(ctx, &policy), -1);
       turbo_script_free(ctx);
     }
+
+    it("should count retained closure snapshots in context_bytes") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_memory_stats_t before;
+      turbo_script_memory_stats_t after;
+
+      check_not_null(ctx);
+      check_int_eq(turbo_script_get_memory_stats(ctx, &before), 0);
+      /* Each iteration creates a closure that captures a fresh 1 KiB string;
+       * the captured snapshot is retained by the root env closure chain. */
+      check_int_eq(turbo_script_run(ctx, "for (i = 0; i < 50; i += 1) { txt = repeat(\"x\", 1024); f = (x) => x + txt; } result = 1;"), 0);
+      check_int_eq(turbo_script_get_memory_stats(ctx, &after), 0);
+      check_true(after.context_bytes > before.context_bytes + 1024);
+      turbo_script_free(ctx);
+    }
   }
 
   describe("Basics") {

@@ -94,7 +94,7 @@ See [sqlite README](../../modules/sqlite/README.md) for SQLite SQL helpers, FTS5
 See [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) for TA indicators.
 
 ### Vector Operations
-See [vec_cheatsheet.md](../vec_cheatsheet.md) for advanced vector operations.
+See [vec_cheatsheet.md](../api/vec_cheatsheet.md) for advanced vector operations.
 
 ---
 

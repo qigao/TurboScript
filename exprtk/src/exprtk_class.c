@@ -858,10 +858,29 @@ static exprtk_func_t *class_clone_func(mem_pool_t *arena,
     if (!copy) return NULL;
 
     *copy = *func;
+    if (copy->closure_env) exprtk_env_retain(copy->closure_env);
     copy->name = class_copy_string(arena, func->name ? func->name : "");
     copy->owner_class = owner_class;
     copy->next = NULL;
     return copy;
+}
+
+static void class_release_method_closure(exprtk_func_t *func) {
+    if (!func) return;
+    if (func->closure_env) {
+        exprtk_env_release(func->closure_env);
+        func->closure_env = NULL;
+    }
+}
+
+static void class_release_method_table_closures(void *table) {
+    HTAB(method_entry_t) *htab = (HTAB(method_entry_t) *)table;
+    if (!htab) return;
+    HTAB_EL(method_entry_t) *els_addr = VARR_ADDR(HTAB_EL(method_entry_t), htab->els);
+    for (htab_size_t i = 0; i < htab->els_bound; ++i) {
+        if (els_addr[i].hash != HTAB_DELETED_HASH)
+            class_release_method_closure(els_addr[i].el.func);
+    }
 }
 
 static void class_add_abstract_method_signature_entry(exprtk_class_t *klass,
@@ -1371,6 +1390,7 @@ void exprtk_class_add_abstract_method_signature(
         (exprtk_func_t *)mem_alloc(klass->arena, sizeof(exprtk_func_t));
     if (signature) {
         *signature = method;
+        if (signature->closure_env) exprtk_env_retain(signature->closure_env);
         signature->name = class_copy_string(klass->arena, name);
         signature->next = NULL;
         class_add_abstract_method_signature_entry(klass, key_value, signature);
@@ -1852,6 +1872,14 @@ int exprtk_class_is_interface(exprtk_class_t *klass) {
 
 void exprtk_class_destroy(exprtk_class_t *klass) {
     if (!klass) return;
+
+    // Release captured scopes held by methods before destroying the tables.
+    // func->closure_env is nulled after release so duplicate entries for the
+    // same method (arity/type keys) do not double-release.
+    class_release_method_table_closures(klass->constructors);
+    class_release_method_table_closures(klass->methods);
+    class_release_method_table_closures(klass->static_methods);
+    class_release_method_table_closures(klass->abstract_methods);
 
     // Free hash tables
     if (klass->constructors) {

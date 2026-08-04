@@ -12,6 +12,38 @@
 #include <stdarg.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifdef __cplusplus
+#include <atomic>
+#else
+#include <stdatomic.h>
+#endif
+
+/* Global spin lock guarding the captured-scope closure chain shared by a
+ * context root. The host may run scripts on one thread while timer/task
+ * callbacks run on a coroutine event-loop thread; both mutate the chain
+ * (snapshot insertion, reference counting, sweeping), so those critical
+ * sections must be serialized. */
+static atomic_flag exprtk_closure_chain_lock = ATOMIC_FLAG_INIT;
+
+static void exprtk_closure_chain_acquire(void) {
+    while (atomic_flag_test_and_set_explicit(&exprtk_closure_chain_lock,
+                                             memory_order_acquire)) {
+    }
+}
+
+static void exprtk_closure_chain_release(void) {
+    atomic_flag_clear_explicit(&exprtk_closure_chain_lock, memory_order_release);
+}
+
+#ifdef _WIN32
+#include <windows.h>
+static uintptr_t exprtk_current_tid(void) { return (uintptr_t)GetCurrentThreadId(); }
+#else
+#include <pthread.h>
+static uintptr_t exprtk_current_tid(void) { return (uintptr_t)pthread_self(); }
+#endif
+
 // MIR allocator wrapper for standard malloc/free
 static void* mir_std_malloc(size_t size, void *user_data) {
     (void)user_data;
@@ -307,6 +339,12 @@ exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value, exprtk_env_t *dst
             return exprtk_val_bound_method(cloned_instance.data.instance_val.instance,
                                            method);
         }
+        case EXPRTK_VAL_FUNCTION:
+            /* A cloned function value independently owns the captured-scope
+             * reference; every release path drops one reference per clone.
+             * With capture-by-need snapshots this no longer chain-captures the
+             * previous closure value, and it keeps captured variables alive. */
+            return exprtk_value_retain(value);
         default:
             return value;
     }
@@ -326,7 +364,16 @@ static int exprtk_value_is_reference_type(exprtk_value_t value) {
 }
 
 static exprtk_value_t exprtk_value_store_to_env(exprtk_value_t value, exprtk_env_t *dst_env) {
-    if (exprtk_value_is_reference_type(value)) return value;
+    if (exprtk_value_is_reference_type(value)) {
+        /* The environment entry becomes a reference holder: function values
+         * take one reference on the captured scope so replacing or freeing the
+         * entry can drop it symmetrically in exprtk_env_release_stored_value. */
+        if (value.type == EXPRTK_VAL_FUNCTION && value.data.function.closure_env) {
+            exprtk_env_retain(value.data.function.closure_env);
+            value.ownership = EXPRTK_VALUE_OWNED;
+        }
+        return value;
+    }
 
     if (value.ownership == EXPRTK_VALUE_OWNED &&
         (value.storage || value.storage_aux) &&
@@ -372,7 +419,14 @@ static void exprtk_env_release_stored_value(exprtk_env_t *env, exprtk_value_t *v
     exprtk_release_state_t state;
 
     if (!env || !value) return;
-    if (exprtk_value_is_reference_type(*value)) return;
+    if (exprtk_value_is_reference_type(*value)) {
+        if (value->type == EXPRTK_VAL_FUNCTION && value->ownership == EXPRTK_VALUE_OWNED &&
+            value->data.function.closure_env) {
+            exprtk_env_release(value->data.function.closure_env);
+            value->data.function.closure_env = NULL;
+        }
+        return;
+    }
 
     memset(&state, 0, sizeof(state));
     state.owner_arena = &env->arena;
@@ -629,7 +683,8 @@ void exprtk_env_init(exprtk_env_t *env) {
     }
 }
 
-exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
+exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env, const char *const *names,
+                                        size_t name_count) {
     if (!env) return NULL;
     exprtk_env_t *root = env;
     while(root->parent) root = root->parent;
@@ -643,7 +698,10 @@ exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
     new_env->eval_node = env->eval_node;
     new_env->exec_script_body = env->exec_script_body;
 
-    // Copy all variables from env and its parents
+    /* Copy selected variables from env and its parents. When names == NULL the
+     * whole environment is copied (class closures, module imports). Closure
+     * snapshots pass their free-variable list so repeated closure assignment
+     * does not chain-capture the previous closure value. */
     exprtk_env_t *curr_old = env;
     while (curr_old) {
         if (curr_old->vars) {
@@ -655,6 +713,17 @@ exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
             for (htab_size_t i = 0; i < bound; i++) {
                 if (els_addr[i].hash != HTAB_DELETED_HASH) {
                     exprtk_var_entry_t entry = els_addr[i].el;
+                    if (names) {
+                        size_t n;
+                        int wanted = 0;
+                        for (n = 0; n < name_count; ++n) {
+                            if (names[n] && entry.name && strcmp(names[n], entry.name) == 0) {
+                                wanted = 1;
+                                break;
+                            }
+                        }
+                        if (!wanted) continue;
+                    }
                     // Check if already exists in new_env via direct hash lookup
                     HTAB(exprtk_var_entry_t) *new_htab = (HTAB(exprtk_var_entry_t)*)new_env->vars;
                     exprtk_var_entry_t probe = { .name = entry.name };
@@ -673,11 +742,93 @@ exprtk_env_t* exprtk_env_snapshot(exprtk_env_t *env) {
         curr_old = curr_old->parent;
     }
 
-    /* Attach to root's closure list for automatic cleanup on script exit */
+    /* Attach to root's closure list. The chain owns one reference (ref_count
+     * starts at 1); function values and class methods add further references
+     * through exprtk_env_retain() and drop them through exprtk_env_release().
+     * exprtk_env_sweep_closures() reclaims snapshots with no live references. */
+    exprtk_closure_chain_acquire();
     new_env->next_closure = root->next_closure;
+    new_env->closure_root = root;
+    new_env->ref_count = 1;
+    new_env->is_class_closure = 0;
+    new_env->closure_owner_tid = exprtk_current_tid();
     root->next_closure = new_env;
+    exprtk_closure_chain_release();
 
     return new_env;
+}
+
+exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env) {
+    return exprtk_env_snapshot_names(env, NULL, 0);
+}
+
+void exprtk_env_retain(exprtk_env_t *env) {
+    /* Only captured snapshot scopes carry a reference count. Root, child and
+     * task-local scopes use ref_count == 0 and are managed by their owners. */
+    if (!env) return;
+    exprtk_closure_chain_acquire();
+    if (env->ref_count > 0) env->ref_count++;
+    exprtk_closure_chain_release();
+}
+
+void exprtk_env_release(exprtk_env_t *env) {
+    if (!env) return;
+    exprtk_closure_chain_acquire();
+    if (env->ref_count <= 0) {
+        exprtk_closure_chain_release();
+        return;
+    }
+    if (--env->ref_count > 0) {
+
+        exprtk_closure_chain_release();
+        return;
+    }
+    exprtk_closure_chain_release();
+
+    /* Last reference dropped. The snapshot stays linked with ref_count == 0
+     * and is reclaimed by exprtk_env_sweep_closures() or the final env free.
+     * Deferring the actual free keeps the chain mutation on the sweeping
+     * thread, which is safe when timer/task callbacks run concurrently. */
+}
+
+void exprtk_env_sweep_closures(exprtk_env_t *root) {
+    uintptr_t tid = exprtk_current_tid();
+    exprtk_env_t *swept = NULL;
+    exprtk_env_t **link;
+
+    if (!root) return;
+
+    /* Reclaim only snapshots created by the calling thread. ref_count == 1
+     * means only the chain owns it; ref_count == 0 means a dropped reference
+     * is pending collection. Either way no function value or method references
+     * this snapshot anymore. The owner-thread filter keeps a sweeping thread
+     * from racing with another thread that is mid-way between creating a
+     * snapshot and storing (and thus retaining) it.
+     * Unlink under the chain lock; release outside it because
+     * exprtk_env_free() re-enters the lock while dropping the references held
+     * by the snapshot's own variables. */
+    exprtk_closure_chain_acquire();
+    link = &root->next_closure;
+    while (*link) {
+        exprtk_env_t *closure = *link;
+        exprtk_env_t *next = closure->next_closure;
+        if (closure->closure_owner_tid == tid && closure->ref_count <= 1) {
+            *link = next;
+            closure->next_closure = swept;
+            swept = closure;
+        } else {
+            link = &closure->next_closure;
+        }
+    }
+    exprtk_closure_chain_release();
+
+    while (swept) {
+        exprtk_env_t *closure = swept;
+        swept = closure->next_closure;
+        closure->next_closure = NULL;
+        exprtk_env_free(closure);
+        free(closure);
+    }
 }
 
 static void exprtk_release_map_value(exprtk_value_t *map, exprtk_release_state_t *state) {
@@ -767,6 +918,12 @@ static void exprtk_release_value(exprtk_value_t *value, exprtk_release_state_t *
         case EXPRTK_VAL_BOUND_METHOD:
             exprtk_release_owned_instance(value->data.bound_method_val.instance, state);
             break;
+        case EXPRTK_VAL_FUNCTION:
+            if (value->ownership == EXPRTK_VALUE_OWNED && value->data.function.closure_env) {
+                exprtk_env_release(value->data.function.closure_env);
+                value->data.function.closure_env = NULL;
+            }
+            break;
         case EXPRTK_VAL_TYPED_ARRAY:
             if (value->data.typed_array.heap_owned) free(value->data.typed_array.data);
             value->data.typed_array.data = NULL;
@@ -803,16 +960,30 @@ static void exprtk_env_free_internal(exprtk_env_t *env, exprtk_release_state_t *
     mem_pool_t *previous_owner_arena = state->owner_arena;
     state->owner_arena = &env->arena;
 
-    /* Free all captured closure environments */
-    exprtk_env_t *closure = env->next_closure;
-    while (closure) {
-        exprtk_env_t *next = closure->next_closure;
-        closure->next_closure = NULL;
-        exprtk_env_free_internal(closure, state);
-        free(closure);
-        closure = next;
+    /* Release variable values first. Function values drop their captured
+     * scope references here; a snapshot whose last reference was the closure
+     * chain is unlinked and freed recursively inside exprtk_env_release(). */
+    if (env->vars) {
+        HTAB(exprtk_var_entry_t) *htab = (HTAB(exprtk_var_entry_t)*)env->vars;
+        free_htab_entries(htab, state);
+        HTAB_OP(exprtk_var_entry_t, destroy)(&htab);
+        env->vars = NULL;
     }
-    env->next_closure = NULL;
+
+    /* Release script function closure references before the chain sweep. */
+    exprtk_func_t *fcurr = env->funcs;
+    while (fcurr) {
+        exprtk_func_t *fnext = fcurr->next;
+        free(fcurr->name);
+        if (fcurr->is_script && fcurr->data.script.arg_params) {
+            free(fcurr->data.script.arg_params);
+        }
+        exprtk_env_release(fcurr->closure_env);
+        free(fcurr);
+        fcurr = fnext;
+    }
+    env->funcs = NULL;
+
     if (env->modules) {
         free((void *)env->modules);
         env->modules = NULL;
@@ -828,26 +999,29 @@ static void exprtk_env_free_internal(exprtk_env_t *env, exprtk_release_state_t *
         env->regex_ctx = NULL;
     }
 
-    // Destroy hash table (manually free entries first)
-    if (env->vars) {
-        HTAB(exprtk_var_entry_t) *htab = (HTAB(exprtk_var_entry_t)*)env->vars;
-        free_htab_entries(htab, state);
-        HTAB_OP(exprtk_var_entry_t, destroy)(&htab);
-        env->vars = NULL;
-    }
-    exprtk_func_t *fcurr = env->funcs;
-    while (fcurr) {
-        exprtk_func_t *fnext = fcurr->next;
-        free(fcurr->name);
-        if (fcurr->is_script) {
-            if (fcurr->data.script.arg_params) {
-                free(fcurr->data.script.arg_params);
-            }
+    /* Free remaining captured snapshots. Snapshots only reference scopes that
+     * predate them, so walking the chain from head (newest) to tail (oldest)
+     * releases cross references before the referenced snapshot is freed.
+     * Unlink under the chain lock and free outside it: freeing a snapshot can
+     * drop references that link further orphans back onto the chain, so the
+     * unlink/free loop repeats until the chain is empty. */
+    for (;;) {
+        exprtk_env_t *closure;
+
+        exprtk_closure_chain_acquire();
+        closure = env->next_closure;
+        env->next_closure = NULL;
+        exprtk_closure_chain_release();
+        if (!closure) break;
+
+        while (closure) {
+            exprtk_env_t *next = closure->next_closure;
+            closure->next_closure = NULL;
+            exprtk_env_free_internal(closure, state);
+            free(closure);
+            closure = next;
         }
-        free(fcurr);
-        fcurr = fnext;
     }
-    env->funcs = NULL;
     mem_destroy(&env->arena);
     state->owner_arena = previous_owner_arena;
 }
@@ -1433,6 +1607,7 @@ static exprtk_func_t *eval_make_class_func(exprtk_node_t *method_node,
     method_func->is_script = 1;
     method_func->owner_class = klass;
     method_func->closure_env = class_closure;
+    exprtk_env_retain(class_closure);
     method_func->is_static_method = method_node->data.method.is_static;
     method_func->access_level = method_node->data.method.access_level;
     method_func->is_override = method_node->data.method.is_override;
@@ -1598,6 +1773,7 @@ exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env)
     exprtk_class_set_abstract(klass, node->data.class_def.is_abstract);
     exprtk_class_set_interface(klass, node->data.class_def.is_interface);
     exprtk_env_t *class_closure = exprtk_env_snapshot(env);
+    if (class_closure) class_closure->is_class_closure = 1;
 
     if (parent && exprtk_class_is_final(parent)) {
         return throw_error(env, node, "Cannot extend final class '%s'",
@@ -1616,6 +1792,7 @@ exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env)
             ctor_func->is_script = 1;
             ctor_func->owner_class = klass;
             ctor_func->closure_env = class_closure;
+            exprtk_env_retain(class_closure);
             ctor_func->is_static_method = 0;
             ctor_func->access_level = EXPRTK_ACCESS_PUBLIC;
             ctor_func->is_override = 0;
@@ -2228,6 +2405,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
             func_val.data.function.arg_count = method->data.script.arg_count;
             func_val.data.function.body = method->data.script.body;
             func_val.data.function.closure_env = method->closure_env;
+            exprtk_env_retain(method->closure_env);
             func_val.data.function.owner_class = method->owner_class;
             func_val.data.function.is_static_method = 1;
             func_val.data.function.access_level = method->access_level;
@@ -2342,6 +2520,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
             func_val.data.function.arg_count = method->data.script.arg_count;
             func_val.data.function.body = method->data.script.body;
             func_val.data.function.closure_env = method->closure_env;
+            exprtk_env_retain(method->closure_env);
             func_val.data.function.owner_class = method->owner_class;
             func_val.data.function.is_static_method = 1;
             func_val.data.function.access_level = method->access_level;
@@ -3499,4 +3678,220 @@ exprtk_class_t *exprtk_env_lookup_class(exprtk_env_t *env, const char *name) {
     if (!env || !name) return NULL;
     exprtk_value_t value = exprtk_env_get(env, name);
     return value.type == EXPRTK_VAL_CLASS ? value.data.class_val.klass : NULL;
+}
+
+/* =========================================================================
+ * Closure free-variable collection (capture-by-need snapshots)
+ * ========================================================================= */
+
+typedef struct {
+    char **names;
+    size_t count;
+    size_t capacity;
+    mem_pool_t *arena;
+} exprtk_free_var_collector_t;
+
+static int exprtk_collector_add(exprtk_free_var_collector_t *c, const char *name) {
+    char **new_names;
+    size_t i;
+    if (!c || !name || !*name) return 1;
+    for (i = 0; i < c->count; ++i) {
+        if (strcmp(c->names[i], name) == 0) return 1;
+    }
+    if (c->count == c->capacity) {
+        size_t new_cap = c->capacity ? c->capacity * 2 : 16;
+        new_names = (char **)mem_alloc(c->arena, new_cap * sizeof(char *));
+        if (!new_names) return 0;
+        if (c->names) memcpy(new_names, c->names, c->count * sizeof(char *));
+        c->names = new_names;
+        c->capacity = new_cap;
+    }
+    c->names[c->count] = (char *)mem_alloc(c->arena, strlen(name) + 1);
+    if (!c->names[c->count]) return 0;
+    memcpy(c->names[c->count], name, strlen(name) + 1);
+    c->count++;
+    return 1;
+}
+
+static void exprtk_collect_free_vars_node(const exprtk_node_t *node,
+                                          exprtk_free_var_collector_t *c) {
+    size_t i;
+    if (!node) return;
+    switch (node->type) {
+        case EXPRTK_NODE_VARIABLE:
+            (void)exprtk_collector_add(c, node->data.variable.name);
+            break;
+        case EXPRTK_NODE_BINARY_OP:
+            exprtk_collect_free_vars_node(node->data.binary.left, c);
+            exprtk_collect_free_vars_node(node->data.binary.right, c);
+            break;
+        case EXPRTK_NODE_FUNCTION_CALL:
+            /* The callee name is a free-variable reference (e.g. a(1)). */
+            (void)exprtk_collector_add(c, node->data.function.name);
+            for (i = 0; i < node->data.function.arg_count; ++i)
+                exprtk_collect_free_vars_node(node->data.function.args[i], c);
+            break;
+        case EXPRTK_NODE_ASSIGNMENT:
+            /* target name is a local write; the value may reference free vars */
+            exprtk_collect_free_vars_node(node->data.assignment.value, c);
+            break;
+        case EXPRTK_NODE_IF:
+            exprtk_collect_free_vars_node(node->data.if_stmt.condition, c);
+            exprtk_collect_free_vars_node(node->data.if_stmt.if_branch, c);
+            exprtk_collect_free_vars_node(node->data.if_stmt.else_branch, c);
+            break;
+        case EXPRTK_NODE_WHILE:
+            exprtk_collect_free_vars_node(node->data.while_loop.condition, c);
+            exprtk_collect_free_vars_node(node->data.while_loop.body, c);
+            break;
+        case EXPRTK_NODE_FOR:
+            exprtk_collect_free_vars_node(node->data.for_loop.init, c);
+            exprtk_collect_free_vars_node(node->data.for_loop.condition, c);
+            exprtk_collect_free_vars_node(node->data.for_loop.post, c);
+            exprtk_collect_free_vars_node(node->data.for_loop.body, c);
+            break;
+        case EXPRTK_NODE_BLOCK:
+            for (i = 0; i < node->data.block.count; ++i)
+                exprtk_collect_free_vars_node(node->data.block.statements[i], c);
+            break;
+        case EXPRTK_NODE_FLOW:
+            exprtk_collect_free_vars_node(node->data.flow.value, c);
+            break;
+        case EXPRTK_NODE_VECTOR:
+            for (i = 0; i < node->data.vector.count; ++i)
+                exprtk_collect_free_vars_node(node->data.vector.elements[i], c);
+            break;
+        case EXPRTK_NODE_INDEX:
+            exprtk_collect_free_vars_node(node->data.index_access.array, c);
+            exprtk_collect_free_vars_node(node->data.index_access.index, c);
+            break;
+        case EXPRTK_NODE_SLICE:
+            exprtk_collect_free_vars_node(node->data.slice.array, c);
+            exprtk_collect_free_vars_node(node->data.slice.start, c);
+            exprtk_collect_free_vars_node(node->data.slice.end, c);
+            break;
+        case EXPRTK_NODE_FUNCTION_DEFINITION:
+        case EXPRTK_NODE_FUNCTION_EXPRESSION:
+        case EXPRTK_NODE_GENERATOR_FUNCTION:
+            /* Recurse into the body but not the parameter list: nested bodies
+             * may reference outer free variables, and over-capturing is safe. */
+            if (node->type == EXPRTK_NODE_FUNCTION_DEFINITION)
+                exprtk_collect_free_vars_node(node->data.func_def.body, c);
+            else if (node->type == EXPRTK_NODE_FUNCTION_EXPRESSION)
+                exprtk_collect_free_vars_node(node->data.func_def.body, c);
+            else
+                exprtk_collect_free_vars_node(node->data.generator_def.body, c);
+            break;
+        case EXPRTK_NODE_MEMBER_CALL:
+            exprtk_collect_free_vars_node(node->data.member_call.object, c);
+            for (i = 0; i < node->data.member_call.arg_count; ++i)
+                exprtk_collect_free_vars_node(node->data.member_call.args[i], c);
+            break;
+        case EXPRTK_NODE_CONSTANT_DECL:
+            exprtk_collect_free_vars_node(node->data.assignment.value, c);
+            break;
+        case EXPRTK_NODE_SWITCH:
+            exprtk_collect_free_vars_node(node->data.switch_stmt.value, c);
+            for (i = 0; i < node->data.switch_stmt.case_count; ++i)
+                exprtk_collect_free_vars_node(node->data.switch_stmt.cases[i], c);
+            exprtk_collect_free_vars_node(node->data.switch_stmt.default_case, c);
+            break;
+        case EXPRTK_NODE_DO_WHILE:
+            exprtk_collect_free_vars_node(node->data.do_while.body, c);
+            exprtk_collect_free_vars_node(node->data.do_while.condition, c);
+            break;
+        case EXPRTK_NODE_MAP_LITERAL:
+            for (i = 0; i < node->data.map_literal.count; ++i)
+                exprtk_collect_free_vars_node(node->data.map_literal.values[i], c);
+            break;
+        case EXPRTK_NODE_MEMBER_ACCESS:
+            exprtk_collect_free_vars_node(node->data.member_access.object, c);
+            break;
+        case EXPRTK_NODE_MEMBER_SET:
+            exprtk_collect_free_vars_node(node->data.member_set.object, c);
+            exprtk_collect_free_vars_node(node->data.member_set.value, c);
+            break;
+        case EXPRTK_NODE_FOR_IN:
+            exprtk_collect_free_vars_node(node->data.for_in.collection, c);
+            exprtk_collect_free_vars_node(node->data.for_in.body, c);
+            break;
+        case EXPRTK_NODE_DESTRUCTURING_ASSIGNMENT:
+            exprtk_collect_free_vars_node(node->data.destructuring.targets, c);
+            exprtk_collect_free_vars_node(node->data.destructuring.value, c);
+            break;
+        case EXPRTK_NODE_TRY_CATCH:
+            exprtk_collect_free_vars_node(node->data.try_catch.try_body, c);
+            exprtk_collect_free_vars_node(node->data.try_catch.catch_body, c);
+            break;
+        case EXPRTK_NODE_THROW:
+            exprtk_collect_free_vars_node(node->data.throw_stmt.value, c);
+            break;
+        case EXPRTK_NODE_YIELD:
+            exprtk_collect_free_vars_node(node->data.yield_expr.value, c);
+            break;
+        case EXPRTK_NODE_CLASS_DEF:
+            exprtk_collect_free_vars_node(node->data.class_def.constructor, c);
+            for (i = 0; i < node->data.class_def.method_count; ++i)
+                exprtk_collect_free_vars_node(node->data.class_def.methods[i], c);
+            for (i = 0; i < node->data.class_def.static_method_count; ++i)
+                exprtk_collect_free_vars_node(node->data.class_def.static_methods[i], c);
+            break;
+        case EXPRTK_NODE_METHOD:
+            exprtk_collect_free_vars_node(node->data.method.body, c);
+            break;
+        case EXPRTK_NODE_FIELD_DECL:
+            exprtk_collect_free_vars_node(node->data.field_decl.initializer, c);
+            break;
+        case EXPRTK_NODE_NEW:
+            for (i = 0; i < node->data.new_expr.arg_count; ++i)
+                exprtk_collect_free_vars_node(node->data.new_expr.args[i], c);
+            break;
+        case EXPRTK_NODE_SUPER:
+            for (i = 0; i < node->data.super_expr.arg_count; ++i)
+                exprtk_collect_free_vars_node(node->data.super_expr.args[i], c);
+            break;
+        case EXPRTK_NODE_INSTANCEOF:
+            exprtk_collect_free_vars_node(node->data.instanceof_expr.object, c);
+            exprtk_collect_free_vars_node(node->data.instanceof_expr.class_expr, c);
+            break;
+        case EXPRTK_NODE_SPREAD:
+            exprtk_collect_free_vars_node(node->data.spread.child, c);
+            break;
+        default:
+            break;
+    }
+}
+
+char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
+                                        exprtk_node_t *const *arg_params,
+                                        size_t arg_count,
+                                        mem_pool_t *arena) {
+    exprtk_free_var_collector_t c;
+    char **result;
+    size_t i, j, out = 0;
+    if (!arena || !body) return NULL;
+    memset(&c, 0, sizeof(c));
+    c.arena = arena;
+    exprtk_collect_free_vars_node(body, &c);
+    if (c.count == 0) {
+        result = (char **)mem_alloc(arena, sizeof(char *));
+        if (result) result[0] = NULL;
+        return result;
+    }
+    result = (char **)mem_alloc(arena, (c.count + 1) * sizeof(char *));
+    if (!result) return NULL;
+    for (i = 0; i < c.count; ++i) {
+        int is_param = 0;
+        for (j = 0; j < arg_count; ++j) {
+            if (arg_params[j] && arg_params[j]->type == EXPRTK_NODE_VARIABLE &&
+                arg_params[j]->data.variable.name &&
+                strcmp(c.names[i], arg_params[j]->data.variable.name) == 0) {
+                is_param = 1;
+                break;
+            }
+        }
+        if (!is_param) result[out++] = c.names[i];
+    }
+    result[out] = NULL;
+    return result;
 }

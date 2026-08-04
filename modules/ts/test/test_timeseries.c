@@ -165,28 +165,4 @@ spec("timeseries") {
         }
     }
 
-    describe("Unimplemented transforms") {
-        it("should return 0 for DWT until implemented") {
-            mem_pool_t arena = {0};
-            mem_init(&arena, 4096);
-
-            double data[] = {1, 2, 3, 4};
-            double approx[4] = {0};
-            double detail[8] = {0};
-
-            check_int_eq(exprtk_ts_dwt(data, 4, 2, approx, detail, &arena), 0);
-            mem_destroy(&arena);
-        }
-
-        it("should return 0 for EMD until implemented") {
-            mem_pool_t arena = {0};
-            mem_init(&arena, 4096);
-
-            double data[] = {1, 2, 3, 4};
-            double imfs[8] = {0};
-
-            check_int_eq(exprtk_ts_emd(data, 4, 2, imfs, &arena), 0);
-            mem_destroy(&arena);
-        }
-    }
 }

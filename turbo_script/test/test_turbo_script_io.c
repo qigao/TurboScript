@@ -76,6 +76,13 @@ spec("turbo_script_io") {
 
   describe("Net Plugin (HTTP via Script)") {
     it("should fetch mockhttp.org using http.get from script") {
+      /* This test hits a live external service, so it is gated behind
+       * TS_NET_TESTS=1. Offline/CI environments stay hermetic; set the
+       * variable to opt into the network check. */
+      if (getenv("TS_NET_TESTS") == NULL) {
+        printf("[SKIPPED] set TS_NET_TESTS=1 to run the network-dependent http.get test\n");
+        return;
+      }
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
 
       const char *script = ""

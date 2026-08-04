@@ -1155,6 +1155,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     func_val.data.function.arg_count = static_method->data.script.arg_count;
                     func_val.data.function.body = static_method->data.script.body;
                     func_val.data.function.closure_env = static_method->closure_env;
+                    exprtk_env_retain(static_method->closure_env);
                     func_val.data.function.owner_class = static_method->owner_class;
                     func_val.data.function.is_static_method = static_method->is_static_method;
                     func_val.data.function.access_level = static_method->access_level;
@@ -1519,7 +1520,19 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             val.data.function.arg_params = node->data.func_def.arg_params;
             val.data.function.arg_count  = node->data.func_def.arg_count;
             val.data.function.body       = node->data.func_def.body;
-            val.data.function.closure_env = exprtk_env_snapshot(env);  /* capture enclosing scope */
+            {
+                /* Capture only the free variables of the closure body so
+                 * repeated closure assignment does not chain-capture the
+                 * previous closure value (which would pin it forever). */
+                char **free_vars = exprtk_collect_closure_free_vars(
+                    node->data.func_def.body, node->data.func_def.arg_params,
+                    node->data.func_def.arg_count, &env->arena);
+                size_t fv_count = 0;
+                while (free_vars && free_vars[fv_count]) fv_count++;
+                val.data.function.closure_env = free_vars
+                    ? exprtk_env_snapshot_names(env, (const char *const *)free_vars, fv_count)
+                    : exprtk_env_snapshot(env);
+            }
             val.data.function.owner_class = NULL;
             val.data.function.is_static_method = 0;
             val.data.function.access_level = EXPRTK_ACCESS_PUBLIC;
@@ -1659,6 +1672,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 func_val.data.function.arg_count = method->data.script.arg_count;
                 func_val.data.function.body = method->data.script.body;
                 func_val.data.function.closure_env = method->closure_env;
+                exprtk_env_retain(method->closure_env);
                 func_val.data.function.owner_class = method->owner_class;
                 func_val.data.function.is_static_method = method->is_static_method;
                 func_val.data.function.access_level = method->access_level;

@@ -145,6 +145,7 @@ int ts_mir_runtime_define_func_in_env(exprtk_env_t *env, exprtk_node_t *node) {
   curr->is_script = 1;
   curr->owner_class = NULL;
   curr->closure_env = env;
+  exprtk_env_retain(env);
   curr->is_static_method = 0;
   curr->access_level = EXPRTK_ACCESS_PUBLIC;
   curr->is_override = 0;

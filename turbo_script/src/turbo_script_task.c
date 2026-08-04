@@ -70,6 +70,7 @@ struct ts_task_scheduler_s {
 
 static void ts_task_entry(coro_t *co, void *arg);
 static int ts_task_reset_job(ts_task_job_t *job);
+static void ts_task_release_job_callback(ts_task_job_t *job);
 
 static void ts_task_copy_error(char *dst, size_t dst_size, const char *message) {
   if (!dst || dst_size == 0) return;
@@ -237,6 +238,7 @@ static int ts_task_reset_job(ts_task_job_t *job) {
     if (exprtk_value_is_object_like(&job->result)) exprtk_map_free(&job->result);
     exprtk_env_free(&job->env);
   }
+  ts_task_release_job_callback(job);
   memset(job, 0, sizeof(*job));
   job->magic = TS_TASK_MAGIC;
   job->scheduler = scheduler;
@@ -280,6 +282,24 @@ static void ts_task_release_cancel_lifetime(ts_task_job_t *job) {
   job->cancel_ref_held = 0;
   if (registration) (void)coro_cancel_unregister(registration);
   ts_context_release(ctx);
+}
+
+static void ts_task_release_job_callback(ts_task_job_t *job) {
+  if (!job || job->callback.type != EXPRTK_VAL_FUNCTION ||
+      job->callback.ownership != EXPRTK_VALUE_OWNED ||
+      !job->callback.data.function.closure_env)
+    return;
+  exprtk_env_release(job->callback.data.function.closure_env);
+  job->callback.data.function.closure_env = NULL;
+  job->callback.ownership = EXPRTK_VALUE_BORROWED;
+}
+
+static void ts_task_retain_job_callback(ts_task_job_t *job) {
+  if (!job || job->callback.type != EXPRTK_VAL_FUNCTION ||
+      !job->callback.data.function.closure_env)
+    return;
+  exprtk_env_retain(job->callback.data.function.closure_env);
+  job->callback.ownership = EXPRTK_VALUE_OWNED;
 }
 
 static void ts_task_init_env(ts_task_job_t *job, turbo_script_ctx_t *ctx) {
@@ -441,6 +461,7 @@ static int ts_task_spawn_job(turbo_script_ctx_t *ctx, exprtk_value_t callback,
   if (scheduler->next_id <= 0) scheduler->next_id = 1;
   job->id = scheduler->next_id;
   job->callback = callback;
+  ts_task_retain_job_callback(job);
   job->completion = completion;
   job->completion_arg = completion_arg;
   job->auto_release = auto_release;
@@ -527,7 +548,13 @@ static void ts_task_entry(coro_t *co, void *arg) {
     ts_task_copy_error(job->error, sizeof(job->error), "task was cancelled");
   else if (failed && !job->error[0])
     ts_task_capture_error(&job->env, job->error, sizeof(job->error));
+  ts_task_release_job_callback(job);
   memset(&job->callback, 0, sizeof(job->callback));
+
+  /* Reclaim snapshots created by this event-loop thread inside the callback.
+   * The owner-thread filter plus the chain lock keep this safe alongside the
+   * host running scripts and sweeping on another thread. */
+  exprtk_env_sweep_closures(&ctx->env);
 
   turbo_mutex_lock(&scheduler->mutex);
   job->state = cancelled ? TS_TASK_CANCELLED : (failed ? TS_TASK_FAILED : TS_TASK_COMPLETED);

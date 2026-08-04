@@ -511,7 +511,11 @@ typedef struct exprtk_env_s {
   size_t max_external_value_bytes;   // Maximum one-shot external/network value
   mem_pool_t arena;                // For persistent data like script function bodies
   exprtk_value_t error_value;        // Value thrown by throw statement
-  struct exprtk_env_s *next_closure; // linked list of closure scopes to free
+  struct exprtk_env_s *next_closure; // linked list of captured snapshot scopes
+  struct exprtk_env_s *closure_root; // root scope owning the closure chain (snapshot scopes only)
+  int ref_count;                     // snapshot scopes only: 1 = owned by the root closure chain
+  int is_class_closure;              // snapshot created for a class definition
+  uintptr_t closure_owner_tid;       // thread that created this snapshot (for thread-local sweeping)
 
   // Error reporting (Phase 2)
   char error_msg[256]; // Last error message

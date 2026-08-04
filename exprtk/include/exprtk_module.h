@@ -194,6 +194,18 @@ exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index);
 
 int exprtk_value_copy_to_pool(exprtk_value_t value, mem_pool_t *pool,
                               exprtk_value_t *out);
+/* Captured-scope reference counting used by function values (see exprtk.h). */
+CXX_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
+                                              const char *const *names,
+                                              size_t name_count);
+CXX_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
+                                                exprtk_node_t *const *arg_params,
+                                                size_t arg_count,
+                                                mem_pool_t *arena);
+CXX_C_API void exprtk_env_retain(exprtk_env_t *env);
+CXX_C_API void exprtk_env_release(exprtk_env_t *env);
+CXX_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
+
 int exprtk_value_copy_to_env(exprtk_value_t value, exprtk_env_t *env,
                              exprtk_value_t *out);
 exprtk_value_t exprtk_value_retain(exprtk_value_t value);

@@ -49,6 +49,7 @@ macro(add_mir_test TARGET_NAME SOURCE_FILE)
             $<TARGET_FILE:mapper_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>)
 endmacro()
 
+add_mir_test(test_turbo_script_mir        test_turbo_script_mir.c)
 add_mir_test(test_turbo_script_mir_core     test_turbo_script_mir_core.c)
 add_mir_test(test_turbo_script_mir_oop      test_turbo_script_mir_oop.c)
 add_mir_test(test_turbo_script_mir_advanced test_turbo_script_mir_advanced.c)

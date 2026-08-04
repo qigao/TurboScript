@@ -74,6 +74,13 @@ static int exprtk_value_uses_managed_payload(exprtk_value_type_t type) {
 }
 
 exprtk_value_t exprtk_value_retain(exprtk_value_t value) {
+    /* A function value is a reference holder: retaining the value must retain
+     * the captured scope so copies stay alive independently of the source. */
+    if (value.type == EXPRTK_VAL_FUNCTION) {
+        if (value.data.function.closure_env) exprtk_env_retain(value.data.function.closure_env);
+        value.ownership = EXPRTK_VALUE_OWNED;
+        return value;
+    }
     if (!exprtk_value_uses_managed_payload(value.type)) {
         value.storage = NULL;
         value.storage_aux = NULL;
@@ -325,6 +332,15 @@ void exprtk_value_destroy(exprtk_value_t *value) {
         return;
     }
     exprtk_value_release_storage(value);
+    if (value->type == EXPRTK_VAL_FUNCTION) {
+        if (value->ownership == EXPRTK_VALUE_OWNED && value->data.function.closure_env) {
+            exprtk_env_release(value->data.function.closure_env);
+            value->data.function.closure_env = NULL;
+        }
+        memset(value, 0, sizeof(*value));
+        value->type = EXPRTK_VAL_NULL;
+        return;
+    }
     if (value->type == EXPRTK_VAL_MAP || value->type == EXPRTK_VAL_OBJECT) {
         exprtk_map_free(value);
     } else if (value->type == EXPRTK_VAL_LIST || value->type == EXPRTK_VAL_SET) {

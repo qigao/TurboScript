@@ -104,6 +104,24 @@ static exprtk_value_t ts_timer_fail(turbo_script_ctx_t *ctx, turbo_script_error_
   return exprtk_val_num(0.0);
 }
 
+static void ts_timer_release_job_callback(ts_timer_job_t *job) {
+  if (!job || job->callback.type != EXPRTK_VAL_FUNCTION ||
+      job->callback.ownership != EXPRTK_VALUE_OWNED ||
+      !job->callback.data.function.closure_env)
+    return;
+  exprtk_env_release(job->callback.data.function.closure_env);
+  job->callback.data.function.closure_env = NULL;
+  job->callback.ownership = EXPRTK_VALUE_BORROWED;
+}
+
+static void ts_timer_retain_job_callback(ts_timer_job_t *job) {
+  if (!job || job->callback.type != EXPRTK_VAL_FUNCTION ||
+      !job->callback.data.function.closure_env)
+    return;
+  exprtk_env_retain(job->callback.data.function.closure_env);
+  job->callback.ownership = EXPRTK_VALUE_OWNED;
+}
+
 static int ts_timer_state_is_terminal(ts_timer_job_state_t state) {
   return state == TS_TIMER_JOB_EMPTY || state == TS_TIMER_JOB_COMPLETED ||
          state == TS_TIMER_JOB_CANCELLED || state == TS_TIMER_JOB_FAILED;
@@ -305,7 +323,9 @@ static int ts_timer_start_job(turbo_script_ctx_t *ctx, ts_timer_kind_t kind, uin
   job->timer = new_timer;
   job->interval_ms = interval_ms;
   job->cron_due = cron_due;
+  ts_timer_release_job_callback(job);
   job->callback = callback;
+  ts_timer_retain_job_callback(job);
   job->task_id = 0;
   job->active_counted = 1;
   if (cron) job->cron = *cron;
@@ -440,6 +460,10 @@ static void ts_timer_execute_posted(void *arg1, void *arg2) {
   ctx->env.aborted = 0;
   ctx->env.flow = exprtk_FLOW_NORMAL;
 
+  /* Reclaim snapshots created by this event-loop thread (the callback body).
+   * The owner-thread filter plus the chain lock make this safe even while the
+   * host runs scripts and sweeps on another thread. */
+  exprtk_env_sweep_closures(&ctx->env);
   ts_timer_finish_callback(ctx, job, 0, callback_failed ? callback_error : NULL);
   ts_context_release(ctx);
 }
@@ -744,6 +768,7 @@ void ts_timer_scheduler_destroy(turbo_script_ctx_t *ctx) {
   ts_timer_scheduler_t *scheduler;
   if (!ctx || !ctx->timer_scheduler) return;
   scheduler = ctx->timer_scheduler;
+  for (size_t i = 0; i < scheduler->capacity; ++i) ts_timer_release_job_callback(&scheduler->jobs[i]);
   turbo_mutex_destroy(&scheduler->mutex);
   free(scheduler->jobs);
   free(scheduler);

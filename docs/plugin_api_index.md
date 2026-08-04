@@ -109,15 +109,13 @@ Count: 14
 
 ## ts plugin (`ts`)
 
-Count: 30
+Count: 28
 
 - `ts.adf`
 - `ts.autocorr`
 - `ts.coint`
 - `ts.cum_return`
 - `ts.diff`
-- `ts.dwt`
-- `ts.emd`
 - `ts.ewm_mean`
 - `ts.ewm_std`
 - `ts.expanding_mean`

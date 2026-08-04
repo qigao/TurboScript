@@ -380,7 +380,7 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
       ctx->jit_cache[slot].script &&
       strcmp(ctx->jit_cache[slot].script, script) == 0 &&
       ctx->jit_cache[slot].fn_ptr) {
-    ctx->jit_cache[slot].access_count++;  // 更新 LRU 访问计数
+    ctx->jit_cache[slot].access_count++;  // 直接映射缓存；access_count 仅供未来 LRU 使用
     
     // 记录缓存命中统计
     if (ctx->jit_stats_enabled) {
@@ -408,12 +408,19 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) 
    * silently running through the interpreter. */
   if (turbo_script_compile_mir(ctx, script) != 0) return -1;
 
-  /* Store in cache */
+  /* Store in cache. A failed script copy leaves the slot empty so a later
+   * lookup cannot match a partial (script == NULL) entry. */
   free(ctx->jit_cache[slot].script);
   ctx->jit_cache[slot].script = strdup(script);
-  ctx->jit_cache[slot].hash = hash;
-  ctx->jit_cache[slot].fn_ptr = ctx->mir_last_fn;
-  ctx->jit_cache[slot].access_count = 1;  // 初始化访问计数
+  if (!ctx->jit_cache[slot].script) {
+    ctx->jit_cache[slot].hash = 0;
+    ctx->jit_cache[slot].fn_ptr = NULL;
+    ctx->jit_cache[slot].access_count = 0;
+  } else {
+    ctx->jit_cache[slot].hash = hash;
+    ctx->jit_cache[slot].fn_ptr = ctx->mir_last_fn;
+    ctx->jit_cache[slot].access_count = 1;  // 初始化访问计数
+  }
 
   // 记录执行统计
   if (ctx->jit_stats_enabled) {

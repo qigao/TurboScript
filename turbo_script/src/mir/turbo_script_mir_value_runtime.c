@@ -1109,6 +1109,7 @@ static int ts_mir_runtime_super_value(exprtk_node_t *node, exprtk_env_t *env,
     out->data.function.arg_count = method->data.script.arg_count;
     out->data.function.body = method->data.script.body;
     out->data.function.closure_env = method->closure_env;
+    exprtk_env_retain(method->closure_env);
     out->data.function.owner_class = method->owner_class;
     out->data.function.is_static_method = method->is_static_method;
     out->data.function.access_level = method->access_level;
@@ -1404,7 +1405,17 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     out->data.function.arg_params = node->data.func_def.arg_params;
     out->data.function.arg_count = node->data.func_def.arg_count;
     out->data.function.body = node->data.func_def.body;
-    out->data.function.closure_env = exprtk_env_snapshot(env);
+    {
+      /* Capture only the free variables of the closure body. */
+      char **free_vars = exprtk_collect_closure_free_vars(
+          node->data.func_def.body, node->data.func_def.arg_params,
+          node->data.func_def.arg_count, &env->arena);
+      size_t fv_count = 0;
+      while (free_vars && free_vars[fv_count]) fv_count++;
+      out->data.function.closure_env = free_vars
+          ? exprtk_env_snapshot_names(env, (const char *const *)free_vars, fv_count)
+          : exprtk_env_snapshot(env);
+    }
     out->data.function.owner_class = NULL;
     out->data.function.is_static_method = 0;
     out->data.function.access_level = EXPRTK_ACCESS_PUBLIC;
@@ -2233,7 +2244,17 @@ double ts_mir_function_expr_assign(void *ctx_ptr, const char *target_name, void 
   value.data.function.arg_params = node->data.func_def.arg_params;
   value.data.function.arg_count = node->data.func_def.arg_count;
   value.data.function.body = node->data.func_def.body;
-  value.data.function.closure_env = exprtk_env_snapshot(&ctx->env);
+  {
+    /* Capture only the free variables of the closure body. */
+    char **free_vars = exprtk_collect_closure_free_vars(
+        node->data.func_def.body, node->data.func_def.arg_params,
+        node->data.func_def.arg_count, &ctx->env.arena);
+    size_t fv_count = 0;
+    while (free_vars && free_vars[fv_count]) fv_count++;
+    value.data.function.closure_env = free_vars
+        ? exprtk_env_snapshot_names(&ctx->env, (const char *const *)free_vars, fv_count)
+        : exprtk_env_snapshot(&ctx->env);
+  }
   value.data.function.owner_class = NULL;
   value.data.function.is_static_method = 0;
   value.data.function.access_level = EXPRTK_ACCESS_PUBLIC;

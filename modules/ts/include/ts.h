@@ -40,10 +40,6 @@ size_t exprtk_ts_match_candle(const double *O, const double *H, const double *L,
                               mem_pool_t *arena);
 size_t exprtk_ts_match_dtw(const double *data, const double *pattern, size_t n, size_t m,
                            double *out, mem_pool_t *arena);
-size_t exprtk_ts_dwt(const double *data, size_t n, size_t levels, double *approx, double *detail,
-                     mem_pool_t *arena);
-size_t exprtk_ts_emd(const double *data, size_t n, size_t max_imfs, double *imfs,
-                     mem_pool_t *arena);
 double exprtk_ts_hurst(const double *data, size_t n, double *out, mem_pool_t *arena);
 
 /* Cointegration & Spread */

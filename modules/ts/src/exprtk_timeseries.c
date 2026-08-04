@@ -56,7 +56,6 @@ static double dtw_dist(const double *a, const double *b, size_t m, double *cost_
 #undef COST
 }
 
-
 size_t exprtk_ts_diff(const double *data, size_t n, size_t order, double *out, mem_pool_t *arena) {
     if (n <= order) return 0;
     double *tmp = MEM_ALLOC_ARRAY(arena, double, n); memcpy(tmp, data, n * sizeof(double));
@@ -315,18 +314,6 @@ size_t exprtk_ts_match_returns(const double *data, const double *pattern, size_t
     }
     for (size_t i = n - m + 1; i < n; ++i) out[i] = 0;
     return n - m + 1;
-}
-
-// Stub implementations for DWT and EMD (complex algorithms, simplified here)
-size_t exprtk_ts_dwt(const double *data, size_t n, size_t levels, double *approx, double *detail,
-                     mem_pool_t *arena) {
-    (void)data; (void)n; (void)levels; (void)approx; (void)detail; (void)arena;
-    return 0; // TODO: Implement wavelet transform
-}
-
-size_t exprtk_ts_emd(const double *data, size_t n, size_t max_imfs, double *imfs, mem_pool_t *arena) {
-    (void)data; (void)n; (void)max_imfs; (void)imfs; (void)arena;
-    return 0; // TODO: Implement empirical mode decomposition
 }
 
 static double ts_normal_cdf(double x) {

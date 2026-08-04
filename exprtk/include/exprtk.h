@@ -42,6 +42,42 @@ CXX_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_
 // Environment management
 CXX_C_API void exprtk_env_init(exprtk_env_t *env);
 CXX_C_API void exprtk_env_free(exprtk_env_t *env);
+
+/** Retain a captured snapshot environment (no-op for non-snapshot scopes). */
+CXX_C_API void exprtk_env_retain(exprtk_env_t *env);
+
+/**
+ * Create a captured snapshot that copies only the named variables instead of
+ * the whole environment. Closures capture their free variables this way so
+ * repeated closure assignment does not chain-capture the previous closure.
+ * Pass NULL/0 for names to copy everything (class closures, module imports).
+ */
+CXX_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
+                                                  const char *const *names,
+                                                  size_t name_count);
+
+/**
+ * Collect variable names referenced by @p body (recursively, including nested
+ * function bodies) excluding @p arg_params. Callers use the result to build a
+ * capturing snapshot. Returns a NULL-terminated string array or NULL on OOM;
+ * the array and strings are allocated in @p arena.
+ */
+CXX_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
+                                                  exprtk_node_t *const *arg_params,
+                                                  size_t arg_count,
+                                                  mem_pool_t *arena);
+
+/** Release a captured snapshot environment; freed when the last reference drops. */
+CXX_C_API void exprtk_env_release(exprtk_env_t *env);
+
+/**
+ * Reclaim snapshot environments on @p root closure chain that were created by
+ * the calling thread and are no longer referenced by any function value or
+ * method. Call after a script execution boundary (or a timer/task callback)
+ * so short-lived closures do not accumulate. Thread-local ownership makes
+ * concurrent sweeps from the host and the event-loop thread safe.
+ */
+CXX_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
 /**
  * Store a value in an environment owner domain. Borrowed and cross-domain
  * values are copied. An owned mem_buffer payload already belonging to this
