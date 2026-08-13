@@ -17,7 +17,7 @@ print("Hello, " + name + "!");
 
 Run it:
 ```bash
-turbo_script hello.tbs
+turbo_script_repl --file hello.tbs
 ```
 
 Output:
@@ -229,31 +229,27 @@ var text = format_date_utc(utc_ts, "%Y-%m-%d %H:%M:%S");
 TurboScript can be extended with modules (plugins):
 
 ```javascript
-// Load CSV module
-import("csv");
+import("ta");
 
-// Read CSV file
-var data = csv.read("prices.csv");
-
-// Get column
-var close_prices = csv.col(data, "close");
-
-// Process data
-var average_price = avg(close_prices);
-print("Average price: " + average_price);
+var close = [100, 101, 103, 102, 105, 107];
+var average = ta.sma(close, 3);
+print("Latest SMA: " + average[len(average) - 1]);
 ```
 
 ### Common Modules
 
 ```javascript
-import("csv");      // CSV parsing
-import("json");     // JSON parsing
-import("ta");       // Technical analysis
-import("vec");      // Advanced vector operations
-import("net");      // HTTP/WebSocket
-import("sqlite");   // Database access
-import("mapper");   // Class-first JSON/YAML/XML mapping
+import("parser");       // INI, dotenv, TOML and command-line parsing
+import("mapper");       // Class-first JSON/YAML/XML mapping
+import("ta");           // Technical analysis, exposed as ta.*
+import("fin");          // Finance and strategy helpers, exposed as strategy.*
+import("ts");           // Time-series helpers, exposed as ts.*
+import("net");          // HTTP/WebSocket
+import("sqlite");       // SQL, embeddings and local RAG helpers
 ```
+
+Math, strings, vectors, tables, file I/O and date/time helpers are built in;
+they do not require `import()`.
 
 ---
 
@@ -262,12 +258,10 @@ import("mapper");   // Class-first JSON/YAML/XML mapping
 Let's analyze stock prices:
 
 ```javascript
-import("csv");
 import("ta");
 
-// Read data
-var data = csv.read("AAPL.csv");
-var close = csv.col(data, "close");
+var close = [100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+             109, 111, 110, 112, 114, 113, 115, 117, 116, 118];
 
 // Calculate indicators
 var sma20 = ta.sma(close, 20);    // 20-day moving average
@@ -291,6 +285,9 @@ print("RSI: " + latest_rsi);
 print("Signal: " + signal);
 ```
 
+The checked-in version is [examples/getting_started.tbs](../examples/getting_started.tbs)
+and is executed by the test suite.
+
 ---
 
 ## Next Steps
@@ -298,8 +295,8 @@ print("Signal: " + signal);
 Now that you know the basics:
 
 1. **[Language Guide](language-guide.md)** - Learn advanced features (destructuring, closures, error handling)
-2. **[API Reference](api-reference.md)** - Explore all built-in functions
-3. **[Plugin Development](plugin-development.md)** - Create your own modules in C/C++
+2. **[API Reference](api/api-reference.md)** - Explore all built-in functions
+3. **[Plugin Development](PLUGIN_SYSTEM.md)** - Create your own modules in C/C++
 
 ---
 

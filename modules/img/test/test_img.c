@@ -3,6 +3,7 @@
  * @brief 图像处理模块单元测试
  */
 #include "img.h"
+#include "exprtk.h"
 #include "tinytest.h"
 
 #include <stdio.h>
@@ -12,7 +13,78 @@
 #define TEST_WIDTH 320
 #define TEST_HEIGHT 240
 
+void exprtk_img_release_handles(exprtk_env_t *env);
+
 spec("img_module") {
+  describe("script handles") {
+    it("should accept numeric handles and reject stale handles") {
+      exprtk_env_t env;
+      exprtk_value_t create_args[] = {exprtk_val_num(4), exprtk_val_num(3), exprtk_val_num(3)};
+      exprtk_value_t result;
+      exprtk_value_t handle_arg;
+      exprtk_value_t stale_handle;
+
+      exprtk_env_init(&env);
+      exprtk_env_add_module(&env, exprtk_module_img());
+      result = exprtk_call_internal("img_create", 3, create_args, &env);
+      check_int_eq(result.type, EXPRTK_VAL_INTEGER);
+      check_int_gt(result.data.integer, 0);
+
+      handle_arg = exprtk_val_num((double)result.data.integer);
+      stale_handle = handle_arg;
+      result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 4);
+      result = exprtk_call_internal("img_height", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 3);
+      result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 1);
+      result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 0);
+      result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 0);
+
+      result = exprtk_call_internal("img_create", 3, create_args, &env);
+      check_int_eq(result.type, EXPRTK_VAL_INTEGER);
+      check_int_gt(result.data.integer, 0);
+      handle_arg = exprtk_val_num((double)result.data.integer);
+      check_true(handle_arg.data.number != stale_handle.data.number);
+      result = exprtk_call_internal("img_width", 1, &stale_handle, &env);
+      check_int_eq(result.data.integer, 0);
+      result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 1);
+
+      handle_arg = exprtk_val_num(999999999.0);
+      result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
+      check_int_eq(result.data.integer, 0);
+      exprtk_env_free(&env);
+    }
+
+    it("should isolate handles and release them with their environment") {
+      exprtk_env_t owner_env;
+      exprtk_env_t other_env;
+      exprtk_value_t create_args[] = {exprtk_val_num(2), exprtk_val_num(2), exprtk_val_num(3)};
+      exprtk_value_t result;
+      exprtk_value_t handle_arg;
+
+      exprtk_env_init(&owner_env);
+      exprtk_env_init(&other_env);
+      exprtk_env_add_module(&owner_env, exprtk_module_img());
+      exprtk_env_add_module(&other_env, exprtk_module_img());
+      result = exprtk_call_internal("img_create", 3, create_args, &owner_env);
+      check_int_gt(result.data.integer, 0);
+      handle_arg = exprtk_val_num((double)result.data.integer);
+
+      result = exprtk_call_internal("img_width", 1, &handle_arg, &other_env);
+      check_int_eq(result.data.integer, 0);
+      exprtk_img_release_handles(&owner_env);
+      result = exprtk_call_internal("img_width", 1, &handle_arg, &owner_env);
+      check_int_eq(result.data.integer, 0);
+
+      exprtk_env_free(&other_env);
+      exprtk_env_free(&owner_env);
+    }
+  }
+
   describe("lifecycle") {
     it("should create and free images") {
       img_t *img = img_create(TEST_WIDTH, TEST_HEIGHT, 3);

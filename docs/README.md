@@ -13,19 +13,18 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 ### For Users
 - **[Getting Started](getting-started.md)** - 5-minute tutorial to write your first script
 - **[Language Guide](language-guide.md)** - Complete syntax reference and language features
-- **[API Reference](api-reference.md)** - Built-in functions and standard library
+- **[API Reference](api/api-reference.md)** - Built-in functions and standard library
 
 ### For Developers
-- **[Plugin Development](plugin-development.md)** - Extend TurboScript with C/C++ plugins
+- **[Plugin Development](PLUGIN_SYSTEM.md)** - Extend TurboScript with C/C++ plugins
 - **[Module Documentation](modules/)** - Domain-specific module guides
 - **[Architecture](advanced/architecture.md)** - Internal design and implementation
 - **[DSL Charter](DSL_CHARTER.md)** - Language scope, semantic contracts, and roadmap
-- **[DSL Execution Plan](DSL_EXECUTION_PLAN.md)** - Prioritized backlog and parser/evaluator convergence plan
 
 ### Quick Reference
-- **[Math Cheatsheet](math_cheatsheet.md)** - Mathematical functions
-- **[Vector Operations](vec_cheatsheet.md)** - Vector/array operations
-- **[Technical Analysis](ta_fin_cheatsheet.md)** - TA indicators and finance functions
+- **[Math Cheatsheet](api/math_cheatsheet.md)** - Mathematical functions
+- **[Vector Operations](api/vec_cheatsheet.md)** - Vector/array operations
+- **[Technical Analysis](api/ta_fin_cheatsheet.md)** - TA indicators and finance functions
 
 ---
 
@@ -36,7 +35,7 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 - **Dynamic typing** with type introspection (`typeof`, `is_number`, etc.)
 - **Arrow functions** and closures: `(x) => x * 2`
 - **Destructuring assignment**: `let [a, b] = [10, 20]`
-- **Pipe operator**: `data |> filter(x > 0) |> sum()`
+- **Pipe operator**: `data |> filter(x => x > 0) |> sum()`
 - **Optional chaining**: `user?.address?.city`
 - **OOP support**: `class`, `interface`, `extends`, `implements`, `super`
 
@@ -58,47 +57,38 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 
 ### Extensible Architecture
 - **Plugin system**: Load C/C++ DLLs dynamically via `import("plugin_name")`
-- **Module-based**: Clean namespace separation (`csv.*`, `json.*`, `ta.*`, `strategy.*`)
+- **Module-based**: Clean namespace separation (`parser.*`, `mapper.*`, `ta.*`, `strategy.*`)
 - **Unified MIR backend**: `turbo_script_run()` executes generated MIR with MIR's interpreter; `turbo_script_run_jit()` uses the same IR and asks MIR to generate native code
 - **Pure MIR execution contract**: unsupported lowering forms report errors from the MIR pipeline
 - **Optimized hot paths**: direct math calls, pre-bound vector access, map numeric pointers, monomorphic OOP method lowering, `super.method(...)` inline, and public numeric instance field slot access
-- **Zero-copy FFI**: Efficient data exchange with host applications
+- **Typed host API**: Bind scalars, strings and vectors and register native callbacks
 
 ---
 
 ## 📦 Installation
 
-### From Source
-```bash
-git clone https://github.com/your-org/turbonet.git
-cd turbonet/tScript
-mkdir build && cd build
-cmake ..
-make
-```
-
-### Using Pre-built Binaries
-Download the latest release from [Releases](https://github.com/your-org/turbonet/releases).
+The source build requires installed TurboUtils, TurboNet, TurboHTTP and
+RulesForge packages plus the dependencies in `vcpkg.json`. Configure their
+locations in a local `CMakeUserPresets.json`, then follow the commands in the
+[repository README](../README.md#build-and-test).
 
 ---
 
 ## 🎯 Quick Example
 
 ```javascript
-// Load plugins
-import("csv");
 import("ta");
 
-// Read and process data
-var data = csv.read("prices.csv");
-var close = csv.col(data, "close");
+var close = [100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+             109, 111, 110, 112, 114, 113, 115, 117, 116, 118];
 
 // Calculate technical indicators
 var sma20 = ta.sma(close, 20);
 var rsi14 = ta.rsi(close, 14);
 
 // Generate signals
-var signal = (rsi14 < 30) ? "BUY" : (rsi14 > 70) ? "SELL" : "HOLD";
+var latest_rsi = rsi14[len(rsi14) - 1];
+var signal = (latest_rsi < 30) ? "BUY" : (latest_rsi > 70) ? "SELL" : "HOLD";
 
 print("Signal: " + signal);
 ```
@@ -120,14 +110,17 @@ TurboScript comes with a rich set of optional modules:
 |--------|-------------|---------------|
 | `parser` | Configuration-oriented text parsing (INI, dotenv, TOML, command line) | [parser README](../modules/parser/README.md) |
 | `mapper` | Class-first JSON/YAML/XML serialization through `turbo_parser.h` | [mapper README](../modules/mapper/README.md) |
-| `ta` | Technical analysis indicators | [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) |
-| `fin` / `strategy` | Risk metrics, strategy context, portfolio helpers | [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) |
-| `vec` | Advanced vector operations | [vec_cheatsheet.md](vec_cheatsheet.md) |
-| `net` | HTTP/WebSocket networking | [modules/net.md](modules/net.md) |
-| `sqlite` | Database access | [modules/sqlite.md](modules/sqlite.md) |
+| `ta` | Technical analysis indicators (`ta.*`) | [TA/finance cheatsheet](api/ta_fin_cheatsheet.md) |
+| `fin` | Risk metrics and strategy helpers (`strategy.*`) | [TA/finance cheatsheet](api/ta_fin_cheatsheet.md) |
+| `ts` | Time-series helpers (`ts.*`) | [module source](../modules/ts/) |
+| built-in vectors | Vector operations; no import required | [vector cheatsheet](api/vec_cheatsheet.md) |
+| `net` | HTTP/1, HTTP/2 and WebSocket clients | [task/network guide](advanced/tasks.md) |
+| `sqlite` | SQL, embeddings and local RAG | [SQLite README](../modules/sqlite/README.md) |
+| `img` | Image handles and pixel/image operations | [image README](../modules/img/README.md) |
+| `crypto`, `hash`, `fuzzy` | Cryptography, hashing and fuzzy matching | [API reference](api/api-reference.md) |
 | `rules_forge` | Rules engine integration and TurboScript RHS plugin loading | [rules_forge README](../modules/rules_forge/README.md) |
 | `os` | Platform information, shell-free child processes, logging, service and power management | [os README](../modules/os/README.md) |
-| `wasm` | WebAssembly execution | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
+| `wasm` | Experimental source present, not enabled by the default build | [integration plan](../modules/wasm/WASI_INTEGRATION_PLAN.md) |
 
 ---
 
@@ -143,23 +136,5 @@ tScript/
 └── tests/           # Test suite
 ```
 
-### Contributing
-See [CONTRIBUTING.md](../CONTRIBUTING.md) for guidelines.
-
----
-
-## 📄 License
-
-[Your License Here]
-
----
-
-## 🤝 Community
-
-- **Issues**: [GitHub Issues](https://github.com/your-org/turbonet/issues)
-- **Discussions**: [GitHub Discussions](https://github.com/your-org/turbonet/discussions)
-- **Discord**: [Join our server](https://discord.gg/your-invite)
-
----
-
-**Built with ❤️ for high-performance scripting**
+This checkout does not currently include repository-level licensing metadata;
+resolve licensing before redistributing source or binaries.

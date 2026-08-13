@@ -8,7 +8,7 @@ add_custom_command(
   TARGET test_net_ctx
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:TurboHttp::HttpClient> $<TARGET_FILE_DIR:test_net_ctx>)
+          $<TARGET_FILE:TurboHttp::TurboHttp> $<TARGET_FILE_DIR:test_net_ctx>)
 
 cmake_add_test(
   TARGET test_net_module
@@ -43,3 +43,18 @@ add_custom_command(
   POST_BUILD
   COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>
           $<TARGET_FILE_DIR:test_net_task_ws>)
+
+cmake_add_test(
+  TARGET test_net_task_http
+  SOURCES test_net_task_http.c
+  LIBS turbo_script TurboHttp::Iris TurboNet::CoroNet TurboUtils::TinyTest
+  DEPENDS net_tbs
+  FOLDER modules/net)
+
+add_custom_command(
+  TARGET test_net_task_http
+  POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>
+          $<TARGET_FILE_DIR:test_net_task_http>
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:TurboHttp::Iris>
+          $<TARGET_FILE_DIR:test_net_task_http>)

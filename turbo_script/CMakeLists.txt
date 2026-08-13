@@ -50,8 +50,8 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core TurboUtils::Parser
-  PRIVATE TurboUtils::Cron TurboNet::CoroNet)
+  PUBLIC TurboUtils::Core TurboParser::Parser
+  PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 # Enable strict warnings for modularized code
 if(MSVC)
@@ -85,7 +85,7 @@ target_link_libraries(
   ${TARGET_NAME}
   PRIVATE exprtk mir_static
   PUBLIC TurboUtils::Core
-  PRIVATE TurboUtils::Cron TurboNet::CoroNet)
+  PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  

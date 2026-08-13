@@ -17,7 +17,7 @@ print("Hello, " + name + "!");
 
 运行：
 ```bash
-turbo_script hello.tbs
+turbo_script_repl --file hello.tbs
 ```
 
 输出：
@@ -231,31 +231,27 @@ var text = format_date_utc(utc_ts, "%Y-%m-%d %H:%M:%S");
 TurboScript 可以通过模块（插件）扩展：
 
 ```javascript
-// 加载 CSV 模块
-import("csv");
+import("ta");
 
-// 读取 CSV 文件
-var data = csv.read("prices.csv");
-
-// 获取列
-var close_prices = csv.col(data, "close");
-
-// 处理数据
-var average_price = avg(close_prices);
-print("平均价格: " + average_price);
+var close = [100, 101, 103, 102, 105, 107];
+var average = ta.sma(close, 3);
+print("最新 SMA: " + average[len(average) - 1]);
 ```
 
 ### 常用模块
 
 ```javascript
-import("csv");      // CSV 解析
-import("json");     // JSON 解析
-import("ta");       // 技术分析
-import("vec");      // 高级向量操作
-import("net");      // HTTP/WebSocket
-import("sqlite");   // 数据库访问
-import("mapper");   // 基于 class 的 JSON/YAML/XML 映射
+import("parser");       // INI、dotenv、TOML 和命令行解析
+import("mapper");       // 基于 class 的 JSON/YAML/XML 映射
+import("ta");           // 技术分析，调用命名空间为 ta.*
+import("fin");          // 金融与策略函数，调用命名空间为 strategy.*
+import("ts");           // 时间序列函数，调用命名空间为 ts.*
+import("net");          // HTTP/WebSocket
+import("sqlite");       // SQL、embedding 与本地 RAG
 ```
+
+数学、字符串、向量、table、文件 I/O 和日期时间函数均为内置能力，不需要
+`import()`。
 
 ---
 
@@ -264,12 +260,10 @@ import("mapper");   // 基于 class 的 JSON/YAML/XML 映射
 让我们分析股票价格：
 
 ```javascript
-import("csv");
 import("ta");
 
-// 读取数据
-var data = csv.read("AAPL.csv");
-var close = csv.col(data, "close");
+var close = [100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+             109, 111, 110, 112, 114, 113, 115, 117, 116, 118];
 
 // 计算指标
 var sma20 = ta.sma(close, 20);    // 20 日均线
@@ -293,6 +287,9 @@ print("RSI: " + latest_rsi);
 print("信号: " + signal);
 ```
 
+仓库版本见 [examples/getting_started.tbs](../../examples/getting_started.tbs)，并由
+测试套件实际执行。
+
 ---
 
 ## 下一步
@@ -313,7 +310,7 @@ print("信号: " + signal);
 
 ```javascript
 var result = data
-    |> filter(x > 0)
+    |> filter(x => x > 0)
     |> map(x => x * 2)
     |> sum();
 ```

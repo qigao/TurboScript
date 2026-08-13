@@ -91,6 +91,8 @@ struct turbo_script_ctx_s {
   size_t compiled_ast_capacity;
 
   /* Plugin handles */
+  turbo_script_plugin_authorizer_fn plugin_authorizer;
+  void *plugin_authorizer_data;
   ts_plugin_handle_t *plugins[TS_MAX_PLUGINS];
   char *loaded_names[TS_MAX_PLUGINS];
   size_t plugin_count;

@@ -481,6 +481,20 @@ exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char
 
 /* ── Plugin helpers ───────────────────────────────────────────────── */
 
+typedef enum {
+  TS_PLUGIN_LOAD_OK = 0,
+  TS_PLUGIN_LOAD_FAILED = -1,
+  TS_PLUGIN_LOAD_DENIED = -2,
+} ts_plugin_load_result_t;
+
+static int ts_is_builtin_module(const char *name) {
+  if (!name) return 0;
+  return strcmp(name, "math") == 0 || strcmp(name, "string") == 0 ||
+         strcmp(name, "stats") == 0 || strcmp(name, "io") == 0 ||
+         strcmp(name, "core") == 0 || strcmp(name, "regex") == 0 ||
+         strcmp(name, "timer") == 0;
+}
+
 /* Check if a plugin with the given import name is already loaded */
 static int ts_plugin_already_loaded(turbo_script_ctx_t *ctx, const char *name) {
   for (size_t i = 0; i < ctx->plugin_count; ++i) {
@@ -520,10 +534,14 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
       NULL};
   ts_plugin_handle_t *h = NULL;
 
-  if (name && strcmp(name, "regex") == 0) return -1;
+  if (!ctx || !name || !*name) return TS_PLUGIN_LOAD_FAILED;
+  if (ts_is_builtin_module(name)) return TS_PLUGIN_LOAD_OK;
 
-  if (ts_plugin_already_loaded(ctx, name)) return 0;
-  if (ctx->plugin_count >= TS_MAX_PLUGINS) return -1;
+  if (ts_plugin_already_loaded(ctx, name)) return TS_PLUGIN_LOAD_OK;
+  if (ctx->plugin_count >= TS_MAX_PLUGINS) return TS_PLUGIN_LOAD_FAILED;
+  if (ctx->plugin_authorizer &&
+      !ctx->plugin_authorizer(name, ctx->plugin_authorizer_data))
+    return TS_PLUGIN_LOAD_DENIED;
 
   for (size_t i = 0; suffixes[i] != NULL; ++i) {
     const char *dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 1);
@@ -536,24 +554,35 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
     h = ts_plugin_load(dll);
     if (h) break;
   }
-  if (!h) return -1;
+  if (!h) return TS_PLUGIN_LOAD_FAILED;
 
   if (ts_plugin_init(h, &ctx->env, &ctx->scratch_arena) != 0) {
     ts_plugin_unload(h);
-    return -1;
+    return TS_PLUGIN_LOAD_FAILED;
   }
 
   loaded_name = strdup(name);
   if (!loaded_name) {
     ts_plugin_unload(h);
-    return -1;
+    return TS_PLUGIN_LOAD_FAILED;
   }
 
   size_t idx = ctx->plugin_count;
   ctx->plugins[idx] = h;
   ctx->loaded_names[idx] = loaded_name;
   ctx->plugin_count++;
-  return 0;
+  return TS_PLUGIN_LOAD_OK;
+}
+
+static void ts_set_plugin_load_error(turbo_script_ctx_t *ctx, const char *operation,
+                                     const char *name, int load_result) {
+  const char *reason = load_result == TS_PLUGIN_LOAD_DENIED
+                           ? "denied by host policy"
+                           : "failed to load native plugin";
+  if (!ctx) return;
+  ctx->error_code = TURBO_SCRIPT_ERROR_PLUGIN;
+  snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s '%s': %s", operation,
+           name ? name : "", reason);
 }
 
 static int ts_is_script_import(const char *name) {
@@ -858,6 +887,7 @@ static exprtk_value_t ts_import_script_common(turbo_script_ctx_t *ctx, const cha
 
 static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
+  int load_result;
   if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
     TS_ERROR(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "import: expected 1 string arg");
     return TS_ZERO;
@@ -873,18 +903,17 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, exprtk_env_t 
     return ts_import_script_common(ctx, name, 0);
   }
 
-  if (strcmp(name, "math") == 0 || strcmp(name, "string") == 0 ||
-      strcmp(name, "stats") == 0 || strcmp(name, "io") == 0 ||
-      strcmp(name, "core") == 0 || strcmp(name, "regex") == 0 ||
-      strcmp(name, "timer") == 0) {
+  if (ts_is_builtin_module(name)) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
-  if (ts_load_plugin(ctx, name) == 0) {
+  load_result = ts_load_plugin(ctx, name);
+  if (load_result == TS_PLUGIN_LOAD_OK) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
-  TS_ERROR(ctx, TURBO_SCRIPT_ERROR_PLUGIN, "import: failed to load plugin");
+  ts_set_plugin_load_error(ctx, "import", name, load_result);
+  ctx->env.aborted = 1;
   return TS_ZERO;
 }
 
@@ -1050,12 +1079,16 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
   }
 }
 
-turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
+turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
+    turbo_script_init_flags_t flags, turbo_script_plugin_authorizer_fn authorizer,
+    void *user_data) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)calloc(1, sizeof(turbo_script_ctx_t));
   if (!ctx) return NULL;
 
   atomic_init(&ctx->ref_count, 1U);
   atomic_init(&ctx->closing, 0);
+  ctx->plugin_authorizer = authorizer;
+  ctx->plugin_authorizer_data = user_data;
   if (turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_SERVICE,
                                       &ctx->memory_policy) != 0) {
     free(ctx);
@@ -1097,15 +1130,21 @@ turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
   return ctx;
 }
 
+turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
+  return turbo_script_init_with_plugin_authorizer(flags, NULL, NULL);
+}
+
 int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
+  int load_result;
   if (!ctx) return -1;
-  if (!name) {
-    set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "plugin name is NULL");
+  if (!name || !*name) {
+    set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "plugin name is empty");
     return -1;
   }
   clear_error(ctx);
-  if (ts_load_plugin(ctx, name) != 0) {
-    set_error(ctx, TURBO_SCRIPT_ERROR_PLUGIN, "failed to load plugin");
+  load_result = ts_load_plugin(ctx, name);
+  if (load_result != TS_PLUGIN_LOAD_OK) {
+    ts_set_plugin_load_error(ctx, "load plugin", name, load_result);
     return -1;
   }
   return 0;

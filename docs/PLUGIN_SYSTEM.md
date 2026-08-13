@@ -525,29 +525,50 @@ let json = parse_json(response);
 
 ### Plugin Sandboxing
 
-**Current implementation**: No sandboxing - plugins have full access.
+**Current implementation**: Native plugins are not sandboxed and run with the
+host process's permissions. Embedders can install a name-based authorization
+callback before context initialization so an unapproved dynamic library is
+rejected before it is opened:
+
+```c
+#include "turbo_script.h"
+#include <stdbool.h>
+#include <string.h>
+
+static bool allow_native_plugin(const char *name, void *user_data) {
+    const char *const *allowlist = user_data;
+    for (size_t i = 0; allowlist[i] != NULL; ++i) {
+        if (strcmp(name, allowlist[i]) == 0) return true;
+    }
+    return false;
+}
+
+int main(void) {
+    const char *allowlist[] = {"parser", "net", NULL};
+    turbo_script_ctx_t *ctx = turbo_script_init_with_plugin_authorizer(
+        TURBO_SCRIPT_INIT_DEFAULT, allow_native_plugin, allowlist);
+    if (!ctx) return 1;
+
+    int result = turbo_script_load_plugin(ctx, "net");
+    turbo_script_free(ctx);
+    return result == 0 ? 0 : 1;
+}
+```
+
+The callback applies to the first native load for each logical plugin name.
+Built-in modules such as `math` and `.tbs` script modules do not invoke it.
+`TURBO_SCRIPT_INIT_DEFAULT` requests the native `parser` plugin, so an allowlist
+for default contexts must include `parser`. The callback data is borrowed and
+must outlive the context.
+
+This is an admission-control hook, not a permission sandbox: it does not verify
+signatures, constrain filesystem or network access, or isolate plugin crashes.
 
 **Recommendations:**
 1. Only load plugins from trusted sources
 2. Verify plugin signatures
-3. Use plugin whitelisting in production
-
-### Future: Plugin Permissions
-
-```c
-// Proposed API
-typedef struct {
-    bool allow_file_io;
-    bool allow_network;
-    bool allow_system_calls;
-} plugin_permissions_t;
-
-int turbo_script_load_plugin_with_perms(
-    turbo_script_ctx_t *ctx,
-    const char *name,
-    const plugin_permissions_t *perms
-);
-```
+3. Use `turbo_script_init_with_plugin_authorizer()` with an explicit allowlist
+4. Use process-level isolation when plugins must not inherit host permissions
 
 ---
 

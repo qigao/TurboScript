@@ -1,11 +1,11 @@
 import("net");
 
 var first = task.spawn(() => {
-    return http.get("https://example.com/", map { timeout: 5000 });
+    return http.get("https://example.com/", map { timeout: 5000, transport: "auto" });
 });
 
 var second = task.spawn(() => {
-    return http.get("https://www.iana.org/", map { timeout: 5000 });
+    return http.get("https://www.iana.org/", map { timeout: 5000, transport: "auto" });
 });
 
 var report = task.spawn(() => {

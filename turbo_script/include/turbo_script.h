@@ -62,6 +62,17 @@ typedef enum {
   TURBO_SCRIPT_INIT_BARE = 1,
 } turbo_script_init_flags_t;
 
+/**
+ * @brief Decide whether a native plugin may be loaded into a context.
+ *
+ * @p plugin_name and @p user_data are borrowed. The callback runs
+ * synchronously on the thread that first requests the native plugin. Returning
+ * false denies the load before the dynamic library is opened. Built-in modules
+ * and script-module imports do not invoke this callback.
+ */
+typedef bool (*turbo_script_plugin_authorizer_fn)(const char *plugin_name,
+                                                  void *user_data);
+
 /** Runtime memory profiles. Each profile has bounded, fail-fast defaults. */
 typedef enum {
   TURBO_SCRIPT_MEMORY_BATCH = 0,
@@ -113,6 +124,20 @@ typedef enum {
  * init.
  */
 CXX_C_API turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags);
+
+/**
+ * @brief Initialize a context with an optional native-plugin authorization policy.
+ *
+ * A NULL @p authorizer preserves the allow-all behavior of turbo_script_init().
+ * The callback and borrowed @p user_data must remain valid for the context
+ * lifetime. TURBO_SCRIPT_INIT_DEFAULT requests the native `parser` plugin during
+ * initialization, so the policy is consulted for `parser` before this function
+ * returns. Denying that optional plugin does not make context initialization
+ * fail.
+ */
+CXX_C_API turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
+    turbo_script_init_flags_t flags, turbo_script_plugin_authorizer_fn authorizer,
+    void *user_data);
 
 /** Fill @p policy with the bounded defaults for @p profile. */
 CXX_C_API int turbo_script_memory_policy_init(turbo_script_memory_profile_t profile,

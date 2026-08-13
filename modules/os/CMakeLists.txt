@@ -20,7 +20,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core TurboUtils::Cron)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core TurboParser::Cron)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${OS_PLUGIN_SOURCES})
 
@@ -30,7 +30,7 @@ cmake_config_target(
   OUTPUT_NAME tbs_os
   PLUGIN)
 
-target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME} exprtk TurboUtils::Core TurboUtils::Cron)
+target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME} exprtk TurboUtils::Core TurboParser::Cron)
 target_include_directories(${TARGET_NAME_PLUGIN} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 set_target_properties(

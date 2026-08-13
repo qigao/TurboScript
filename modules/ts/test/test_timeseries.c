@@ -6,6 +6,7 @@
 #include "tinytest.h"
 #include <turbo_buffer.h>
 #include <math.h>
+#include <stdint.h>
 
 #define EPSILON 0.0001
 
@@ -52,6 +53,35 @@ spec("timeseries") {
             for (size_t i = 0; i <= max_lag; i++) {
                 check(out[i] >= -1.0 && out[i] <= 1.0);
             }
+        }
+    }
+
+    describe("ts_adf - Augmented Dickey-Fuller") {
+
+        it("should report two output values for valid input") {
+            mem_pool_t arena = {0};
+            double data[] = {10.0, 10.5, 10.2, 10.8, 10.4, 11.0, 10.7, 11.3};
+            double out[2] = {0};
+
+            mem_init(&arena, 4096);
+            check_int_eq(exprtk_ts_adf(data, 8, 1, out, &arena), 2);
+            check_true(isfinite(out[0]));
+            check_true(isfinite(out[1]));
+            mem_destroy(&arena);
+        }
+
+        it("should reject incomplete inputs") {
+            mem_pool_t arena = {0};
+            double data[] = {1.0, 2.0, 3.0};
+            double out[2] = {0};
+
+            mem_init(&arena, 4096);
+            check_int_eq(exprtk_ts_adf(data, 3, 1, out, &arena), 0);
+            check_int_eq(exprtk_ts_adf(NULL, 3, 1, out, &arena), 0);
+            check_int_eq(exprtk_ts_adf(data, 3, 1, NULL, &arena), 0);
+            check_int_eq(exprtk_ts_adf(data, 3, 1, out, NULL), 0);
+            check_int_eq(exprtk_ts_adf(data, 3, SIZE_MAX, out, &arena), 0);
+            mem_destroy(&arena);
         }
     }
 

@@ -105,19 +105,18 @@ size_t exprtk_ts_pacf(const double *data, size_t n, size_t max_lag, double *out,
 }
 
 int exprtk_ts_adf(const double *data, size_t n, size_t p, double *out, mem_pool_t *arena) {
-    if (n <= p + 2) return 0;
+    if (!data || !out || !arena || n <= 2 || p >= n - 2) return 0;
     size_t m = n - 1 - p;
     double *dy = MEM_ALLOC_ARRAY(arena, double, m);
     double *y_lag = MEM_ALLOC_ARRAY(arena, double, m);
-    double *X = MEM_ALLOC_ARRAY(arena, double, m * (p + 1));
+    if (!dy || !y_lag) return 0;
 
     for (size_t i = 0; i < m; ++i) {
         dy[i] = data[i + p + 1] - data[i + p]; y_lag[i] = data[i + p];
-        X[i * (p + 1)] = y_lag[i];
-        for (size_t j = 1; j <= p; ++j) X[i * (p + 1) + j] = data[i + p + 1 - j] - data[i + p - j];
     }
     ols_result_t r = ols_fit(dy, y_lag, m);
     out[0] = r.t_slope; out[1] = r.slope;
+    return 2;
 }
 
 size_t exprtk_ts_garch(const double *returns, size_t n, double alpha, double beta, double *out) {
@@ -349,7 +348,7 @@ size_t exprtk_ts_coint(const double *x, const double *y, size_t n, double *out, 
 
     /* Step 3: ADF test on residuals */
     double adf_out[2] = {0, 0};
-    exprtk_ts_adf(resid, n, 1, adf_out, arena);
+    if (exprtk_ts_adf(resid, n, 1, adf_out, arena) != 2) return 0;
 
     out[0] = adf_out[0];  /* test statistic */
     out[1] = ts_normal_cdf(adf_out[0]);  /* approximate one-sided significance */

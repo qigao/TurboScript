@@ -7,7 +7,7 @@
 
 #include "exprtk.h"
 #include "turbo_buffer.h"
-#include "http_client.h"
+#include <turbo_http.h>
 #include <CoroNet.h>
 
 #include <string.h>
@@ -21,7 +21,7 @@ typedef struct net_ws_task_connection_s {
 } net_ws_task_connection_t;
 
 typedef struct net_ctx_s {
-    http_client_t *client;
+    turbo_http_t *client;
     /* The root environment keeps the legacy singleton. Managed tasks use a
      * bounded owner-token registry so ws.* calls in different tasks cannot
      * replace one another's sockets. The context owns every socket and task
@@ -40,9 +40,10 @@ typedef struct {
 
 #define NET_ZERO ((exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 0.0})
 
-static inline http_client_t *net_ctx_ensure_client(net_ctx_t *ctx) {
+static inline turbo_http_t *net_ctx_ensure_client(net_ctx_t *ctx) {
     if (!ctx) return NULL;
-    if (!ctx->client) ctx->client = http_client_create(NULL);
+    if (!ctx->client && turbo_http_create_sync(NULL, &ctx->client) != TURBO_OK)
+        return NULL;
     return ctx->client;
 }
 

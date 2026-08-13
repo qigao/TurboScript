@@ -8,6 +8,8 @@
 #include <CoroNet.h>
 #include <turbo_parser.h>
 #include <turbo_str.h>
+#include <math.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -24,7 +26,7 @@ void net_ctx_destroy(void *p) {
   net_ctx_t *ctx = (net_ctx_t *)p;
   size_t i;
   if (!ctx) return;
-  if (ctx->client) http_client_destroy(ctx->client);
+  if (ctx->client) turbo_http_destroy(ctx->client);
   if (ctx->ws_client) coro_socket_destroy(ctx->ws_client);
   for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
     if (ctx->ws_task_connections[i].socket)
@@ -444,34 +446,88 @@ static int net_build_request_headers(http_ud_t *ud, const exprtk_value_t *header
   return 1;
 }
 
-static void net_apply_request_options(http_ud_t *ud, http_client_t *client,
-                                      const exprtk_value_t *options,
-                                      const char ***headers_out, int *header_count_out) {
+typedef struct net_http_request_config_s {
+  turbo_http_options_t facade;
+  const char **headers;
+  int header_count;
+  const char *basic_user;
+  const char *basic_pass;
+  const char *bearer_token;
+} net_http_request_config_t;
+
+#define NET_MAX_EXACT_INTEGER 9007199254740991.0
+
+static int net_positive_i64_value(const exprtk_value_t *value, int64_t *out) {
+  if (!value || !out) return 0;
+  if (value->type == EXPRTK_VAL_INTEGER && value->data.integer > 0) {
+    *out = value->data.integer;
+    return 1;
+  }
+  if (value->type == EXPRTK_VAL_NUMBER && isfinite(value->data.number) &&
+      value->data.number >= 1.0 && value->data.number <= NET_MAX_EXACT_INTEGER &&
+      floor(value->data.number) == value->data.number) {
+    *out = (int64_t)value->data.number;
+    return 1;
+  }
+  return 0;
+}
+
+static int net_http_transport_value(const exprtk_value_t *value,
+                                    turbo_http_transport_t *out) {
+  const char *text;
+  size_t len;
+
+  if (!value || !out || value->type != EXPRTK_VAL_STRING) return 0;
+  text = value->data.string.data;
+  len = value->data.string.len;
+  if (len == 4 && tstr_ncasecmp(text, "auto", len) == 0) {
+    *out = TURBO_HTTP_TRANSPORT_AUTO;
+    return 1;
+  }
+  if (len == 2 && tstr_ncasecmp(text, "h1", len) == 0) {
+    *out = TURBO_HTTP_TRANSPORT_H1;
+    return 1;
+  }
+  if (len == 2 && tstr_ncasecmp(text, "h2", len) == 0) {
+    *out = TURBO_HTTP_TRANSPORT_H2;
+    return 1;
+  }
+  return 0;
+}
+
+static int net_parse_request_options(http_ud_t *ud, const exprtk_value_t *options,
+                                     net_http_request_config_t *config) {
   exprtk_value_t value;
   int bool_value;
 
-  *headers_out = NULL;
-  *header_count_out = 0;
-  if (!options || options->type != EXPRTK_VAL_MAP) return;
+  if (!ud || !config) return 0;
+  memset(config, 0, sizeof(*config));
+  if (turbo_http_options_init(&config->facade, sizeof(config->facade)) != TURBO_OK)
+    return 0;
+  if (!options) return 1;
+  if (options->type != EXPRTK_VAL_MAP) return 0;
 
   value = exprtk_map_get(options, "timeout");
-  if (value.type == EXPRTK_VAL_NUMBER) {
-    http_client_set_timeout(client, (int)value.data.number);
-  } else if (value.type == EXPRTK_VAL_INTEGER) {
-    http_client_set_timeout(client, (int)value.data.integer);
+  if (value.type != EXPRTK_VAL_NULL &&
+      !net_positive_i64_value(&value, &config->facade.timeout_ms)) {
+    return 0;
   }
 
   value = exprtk_map_get(options, "follow_redirects");
   if (net_truthy_value(&value, &bool_value)) {
-    http_client_follow_redirects(client, bool_value);
+    config->facade.follow_redirects = bool_value;
+  }
+
+  value = exprtk_map_get(options, "transport");
+  if (value.type != EXPRTK_VAL_NULL &&
+      !net_http_transport_value(&value, &config->facade.transport)) {
+    return 0;
   }
 
   value = exprtk_map_get(options, "headers");
   if (value.type == EXPRTK_VAL_MAP) {
-    if (!net_build_request_headers(ud, &value, headers_out, header_count_out)) {
-      *headers_out = NULL;
-      *header_count_out = 0;
-    }
+    if (!net_build_request_headers(ud, &value, &config->headers,
+                                   &config->header_count)) return 0;
   }
 
   value = exprtk_map_get(options, "basic_auth");
@@ -479,45 +535,60 @@ static void net_apply_request_options(http_ud_t *ud, http_client_t *client,
     exprtk_value_t user = exprtk_map_get(&value, "user");
     exprtk_value_t pass = exprtk_map_get(&value, "pass");
     if (user.type == EXPRTK_VAL_STRING && pass.type == EXPRTK_VAL_STRING) {
-      http_client_set_basic_auth(client, net_arena_cstr(ud->scratch, user.data.string),
-                                 net_arena_cstr(ud->scratch, pass.data.string));
+      config->basic_user = net_arena_cstr(ud->scratch, user.data.string);
+      config->basic_pass = net_arena_cstr(ud->scratch, pass.data.string);
+      if (!config->basic_user || !config->basic_pass) return 0;
     }
   }
 
   value = exprtk_map_get(options, "bearer_token");
   if (value.type == EXPRTK_VAL_STRING) {
-    http_client_set_bearer_token(client, net_arena_cstr(ud->scratch, value.data.string));
+    config->bearer_token = net_arena_cstr(ud->scratch, value.data.string);
+    if (!config->bearer_token) return 0;
   }
+
+  return 1;
+}
+
+static int net_configure_http_client(turbo_http_t *client,
+                                     const net_http_request_config_t *config) {
+  if (!client || !config) return 0;
+  if (config->basic_user &&
+      turbo_http_set_basic_auth(client, config->basic_user, config->basic_pass) != TURBO_OK)
+    return 0;
+  if (config->bearer_token &&
+      turbo_http_set_bearer_token(client, config->bearer_token) != TURBO_OK)
+    return 0;
+  return 1;
 }
 
 static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr_v url_sv,
                                        const tstr_v *body_sv, const exprtk_value_t *options,
                                        int structured_response, exprtk_env_t *env) {
-  http_client_t *client;
+  turbo_http_t *client = NULL;
   http_response_t *resp;
-  const char **headers = NULL;
-  int header_count = 0;
+  net_http_request_config_t config;
+  coro_context_t *coro_ctx;
   char *url;
   const char *body = NULL;
   size_t body_len = 0;
   exprtk_value_t ret = NET_ZERO;
   http_request_control_t control = HTTP_REQUEST_CONTROL_DEFAULT;
   http_ud_t call_ud;
+  int create_result;
 
-  if (!ud || !ud->env) return NET_ZERO;
+  if (!ud || !env) return NET_ZERO;
   call_ud = *ud;
   call_ud.env = env;
   ud = &call_ud;
 
-  client = http_client_create(NULL);
-  if (!client) {
-    return structured_response ? net_error_response_value(ud, "HTTP client create failed")
+  if (!net_parse_request_options(ud, options, &config)) {
+    return structured_response ? net_error_response_value(ud, "invalid HTTP request options")
                                : NET_ZERO;
   }
 
   url = net_arena_cstr(ud->scratch, url_sv);
   if (!url) {
-    http_client_destroy(client);
     return structured_response ? net_error_response_value(ud, "URL allocation failed")
                                : NET_ZERO;
   }
@@ -527,9 +598,24 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
     body_len = body_sv->len;
   }
 
-  net_apply_request_options(ud, client, options, &headers, &header_count);
+  coro_ctx = coro_context_current();
+  create_result = coro_ctx ? turbo_http_create(coro_ctx, &config.facade, &client)
+                           : turbo_http_create_sync(&config.facade, &client);
+  if (create_result != TURBO_OK || !client) {
+    return structured_response ? net_error_response_value(ud, "HTTP facade create failed")
+                               : NET_ZERO;
+  }
+  if (!net_configure_http_client(client, &config)) {
+    turbo_http_destroy(client);
+    return structured_response ? net_error_response_value(ud, "HTTP authentication setup failed")
+                               : NET_ZERO;
+  }
+
   control.cancel_token = turbo_script_current_task_cancel_token();
-  resp = http_request_ex(client, method, url, headers, header_count, body, body_len, &control);
+  resp = coro_ctx ? turbo_http_request_ex(client, method, url, config.headers,
+                                          config.header_count, body, body_len, &control)
+                  : turbo_http_request_sync(client, method, url, config.headers,
+                                            config.header_count, body, body_len);
   if (resp) {
     ret = structured_response ? net_response_value(ud, resp) : copy_response_body(resp, ud->env);
     http_response_free(resp);
@@ -537,7 +623,7 @@ static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr
     ret = net_error_response_value(ud, "HTTP request failed");
   }
 
-  http_client_destroy(client);
+  turbo_http_destroy(client);
   return ret;
 }
 
@@ -689,6 +775,10 @@ static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, exprtk_env_t
   return NET_ONE;
 }
 
+static void net_ws_release_callback_env(exprtk_env_t *callback_env) {
+  if (callback_env) exprtk_env_release(callback_env);
+}
+
 static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
   http_ud_t *ud = (http_ud_t *)user_data;
   const coro_cancel_token_t *owner;
@@ -702,16 +792,20 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
   exprtk_value_t message;
   exprtk_value_t result;
   exprtk_env_t *call_env;
+  exprtk_env_t *callback_env;
 
   if (!ud || !ud->ctx || argc != 2 || args[0].type != EXPRTK_VAL_NUMBER ||
       args[1].type != EXPRTK_VAL_FUNCTION)
     return NET_ZERO;
   call_env = env;
   if (!call_env) return NET_ZERO;
+  callback_env = args[1].data.function.closure_env;
+  if (callback_env) exprtk_env_retain(callback_env);
   owner = turbo_script_current_task_cancel_token();
   client = net_ctx_current_ws_client(ud->ctx, owner);
   if (!client) {
     net_set_error(ud->ctx, "ws client not connected");
+    net_ws_release_callback_env(callback_env);
     return NET_ZERO;
   }
 
@@ -719,6 +813,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
 
   if (timeout_ms < 0) {
     net_set_error(ud->ctx, "ws recv timeout must be non-negative");
+    net_ws_release_callback_env(callback_env);
     return NET_ZERO;
   }
   coro_socket_set_timeout(client, (uint64_t)timeout_ms);
@@ -730,6 +825,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
     if (r != TURBO_OK) {
       net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws recv cancelled"
                                                   : "ws recv cancellation setup failed");
+      net_ws_release_callback_env(callback_env);
       return NET_ZERO;
     }
   }
@@ -740,6 +836,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
     net_set_error(ud->ctx, r == TURBO_ECANCELED ? "ws recv cancelled"
                                                 : "ws recv failed or timeout");
     if (resp) coro_socket_free_recv(resp);
+    net_ws_release_callback_env(callback_env);
     return NET_ZERO;
   }
 
@@ -750,6 +847,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
     snprintf(call_env->error_msg, sizeof(call_env->error_msg),
              "ws.consume: frame size %zu exceeds quota %zu", len,
              call_env->max_external_value_bytes);
+    net_ws_release_callback_env(callback_env);
     return NET_ZERO;
   }
 
@@ -759,6 +857,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
   message = exprtk_val_str(tstr_v_from_buf(resp, len));
   result = exprtk_call_function_value(args[1], 1, &message, call_env);
   coro_socket_free_recv(resp);
+  net_ws_release_callback_env(callback_env);
   net_set_error(ud->ctx, "");
   return result;
 }

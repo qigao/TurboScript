@@ -71,6 +71,21 @@ spec("net_plugin") {
       check_int_eq(err.type, EXPRTK_VAL_STRING);
       check(err.data.string.len > 0);
       exprtk_map_free(&res);
+      exprtk_map_free(&args[1]);
+
+      /* Invalid facade transport names fail before network I/O. */
+      args[1] = exprtk_val_map();
+      exprtk_map_set(&args[1], "transport",
+                     (exprtk_value_t){EXPRTK_VAL_STRING,
+                                      .data.string = {"invalid", 7}});
+      res = fn_http_get->data.native.fn(2, args, &env,
+                                        fn_http_get->data.native.user_data);
+      check_int_eq(res.type, EXPRTK_VAL_MAP);
+      err = exprtk_map_get(&res, "error");
+      check_int_eq(err.type, EXPRTK_VAL_STRING);
+      check(err.data.string.len > 0);
+      exprtk_map_free(&res);
+      exprtk_map_free(&args[1]);
 
       /* Test ws.connect with invalid URL -> returns 0/null */
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "ws://invalid.url.local", 22 }};
@@ -83,6 +98,9 @@ spec("net_plugin") {
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "https://mockhttp.org/", 21 }};
       args[1] = exprtk_val_map();
       exprtk_map_set(&args[1], "timeout", (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 5000});
+      exprtk_map_set(&args[1], "transport",
+                     (exprtk_value_t){EXPRTK_VAL_STRING,
+                                      .data.string = {"auto", 4}});
       res = fn_http_get->data.native.fn(2, args, &env, fn_http_get->data.native.user_data);
       check_int_eq(res.type, EXPRTK_VAL_MAP);
       
@@ -92,6 +110,7 @@ spec("net_plugin") {
       check(status.data.number == 200);
       
       exprtk_map_free(&res);
+      exprtk_map_free(&args[1]);
 
       ts_plugin_unload(h);
       exprtk_env_free(&env);

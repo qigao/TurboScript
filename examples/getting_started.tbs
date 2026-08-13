@@ -1,0 +1,13 @@
+import("ta");
+
+var close = [100, 101, 102, 101, 103, 105, 104, 106, 108, 107,
+             109, 111, 110, 112, 114, 113, 115, 117, 116, 118];
+var sma20 = ta.sma(close, 20);
+var rsi14 = ta.rsi(close, 14);
+
+assert(len(sma20) == len(close), "SMA result length must match input");
+assert(len(rsi14) == len(close), "RSI result length must match input");
+
+print("Price: " + close[len(close) - 1]);
+print("SMA20: " + sma20[len(sma20) - 1]);
+print("RSI14: " + rsi14[len(rsi14) - 1]);

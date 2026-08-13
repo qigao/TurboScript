@@ -5,6 +5,8 @@
 #include "exprtk_module.h"
 #include "ts_internal.h"
 #include "ts.h"
+#include <math.h>
+#include <stdint.h>
 
 static exprtk_value_t fn_ts_diff(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                  mem_pool_t *arena) {
@@ -52,12 +54,21 @@ static exprtk_value_t fn_ts_adf(size_t argc, exprtk_value_t *args, exprtk_env_t 
                                 mem_pool_t *arena) {
   (void)env;
   if (argc == 2 && args[0].type == EXPRTK_VAL_VECTOR) {
-    double *out = MEM_ALLOC_ARRAY(arena, double, 2);
-    if (out) {
-      exprtk_ts_adf(args[0].data.vector.data, args[0].data.vector.size, (size_t)args[1].data.number,
-                    out, arena);
-      return exprtk_val_vec(out, 2);
+    size_t n = args[0].data.vector.size;
+    size_t lag;
+    if (args[1].type == EXPRTK_VAL_INTEGER && args[1].data.integer >= 0 &&
+        (uint64_t)args[1].data.integer <= n) {
+      lag = (size_t)args[1].data.integer;
+    } else if (args[1].type == EXPRTK_VAL_NUMBER && isfinite(args[1].data.number) &&
+               args[1].data.number >= 0.0 && args[1].data.number <= (double)n &&
+               floor(args[1].data.number) == args[1].data.number) {
+      lag = (size_t)args[1].data.number;
+    } else {
+      return exprtk_val_num(0);
     }
+    double *out = MEM_ALLOC_ARRAY(arena, double, 2);
+    if (out && exprtk_ts_adf(args[0].data.vector.data, n, lag, out, arena) == 2)
+      return exprtk_val_vec(out, 2);
   }
   return exprtk_val_num(0);
 }

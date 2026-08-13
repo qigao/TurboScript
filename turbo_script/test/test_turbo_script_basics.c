@@ -14,6 +14,20 @@ typedef struct {
   int result;
 } script_coro_arg_t;
 
+typedef struct {
+  const char *allowed_name;
+  size_t call_count;
+  char last_name[32];
+} plugin_authorizer_probe_t;
+
+static bool test_plugin_authorizer(const char *plugin_name, void *user_data) {
+  plugin_authorizer_probe_t *probe = (plugin_authorizer_probe_t *)user_data;
+  if (!probe || !plugin_name) return false;
+  probe->call_count++;
+  snprintf(probe->last_name, sizeof(probe->last_name), "%s", plugin_name);
+  return probe->allowed_name && strcmp(probe->allowed_name, plugin_name) == 0;
+}
+
 static unsigned long ts_test_nonce(void) {
   static unsigned long counter = 0;
   return ((unsigned long)time(NULL) << 16) ^ (unsigned long)clock() ^ ++counter;
@@ -35,6 +49,52 @@ static exprtk_value_t test_triple_fn(size_t argc, exprtk_value_t *args, exprtk_e
 
 
 spec("turbo_script_basics") {
+  describe("Native plugin authorization") {
+    it("should deny native plugins before load and bypass built-in modules") {
+      plugin_authorizer_probe_t probe = {0};
+      turbo_script_ctx_t *ctx = turbo_script_init_with_plugin_authorizer(
+          TURBO_SCRIPT_INIT_DEFAULT, test_plugin_authorizer, &probe);
+
+      check_not_null(ctx);
+      check_int_eq((int)probe.call_count, 1);
+      check_str_eq(probe.last_name, "parser");
+
+      check_int_eq(turbo_script_load_plugin(ctx, "math"), 0);
+      check_int_eq(turbo_script_run(ctx, "builtin_module = import(\"io\");"), 0);
+      check_int_eq((int)probe.call_count, 1);
+
+      check_int_eq(turbo_script_load_plugin(ctx, "ta"), -1);
+      check_int_eq((int)probe.call_count, 2);
+      check_str_eq(probe.last_name, "ta");
+      check_int_eq((int)turbo_script_get_error_code(ctx),
+                   (int)TURBO_SCRIPT_ERROR_PLUGIN);
+      check_not_null(strstr(turbo_script_get_error(ctx), "ta"));
+      check_not_null(strstr(turbo_script_get_error(ctx), "denied by host policy"));
+
+      check_int_eq(turbo_script_run(ctx, "import(\"ta\");"), -1);
+      check_int_eq((int)probe.call_count, 3);
+      check_not_null(strstr(turbo_script_get_error(ctx), "import 'ta'"));
+      check_not_null(strstr(turbo_script_get_error(ctx), "denied by host policy"));
+      turbo_script_free(ctx);
+    }
+
+    it("should authorize only the first load of a native plugin") {
+      plugin_authorizer_probe_t probe = {.allowed_name = "ta"};
+      turbo_script_ctx_t *ctx = turbo_script_init_with_plugin_authorizer(
+          TURBO_SCRIPT_INIT_BARE, test_plugin_authorizer, &probe);
+
+      check_not_null(ctx);
+      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
+      check_int_eq((int)probe.call_count, 1);
+      check_str_eq(probe.last_name, "ta");
+
+      probe.allowed_name = NULL;
+      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
+      check_int_eq((int)probe.call_count, 1);
+      turbo_script_free(ctx);
+    }
+  }
+
   describe("Memory policy") {
     it("should provide bounded profiles and report usage") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);

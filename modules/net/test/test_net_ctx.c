@@ -31,12 +31,13 @@ spec("net_ctx") {
             net_ctx_t *ctx = net_ctx_create();
             check_null(ctx->client);
 
-            http_client_t *c = net_ctx_ensure_client(ctx);
+            turbo_http_t *c = net_ctx_ensure_client(ctx);
             check_not_null(c);
             check(ctx->client == c);
+            check_not_null(turbo_http_get_context(c));
 
             /* Second call returns same instance */
-            http_client_t *c2 = net_ctx_ensure_client(ctx);
+            turbo_http_t *c2 = net_ctx_ensure_client(ctx);
             check(c == c2);
 
             net_ctx_destroy(ctx);

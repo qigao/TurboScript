@@ -33,7 +33,7 @@ target_include_directories(${TARGET_NAME}
 )
 
 target_link_libraries(${TARGET_NAME}
-    PUBLIC exprtk TurboUtils::Core TurboUtils::Parser
+    PUBLIC exprtk TurboUtils::Core TurboParser::Parser
 )
 
 set_target_properties(${TARGET_NAME} PROPERTIES
@@ -52,7 +52,7 @@ cmake_config_target(
 
 target_link_libraries(${TARGET_NAME_PLUGIN}
     PRIVATE ${TARGET_NAME}
-    PUBLIC exprtk TurboUtils::Core TurboUtils::Parser
+    PUBLIC exprtk TurboUtils::Core TurboParser::Parser
 )
 
 target_include_directories(${TARGET_NAME_PLUGIN}

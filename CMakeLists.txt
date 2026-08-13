@@ -46,6 +46,7 @@ include(CmakeUtils)
 find_package(Threads REQUIRED)
 find_package(TurboUtils CONFIG REQUIRED PATHS "${TURBO_UTILS_ROOT}"
              NO_DEFAULT_PATH)
+find_package(TurboParser CONFIG REQUIRED PATHS "${TURBOPARSER_ROOT}")
 find_package(TurboNet CONFIG REQUIRED PATHS "${TURBONET_ROOT}" NO_DEFAULT_PATH)
 find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}"
              NO_DEFAULT_PATH)

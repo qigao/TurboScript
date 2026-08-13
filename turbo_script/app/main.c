@@ -58,6 +58,13 @@ static int run_scheduled_callbacks(turbo_script_ctx_t *ctx, coro_context_t *coro
     return script_result;
 }
 
+static void print_script_error(turbo_script_ctx_t *ctx, int result) {
+    const char *message;
+    if (!ctx || result >= 0) return;
+    message = turbo_script_get_error(ctx);
+    if (message && message[0] != '\0') fprintf(stderr, "Error: %s\n", message);
+}
+
 typedef enum {
     REPL_REQUEST_EVAL = 0,
     REPL_REQUEST_PRINT_STATS,
@@ -101,8 +108,7 @@ static void repl_runtime_request(void *arg1, void *arg2) {
     switch (request->kind) {
     case REPL_REQUEST_EVAL:
         request->result = turbo_script_run_and_print(runtime->ctx, request->script);
-        if (request->result < 0)
-            fprintf(stderr, "Error: %s\n", turbo_script_get_error(runtime->ctx));
+        print_script_error(runtime->ctx, request->result);
         break;
     case REPL_REQUEST_PRINT_STATS:
         turbo_script_print_jit_stats(runtime->ctx, stdout);
@@ -209,6 +215,7 @@ int main(int argc, char **argv) {
         int res = eval_str ? turbo_script_run(ctx, eval_str)
                            : turbo_script_run_file(ctx, file_path);
         res = run_scheduled_callbacks(ctx, coro_ctx, res);
+        print_script_error(ctx, res);
         if (enable_jit_stats) {
             turbo_script_print_jit_stats(ctx, stdout);
         }

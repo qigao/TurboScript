@@ -23,11 +23,11 @@ img_free(img);
 
 ### 图像句柄 (Handle)
 
-所有图像操作都基于**句柄**（整数），它代表内存中的图像对象：
+所有图像操作都基于**句柄**（整数），它通过内部句柄表引用图像对象：
 
 ```javascript
-let handle = img_load("photo.jpg", 0);  // 返回句柄
-// handle 是一个整数，内部指向图像数据
+let handle = img_load("photo.jpg", 0);  // 返回不透明句柄，失败返回 0
+// 不要构造、修改或重复释放句柄
 ```
 
 ### 内存管理
@@ -237,8 +237,8 @@ function add_watermark(base_img, x, y, size) {
 
 3. **重复释放**
    ```javascript
-   img_free(img);
-   img_free(img);  // 错误: 二次释放！
+img_free(img);
+img_free(img);  // 返回 0：句柄已失效，不会再次释放底层图像
    ```
 
 ## 六、性能提示
