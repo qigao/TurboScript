@@ -70,6 +70,9 @@ spec("net_plugin") {
       exprtk_value_t err = exprtk_map_get(&res, "error");
       check((err.type) == (EXPRTK_VAL_STRING));
       check(err.data.string.len > 0);
+      check(!(err.data.string.len == strlen("invalid HTTP request options") &&
+              memcmp(err.data.string.data, "invalid HTTP request options",
+                     err.data.string.len) == 0));
       exprtk_map_free(&res);
       exprtk_map_free(&args[1]);
 

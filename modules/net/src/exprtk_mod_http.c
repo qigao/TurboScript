@@ -507,44 +507,51 @@ static int net_parse_request_options(http_ud_t *ud, const exprtk_value_t *option
   if (!options) return 1;
   if (options->type != EXPRTK_VAL_MAP) return 0;
 
-  value = exprtk_map_get(options, "timeout");
-  if (value.type != EXPRTK_VAL_NULL &&
-      !net_positive_i64_value(&value, &config->facade.timeout_ms)) {
-    return 0;
+  if (exprtk_map_has(options, "timeout")) {
+    value = exprtk_map_get(options, "timeout");
+    if (!net_positive_i64_value(&value, &config->facade.timeout_ms)) return 0;
   }
 
-  value = exprtk_map_get(options, "follow_redirects");
-  if (net_truthy_value(&value, &bool_value)) {
-    config->facade.follow_redirects = bool_value;
-  }
-
-  value = exprtk_map_get(options, "transport");
-  if (value.type != EXPRTK_VAL_NULL &&
-      !net_http_transport_value(&value, &config->facade.transport)) {
-    return 0;
-  }
-
-  value = exprtk_map_get(options, "headers");
-  if (value.type == EXPRTK_VAL_MAP) {
-    if (!net_build_request_headers(ud, &value, &config->headers,
-                                   &config->header_count)) return 0;
-  }
-
-  value = exprtk_map_get(options, "basic_auth");
-  if (value.type == EXPRTK_VAL_MAP) {
-    exprtk_value_t user = exprtk_map_get(&value, "user");
-    exprtk_value_t pass = exprtk_map_get(&value, "pass");
-    if (user.type == EXPRTK_VAL_STRING && pass.type == EXPRTK_VAL_STRING) {
-      config->basic_user = net_arena_cstr(ud->scratch, user.data.string);
-      config->basic_pass = net_arena_cstr(ud->scratch, pass.data.string);
-      if (!config->basic_user || !config->basic_pass) return 0;
+  if (exprtk_map_has(options, "follow_redirects")) {
+    value = exprtk_map_get(options, "follow_redirects");
+    if (net_truthy_value(&value, &bool_value)) {
+      config->facade.follow_redirects = bool_value;
     }
   }
 
-  value = exprtk_map_get(options, "bearer_token");
-  if (value.type == EXPRTK_VAL_STRING) {
-    config->bearer_token = net_arena_cstr(ud->scratch, value.data.string);
-    if (!config->bearer_token) return 0;
+  if (exprtk_map_has(options, "transport")) {
+    value = exprtk_map_get(options, "transport");
+    if (!net_http_transport_value(&value, &config->facade.transport)) return 0;
+  }
+
+  if (exprtk_map_has(options, "headers")) {
+    value = exprtk_map_get(options, "headers");
+    if (value.type == EXPRTK_VAL_MAP &&
+        !net_build_request_headers(ud, &value, &config->headers,
+                                   &config->header_count)) {
+      return 0;
+    }
+  }
+
+  if (exprtk_map_has(options, "basic_auth")) {
+    value = exprtk_map_get(options, "basic_auth");
+    if (value.type == EXPRTK_VAL_MAP) {
+      exprtk_value_t user = exprtk_map_get(&value, "user");
+      exprtk_value_t pass = exprtk_map_get(&value, "pass");
+      if (user.type == EXPRTK_VAL_STRING && pass.type == EXPRTK_VAL_STRING) {
+        config->basic_user = net_arena_cstr(ud->scratch, user.data.string);
+        config->basic_pass = net_arena_cstr(ud->scratch, pass.data.string);
+        if (!config->basic_user || !config->basic_pass) return 0;
+      }
+    }
+  }
+
+  if (exprtk_map_has(options, "bearer_token")) {
+    value = exprtk_map_get(options, "bearer_token");
+    if (value.type == EXPRTK_VAL_STRING) {
+      config->bearer_token = net_arena_cstr(ud->scratch, value.data.string);
+      if (!config->bearer_token) return 0;
+    }
   }
 
   return 1;
