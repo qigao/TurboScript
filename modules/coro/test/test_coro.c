@@ -24,7 +24,7 @@ static exprtk_value_t test_generator(size_t argc,
     ctx->yield_value = exprtk_val_num(100);
     if (coro_yield() != 0) return exprtk_val_num(-1);
 
-    return exprtk_val_str(tstr_v_from_cstr("done"));
+    return exprtk_val_str(vstr_from_cstr("done"));
 }
 
 static void setup_registry(void) {
@@ -48,9 +48,9 @@ spec("coro_module") {
         it("creates an empty registry and pool") {
             check_not_null(g_registry);
             check_not_null(g_registry->pool);
-            check_int_eq((int)g_registry->count, 0);
+            check(((int)g_registry->count) == (0));
             check(g_registry->capacity >= 16);
-            check_int_eq(g_registry->next_id, 1);
+            check((g_registry->next_id) == (1));
         }
 
         it("adds, finds, and removes a context") {
@@ -62,13 +62,13 @@ spec("coro_module") {
             check_not_null(ctx);
 
             ctx->id = g_registry->next_id++;
-            check_int_eq(coro_registry_add(g_registry, ctx), 0);
+            check((coro_registry_add(g_registry, ctx)) == (0));
             check(coro_registry_find(g_registry, ctx->id) == ctx);
-            check_int_eq((int)g_registry->count, 1);
+            check(((int)g_registry->count) == (1));
 
             coro_registry_remove(g_registry, ctx->id);
             check_null(coro_registry_find(g_registry, ctx->id));
-            check_int_eq((int)g_registry->count, 0);
+            check(((int)g_registry->count) == (0));
             coro_ctx_destroy(ctx);
             exprtk_env_free(&env);
         }
@@ -83,9 +83,9 @@ spec("coro_module") {
             ctx = coro_ctx_create(&env, "generator", 0);
             check_not_null(ctx);
             check_not_null(ctx->coro);
-            check_str_eq(ctx->func_name, "generator");
-            check_int_eq(coro_ctx_status(ctx), 0);
-            check_int_eq(ctx->pooled, 0);
+            check(strcmp((ctx->func_name), ("generator")) == 0);
+            check((coro_ctx_status(ctx)) == (0));
+            check((ctx->pooled) == (0));
 
             coro_ctx_destroy(ctx);
             exprtk_env_free(&env);
@@ -99,8 +99,8 @@ spec("coro_module") {
             ctx = coro_ctx_create_pooled(&env, "generator", 128 * 1024,
                                          g_registry->pool);
             check_not_null(ctx);
-            check_int_eq(ctx->pooled, 0);
-            check_int_eq((int)turbo_coro_pool_active_count(g_registry->pool), 0);
+            check((ctx->pooled) == (0));
+            check(((int)turbo_coro_pool_active_count(g_registry->pool)) == (0));
 
             coro_ctx_destroy(ctx);
             exprtk_env_free(&env);
@@ -113,11 +113,11 @@ spec("coro_module") {
             exprtk_env_init(&env);
             ctx = coro_ctx_create_pooled(&env, "generator", 0, g_registry->pool);
             check_not_null(ctx);
-            check_int_eq(ctx->pooled, 1);
-            check_int_eq((int)turbo_coro_pool_active_count(g_registry->pool), 1);
+            check((ctx->pooled) == (1));
+            check(((int)turbo_coro_pool_active_count(g_registry->pool)) == (1));
 
             coro_ctx_destroy(ctx);
-            check_int_eq((int)turbo_coro_pool_active_count(g_registry->pool), 0);
+            check(((int)turbo_coro_pool_active_count(g_registry->pool)) == (0));
             exprtk_env_free(&env);
         }
     }
@@ -133,30 +133,30 @@ spec("coro_module") {
             ctx = coro_ctx_create_pooled(&env, "generator", 0, g_registry->pool);
             check_not_null(ctx);
 
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_state(ctx->coro), coro_SUSPENDED);
-            check_int_eq(ctx->yield_value.type, EXPRTK_VAL_NUMBER);
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_state(ctx->coro)) == (coro_SUSPENDED));
+            check((ctx->yield_value.type) == (EXPRTK_VAL_NUMBER));
             check(ctx->yield_value.data.number == 42);
 
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_state(ctx->coro), coro_SUSPENDED);
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_state(ctx->coro)) == (coro_SUSPENDED));
             check(ctx->yield_value.data.number == 100);
 
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_state(ctx->coro), coro_DEAD);
-            check_int_eq(ctx->return_value.type, EXPRTK_VAL_STRING);
-            check_int_eq((int)turbo_coro_pool_active_count(g_registry->pool), 1);
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_state(ctx->coro)) == (coro_DEAD));
+            check((ctx->return_value.type) == (EXPRTK_VAL_STRING));
+            check(((int)turbo_coro_pool_active_count(g_registry->pool)) == (1));
 
             released_coro = ctx->coro;
             coro_ctx_destroy(ctx);
-            check_int_eq((int)turbo_coro_pool_active_count(g_registry->pool), 0);
+            check(((int)turbo_coro_pool_active_count(g_registry->pool)) == (0));
 
             ctx = coro_ctx_create_pooled(&env, "generator", 0, g_registry->pool);
             check_not_null(ctx);
-            check_ptr_eq(ctx->coro, released_coro);
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_resume(ctx->coro), 0);
+            check((ctx->coro) == (released_coro));
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_resume(ctx->coro)) == (0));
             coro_ctx_destroy(ctx);
             exprtk_env_free(&env);
         }
@@ -168,10 +168,10 @@ spec("coro_module") {
             exprtk_env_init(&env);
             ctx = coro_ctx_create(&env, "missing", 0);
             check_not_null(ctx);
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_state(ctx->coro), coro_DEAD);
-            check_int_eq(ctx->return_value.type, EXPRTK_VAL_STRING);
-            check_str_eq(ctx->error_msg, "coroutine function not found");
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_state(ctx->coro)) == (coro_DEAD));
+            check((ctx->return_value.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((ctx->error_msg), ("coroutine function not found")) == 0);
 
             coro_ctx_destroy(ctx);
             exprtk_env_free(&env);
@@ -186,9 +186,9 @@ spec("coro_module") {
             ctx = coro_ctx_create(&env, "generator", 0);
             check_not_null(ctx);
 
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_resume(ctx->coro), 0);
-            check_int_eq(coro_resume(ctx->coro), 0);
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_resume(ctx->coro)) == (0));
+            check((coro_resume(ctx->coro)) == (0));
             check(coro_resume(ctx->coro) != 0);
 
             coro_ctx_destroy(ctx);

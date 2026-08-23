@@ -66,7 +66,7 @@ spec("turbo_script_quant") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("SMA Crossover Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       // After pullback and recovery, fast SMA should be above slow SMA
       double signal = ts_get_num(ctx, "signal");
@@ -74,11 +74,11 @@ spec("turbo_script_quant") {
 
       double rsi_last = ts_get_num(ctx, "rsi_last");
       printf("  RSI(14): %.2f\n", rsi_last);
-      check_float_gt(rsi_last, 0.0); // RSI should be valid
+      check((rsi_last) > (0.0)); // RSI should be valid
 
       double vol_last = ts_get_num(ctx, "vol_last");
       printf("  Volatility (StdDev): %.4f\n", vol_last);
-      check_float_gt(vol_last, 0.0); // StdDev should be positive
+      check((vol_last) > (0.0)); // StdDev should be positive
 
       turbo_script_free(ctx);
     }
@@ -106,7 +106,7 @@ spec("turbo_script_quant") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("RSI Screener Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double rsi_a = ts_get_num(ctx, "rsi_a_last");
       double rsi_b = ts_get_num(ctx, "rsi_b_last");
@@ -114,7 +114,7 @@ spec("turbo_script_quant") {
       printf("  Stock B RSI: %.2f (uptrend)\n", rsi_b);
 
       // Downtrend stock should have lower RSI than uptrend stock
-      check_float_lt(rsi_a, rsi_b);
+      check((rsi_a) < (rsi_b));
 
       turbo_script_free(ctx);
     }
@@ -160,7 +160,7 @@ spec("turbo_script_quant") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Confluence Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double total = ts_get_num(ctx, "total_score");
       double trend = ts_get_num(ctx, "trend_score");
@@ -175,7 +175,7 @@ spec("turbo_script_quant") {
       printf("    Position: %.0f/25\n", pos);
 
       // In a clear uptrend, the total score should be high
-      check_float_gt(total, 50.0);
+      check((total) > (50.0));
 
       turbo_script_free(ctx);
     }
@@ -208,7 +208,7 @@ spec("turbo_script_quant") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Options Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double call_p = ts_get_num(ctx, "call_price");
       double put_p = ts_get_num(ctx, "put_price");
@@ -223,14 +223,14 @@ spec("turbo_script_quant") {
       printf("  Delta Put:  %.4f\n", dp);
 
       // Put-call parity check: C - P ≈ 4.877
-      check_float_eq(parity, 4.877, 0.1);
+      check(fabs((double)(parity) - (double)(4.877)) <= (double)(0.1));
 
       // Call should be more expensive than put for ATM with positive rate
-      check_float_gt(call_p, put_p);
+      check((call_p) > (put_p));
 
       // Delta parity: delta_c - delta_p ≈ 1
       double delta_parity = ts_get_num(ctx, "delta_parity");
-      check_float_eq(delta_parity, 1.0, 0.05);
+      check(fabs((double)(delta_parity) - (double)(1.0)) <= (double)(0.05));
 
       turbo_script_free(ctx);
     }
@@ -263,7 +263,7 @@ spec("turbo_script_quant") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("CSV Pipeline Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double last_price = ts_get_num(ctx, "last_price");
       double last_sma = ts_get_num(ctx, "last_sma");
@@ -275,7 +275,7 @@ spec("turbo_script_quant") {
       printf("  EMA(3):    %.2f\n", last_ema);
       printf("  Trend:     %s\n", trend > 0 ? "BULLISH" : "BEARISH");
 
-      check_float_eq(last_price, 112.0, 0.1);
+      check(fabs((double)(last_price) - (double)(112.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -289,8 +289,8 @@ spec("turbo_script_quant") {
                            "}"
                            "res = double_val(21);";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(42.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -302,8 +302,8 @@ spec("turbo_script_quant") {
                            "};"
                            "res = factorial(5);";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 120.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(120.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -322,9 +322,9 @@ spec("turbo_script_quant") {
                            "res = square(5); "
                            "ver = MODULE_VERSION;";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 25.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "ver"), 2.0, 0.1);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(25.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "ver")) - (double)(2.0)) <= (double)(0.1));
 
       // Clean up
       turbo_script_run(ctx, "file_remove(\"utils.tbs\");");
@@ -344,28 +344,28 @@ spec("turbo_script_quant") {
       turbo_fs_buf_t buf;
 
       ts_test_make_name(root_dir, sizeof(root_dir), "_ts_import_rel", "");
-      check_int_eq(turbo_fs_mkdir(root_dir, 0755), 0);
-      check_int_eq(turbo_fs_path_join(sub_dir, sizeof(sub_dir), root_dir, "sub"), 0);
-      check_int_eq(turbo_fs_mkdir(sub_dir, 0755), 0);
-      check_int_eq(turbo_fs_path_join(main_path, sizeof(main_path), root_dir, "main.tbs"), 0);
-      check_int_eq(turbo_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.tbs"), 0);
-      check_int_eq(turbo_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.tbs"), 0);
+      check((turbo_fs_mkdir(root_dir, 0755)) == (0));
+      check((turbo_fs_path_join(sub_dir, sizeof(sub_dir), root_dir, "sub")) == (0));
+      check((turbo_fs_mkdir(sub_dir, 0755)) == (0));
+      check((turbo_fs_path_join(main_path, sizeof(main_path), root_dir, "main.tbs")) == (0));
+      check((turbo_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.tbs")) == (0));
+      check((turbo_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.tbs")) == (0));
 
       buf = turbo_fs_buf_init((char *)util_src, strlen(util_src));
-      check_int_eq(turbo_fs_write_file(util_path, &buf), 0);
+      check((turbo_fs_write_file(util_path, &buf)) == (0));
       buf = turbo_fs_buf_init((char *)child_src, strlen(child_src));
-      check_int_eq(turbo_fs_write_file(child_path, &buf), 0);
+      check((turbo_fs_write_file(child_path, &buf)) == (0));
       buf = turbo_fs_buf_init((char *)main_src, strlen(main_src));
-      check_int_eq(turbo_fs_write_file(main_path, &buf), 0);
+      check((turbo_fs_write_file(main_path, &buf)) == (0));
 
-      check_int_eq(turbo_script_run_file(ctx, main_path), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 8.0, 0.001);
+      check((turbo_script_run_file(ctx, main_path)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(8.0)) <= (double)(0.001));
 
-      check_int_eq(turbo_fs_unlink(main_path), 0);
-      check_int_eq(turbo_fs_unlink(child_path), 0);
-      check_int_eq(turbo_fs_unlink(util_path), 0);
-      check_int_eq(turbo_fs_rmdir(sub_dir), 0);
-      check_int_eq(turbo_fs_rmdir(root_dir), 0);
+      check((turbo_fs_unlink(main_path)) == (0));
+      check((turbo_fs_unlink(child_path)) == (0));
+      check((turbo_fs_unlink(util_path)) == (0));
+      check((turbo_fs_rmdir(sub_dir)) == (0));
+      check((turbo_fs_rmdir(root_dir)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -374,8 +374,8 @@ spec("turbo_script_quant") {
 
       turbo_script_run(ctx, "write_file(\"legacy.ts\", \"legacy_value = 7;\");");
 
-      check_int_eq(turbo_script_run(ctx, "import(\"legacy.ts\");"), -1);
-      check_float_eq(ts_get_num(ctx, "legacy_value"), 0.0, 0.001);
+      check((turbo_script_run(ctx, "import(\"legacy.ts\");")) == (-1));
+      check(fabs((double)(ts_get_num(ctx, "legacy_value")) - (double)(0.0)) <= (double)(0.001));
 
       turbo_script_run(ctx, "file_remove(\"legacy.ts\");");
       turbo_script_free(ctx);
@@ -394,7 +394,7 @@ spec("turbo_script_quant") {
 
       ts_test_make_name(module_path, sizeof(module_path), "_ts_export_mod", ".tbs");
       buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
-      check_int_eq(turbo_fs_write_file(module_path, &buf), 0);
+      check((turbo_fs_write_file(module_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
                "var m1 = import(\"%s\"); "
@@ -404,11 +404,11 @@ spec("turbo_script_quant") {
                "var loads = m2.load_count;",
                module_path, module_path);
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 46.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "loads"), 1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(46.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "loads")) - (double)(1.0)) <= (double)(0.001));
 
-      check_int_eq(turbo_fs_unlink(module_path), 0);
+      check((turbo_fs_unlink(module_path)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -425,7 +425,7 @@ spec("turbo_script_quant") {
 
       ts_test_make_name(module_path, sizeof(module_path), "_ts_isolated_mod", ".tbs");
       buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
-      check_int_eq(turbo_fs_write_file(module_path, &buf), 0);
+      check((turbo_fs_write_file(module_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
                "shared = 7; "
@@ -437,13 +437,13 @@ spec("turbo_script_quant") {
                "var leaked_secret = secret;",
                module_path);
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "out"), 8.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "exported_shared"), 99.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "global_shared"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "leaked_secret"), 0.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "out")) - (double)(8.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "exported_shared")) - (double)(99.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "global_shared")) - (double)(7.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "leaked_secret")) - (double)(0.0)) <= (double)(0.001));
 
-      check_int_eq(turbo_fs_unlink(module_path), 0);
+      check((turbo_fs_unlink(module_path)) == (0));
       turbo_script_free(ctx);
     }
   }
@@ -457,11 +457,11 @@ spec("turbo_script_quant") {
       ts_bind_num(ctx, "x", 5.0);
       turbo_script_exec(ctx, compiled);
 
-      check_float_eq(ts_get_num(ctx, "y"), 10.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(10.0)) <= (double)(0.001));
 
       ts_bind_num(ctx, "x", 100.0);
       turbo_script_exec(ctx, compiled);
-      check_float_eq(ts_get_num(ctx, "y"), 200.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(200.0)) <= (double)(0.001));
 
       turbo_script_compiled_free(compiled);
       turbo_script_free(ctx);
@@ -479,30 +479,28 @@ spec("turbo_script_quant") {
     it("should inject double[] from C and read back from script") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       double data[] = {1.0, 2.0, 3.0, 4.0, 5.0};
-      check_int_eq(ts_bind_vec(ctx, "v", data, 5), 0);
+      check((ts_bind_vec(ctx, "v", data, 5)) == (0));
 
-      check_int_eq(turbo_script_run(ctx, "s = "
-                                         "vec.sum(v); a = vec.avg(v);"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "s"), 15.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a"), 3.0, 0.001);
+      check((turbo_script_run(ctx, "s = "
+                                         "vec.sum(v); a = vec.avg(v);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "s")) - (double)(15.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a")) - (double)(3.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
 
     it("should extract vector from script back to C") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_run(ctx, "v = "
-                                         "split(\"10,20,30\", \",\");"),
-                   0);
+      check((turbo_script_run(ctx, "v = "
+                                         "split(\"10,20,30\", \",\");")) == (0));
 
       const double *out = NULL;
       size_t out_len = 0;
-      check_int_eq(ts_get_vec(ctx, "v", &out, &out_len), 0);
-      check_int_eq((int)out_len, 3);
-      check_float_eq(out[0], 10.0, 0.001);
-      check_float_eq(out[1], 20.0, 0.001);
-      check_float_eq(out[2], 30.0, 0.001);
+      check((ts_get_vec(ctx, "v", &out, &out_len)) == (0));
+      check(((int)out_len) == (3));
+      check(fabs((double)(out[0]) - (double)(10.0)) <= (double)(0.001));
+      check(fabs((double)(out[1]) - (double)(20.0)) <= (double)(0.001));
+      check(fabs((double)(out[2]) - (double)(30.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -511,7 +509,7 @@ spec("turbo_script_quant") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const double *out = NULL;
       size_t out_len = 0;
-      check_int_eq(ts_get_vec(ctx, "nonexistent", &out, &out_len), -1);
+      check((ts_get_vec(ctx, "nonexistent", &out, &out_len)) == (-1));
       turbo_script_free(ctx);
     }
   }
@@ -522,7 +520,7 @@ spec("turbo_script_quant") {
       ts_bind_str(ctx, "greeting", "hello world");
       const char *val = ts_get_str(ctx, "greeting");
       check_not_null(val);
-      check_int_eq(strcmp(val, "hello world"), 0);
+      check((strcmp(val, "hello world")) == (0));
       turbo_script_free(ctx);
     }
 
@@ -540,8 +538,8 @@ spec("turbo_script_quant") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
 
       ts_bind_func(ctx, "triple", test_triple_fn, NULL);
-      check_int_eq(turbo_script_run(ctx, "r = triple(7);"), 0);
-      check_float_eq(ts_get_num(ctx, "r"), 21.0, 0.001);
+      check((turbo_script_run(ctx, "r = triple(7);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(21.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -551,7 +549,7 @@ spec("turbo_script_quant") {
     it("should abort on wrong arg type") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       int res = turbo_script_run(ctx, "r = vec.avg(42);");
-      check_int_eq(res, -1);
+      check((res) == (-1));
       turbo_script_free(ctx);
     }
 
@@ -559,7 +557,7 @@ spec("turbo_script_quant") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       int res = turbo_script_run(ctx, "data = "
                                       "read_file(\"nonexistent_file_xyz.txt\");");
-      check_int_eq(res, 0);
+      check((res) == (0));
       turbo_script_free(ctx);
     }
   }
@@ -572,8 +570,8 @@ spec("turbo_script_quant") {
                            "x -= 3; " // 12
                            "x *= 2; " // 24
                            "x /= 4;"; // 6
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "x"), 6.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "x")) - (double)(6.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -585,8 +583,8 @@ spec("turbo_script_quant") {
                            "for (i = 0; i < 10; i += 1) { "
                            "  sum += i; "
                            "}";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "sum"), 45.0, 0.001); // 0+1+...+9
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "sum")) - (double)(45.0)) <= (double)(0.001)); // 0+1+...+9
       turbo_script_free(ctx);
     }
   }
@@ -598,9 +596,9 @@ spec("turbo_script_quant") {
                            "s = v[1..4]; "
                            "l = vec.len(s); "
                            "total = vec.sum(s);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "l"), 3.0, 0.001);      // elements at index 1,2,3
-      check_float_eq(ts_get_num(ctx, "total"), 90.0, 0.001); // 20+30+40
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "l")) - (double)(3.0)) <= (double)(0.001));      // elements at index 1,2,3
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(90.0)) <= (double)(0.001)); // 20+30+40
       turbo_script_free(ctx);
     }
   }
@@ -621,13 +619,13 @@ spec("turbo_script_quant") {
                            "tl1 = if (l1) { 1 } else { 0 };";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Container contract Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "miss1"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "miss2"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tm0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tm1"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tl0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tl1"), 1.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "miss1")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "miss2")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "tm0")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "tm1")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "tl0")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "tl1")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -646,7 +644,7 @@ spec("turbo_script_quant") {
           "k = strategy.kelly(0.6, 0.02, 0.015);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Risk Metrics Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double vh = ts_get_num(ctx, "vh");
       double vp = ts_get_num(ctx, "vp");
@@ -658,9 +656,9 @@ spec("turbo_script_quant") {
       printf("  Kelly: %.4f\n", k);
 
       // VaR should be positive (loss magnitude)
-      check_float_gt(vh, 0.0);
+      check((vh) > (0.0));
       // Kelly should be positive for profitable strategy
-      check_float_gt(k, 0.0);
+      check((k) > (0.0));
 
       turbo_script_free(ctx);
     }
@@ -674,13 +672,13 @@ spec("turbo_script_quant") {
                            "dd_stats = strategy.drawdown_stats(equity);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Drawdown Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       // dd should be a vector of same length
       const double *dd_data = NULL;
       size_t dd_len = 0;
-      check_int_eq(ts_get_vec(ctx, "dd", &dd_data, &dd_len), 0);
-      check_int_eq((int)dd_len, 10);
+      check((ts_get_vec(ctx, "dd", &dd_data, &dd_len)) == (0));
+      check(((int)dd_len) == (10));
 
       turbo_script_free(ctx);
     }
@@ -698,10 +696,10 @@ spec("turbo_script_quant") {
                            "cu_len = vec.len(cu);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Signal Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "co_len"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cu_len"), 7.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "co_len")) - (double)(7.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cu_len")) - (double)(7.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -723,10 +721,10 @@ spec("turbo_script_quant") {
           "hammer_len = vec.len(hammer);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Candle Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "doji_len"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "hammer_len"), 5.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "doji_len")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "hammer_len")) - (double)(5.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -743,17 +741,17 @@ spec("turbo_script_quant") {
           "w_len = vec.len(w);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Portfolio Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       const double *w_data = NULL;
       size_t w_len = 0;
-      check_int_eq(ts_get_vec(ctx, "w", &w_data, &w_len), 0);
-      check_int_eq((int)w_len, 2);
+      check((ts_get_vec(ctx, "w", &w_data, &w_len)) == (0));
+      check(((int)w_len) == (2));
 
       // Weights should sum to ~1
       double w_sum = w_data[0] + w_data[1];
       printf("  Weights: [%.4f, %.4f] sum=%.4f\n", w_data[0], w_data[1], w_sum);
-      check_float_eq(w_sum, 1.0, 0.05);
+      check(fabs((double)(w_sum) - (double)(1.0)) <= (double)(0.05));
 
       turbo_script_free(ctx);
     }
@@ -767,27 +765,27 @@ spec("turbo_script_quant") {
           "w = strategy.pf_min_variance(cov);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Portfolio 3 Asset Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       const double *w_data = NULL;
       size_t w_len = 0;
-      check_int_eq(ts_get_vec(ctx, "w", &w_data, &w_len), 0);
-      check_int_eq((int)w_len, 3);
-      check_float_eq(w_data[0] + w_data[1] + w_data[2], 1.0, 0.001);
+      check((ts_get_vec(ctx, "w", &w_data, &w_len)) == (0));
+      check(((int)w_len) == (3));
+      check(fabs((double)(w_data[0] + w_data[1] + w_data[2]) - (double)(1.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
 
     it("should not expose finance risk helpers through ta aliases") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq(turbo_script_load_plugin(ctx, "fin"), 0);
+      check((turbo_script_load_plugin(ctx, "ta")) == (0));
+      check((turbo_script_load_plugin(ctx, "fin")) == (0));
 
       const char *script = "returns = [-0.02, 0.01, -0.03]; "
                            "bad = try { ta.var_hist(returns, 0.95); 0 } catch (e) { 1 };";
       int res = turbo_script_run(ctx, script);
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "bad"), 1.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "bad")) - (double)(1.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }

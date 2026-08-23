@@ -25,9 +25,9 @@ spec("os_module") {
             exprtk_value_t result;
 
             check_not_null(fn);
-            check_int_eq(mem_init(&arena, 4096), 0);
+            check((mem_init(&arena, 4096)) == (0));
             result = fn(0, NULL, NULL, &arena);
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
+            check((result.type) == (EXPRTK_VAL_STRING));
             check(result.data.string.len > 0);
             mem_destroy(&arena);
         }
@@ -39,10 +39,10 @@ spec("os_module") {
             exprtk_value_t result;
 
             check_not_null(fn);
-            check_int_eq(mem_init(&arena, 4096), 0);
+            check((mem_init(&arena, 4096)) == (0));
             result = fn(1, &arg, NULL, &arena);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             mem_destroy(&arena);
         }
     }
@@ -63,35 +63,35 @@ spec("os_module") {
             os_module_load(module, &env, NULL);
 
 #ifdef _WIN32
-            start_args[0] = exprtk_val_str(tstr_v_from_cstr("cmd.exe"));
-            start_args[1] = exprtk_val_str(tstr_v_from_cstr("/c"));
-            start_args[2] = exprtk_val_str(tstr_v_from_cstr("echo os-module"));
+            start_args[0] = exprtk_val_str(vstr_from_cstr("cmd.exe"));
+            start_args[1] = exprtk_val_str(vstr_from_cstr("/c"));
+            start_args[2] = exprtk_val_str(vstr_from_cstr("echo os-module"));
             result = exprtk_call_internal("os.process_start", 3, start_args, &env);
 #else
-            start_args[0] = exprtk_val_str(tstr_v_from_cstr("/bin/echo"));
-            start_args[1] = exprtk_val_str(tstr_v_from_cstr("os-module"));
+            start_args[0] = exprtk_val_str(vstr_from_cstr("/bin/echo"));
+            start_args[1] = exprtk_val_str(vstr_from_cstr("os-module"));
             result = exprtk_call_internal("os.process_start", 2, start_args, &env);
 #endif
-            check_int_eq(result.type, EXPRTK_VAL_INTEGER);
+            check((result.type) == (EXPRTK_VAL_INTEGER));
             check(result.data.integer > 0);
             process_id = result.data.integer;
             exprtk_value_destroy(&result);
 
             wait_args[0] = exprtk_val_int(process_id);
             result = exprtk_call_internal("os.process_wait", 1, wait_args, &env);
-            check_int_eq(result.type, EXPRTK_VAL_MAP);
+            check((result.type) == (EXPRTK_VAL_MAP));
             field = exprtk_map_get(&result, "running");
-            check_int_eq(field.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(field.data.number, 0.0, 0.001);
+            check((field.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(field.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.process_read_stdout", 1, wait_args, &env);
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_contains(result.data.string.data, "os-module");
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check_contains(result.data.string.data, "os-module");
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.process_close", 1, wait_args, &env);
-            check_float_eq(result.data.number, 1.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(1.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
             os_module_destroy(module);
             exprtk_env_free(&env);
@@ -101,7 +101,7 @@ spec("os_module") {
     describe("service controls") {
         it("reject empty service names before invoking the service manager") {
             exprtk_env_t env;
-            exprtk_value_t empty_name = exprtk_val_str(tstr_v_from_cstr(""));
+            exprtk_value_t empty_name = exprtk_val_str(vstr_from_cstr(""));
             exprtk_value_t result;
             void *module;
 
@@ -111,23 +111,23 @@ spec("os_module") {
             os_module_load(module, &env, NULL);
 
             result = exprtk_call_internal("os.service_start", 1, &empty_name, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.service_stop", 1, &empty_name, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.reboot", 1, &empty_name, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.shutdown", 1, &empty_name, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             os_module_destroy(module);
@@ -150,33 +150,33 @@ spec("os_module") {
             check_not_null(module);
             os_module_load(module, &env, NULL);
 
-            args[0] = exprtk_val_str(tstr_v_from_cstr("reboot"));
-            args[1] = exprtk_val_str(tstr_v_from_cstr("0 0 1 1 *"));
+            args[0] = exprtk_val_str(vstr_from_cstr("reboot"));
+            args[1] = exprtk_val_str(vstr_from_cstr("0 0 1 1 *"));
             result = exprtk_call_internal("os.power_schedule", 2, args, &env);
-            check_int_eq(result.type, EXPRTK_VAL_INTEGER);
+            check((result.type) == (EXPRTK_VAL_INTEGER));
             check(result.data.integer > 0);
             schedule_id = result.data.integer;
             exprtk_value_destroy(&result);
 
             cancel_arg = exprtk_val_int(schedule_id);
             result = exprtk_call_internal("os.power_schedule_status", 1, &cancel_arg, &env);
-            check_int_eq(result.type, EXPRTK_VAL_MAP);
+            check((result.type) == (EXPRTK_VAL_MAP));
             field = exprtk_map_get(&result, "active");
-            check_int_eq(field.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(field.data.number, 1.0, 0.001);
+            check((field.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(field.data.number) - (double)(1.0)) <= (double)(0.001));
             field = exprtk_map_get(&result, "fire_count");
-            check_int_eq(field.type, EXPRTK_VAL_INTEGER);
-            check_int_eq(field.data.integer, 0);
+            check((field.type) == (EXPRTK_VAL_INTEGER));
+            check((field.data.integer) == (0));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.power_schedule_cancel", 1, &cancel_arg, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 1.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(1.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
             result = exprtk_call_internal("os.power_schedule_status", 1, &cancel_arg, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
             os_module_destroy(module);
             exprtk_env_free(&env);
@@ -193,18 +193,18 @@ spec("os_module") {
             check_not_null(module);
             os_module_load(module, &env, NULL);
 
-            args[0] = exprtk_val_str(tstr_v_from_cstr("hibernate"));
-            args[1] = exprtk_val_str(tstr_v_from_cstr("0 0 1 1 *"));
+            args[0] = exprtk_val_str(vstr_from_cstr("hibernate"));
+            args[1] = exprtk_val_str(vstr_from_cstr("0 0 1 1 *"));
             result = exprtk_call_internal("os.power_schedule", 2, args, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
 
-            args[0] = exprtk_val_str(tstr_v_from_cstr("shutdown"));
-            args[1] = exprtk_val_str(tstr_v_from_cstr("invalid cron"));
+            args[0] = exprtk_val_str(vstr_from_cstr("shutdown"));
+            args[1] = exprtk_val_str(vstr_from_cstr("invalid cron"));
             result = exprtk_call_internal("os.power_schedule", 2, args, &env);
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
             exprtk_value_destroy(&result);
             os_module_destroy(module);
             exprtk_env_free(&env);

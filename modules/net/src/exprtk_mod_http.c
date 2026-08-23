@@ -46,7 +46,7 @@ static exprtk_value_t net_null_value(void) {
 
 static exprtk_value_t net_make_string_value(exprtk_env_t *env, const char *data, size_t len) {
   exprtk_value_t value;
-  exprtk_value_t borrowed = exprtk_val_str(tstr_v_from_buf(data ? data : "", len));
+  exprtk_value_t borrowed = exprtk_val_str(vstr_from_buf(data ? data : "", len));
   if (!env || (!data && len != 0)) return NET_ZERO;
   if (len > env->max_external_value_bytes) {
     env->aborted = 1;
@@ -562,8 +562,8 @@ static int net_configure_http_client(turbo_http_t *client,
   return 1;
 }
 
-static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, tstr_v url_sv,
-                                       const tstr_v *body_sv, const exprtk_value_t *options,
+static exprtk_value_t net_http_request(http_ud_t *ud, http_method_t method, vstr url_sv,
+                                       const vstr *body_sv, const exprtk_value_t *options,
                                        int structured_response, exprtk_env_t *env) {
   turbo_http_t *client = NULL;
   http_response_t *resp;
@@ -741,7 +741,7 @@ static exprtk_value_t fn_ws_send(size_t argc, exprtk_value_t *args, exprtk_env_t
   const coro_cancel_token_t *owner;
   coro_cancel_registration_t *cancel_registration = NULL;
   coro_socket_t *client;
-  tstr_v payload;
+  vstr payload;
   int r;
 
   if (!ud || !ud->ctx || argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
@@ -854,7 +854,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
   /* The transport buffer is borrowed only for this callback. Script function
    * argument binding copies it into the callback-local environment; only a
    * value explicitly returned by the callback may escape into the task env. */
-  message = exprtk_val_str(tstr_v_from_buf(resp, len));
+  message = exprtk_val_str(vstr_from_buf(resp, len));
   result = exprtk_call_function_value(args[1], 1, &message, call_env);
   coro_socket_free_recv(resp);
   net_ws_release_callback_env(callback_env);

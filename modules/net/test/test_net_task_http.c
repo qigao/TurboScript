@@ -85,24 +85,23 @@ spec("net_task_http") {
       }
 
       turbo_script_set_coro_context(script_ctx, coro_ctx);
-      check_int_eq(turbo_script_load_plugin(script_ctx, "net"), 0);
+      check((turbo_script_load_plugin(script_ctx, "net")) == (0));
       snprintf(script, sizeof(script),
                "request_task = task.spawn(() => "
                "  http.get(\"http://127.0.0.1:%d/ok\", "
                "           map { timeout: %d, transport: \"h1\" })"
                ");",
                port, NET_TASK_HTTP_REQUEST_TIMEOUT_MS);
-      check_int_eq(turbo_script_run(script_ctx, script), 0);
+      check((turbo_script_run(script_ctx, script)) == (0));
       net_task_http_run_until(coro_ctx, script_ctx, NET_TASK_HTTP_TIMEOUT_MS);
-      check_size_eq(turbo_script_task_active_count(script_ctx), 0);
-      check_size_eq(turbo_script_task_failed_count(script_ctx), 0);
-      check_int_eq(turbo_script_run(script_ctx,
+      check((turbo_script_task_active_count(script_ctx)) == (0));
+      check((turbo_script_task_failed_count(script_ctx)) == (0));
+      check((turbo_script_run(script_ctx,
                                     "response = task.result(request_task);"
                                     "response_status = response.status;"
-                                    "response_body = response.body;"),
-                   0);
-      check_float_eq(ts_get_num(script_ctx, "response_status"), 200.0, 0.001);
-      check_str_eq(ts_get_str(script_ctx, "response_body"), "facade-ok");
+                                    "response_body = response.body;")) == (0));
+      check(fabs((double)(ts_get_num(script_ctx, "response_status")) - (double)(200.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(script_ctx, "response_body")), ("facade-ok")) == 0);
 
       net_task_http_stop_server(coro_ctx, server);
       check_true(coro_socket_server_is_stopped(server));
@@ -136,24 +135,23 @@ spec("net_task_http") {
       }
 
       turbo_script_set_coro_context(script_ctx, coro_ctx);
-      check_int_eq(turbo_script_load_plugin(script_ctx, "net"), 0);
+      check((turbo_script_load_plugin(script_ctx, "net")) == (0));
       snprintf(script, sizeof(script),
                "request_task = task.spawn(() => "
                "  http.get(\"http://127.0.0.1:%d/ok\", "
                "           map { timeout: %d, transport: \"h2\" })"
                ");",
                port, NET_TASK_HTTP_REQUEST_TIMEOUT_MS);
-      check_int_eq(turbo_script_run(script_ctx, script), 0);
+      check((turbo_script_run(script_ctx, script)) == (0));
       net_task_http_run_until(coro_ctx, script_ctx, NET_TASK_HTTP_TIMEOUT_MS);
-      check_size_eq(turbo_script_task_active_count(script_ctx), 0);
-      check_size_eq(turbo_script_task_failed_count(script_ctx), 0);
-      check_int_eq(turbo_script_run(script_ctx,
+      check((turbo_script_task_active_count(script_ctx)) == (0));
+      check((turbo_script_task_failed_count(script_ctx)) == (0));
+      check((turbo_script_run(script_ctx,
                                     "response = task.result(request_task);"
                                     "response_status = response.status;"
-                                    "response_body = response.body;"),
-                   0);
-      check_float_eq(ts_get_num(script_ctx, "response_status"), 200.0, 0.001);
-      check_str_eq(ts_get_str(script_ctx, "response_body"), "facade-ok");
+                                    "response_body = response.body;")) == (0));
+      check(fabs((double)(ts_get_num(script_ctx, "response_status")) - (double)(200.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(script_ctx, "response_body")), ("facade-ok")) == 0);
 
       net_task_http_stop_server(coro_ctx, server);
       check_true(coro_socket_server_is_stopped(server));

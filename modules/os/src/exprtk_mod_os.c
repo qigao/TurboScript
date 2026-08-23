@@ -76,7 +76,7 @@ static exprtk_value_t os_platform_text(mem_pool_t *arena,
     buffer = (char *)mem_alloc(arena, TURBO_PLATFORM_INFO_MAX);
     if (!buffer || query(buffer, TURBO_PLATFORM_INFO_MAX) != TURBO_OK)
         return os_empty();
-    return exprtk_val_str(tstr_v_from_cstr(buffer));
+    return exprtk_val_str(vstr_from_cstr(buffer));
 }
 
 static int os_string_arg(const exprtk_value_t *value, const char **data,
@@ -163,7 +163,7 @@ static exprtk_value_t os_process_result_map(os_module_t *module, int64_t id,
     map = exprtk_val_map();
     if (!os_map_put(&map, "id", exprtk_val_int(id)) ||
         !os_map_put(&map, "pid", exprtk_val_int(pid)) ||
-        !os_map_put(&map, "state", exprtk_val_str(tstr_v_from_cstr(
+        !os_map_put(&map, "state", exprtk_val_str(vstr_from_cstr(
                          turbo_process_state_name(result.state)))) ||
         !os_map_put(&map, "running", exprtk_val_num(
                          turbo_process_is_running(process) ? 1.0 : 0.0)) ||
@@ -294,7 +294,7 @@ static exprtk_value_t os_fn_log_level(size_t argc, exprtk_value_t *args,
     (void)user_data;
     if (argc != 0) return os_empty();
     logger = tlog_get_default();
-    return logger ? exprtk_val_str(tstr_v_from_cstr(turbo_log_level_name(
+    return logger ? exprtk_val_str(vstr_from_cstr(turbo_log_level_name(
                            tlog_get_level(logger)))) : os_empty();
 }
 
@@ -428,7 +428,7 @@ static exprtk_value_t os_process_read(os_module_t *module, size_t argc,
                 : turbo_process_read_stdout(process, buffer, (size_t)requested, &read);
     if (code != TURBO_OK && code != TURBO_EOF) return os_empty();
     buffer[read] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buffer, read));
+    return exprtk_val_str(vstr_from_buf(buffer, read));
 }
 
 static exprtk_value_t os_fn_process_read_stdout(size_t argc, exprtk_value_t *args,
@@ -488,10 +488,10 @@ static exprtk_value_t os_service_map(int available, int active, const char *stat
 
     if (!os_map_put(&map, "available", exprtk_val_num(available ? 1 : 0)) ||
         !os_map_put(&map, "active", exprtk_val_num(active ? 1 : 0)) ||
-        !os_map_put(&map, "state", exprtk_val_str(tstr_v_from_cstr(state))) ||
+        !os_map_put(&map, "state", exprtk_val_str(vstr_from_cstr(state))) ||
         !os_map_put(&map, "exit_code", exprtk_val_int(exit_code)) ||
         !os_map_put(&map, "error_code", exprtk_val_int(error_code)) ||
-        !os_map_put(&map, "output", exprtk_val_str(tstr_v_from_cstr(output)))) {
+        !os_map_put(&map, "output", exprtk_val_str(vstr_from_cstr(output)))) {
         exprtk_map_free(&map);
         return os_empty();
     }
@@ -503,14 +503,14 @@ static exprtk_value_t os_action_map(const char *action, int success, int availab
                                     int wait_code, const char *output) {
     exprtk_value_t map = exprtk_val_map();
 
-    if (!os_map_put(&map, "action", exprtk_val_str(tstr_v_from_cstr(action))) ||
+    if (!os_map_put(&map, "action", exprtk_val_str(vstr_from_cstr(action))) ||
         !os_map_put(&map, "success", exprtk_val_num(success ? 1 : 0)) ||
         !os_map_put(&map, "available", exprtk_val_num(available ? 1 : 0)) ||
-        !os_map_put(&map, "state", exprtk_val_str(tstr_v_from_cstr(state))) ||
+        !os_map_put(&map, "state", exprtk_val_str(vstr_from_cstr(state))) ||
         !os_map_put(&map, "exit_code", exprtk_val_int(exit_code)) ||
         !os_map_put(&map, "error_code", exprtk_val_int(error_code)) ||
         !os_map_put(&map, "wait_code", exprtk_val_int(wait_code)) ||
-        !os_map_put(&map, "output", exprtk_val_str(tstr_v_from_cstr(output)))) {
+        !os_map_put(&map, "output", exprtk_val_str(vstr_from_cstr(output)))) {
         exprtk_map_free(&map);
         return os_empty();
     }
@@ -791,16 +791,16 @@ static exprtk_value_t os_power_schedule_map(const os_power_schedule_slot_t *slot
     if (!slot) return os_empty();
     map = exprtk_val_map();
     if (!os_map_put(&map, "id", exprtk_val_int(id)) ||
-        !os_map_put(&map, "action", exprtk_val_str(tstr_v_from_cstr(slot->action))) ||
-        !os_map_put(&map, "expression", exprtk_val_str(tstr_v_from_cstr(slot->expression))) ||
+        !os_map_put(&map, "action", exprtk_val_str(vstr_from_cstr(slot->action))) ||
+        !os_map_put(&map, "expression", exprtk_val_str(vstr_from_cstr(slot->expression))) ||
         !os_map_put(&map, "active", exprtk_val_num(slot->active ? 1 : 0)) ||
         !os_map_put(&map, "fire_count", exprtk_val_int((int64_t)slot->fire_count)) ||
         !os_map_put(&map, "last_success", exprtk_val_num(slot->last_success ? 1 : 0)) ||
         !os_map_put(&map, "last_error_code", exprtk_val_int(slot->last_error_code)) ||
         !os_map_put(&map, "last_wait_code", exprtk_val_int(slot->last_wait_code)) ||
         !os_map_put(&map, "last_scheduled_at", exprtk_val_int((int64_t)slot->last_scheduled_at)) ||
-        !os_map_put(&map, "last_state", exprtk_val_str(tstr_v_from_cstr(slot->last_state))) ||
-        !os_map_put(&map, "last_output", exprtk_val_str(tstr_v_from_cstr(slot->last_output)))) {
+        !os_map_put(&map, "last_state", exprtk_val_str(vstr_from_cstr(slot->last_state))) ||
+        !os_map_put(&map, "last_output", exprtk_val_str(vstr_from_cstr(slot->last_output)))) {
         exprtk_map_free(&map);
         return os_empty();
     }

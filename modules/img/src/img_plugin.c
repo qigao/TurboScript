@@ -26,6 +26,6 @@ static const ts_plugin_t img_plugin = {
     .unload = img_plugin_unload,
 };
 
-TS_PLUGIN_EXPORT const ts_plugin_t *ts_api_create(void) {
+TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) {
     return &img_plugin;
 }

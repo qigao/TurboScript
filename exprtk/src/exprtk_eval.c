@@ -45,7 +45,7 @@ static int eval_value_is_owned_container(exprtk_value_t value) {
             value.type == EXPRTK_VAL_LIST || value.type == EXPRTK_VAL_SET);
 }
 
-static exprtk_value_t eval_promote_string(tstr_t text, const exprtk_node_t *node,
+static exprtk_value_t eval_promote_string(tstr text, const exprtk_node_t *node,
                                           exprtk_env_t *env) {
     exprtk_value_t result = { .type = EXPRTK_VAL_NULL };
     size_t len;
@@ -54,7 +54,7 @@ static exprtk_value_t eval_promote_string(tstr_t text, const exprtk_node_t *node
     len = tstr_len(text);
     if (env) {
         if (exprtk_value_copy_to_env(
-                exprtk_val_str(tstr_v_from_buf(text, len)), env, &result) != 0) {
+                exprtk_val_str(vstr_from_buf(text, len)), env, &result) != 0) {
             tstr_free(text);
             return result;
         }
@@ -65,7 +65,7 @@ static exprtk_value_t eval_promote_string(tstr_t text, const exprtk_node_t *node
             return result;
         }
         memcpy(copy, text, len + 1U);
-        result = exprtk_val_str(tstr_v_from_buf(copy, len));
+        result = exprtk_val_str(vstr_from_buf(copy, len));
     }
     tstr_free(text);
     return result;
@@ -292,13 +292,13 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
         case EXPRTK_NODE_TEMPLATE_STRING: {
             const char *str = node->data.template_string.template_str;
             size_t len = node->data.template_string.len;
-            tstr_t result_buf = tstr_new();
+            tstr result_buf = tstr_new();
             size_t result_len = 0;
             if (!result_buf)
                 return throw_error(env, node, "failed to allocate template string");
 
 #define APPEND_STR(s, slen) do { \
-    tstr_t next_buf = tstr_cat_len(result_buf, (s), (slen)); \
+    tstr next_buf = tstr_cat_len(result_buf, (s), (slen)); \
     if (!next_buf) { \
         tstr_free(result_buf); \
         return throw_error(env, node, "failed to grow template string"); \
@@ -597,7 +597,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 if (l_len > SIZE_MAX - r_len)
                     return throw_error(env, node, "String concatenation is too large");
                 size_t new_len = l_len + r_len;
-                tstr_t joined = tstr_new_len(NULL, new_len);
+                tstr joined = tstr_new_len(NULL, new_len);
                 if (!joined)
                     return throw_error(env, node, "failed to allocate concatenated string");
                 memcpy(joined, l_data, l_len);
@@ -612,10 +612,10 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             // STRING == STRING
             if (l_val.type == EXPRTK_VAL_STRING && r_val.type == EXPRTK_VAL_STRING) {
                 if (node->data.binary.op == exprtk_TOKEN_EQ) {
-                    return exprtk_val_num(tstr_v_eq(l_val.data.string, r_val.data.string) ? 1.0 : 0.0);
+                    return exprtk_val_num(vstr_eq(l_val.data.string, r_val.data.string) ? 1.0 : 0.0);
                 }
                 if (node->data.binary.op == exprtk_TOKEN_NE) {
-                    return exprtk_val_num(!tstr_v_eq(l_val.data.string, r_val.data.string) ? 1.0 : 0.0);
+                    return exprtk_val_num(!vstr_eq(l_val.data.string, r_val.data.string) ? 1.0 : 0.0);
                 }
             }
 
@@ -702,7 +702,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             }
 
             if (l_val.type == EXPRTK_VAL_BIGINT && r_val.type == EXPRTK_VAL_BIGINT) {
-                int equal = tstr_v_eq(l_val.data.bigint.text, r_val.data.bigint.text);
+                int equal = vstr_eq(l_val.data.bigint.text, r_val.data.bigint.text);
                 if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
                 if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
             }
@@ -718,7 +718,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             if ((l_val.type == EXPRTK_VAL_ENUM || l_val.type == EXPRTK_VAL_FLAGS) &&
                 l_val.type == r_val.type) {
                 int equal = l_val.data.enum_val.value == r_val.data.enum_val.value &&
-                            tstr_v_eq(l_val.data.enum_val.type_name, r_val.data.enum_val.type_name);
+                            vstr_eq(l_val.data.enum_val.type_name, r_val.data.enum_val.type_name);
                 if (node->data.binary.op == exprtk_TOKEN_EQ) return exprtk_val_num(equal ? 1.0 : 0.0);
                 if (node->data.binary.op == exprtk_TOKEN_NE) return exprtk_val_num(!equal ? 1.0 : 0.0);
             }
@@ -950,22 +950,23 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             if (!vals && actual_count == 0) return zero;
             if (actual_count == 0) { free(vals); return zero; }
 
-            turbo_vec_t vector_data;
-            if (turbo_vec_init(&vector_data, sizeof(double)) != TURBO_OK) {
+            vec_t vector_data = {0};
+            if (vec_init_bytes(&vector_data, sizeof(double), _Alignof(double),
+                               actual_count) != STL_OK) {
                 exprtk_values_destroy(vals, actual_count);
                 free(vals);
                 return throw_error(env, node, "failed to allocate vector value");
             }
-            if (turbo_vec_reserve(&vector_data, actual_count) != TURBO_OK) {
-                turbo_vec_destroy(&vector_data);
+            if (vec_reserve(&vector_data, actual_count) != STL_OK) {
+                vec_destroy(&vector_data);
                 exprtk_values_destroy(vals, actual_count);
                 free(vals);
                 return throw_error(env, node, "failed to allocate vector value");
             }
             for (size_t i = 0; i < actual_count; ++i) {
                 double element = val_to_double(vals[i]);
-                if (turbo_vec_push(&vector_data, &element) != TURBO_OK) {
-                    turbo_vec_destroy(&vector_data);
+                if (vec_push(&vector_data, &element) != STL_OK) {
+                    vec_destroy(&vector_data);
                     exprtk_values_destroy(vals, actual_count);
                     free(vals);
                     return throw_error(env, node, "failed to build vector value");
@@ -975,12 +976,12 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             exprtk_value_t borrowed = exprtk_val_vec(
                 (double *)vector_data.data, vector_data.size);
             if (exprtk_value_copy_to_env(borrowed, env, &result) != 0) {
-                turbo_vec_destroy(&vector_data);
+                vec_destroy(&vector_data);
                 exprtk_values_destroy(vals, actual_count);
                 free(vals);
                 return zero;
             }
-            turbo_vec_destroy(&vector_data);
+            vec_destroy(&vector_data);
             exprtk_values_destroy(vals, actual_count);
             free(vals);
             return result;
@@ -1420,7 +1421,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                         env->curr_loop_iterations++;
                         if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
                     }
-                    tstr_v sv;
+                    vstr sv;
                     sv.data = (char*)key;
                     sv.len = strlen(key);
                     exprtk_env_set(env, node->data.for_in.var_name, exprtk_val_str(sv));

@@ -3,7 +3,7 @@
 
 #include "turbo_buffer.h"
 #include "turbo_parser.h"
-#include "turbo_str_view.h"
+#include "turbo_vstr.h"
 #include "turbo_uuid.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -113,7 +113,7 @@ struct exprtk_node_s {
       exprtk_node_t *value; // for return
     } flow;
     struct {
-      tstr_v value;
+      vstr value;
     } string;
     struct {
       exprtk_node_t **elements;
@@ -274,7 +274,7 @@ typedef struct {
 } exprtk_decimal_t;
 
 typedef struct {
-  tstr_v text;
+  vstr text;
 } exprtk_bigint_t;
 
 typedef struct {
@@ -283,8 +283,8 @@ typedef struct {
 } exprtk_money_t;
 
 typedef struct {
-  tstr_v type_name;
-  tstr_v symbol;
+  vstr type_name;
+  vstr symbol;
   int64_t value;
   int is_flags;
 } exprtk_enum_value_t;
@@ -369,10 +369,10 @@ typedef struct exprtk_value_s {
   exprtk_value_ownership_t ownership;
   union {
     double number;
-    tstr_v string;
+    vstr string;
     int64_t integer;
     int boolean;
-    tstr_v bytes;
+    vstr bytes;
     turbo_uuid_t uuid;
     turbo_datetime_t datetime;
     exprtk_date_t date;

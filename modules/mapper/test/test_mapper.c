@@ -31,17 +31,17 @@ spec("mapper_module") {
             "class User { name: string; age: int64; active: bool; };");
         exprtk_value_destroy(&definition_result);
         klass = exprtk_env_get(&env, "User");
-        check_int_eq(klass.type, EXPRTK_VAL_CLASS);
+        check((klass.type) == (EXPRTK_VAL_CLASS));
         args[0] = klass;
-        args[1] = exprtk_val_str(tstr_v_from_cstr(
+        args[1] = exprtk_val_str(vstr_from_cstr(
             "{\"name\":\"Ada\",\"age\":37,\"active\":true}"));
         object = exprtk_call_internal("mapper.read_json", 2, args, &env);
-        check_int_eq(object.type, EXPRTK_VAL_INSTANCE);
+        check((object.type) == (EXPRTK_VAL_INSTANCE));
         args[0] = object;
         text = exprtk_call_internal("mapper.write_json", 1, args, &env);
-        check_int_eq(text.type, EXPRTK_VAL_STRING);
-        check_str_contains(text.data.string.data, "Ada");
-        check_str_contains(text.data.string.data, "37");
+        check((text.type) == (EXPRTK_VAL_STRING));
+        check_contains(text.data.string.data, "Ada");
+        check_contains(text.data.string.data, "37");
         exprtk_value_destroy(&text);
         exprtk_value_destroy(&object);
         mapper_ctx_destroy(module);
@@ -63,10 +63,10 @@ spec("mapper_module") {
         exprtk_value_destroy(&definition_result);
         klass = exprtk_env_get(&env, "User");
         args[0] = klass;
-        args[1] = exprtk_val_str(tstr_v_from_cstr("{\"age\":\"bad\"}"));
+        args[1] = exprtk_val_str(vstr_from_cstr("{\"age\":\"bad\"}"));
         result = exprtk_call_internal("mapper.read_json", 2, args, &env);
-        check_int_eq(result.type, EXPRTK_VAL_NULL);
-        check_str_contains(env.error_msg, "received string");
+        check((result.type) == (EXPRTK_VAL_NULL));
+        check_contains(env.error_msg, "received string");
         mapper_ctx_destroy(module);
         exprtk_env_free(&env);
     }
@@ -88,26 +88,26 @@ spec("mapper_module") {
             "class User { name: string; age: int64; active: bool; };" );
         exprtk_value_destroy(&definition_result);
         klass = exprtk_env_get(&env, "User");
-        check_int_eq(klass.type, EXPRTK_VAL_CLASS);
+        check((klass.type) == (EXPRTK_VAL_CLASS));
 
         args[0] = klass;
-        args[1] = exprtk_val_str(tstr_v_from_cstr(
+        args[1] = exprtk_val_str(vstr_from_cstr(
             "name: Ada\nage: 37\nactive: true\n"));
         object = exprtk_call_internal("mapper.read_yaml", 2, args, &env);
-        check_int_eq(object.type, EXPRTK_VAL_INSTANCE);
+        check((object.type) == (EXPRTK_VAL_INSTANCE));
         args[0] = object;
         text = exprtk_call_internal("mapper.write_xml", 1, args, &env);
-        check_int_eq(text.type, EXPRTK_VAL_STRING);
-        check_str_contains(text.data.string.data, "<User>");
-        check_str_contains(text.data.string.data, "<name>Ada</name>");
+        check((text.type) == (EXPRTK_VAL_STRING));
+        check_contains(text.data.string.data, "<User>");
+        check_contains(text.data.string.data, "<name>Ada</name>");
         exprtk_value_destroy(&text);
         exprtk_value_destroy(&object);
 
         args[0] = klass;
-        args[1] = exprtk_val_str(tstr_v_from_cstr(
+        args[1] = exprtk_val_str(vstr_from_cstr(
             "<User><name>Ada</name><age>37</age><active>true</active></User>"));
         object = exprtk_call_internal("mapper.read_xml", 2, args, &env);
-        check_int_eq(object.type, EXPRTK_VAL_INSTANCE);
+        check((object.type) == (EXPRTK_VAL_INSTANCE));
         exprtk_value_destroy(&object);
         mapper_ctx_destroy(module);
         exprtk_env_free(&env);
@@ -121,8 +121,8 @@ spec("mapper_module") {
         result = eval_script(&env,
             "class Settings { static retries: int64 = 3; };"
             "Settings.retries = \"invalid\";");
-        check_int_eq(env.flow, exprtk_FLOW_THROW);
-        check_str_contains(env.error_msg, "static field 'retries'");
+        check((env.flow) == (exprtk_FLOW_THROW));
+        check_contains(env.error_msg, "static field 'retries'");
         exprtk_value_destroy(&result);
         exprtk_env_free(&env);
     }

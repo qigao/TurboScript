@@ -91,7 +91,7 @@ static double sqlite_arg_num(exprtk_value_t value, double fallback) {
   return fallback;
 }
 
-static char *sqlite_arena_cstr(mem_pool_t *arena, tstr_v value) {
+static char *sqlite_arena_cstr(mem_pool_t *arena, vstr value) {
   char *buf = mem_alloc(arena, value.len + 1);
   if (!buf) return NULL;
   memcpy(buf, value.data, value.len);
@@ -117,7 +117,7 @@ static exprtk_value_t sqlite_make_string(exprtk_env_t *env, const char *text, si
   exprtk_value_t value = SQLITE_ZERO;
   if (!env) return SQLITE_ZERO;
   if (exprtk_value_copy_to_env(
-          exprtk_val_str(tstr_v_from_buf((char *)(text ? text : ""), len)), env,
+          exprtk_val_str(vstr_from_buf((char *)(text ? text : ""), len)), env,
           &value) != 0)
     return SQLITE_ZERO;
   return value;
@@ -344,10 +344,13 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exp
     return SQLITE_ZERO;
   }
 
-  turbo_vec_t data = {0};
-  if (turbo_vec_init(&data, sizeof(double)) != TURBO_OK ||
-      turbo_vec_reserve(&data, 64) != TURBO_OK) {
-    if (data.data) turbo_vec_destroy(&data);
+  size_t element_limit = ud->env->max_external_value_bytes / sizeof(double);
+  size_t initial_capacity = element_limit < 64 ? element_limit : 64;
+  vec_t data = {0};
+  if (element_limit == 0 ||
+      vec_init_bytes(&data, sizeof(double), _Alignof(double), element_limit) != STL_OK ||
+      vec_reserve(&data, initial_capacity) != STL_OK) {
+    if (data.data) vec_destroy(&data);
     sqlite3_finalize(stmt);
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
     return SQLITE_ZERO;
@@ -355,8 +358,8 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exp
 
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     double element = sqlite3_column_double(stmt, col_idx);
-    if (turbo_vec_push(&data, &element) != TURBO_OK) {
-      turbo_vec_destroy(&data);
+    if (vec_push(&data, &element) != STL_OK) {
+      vec_destroy(&data);
       sqlite3_finalize(stmt);
       SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
       return SQLITE_ZERO;
@@ -366,7 +369,7 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exp
   sqlite3_finalize(stmt);
 
   if (rc != SQLITE_DONE) {
-    turbo_vec_destroy(&data);
+    vec_destroy(&data);
     strncpy(h->error_msg, sqlite3_errmsg(h->db), sizeof(h->error_msg) - 1);
     h->error_msg[sizeof(h->error_msg) - 1] = '\0';
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: step failed");
@@ -376,11 +379,11 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exp
   exprtk_value_t result = SQLITE_ZERO;
   if (exprtk_value_copy_to_env(
           exprtk_val_vec((double *)data.data, data.size), ud->env, &result) != 0) {
-    turbo_vec_destroy(&data);
+    vec_destroy(&data);
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
     return SQLITE_ZERO;
   }
-  turbo_vec_destroy(&data);
+  vec_destroy(&data);
   return result;
 }
 
@@ -440,7 +443,7 @@ static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args, exprtk_
     return SQLITE_ZERO;
 
   exprtk_value_t value;
-  if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(h->error_msg, len)),
+  if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_buf(h->error_msg, len)),
                                ud->env, &value) != 0)
     return SQLITE_ZERO;
   return value;
@@ -465,7 +468,7 @@ static exprtk_value_t fn_sqlite_vec_blob(size_t argc, exprtk_value_t *args, expr
   }
   len = n * sizeof(double);
   if (exprtk_value_copy_to_env(
-          exprtk_val_bytes(tstr_v_from_buf((char *)vec, len)), ud->env, &result) != 0) {
+          exprtk_val_bytes(vstr_from_buf((char *)vec, len)), ud->env, &result) != 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.vec_blob: OOM");
     return SQLITE_ZERO;
   }

@@ -31,9 +31,9 @@ static exprtk_value_t make_str(exprtk_env_t *env, const char *s) {
     size_t len = strlen(s);
     char *buf = mem_alloc(&env->arena, len + 1);
     check_not_null(buf);
-    if (!buf) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!buf) return exprtk_val_str(vstr_from_buf("", 0));
     memcpy(buf, s, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static exprtk_value_t call_fn(exprtk_env_t *env, const char *name,
@@ -69,7 +69,7 @@ spec("parser_module") {
     describe("context") {
         it("should create context") {
             check_not_null(g_ctx);
-            check_int_eq(g_ctx->error_msg[0], '\0');
+            check((g_ctx->error_msg[0]) == ('\0'));
         }
         
     }

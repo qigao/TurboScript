@@ -199,7 +199,7 @@ double ts_mir_string_assign(void *ctx_ptr, const char *target_name, const char *
   exprtk_value_t val;
   if (!ctx || !target_name || !data || len < 0) return 0.0;
 
-  val = exprtk_val_str(tstr_v_from_buf((char *)data, (size_t)len));
+  val = exprtk_val_str(vstr_from_buf((char *)data, (size_t)len));
   exprtk_env_set(&ctx->env, target_name, val);
   return 0.0;
 }

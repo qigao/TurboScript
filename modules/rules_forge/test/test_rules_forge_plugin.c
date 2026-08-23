@@ -25,7 +25,7 @@ static exprtk_value_t make_string(exprtk_env_t *env, const char *s) {
     size_t len = strlen(s);
     char *buf = mem_alloc(&env->arena, len + 1);
     memcpy(buf, s, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static exprtk_value_t call_native(exprtk_env_t *env, const char *name,
@@ -53,14 +53,14 @@ spec("rules_forge_plugin") {
             ts_plugin_handle_t *h = ts_plugin_load(RULES_FORGE_PLUGIN_DLL);
             check_not_null(h);
             check_not_null(h->plugin);
-            check_str_eq(h->plugin->name, "rules_forge");
+            check(strcmp((h->plugin->name), ("rules_forge")) == 0);
 
             exprtk_env_t env;
             mem_pool_t scratch;
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
 
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
             check_not_null(h->instance);
             check_not_null(find_native(&env, "rules_forge.version"));
             check_not_null(find_native(&env, "rules_forge.kb_create"));
@@ -102,16 +102,16 @@ spec("rules_forge_plugin") {
             check_null(find_native(&env, "rules_forge.session_add_fact_json_schema"));
 
             exprtk_value_t version = call_native(&env, "rules_forge.version", 0, NULL);
-            check_int_eq(version.type, EXPRTK_VAL_STRING);
+            check((version.type) == (EXPRTK_VAL_STRING));
             check(strlen(version.data.string.data) > 0);
 
             exprtk_value_t kb = call_native(&env, "rules_forge.kb_create", 0, NULL);
-            check_int_eq(kb.type, EXPRTK_VAL_NUMBER);
+            check((kb.type) == (EXPRTK_VAL_NUMBER));
             check(kb.data.number >= 0.0);
 
             exprtk_value_t destroy_args[1] = {kb};
             exprtk_value_t destroyed = call_native(&env, "rules_forge.kb_destroy", 1, destroy_args);
-            check_float_eq(destroyed.data.number, 0.0, 0.001);
+            check(fabs((double)(destroyed.data.number) - (double)(0.0)) <= (double)(0.001));
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -142,26 +142,26 @@ spec("rules_forge_plugin") {
                 if (h) ts_plugin_unload(h);
                 return;
             }
-            check_int_eq(tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1), 0);
+            check((tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1)) == (0));
 
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             parse_args[0] = make_string(&env, schema_path);
             parse_args[1] = make_string(&env, "Item");
             parse_args[2] = make_string(&env, "{\"id\":7,\"name\":\"alpha\"}");
             objects[0] = call_native(
                 &env, "rules_forge.data_bind_object_from_json", 3, parse_args);
-            check_int_eq(objects[0].type, EXPRTK_VAL_INTEGER);
+            check((objects[0].type) == (EXPRTK_VAL_INTEGER));
             check(objects[0].data.integer >= 0);
 
             objects[1] = call_native(
                 &env, "rules_forge.data_bind_object_clone", 1, &objects[0]);
-            check_int_eq(objects[1].type, EXPRTK_VAL_INTEGER);
+            check((objects[1].type) == (EXPRTK_VAL_INTEGER));
             type_name = call_native(
                 &env, "rules_forge.data_bind_object_type", 1, &objects[1]);
-            check_str_eq(type_name.data.string.data, "Item");
+            check(strcmp((type_name.data.string.data), ("Item")) == 0);
 
             yaml = call_native(
                 &env, "rules_forge.data_bind_object_serialize_yaml", 1, &objects[0]);
@@ -171,10 +171,10 @@ spec("rules_forge_plugin") {
                 &env, "rules_forge.data_bind_object_serialize_csv", 1, &objects[0]);
             binary = call_native(
                 &env, "rules_forge.data_bind_object_serialize_binary", 1, &objects[0]);
-            check_int_eq(yaml.type, EXPRTK_VAL_STRING);
-            check_int_eq(xml.type, EXPRTK_VAL_STRING);
-            check_int_eq(csv.type, EXPRTK_VAL_STRING);
-            check_int_eq(binary.type, EXPRTK_VAL_BYTES);
+            check((yaml.type) == (EXPRTK_VAL_STRING));
+            check((xml.type) == (EXPRTK_VAL_STRING));
+            check((csv.type) == (EXPRTK_VAL_STRING));
+            check((binary.type) == (EXPRTK_VAL_BYTES));
             check(binary.data.bytes.len > 0);
 
             parse_args[2] = yaml;
@@ -194,21 +194,21 @@ spec("rules_forge_plugin") {
             for (i = 0; i < sizeof(objects) / sizeof(objects[0]); i++) {
                 exprtk_value_t json;
                 exprtk_value_t status;
-                check_int_eq(objects[i].type, EXPRTK_VAL_INTEGER);
+                check((objects[i].type) == (EXPRTK_VAL_INTEGER));
                 check(objects[i].data.integer >= 0);
                 json = call_native(
                     &env, "rules_forge.data_bind_object_serialize_json", 1, &objects[i]);
-                check_int_eq(json.type, EXPRTK_VAL_STRING);
-                check_str_contains(json.data.string.data, "\"id\":7");
+                check((json.type) == (EXPRTK_VAL_STRING));
+                check_contains(json.data.string.data, "\"id\":7");
                 status = call_native(
                     &env, "rules_forge.data_bind_object_destroy", 1, &objects[i]);
-                check_float_eq(status.data.number, 0.0, 0.001);
+                check(fabs((double)(status.data.number) - (double)(0.0)) <= (double)(0.001));
             }
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
             mem_destroy(&scratch);
-            check_int_eq(tt_remove_file(schema_path), 0);
+            check((tt_remove_file(schema_path)) == (0));
             free(schema_path);
         }
 
@@ -238,7 +238,7 @@ spec("rules_forge_plugin") {
                 if (h) ts_plugin_unload(h);
                 return;
             }
-            check_int_eq(tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1), 0);
+            check((tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1)) == (0));
             rule_path = make_rule_path(schema_path);
             check_not_null(rule_path);
             if (!rule_path) {
@@ -263,7 +263,7 @@ spec("rules_forge_plugin") {
 
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             {
                 exprtk_value_t parse_args[3] = {
@@ -276,22 +276,22 @@ spec("rules_forge_plugin") {
                 clone = call_native(
                     &env, "rules_forge.data_bind_object_clone", 1, &object);
             }
-            check_int_eq(object.type, EXPRTK_VAL_INTEGER);
-            check_int_eq(clone.type, EXPRTK_VAL_INTEGER);
+            check((object.type) == (EXPRTK_VAL_INTEGER));
+            check((clone.type) == (EXPRTK_VAL_INTEGER));
 
             kb = call_native(&env, "rules_forge.kb_create", 0, NULL);
             if (kb.data.number >= 0.0) {
                 exprtk_value_t load_args[2] = {kb, make_string(&env, rules)};
                 exprtk_value_t create_args[1] = {kb};
-                check_float_eq(call_native(
-                    &env, "rules_forge.kb_load", 2, load_args).data.number, 0.0, 0.001);
+                check(fabs((double)(call_native(
+                    &env, "rules_forge.kb_load", 2, load_args).data.number) - (double)(0.0)) <= (double)(0.001));
                 session = call_native(
                     &env, "rules_forge.session_create", 1, create_args);
                 continuous = call_native(
                     &env, "rules_forge.continuous_create", 1, create_args);
             }
             check(session.data.number >= 0.0);
-            check_int_eq(continuous.type, EXPRTK_VAL_INTEGER);
+            check((continuous.type) == (EXPRTK_VAL_INTEGER));
             check(continuous.data.integer >= 0);
 
             if (session.data.number >= 0.0) {
@@ -301,9 +301,9 @@ spec("rules_forge_plugin") {
                 exprtk_value_t destroy_status = call_native(
                     &env, "rules_forge.data_bind_object_destroy", 1, &object);
                 exprtk_value_t field_args[2] = {fact, make_string(&env, "value")};
-                check_float_eq(destroy_status.data.number, 0.0, 0.001);
-                check_int_eq(call_native(
-                    &env, "rules_forge.fact_int", 2, field_args).data.integer, 17);
+                check(fabs((double)(destroy_status.data.number) - (double)(0.0)) <= (double)(0.001));
+                check((call_native(
+                    &env, "rules_forge.fact_int", 2, field_args).data.integer) == (17));
                 object = exprtk_val_num(-1.0);
             }
 
@@ -321,7 +321,7 @@ spec("rules_forge_plugin") {
                     exprtk_value_t error = call_native(&env, "rules_forge.error", 0, NULL);
                     info("continuous object push error: %s", error.data.string.data);
                 }
-                check_int_eq(exprtk_map_get(&result, "status").data.integer, 0);
+                check((exprtk_map_get(&result, "status").data.integer) == (0));
                 result_handle = exprtk_map_get(&result, "result");
                 check(result_handle.data.integer >= 0);
             }
@@ -332,41 +332,37 @@ spec("rules_forge_plugin") {
                     exprtk_map_get(&result, "batch_id")
                 };
                 exprtk_value_t destroy_args[1] = {result_handle};
-                check_float_eq(call_native(
+                check(fabs((double)(call_native(
                     &env, "rules_forge.continuous_acknowledge", 2, acknowledge_args)
-                    .data.number, 0.0, 0.001);
-                check_float_eq(call_native(
+                    .data.number) - (double)(0.0)) <= (double)(0.001));
+                check(fabs((double)(call_native(
                     &env, "rules_forge.continuous_result_destroy", 1, destroy_args)
-                    .data.number, 0.0, 0.001);
+                    .data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (continuous.type == EXPRTK_VAL_INTEGER && continuous.data.integer >= 0) {
                 exprtk_value_t destroy_args[1] = {continuous};
-                check_float_eq(call_native(
-                    &env, "rules_forge.continuous_destroy", 1, destroy_args).data.number,
-                    0.0, 0.001);
+                check(fabs((double)(call_native(
+                    &env, "rules_forge.continuous_destroy", 1, destroy_args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (session.data.number >= 0.0) {
                 exprtk_value_t destroy_args[1] = {session};
-                check_float_eq(call_native(
-                    &env, "rules_forge.session_destroy", 1, destroy_args).data.number,
-                    0.0, 0.001);
+                check(fabs((double)(call_native(
+                    &env, "rules_forge.session_destroy", 1, destroy_args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (clone.type == EXPRTK_VAL_INTEGER && clone.data.integer >= 0) {
-                check_float_eq(call_native(
-                    &env, "rules_forge.data_bind_object_destroy", 1, &clone).data.number,
-                    0.0, 0.001);
+                check(fabs((double)(call_native(
+                    &env, "rules_forge.data_bind_object_destroy", 1, &clone).data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (kb.data.number >= 0.0) {
                 exprtk_value_t destroy_args[1] = {kb};
-                check_float_eq(call_native(
-                    &env, "rules_forge.kb_destroy", 1, destroy_args).data.number,
-                    0.0, 0.001);
+                check(fabs((double)(call_native(
+                    &env, "rules_forge.kb_destroy", 1, destroy_args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
             mem_destroy(&scratch);
-            check_int_eq(tt_remove_file(schema_path), 0);
+            check((tt_remove_file(schema_path)) == (0));
             free(rule_path);
             free(schema_path);
         }
@@ -387,7 +383,7 @@ spec("rules_forge_plugin") {
             check_not_null(h);
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             push_args[0] = exprtk_val_int(99);
             push_args[1] = make_string(&env, "Event");
@@ -424,12 +420,12 @@ spec("rules_forge_plugin") {
             yaml_stream_result = call_native(&env,
                 "rules_forge.continuous_stream_yaml_path_create", 6, yaml_stream_args);
 
-            check_int_eq(exprtk_map_get(&push_result, "status").data.integer, 2);
-            check_int_eq(exprtk_map_get(&push_result, "result").data.integer, -1);
-            check_float_eq(stream_result.data.number, -1.0, 0.001);
-            check_int_eq(exprtk_map_get(&yaml_push_result, "status").data.integer, 2);
-            check_int_eq(exprtk_map_get(&yaml_push_result, "result").data.integer, -1);
-            check_float_eq(yaml_stream_result.data.number, -1.0, 0.001);
+            check((exprtk_map_get(&push_result, "status").data.integer) == (2));
+            check((exprtk_map_get(&push_result, "result").data.integer) == (-1));
+            check(fabs((double)(stream_result.data.number) - (double)(-1.0)) <= (double)(0.001));
+            check((exprtk_map_get(&yaml_push_result, "status").data.integer) == (2));
+            check((exprtk_map_get(&yaml_push_result, "result").data.integer) == (-1));
+            check(fabs((double)(yaml_stream_result.data.number) - (double)(-1.0)) <= (double)(0.001));
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -452,7 +448,7 @@ spec("rules_forge_plugin") {
             check_not_null(h);
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             json_args[0] = exprtk_val_int(99);
             json_args[1] = make_string(&env, "Customer");
@@ -477,14 +473,14 @@ spec("rules_forge_plugin") {
             csv = call_native(&env, "rules_forge.session_add_facts_csv_path",
                               4, csv_args);
 
-            check_float_eq(one.data.number, -1.0, 0.001);
-            check_int_eq(exprtk_map_get(&many, "status").data.integer, 2);
-            check_int_eq(exprtk_map_get(&many, "loaded").data.integer, 0);
-            check_float_eq(yaml_one.data.number, -1.0, 0.001);
-            check_int_eq(exprtk_map_get(&yaml_many, "status").data.integer, 2);
-            check_int_eq(exprtk_map_get(&yaml_many, "loaded").data.integer, 0);
-            check_int_eq(exprtk_map_get(&csv, "status").data.integer, 2);
-            check_int_eq(exprtk_map_get(&csv, "loaded").data.integer, 0);
+            check(fabs((double)(one.data.number) - (double)(-1.0)) <= (double)(0.001));
+            check((exprtk_map_get(&many, "status").data.integer) == (2));
+            check((exprtk_map_get(&many, "loaded").data.integer) == (0));
+            check(fabs((double)(yaml_one.data.number) - (double)(-1.0)) <= (double)(0.001));
+            check((exprtk_map_get(&yaml_many, "status").data.integer) == (2));
+            check((exprtk_map_get(&yaml_many, "loaded").data.integer) == (0));
+            check((exprtk_map_get(&csv, "status").data.integer) == (2));
+            check((exprtk_map_get(&csv, "loaded").data.integer) == (0));
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -502,20 +498,18 @@ spec("rules_forge_plugin") {
             check_not_null(h);
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             kb = call_native(&env, "rules_forge.kb_create", 0, NULL);
             args[0] = kb;
             continuous = call_native(&env, "rules_forge.continuous_create", 1, args);
-            check_int_eq(continuous.type, EXPRTK_VAL_INTEGER);
+            check((continuous.type) == (EXPRTK_VAL_INTEGER));
             check(continuous.data.integer >= 0);
 
             args[0] = continuous;
-            check_float_eq(call_native(&env, "rules_forge.continuous_destroy", 1, args).data.number,
-                           0.0, 0.001);
+            check(fabs((double)(call_native(&env, "rules_forge.continuous_destroy", 1, args).data.number) - (double)(0.0)) <= (double)(0.001));
             args[0] = kb;
-            check_float_eq(call_native(&env, "rules_forge.kb_destroy", 1, args).data.number,
-                           0.0, 0.001);
+            check(fabs((double)(call_native(&env, "rules_forge.kb_destroy", 1, args).data.number) - (double)(0.0)) <= (double)(0.001));
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -532,12 +526,12 @@ spec("rules_forge_plugin") {
             check_not_null(h);
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             args[0] = exprtk_val_int(99);
             args[1] = make_string(&env, "{}");
             result = call_native(&env, "rules_forge.stream_feed", 2, args);
-            check_float_eq(result.data.number, 2.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(2.0)) <= (double)(0.001));
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
@@ -587,7 +581,7 @@ spec("rules_forge_plugin") {
                 if (h) ts_plugin_unload(h);
                 return;
             }
-            check_int_eq(tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1), 0);
+            check((tt_write_file(schema_path, schema_text, sizeof(schema_text) - 1)) == (0));
             rule_path = make_rule_path(schema_path);
             check_not_null(rule_path);
             if (!rule_path) {
@@ -608,7 +602,7 @@ spec("rules_forge_plugin") {
 
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             kb = call_native(&env, "rules_forge.kb_create", 0, NULL);
             check(kb.data.number >= 0.0);
@@ -617,7 +611,7 @@ spec("rules_forge_plugin") {
                 exprtk_value_t create_args[1] = {kb};
                 exprtk_value_t load_status = call_native(
                     &env, "rules_forge.kb_load", 2, load_args);
-                check_float_eq(load_status.data.number, 0.0, 0.001);
+                check(fabs((double)(load_status.data.number) - (double)(0.0)) <= (double)(0.001));
                 session = call_native(&env, "rules_forge.session_create", 1, create_args);
             }
             check(session.data.number >= 0.0);
@@ -632,8 +626,8 @@ spec("rules_forge_plugin") {
                 exprtk_value_t query_args[2] = {session, make_string(&env, "FindFullFact")};
                 exprtk_value_t loaded = call_native(
                     &env, "rules_forge.session_add_facts_yaml_path", 4, add_args);
-                check_int_eq(exprtk_map_get(&loaded, "status").data.integer, 0);
-                check_int_eq(exprtk_map_get(&loaded, "loaded").data.integer, 1);
+                check((exprtk_map_get(&loaded, "status").data.integer) == (0));
+                check((exprtk_map_get(&loaded, "loaded").data.integer) == (1));
 
                 query = call_native(&env, "rules_forge.session_query", 2, query_args);
                 check(query.data.number >= 0.0);
@@ -644,8 +638,7 @@ spec("rules_forge_plugin") {
                 exprtk_value_t fact_args[3] = {
                     query, exprtk_val_int(0), make_string(&env, "f")
                 };
-                check_int_eq(call_native(&env, "rules_forge.query_size", 1, size_args).data.integer,
-                             1);
+                check((call_native(&env, "rules_forge.query_size", 1, size_args).data.integer) == (1));
                 fact = call_native(&env, "rules_forge.query_fact", 3, fact_args);
                 check(fact.data.number >= 0.0);
             }
@@ -653,37 +646,32 @@ spec("rules_forge_plugin") {
             if (fact.data.number >= 0.0) {
                 exprtk_value_t field_args[2] = {fact, make_string(&env, "at")};
                 exprtk_value_t at = call_native(&env, "rules_forge.fact_string", 2, field_args);
-                check_int_eq(at.type, EXPRTK_VAL_STRING);
+                check((at.type) == (EXPRTK_VAL_STRING));
                 check(at.data.string.len > 0);
                 field_args[1] = make_string(&env, "latency");
-                check_int_eq(call_native(&env, "rules_forge.fact_int", 2, field_args).data.integer,
-                             5405250);
+                check((call_native(&env, "rules_forge.fact_int", 2, field_args).data.integer) == (5405250));
                 field_args[1] = make_string(&env, "total");
-                check_str_eq(call_native(&env, "rules_forge.fact_string", 2, field_args)
-                                 .data.string.data,
-                             "USD 123.45");
+                check(strcmp((call_native(&env, "rules_forge.fact_string", 2, field_args)
+                                 .data.string.data), ("USD 123.45")) == 0);
             }
 
             if (query.data.number >= 0.0) {
                 exprtk_value_t args[1] = {query};
-                check_float_eq(call_native(&env, "rules_forge.query_destroy", 1, args).data.number,
-                               0.0, 0.001);
+                check(fabs((double)(call_native(&env, "rules_forge.query_destroy", 1, args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (session.data.number >= 0.0) {
                 exprtk_value_t args[1] = {session};
-                check_float_eq(call_native(&env, "rules_forge.session_destroy", 1, args).data.number,
-                               0.0, 0.001);
+                check(fabs((double)(call_native(&env, "rules_forge.session_destroy", 1, args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
             if (kb.data.number >= 0.0) {
                 exprtk_value_t args[1] = {kb};
-                check_float_eq(call_native(&env, "rules_forge.kb_destroy", 1, args).data.number,
-                               0.0, 0.001);
+                check(fabs((double)(call_native(&env, "rules_forge.kb_destroy", 1, args).data.number) - (double)(0.0)) <= (double)(0.001));
             }
 
             ts_plugin_unload(h);
             exprtk_env_free(&env);
             mem_destroy(&scratch);
-            check_int_eq(tt_remove_file(schema_path), 0);
+            check((tt_remove_file(schema_path)) == (0));
             free(rule_path);
             free(schema_path);
         }
@@ -694,14 +682,14 @@ spec("rules_forge_plugin") {
             mem_pool_t scratch;
             exprtk_env_init(&env);
             mem_init(&scratch, 4096);
-            check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+            check((ts_plugin_init(h, &env, &scratch)) == (0));
 
             exprtk_value_t args[2] = {exprtk_val_num(99), make_string(&env, "x")};
             exprtk_value_t result = call_native(&env, "rules_forge.kb_load", 2, args);
-            check_float_eq(result.data.number, 2.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(2.0)) <= (double)(0.001));
 
             exprtk_value_t error = call_native(&env, "rules_forge.error", 0, NULL);
-            check_int_eq(error.type, EXPRTK_VAL_STRING);
+            check((error.type) == (EXPRTK_VAL_STRING));
             check(strlen(error.data.string.data) > 0);
 
             ts_plugin_unload(h);

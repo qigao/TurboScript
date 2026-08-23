@@ -92,9 +92,9 @@ static int rfg_arg_bytes(exprtk_value_t v, const uint8_t **out, size_t *out_len)
 
 static exprtk_value_t rfg_string_n(rfg_ud_t *ud, const char *s, size_t len) {
     exprtk_value_t result = rfg_zero();
-    if (!ud || !ud->env) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!ud || !ud->env) return exprtk_val_str(vstr_from_buf("", 0));
     if (exprtk_value_copy_to_env(
-            exprtk_val_str(tstr_v_from_buf((char *)(s ? s : ""), len)), ud->env,
+            exprtk_val_str(vstr_from_buf((char *)(s ? s : ""), len)), ud->env,
             &result) != 0)
         return rfg_zero();
     return result;
@@ -783,20 +783,20 @@ static exprtk_value_t fn_data_bind_object_serialize_binary(size_t argc,
         !(object = rfg_get_data_bind_object(ud->ctx, h))) {
         rfg_bad_args(ud,
             "rules_forge.data_bind_object_serialize_binary: expected valid object handle");
-        return exprtk_val_bytes(tstr_v_from_buf("", 0));
+        return exprtk_val_bytes(vstr_from_buf("", 0));
     }
     status = ruleforge_data_bind_object_serialize_binary(object, &serialized, &len);
     if (status != RFG_OK || (!serialized && len != 0)) {
         if (serialized) ruleforge_data_bind_binary_free(serialized);
         rfg_set_error(ud->ctx, NULL);
-        return exprtk_val_bytes(tstr_v_from_buf("", 0));
+        return exprtk_val_bytes(vstr_from_buf("", 0));
     }
     if (exprtk_value_copy_to_env(
-            exprtk_val_bytes(tstr_v_from_buf((char *)serialized, len)), ud->env,
+            exprtk_val_bytes(vstr_from_buf((char *)serialized, len)), ud->env,
             &result) != 0) {
         ruleforge_data_bind_binary_free(serialized);
         rfg_set_error(ud->ctx, "rules_forge.data_bind_object_serialize_binary: OOM");
-        return exprtk_val_bytes(tstr_v_from_buf("", 0));
+        return exprtk_val_bytes(vstr_from_buf("", 0));
     }
     ruleforge_data_bind_binary_free(serialized);
     return result;

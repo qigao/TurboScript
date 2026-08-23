@@ -53,7 +53,7 @@ int ts_oop_predicate_can_preserve_value(int kind, exprtk_node_t *arg) {
 int ts_typeof_oop_kind(exprtk_node_t *node) {
   if (!node || node->type != EXPRTK_NODE_STRING || !node->data.string.value.data) return 0;
 
-  tstr_v value = node->data.string.value;
+  vstr value = node->data.string.value;
   if (value.len == 5 && memcmp(value.data, "class", 5) == 0) return 1;
   if (value.len == 8 && memcmp(value.data, "instance", 8) == 0) return 2;
   if (value.len == 8 && memcmp(value.data, "function", 8) == 0) return 3;

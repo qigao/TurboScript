@@ -694,7 +694,7 @@ static exprtk_value_t ts_task_status_fn(size_t argc, exprtk_value_t *args, exprt
   job = ts_task_find_locked(scheduler, id);
   if (job) name = ts_task_state_name(job->state);
   turbo_mutex_unlock(&scheduler->mutex);
-  return exprtk_val_str(tstr_v_from_cstr(name));
+  return exprtk_val_str(vstr_from_cstr(name));
 }
 
 static exprtk_value_t ts_task_error_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
@@ -711,7 +711,7 @@ static exprtk_value_t ts_task_error_fn(size_t argc, exprtk_value_t *args, exprtk
   job = ts_task_find_locked(scheduler, id);
   if (job) ts_task_copy_error(error, sizeof(error), job->error);
   turbo_mutex_unlock(&scheduler->mutex);
-  return exprtk_value_clone_to_env(exprtk_val_str(tstr_v_from_cstr(error)), dst);
+  return exprtk_value_clone_to_env(exprtk_val_str(vstr_from_cstr(error)), dst);
 }
 
 static exprtk_value_t ts_task_result_value(turbo_script_ctx_t *ctx, int64_t id, int await) {

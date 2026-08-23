@@ -234,20 +234,20 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   return 0;
 }
 
-CXX_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script) {
+TURBO_SCRIPT_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script) {
   return turbo_script_compile_mir_backend(ctx, script, NULL, 0);
 }
 
-CXX_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script) {
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script) {
   return turbo_script_compile_mir_backend(ctx, script, NULL, 1);
 }
 
-CXX_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
                                            const char *script) {
   return turbo_script_compile_mir_backend(ctx, script, ast, 0);
 }
 
-CXX_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
                                                   const char *script) {
   return turbo_script_compile_mir_backend(ctx, script, ast, 1);
 }
@@ -284,7 +284,7 @@ static int ts_jit_exec_fn(turbo_script_ctx_t *ctx, void *fn_ptr) {
   return ts_jit_finish_runtime_state(ctx);
 }
 
-CXX_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx) {
+TURBO_SCRIPT_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx) {
   if (!ctx) return -1;
   ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   ctx->error_msg[0] = '\0';
@@ -298,7 +298,7 @@ CXX_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx) {
   return ts_jit_exec_fn(ctx, ctx->mir_last_fn);
 }
 
-CXX_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out) {
+TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out) {
   MIR_val_t args[1];
   MIR_val_t result;
 
@@ -319,11 +319,11 @@ CXX_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, doubl
   return ts_jit_finish_runtime_state(ctx);
 }
 
-CXX_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx) {
+TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx) {
   return turbo_script_exec_mir_interp_result(ctx, NULL);
 }
 
-CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script) {
+TURBO_SCRIPT_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script) {
   if (!ctx) return -1;
   ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   ctx->error_msg[0] = '\0';
@@ -355,7 +355,7 @@ static uint64_t ts_hash_script(const char *s) {
   return h;
 }
 
-CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) {
+TURBO_SCRIPT_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script) {
   uint64_t exec_start_time = 0;
   
   if (!ctx) return -1;

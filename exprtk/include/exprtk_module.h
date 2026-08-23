@@ -9,9 +9,12 @@
 #ifndef EXPRTK_MODULE_H
 #define EXPRTK_MODULE_H
 
+#include "exprtk_export.h"
+
 #include "exprtk_types.h"
 #include "turbo_buffer.h"
-#include "turbo_vec.h"
+#include <turbostl/vec.h>
+#include <turbostl/hash_map.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -69,14 +72,14 @@ static inline exprtk_value_t exprtk_val_vec(double *data, size_t size) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_str(tstr_v v) {
+static inline exprtk_value_t exprtk_val_str(vstr v) {
     exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_STRING;
     val.data.string = v;
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_bytes(tstr_v v) {
+static inline exprtk_value_t exprtk_val_bytes(vstr v) {
     exprtk_value_t val = {0};
     val.type = EXPRTK_VAL_BYTES;
     val.data.bytes = v;
@@ -131,7 +134,7 @@ static inline exprtk_value_t exprtk_val_decimal(exprtk_decimal_t v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_bigint(tstr_v v) {
+static inline exprtk_value_t exprtk_val_bigint(vstr v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_BIGINT;
@@ -147,7 +150,7 @@ static inline exprtk_value_t exprtk_val_money(exprtk_money_t v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_enum(tstr_v type_name, tstr_v symbol, int64_t value, int is_flags) {
+static inline exprtk_value_t exprtk_val_enum(vstr type_name, vstr symbol, int64_t value, int is_flags) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = is_flags ? EXPRTK_VAL_FLAGS : EXPRTK_VAL_ENUM;
@@ -195,16 +198,16 @@ exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index);
 int exprtk_value_copy_to_pool(exprtk_value_t value, mem_pool_t *pool,
                               exprtk_value_t *out);
 /* Captured-scope reference counting used by function values (see exprtk.h). */
-CXX_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
+EXPRTK_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
                                               const char *const *names,
                                               size_t name_count);
-CXX_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
+EXPRTK_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
                                                 exprtk_node_t *const *arg_params,
                                                 size_t arg_count,
                                                 mem_pool_t *arena);
-CXX_C_API void exprtk_env_retain(exprtk_env_t *env);
-CXX_C_API void exprtk_env_release(exprtk_env_t *env);
-CXX_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
+EXPRTK_C_API void exprtk_env_retain(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_release(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
 
 int exprtk_value_copy_to_env(exprtk_value_t value, exprtk_env_t *env,
                              exprtk_value_t *out);

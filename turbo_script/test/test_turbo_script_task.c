@@ -51,9 +51,9 @@ spec("turbo_script_task") {
     it("fails fast when no CoroNet context is configured") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);
-      check_int_lt(task_test_run(ctx, "id = task.spawn(() => 1);"), 0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_STATE);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
+      check((task_test_run(ctx, "id = task.spawn(() => 1);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_STATE));
+      check((turbo_script_task_active_count(ctx)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -62,19 +62,18 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "first = task.spawn(() => {"
+      check((task_test_run(ctx, "first = task.spawn(() => {"
                                      "  task.sleep(10); return 1;"
                                      "});"
                                      "second = task.spawn(() => {"
                                      "  return task.status(first) == \"waiting\";"
-                                     "});"),
-                   0);
-      check_size_eq(turbo_script_task_active_count(ctx), 2);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
-      check_size_eq(turbo_script_task_failed_count(ctx), 0);
-      check_int_eq(task_test_run(ctx, "overlapped = task.result(second);"), 0);
-      check_float_eq(ts_get_num(ctx, "overlapped"), 1.0, 0.001);
+                                     "});")) == (0));
+      check((turbo_script_task_active_count(ctx)) == (2));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_active_count(ctx)) == (0));
+      check((turbo_script_task_failed_count(ctx)) == (0));
+      check((task_test_run(ctx, "overlapped = task.result(second);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "overlapped")) - (double)(1.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -84,7 +83,7 @@ spec("turbo_script_task") {
           &coro_ctx, TASK_TEST_DEEP_STACK_OVERRIDE_BYTES);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx,
+      check((task_test_run(ctx,
                                  "interface Observer { update(event); }"
                                  "interface Strategy { decode(raw); }"
                                  "class PayloadStrategy implements Strategy {"
@@ -123,12 +122,11 @@ spec("turbo_script_task") {
                                  "  var event = strategy.decode(\"{\\\"price\\\":0.5}\");"
                                  "  bus.publish(event);"
                                  "  return metrics.total;"
-                                 "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_failed_count(ctx), 0);
-      check_int_eq(task_test_run(ctx, "deep_total = task.result(deep_task);"), 0);
-      check_float_eq(ts_get_num(ctx, "deep_total"), 13.0, 0.001);
+                                 "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_failed_count(ctx)) == (0));
+      check((task_test_run(ctx, "deep_total = task.result(deep_task);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "deep_total")) - (double)(13.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -137,26 +135,24 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "first = task.spawn(() => {"
+      check((task_test_run(ctx, "first = task.spawn(() => {"
                                      "  task.sleep(5); return 21;"
                                      "});"
                                      "second = task.spawn(() => {"
                                      "  task.yield(); return task.join(first) * 2;"
-                                     "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(task_test_run(ctx, "first_state = task.status(first);"
+                                     "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "first_state = task.status(first);"
                                      "second_state = task.status(second);"
-                                     "answer = task.result(second);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "first_state"), "completed");
-      check_str_eq(ts_get_str(ctx, "second_state"), "completed");
-      check_float_eq(ts_get_num(ctx, "answer"), 42.0, 0.001);
+                                     "answer = task.result(second);")) == (0));
+      check(strcmp((ts_get_str(ctx, "first_state")), ("completed")) == 0);
+      check(strcmp((ts_get_str(ctx, "second_state")), ("completed")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "answer")) - (double)(42.0)) <= (double)(0.001));
 
-      check_int_eq(task_test_run(ctx, "third = task.spawn(() => { return task.join(first) + 1; });"), 0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(task_test_run(ctx, "joined_completed = task.result(third);"), 0);
-      check_float_eq(ts_get_num(ctx, "joined_completed"), 22.0, 0.001);
+      check((task_test_run(ctx, "third = task.spawn(() => { return task.join(first) + 1; });")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "joined_completed = task.result(third);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "joined_completed")) - (double)(22.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -165,14 +161,13 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "first = task.spawn(() => {"
+      check((task_test_run(ctx, "first = task.spawn(() => {"
                                      "  task.sleep(5); return 41;"
                                      "});"
-                                     "second = task.spawn(() => task.join(first) + 1);"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(task_test_run(ctx, "concise_result = task.result(second);"), 0);
-      check_float_eq(ts_get_num(ctx, "concise_result"), 42.0, 0.001);
+                                     "second = task.spawn(() => task.join(first) + 1);")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "concise_result = task.result(second);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "concise_result")) - (double)(42.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -181,14 +176,13 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "failed = task.spawn(() => { throw \"boom\"; });"), 0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_failed_count(ctx), 1);
-      check_int_eq(task_test_run(ctx, "failed_state = task.status(failed);"
-                                     "failure = task.error(failed);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "failed_state"), "failed");
-      check_str_eq(ts_get_str(ctx, "failure"), "boom");
+      check((task_test_run(ctx, "failed = task.spawn(() => { throw \"boom\"; });")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_failed_count(ctx)) == (1));
+      check((task_test_run(ctx, "failed_state = task.status(failed);"
+                                     "failure = task.error(failed);")) == (0));
+      check(strcmp((ts_get_str(ctx, "failed_state")), ("failed")) == 0);
+      check(strcmp((ts_get_str(ctx, "failure")), ("boom")) == 0);
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -197,18 +191,16 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "failed = task.spawn(() => {"
+      check((task_test_run(ctx, "failed = task.spawn(() => {"
                                      "  task.yield(); throw \"joined boom\";"
                                      "});"
-                                     "waiter = task.spawn(() => { return task.join(failed); });"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_failed_count(ctx), 2);
-      check_int_eq(task_test_run(ctx, "waiter_state = task.status(waiter);"
-                                     "waiter_error = task.error(waiter);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "waiter_state"), "failed");
-      check_str_eq(ts_get_str(ctx, "waiter_error"), "joined boom");
+                                     "waiter = task.spawn(() => { return task.join(failed); });")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_failed_count(ctx)) == (2));
+      check((task_test_run(ctx, "waiter_state = task.status(waiter);"
+                                     "waiter_error = task.error(waiter);")) == (0));
+      check(strcmp((ts_get_str(ctx, "waiter_state")), ("failed")) == 0);
+      check(strcmp((ts_get_str(ctx, "waiter_error")), ("joined boom")) == 0);
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -217,22 +209,20 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "sleeper = task.spawn(() => {"
+      check((task_test_run(ctx, "sleeper = task.spawn(() => {"
                                      "  task.sleep(5000); return 1;"
                                      "});"
                                      "canceller = task.spawn(() => {"
                                      "  task.yield(); return task.cancel(sleeper);"
-                                     "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
-      check_int_eq(task_test_run(ctx, "sleeper_state = task.status(sleeper);"
+                                     "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_active_count(ctx)) == (0));
+      check((task_test_run(ctx, "sleeper_state = task.status(sleeper);"
                                      "sleeper_error = task.error(sleeper);"
-                                     "cancel_accepted = task.result(canceller);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "sleeper_state"), "cancelled");
-      check_str_eq(ts_get_str(ctx, "sleeper_error"), "task was cancelled");
-      check_float_eq(ts_get_num(ctx, "cancel_accepted"), 1.0, 0.001);
+                                     "cancel_accepted = task.result(canceller);")) == (0));
+      check(strcmp((ts_get_str(ctx, "sleeper_state")), ("cancelled")) == 0);
+      check(strcmp((ts_get_str(ctx, "sleeper_error")), ("task was cancelled")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "cancel_accepted")) - (double)(1.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -241,7 +231,7 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "target = task.spawn(() => {"
+      check((task_test_run(ctx, "target = task.spawn(() => {"
                                      "  task.sleep(5000); return 7;"
                                      "});"
                                      "waiter = task.spawn(() => task.join(target));"
@@ -250,21 +240,19 @@ spec("turbo_script_task") {
                                      "  waiter_cancelled = task.cancel(waiter);"
                                      "  target_cancelled = task.cancel(target);"
                                      "  return waiter_cancelled && target_cancelled;"
-                                     "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
-      check_int_eq(task_test_run(ctx, "waiter_state = task.status(waiter);"
+                                     "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_active_count(ctx)) == (0));
+      check((task_test_run(ctx, "waiter_state = task.status(waiter);"
                                      "target_state = task.status(target);"
                                      "both_cancelled = task.result(canceller);"
                                      "waiter_released = task.release(waiter);"
-                                     "target_released = task.release(target);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "waiter_state"), "cancelled");
-      check_str_eq(ts_get_str(ctx, "target_state"), "cancelled");
-      check_float_eq(ts_get_num(ctx, "both_cancelled"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "waiter_released"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "target_released"), 1.0, 0.001);
+                                     "target_released = task.release(target);")) == (0));
+      check(strcmp((ts_get_str(ctx, "waiter_state")), ("cancelled")) == 0);
+      check(strcmp((ts_get_str(ctx, "target_state")), ("cancelled")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "both_cancelled")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "waiter_released")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "target_released")) - (double)(1.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -273,23 +261,21 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "first = task.spawn(() => { task.sleep(5000); });"
+      check((task_test_run(ctx, "first = task.spawn(() => { task.sleep(5000); });"
                                      "second = task.spawn(() => { task.sleep(5000); });"
                                      "timer_job = timer.after(5000, () => 1);"
-                                     "shutdown_count = task.shutdown();"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "shutdown_count"), 2.0, 0.001);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
-      check_int_eq(task_test_run(ctx, "first_state = task.status(first);"
+                                     "shutdown_count = task.shutdown();")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "shutdown_count")) - (double)(2.0)) <= (double)(0.001));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_active_count(ctx)) == (0));
+      check((task_test_run(ctx, "first_state = task.status(first);"
                                      "second_state = task.status(second);"
-                                     "timer_state = timer.status(timer_job);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "first_state"), "cancelled");
-      check_str_eq(ts_get_str(ctx, "second_state"), "cancelled");
-      check_str_eq(ts_get_str(ctx, "timer_state"), "cancelled");
-      check_int_lt(task_test_run(ctx, "rejected = task.spawn(() => 1);"), 0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_STATE);
+                                     "timer_state = timer.status(timer_job);")) == (0));
+      check(strcmp((ts_get_str(ctx, "first_state")), ("cancelled")) == 0);
+      check(strcmp((ts_get_str(ctx, "second_state")), ("cancelled")) == 0);
+      check(strcmp((ts_get_str(ctx, "timer_state")), ("cancelled")) == 0);
+      check((task_test_run(ctx, "rejected = task.spawn(() => 1);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_STATE));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -297,19 +283,18 @@ spec("turbo_script_task") {
       coro_context_t *coro_ctx = NULL;
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
-      check_int_eq(turbo_script_set_task_capacity(ctx, 1), 0);
+      check((turbo_script_set_task_capacity(ctx, 1)) == (0));
 
-      check_int_eq(task_test_run(ctx, "first = task.spawn(() => 7);"), 0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_lt(task_test_run(ctx, "blocked = task.spawn(() => 8);"), 0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_STATE);
-      check_int_eq(task_test_run(ctx, "released = task.release(first);"
-                                     "second = task.spawn(() => 8);"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(task_test_run(ctx, "value = task.result(second);"), 0);
-      check_float_eq(ts_get_num(ctx, "released"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "value"), 8.0, 0.001);
+      check((task_test_run(ctx, "first = task.spawn(() => 7);")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "blocked = task.spawn(() => 8);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_STATE));
+      check((task_test_run(ctx, "released = task.release(first);"
+                                     "second = task.spawn(() => 8);")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "value = task.result(second);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "released")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "value")) - (double)(8.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -321,24 +306,22 @@ spec("turbo_script_task") {
       turbo_script_memory_stats_t released;
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy), 0);
+      check((turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy)) == (0));
       policy.max_task_bytes = 1024;
       policy.max_external_value_bytes = 512;
-      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), 0);
-      check_int_eq(task_test_run(ctx,
-                                 "oversized = task.spawn(() => str_repeat(\"x\", 4096));"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_task_failed_count(ctx), 1);
-      check_int_eq(turbo_script_get_memory_stats(ctx, &retained), 0);
+      check((turbo_script_set_memory_policy(ctx, &policy)) == (0));
+      check((task_test_run(ctx,
+                                 "oversized = task.spawn(() => str_repeat(\"x\", 4096));")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_task_failed_count(ctx)) == (1));
+      check((turbo_script_get_memory_stats(ctx, &retained)) == (0));
       check_true(retained.task_bytes > 0);
-      check_int_eq(task_test_run(ctx, "oversized_state = task.status(oversized);"
-                                      "oversized_release = task.release(oversized);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "oversized_state"), "failed");
-      check_float_eq(ts_get_num(ctx, "oversized_release"), 1.0, 0.001);
-      check_int_eq(turbo_script_get_memory_stats(ctx, &released), 0);
-      check_size_eq(released.task_bytes, 0);
+      check((task_test_run(ctx, "oversized_state = task.status(oversized);"
+                                      "oversized_release = task.release(oversized);")) == (0));
+      check(strcmp((ts_get_str(ctx, "oversized_state")), ("failed")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "oversized_release")) - (double)(1.0)) <= (double)(0.001));
+      check((turbo_script_get_memory_stats(ctx, &released)) == (0));
+      check((released.task_bytes) == (0));
       task_test_destroy(ctx, coro_ctx);
     }
 
@@ -346,11 +329,11 @@ spec("turbo_script_task") {
       coro_context_t *coro_ctx = NULL;
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
-      check_int_eq(task_test_run(ctx, "pending = task.spawn(() => { task.sleep(5); });"), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 1);
+      check((task_test_run(ctx, "pending = task.spawn(() => { task.sleep(5); });")) == (0));
+      check((turbo_script_task_active_count(ctx)) == (1));
 
       turbo_script_free(ctx);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
       coro_context_destroy(coro_ctx);
     }
 
@@ -359,14 +342,13 @@ spec("turbo_script_task") {
       turbo_script_ctx_t *ctx = task_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(task_test_run(ctx, "import(\"coro\");"
+      check((task_test_run(ctx, "import(\"coro\");"
                                      "managed = task.spawn(() => {"
                                      "  coro.yield(7); return 9;"
-                                     "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(task_test_run(ctx, "managed_result = task.result(managed);"), 0);
-      check_float_eq(ts_get_num(ctx, "managed_result"), 9.0, 0.001);
+                                     "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((task_test_run(ctx, "managed_result = task.result(managed);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "managed_result")) - (double)(9.0)) <= (double)(0.001));
       task_test_destroy(ctx, coro_ctx);
     }
   }

@@ -5,14 +5,14 @@ static void check_match_at(const char *pattern, const char *text, int expected_i
                            int expected_len) {
   int len = -1;
   int idx = re_match(pattern, text, &len);
-  check_int_eq(idx, expected_idx);
-  check_int_eq(len, expected_len);
+  check((idx) == (expected_idx));
+  check((len) == (expected_len));
 }
 
 static void check_no_match(const char *pattern, const char *text) {
   int len = -1;
   int idx = re_match(pattern, text, &len);
-  check_int_eq(idx, -1);
+  check((idx) == (-1));
 }
 
 suite("tiny regex") {

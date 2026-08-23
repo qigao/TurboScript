@@ -23,7 +23,7 @@ typedef struct {
 typedef struct {
     exprtk_value_t list;
     mem_pool_t *arena;
-    tstr_v text;
+    vstr text;
     const fuzzy_utf8_offsets_t *offsets;
     const exprtk_value_t *patterns;
     size_t pattern_count;
@@ -58,15 +58,15 @@ static int fuzzy_size_arg(const exprtk_value_t *arg, size_t *out) {
 
 static exprtk_value_t fuzzy_copy_string(mem_pool_t *arena, const char *data, size_t len) {
     char *buf;
-    if (!arena) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!arena) return exprtk_val_str(vstr_from_buf("", 0));
     buf = (char *)mem_alloc(arena, len + 1);
-    if (!buf) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!buf) return exprtk_val_str(vstr_from_buf("", 0));
     if (len > 0 && data) memcpy(buf, data, len);
     buf[len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
-static int fuzzy_parse_flags(tstr_v flags, int literal_default, int *out) {
+static int fuzzy_parse_flags(vstr flags, int literal_default, int *out) {
     int cflags = REG_EXTENDED;
     if (!out) return 0;
     if (literal_default) cflags |= REG_LITERAL;
@@ -94,13 +94,13 @@ static int fuzzy_parse_flags(tstr_v flags, int literal_default, int *out) {
 
 static int fuzzy_flags_arg(size_t argc, exprtk_value_t *args, size_t index,
                            int literal_default, int *out) {
-    if (argc <= index) return fuzzy_parse_flags(tstr_v_from_buf("", 0), literal_default, out);
+    if (argc <= index) return fuzzy_parse_flags(vstr_from_buf("", 0), literal_default, out);
     if (args[index].type != EXPRTK_VAL_STRING) return 0;
     return fuzzy_parse_flags(args[index].data.string, literal_default, out);
 }
 
-static int fuzzy_utf8_to_wide(tstr_v input, mem_pool_t *arena, fuzzy_wtext_t *out) {
-    tstr_v rest = input;
+static int fuzzy_utf8_to_wide(vstr input, mem_pool_t *arena, fuzzy_wtext_t *out) {
+    vstr rest = input;
     size_t byte_offset = 0;
     size_t wide_len = 0;
 
@@ -116,7 +116,7 @@ static int fuzzy_utf8_to_wide(tstr_v input, mem_pool_t *arena, fuzzy_wtext_t *ou
         size_t before = rest.len;
         size_t consumed;
 
-        if (!tstr_v_utf8_next(&rest, &codepoint)) return 0;
+        if (!vstr_utf8_next(&rest, &codepoint)) return 0;
         consumed = before - rest.len;
         if (consumed == 0 || codepoint > 0x10FFFFu) return 0;
 
@@ -150,15 +150,15 @@ static size_t fuzzy_byte_offset(const fuzzy_wtext_t *text, regoff_t offset) {
     return text->byte_offsets[(size_t)offset];
 }
 
-static int64_t fuzzy_utf8_index(tstr_v text, size_t byte_offset) {
+static int64_t fuzzy_utf8_index(vstr text, size_t byte_offset) {
     size_t len;
     if (byte_offset > text.len) byte_offset = text.len;
-    len = tstr_v_utf8_len(tstr_v_from_buf(text.data, byte_offset));
-    return len == TSTR_V_NPOS ? -1 : (int64_t)len;
+    len = vstr_utf8_len(vstr_from_buf(text.data, byte_offset));
+    return len == VSTR_NPOS ? -1 : (int64_t)len;
 }
 
-static int fuzzy_utf8_offsets(tstr_v input, mem_pool_t *arena, fuzzy_utf8_offsets_t *out) {
-    tstr_v rest = input;
+static int fuzzy_utf8_offsets(vstr input, mem_pool_t *arena, fuzzy_utf8_offsets_t *out) {
+    vstr rest = input;
     size_t byte_offset = 0;
     size_t cp_len = 0;
 
@@ -173,7 +173,7 @@ static int fuzzy_utf8_offsets(tstr_v input, mem_pool_t *arena, fuzzy_utf8_offset
         size_t consumed;
         (void)codepoint;
 
-        if (!tstr_v_utf8_next(&rest, &codepoint)) return 0;
+        if (!vstr_utf8_next(&rest, &codepoint)) return 0;
         consumed = before - rest.len;
         if (consumed == 0) return 0;
         out->byte_offsets[cp_len++] = byte_offset;
@@ -192,7 +192,7 @@ static size_t fuzzy_offset_to_byte(const fuzzy_collect_ctx_t *ctx, size_t offset
     return ctx->offsets->byte_offsets[offset];
 }
 
-static exprtk_value_t fuzzy_result(mem_pool_t *arena, tstr_v text, int matched,
+static exprtk_value_t fuzzy_result(mem_pool_t *arena, vstr text, int matched,
                                    size_t start, size_t end, const regamatch_t *amatch) {
     exprtk_value_t map = exprtk_val_map();
     exprtk_map_set(&map, "matched", exprtk_val_num(matched ? 1.0 : 0.0));
@@ -204,7 +204,7 @@ static exprtk_value_t fuzzy_result(mem_pool_t *arena, tstr_v text, int matched,
                    exprtk_val_int(matched ? fuzzy_utf8_index(text, end) : -1));
     exprtk_map_set(&map, "text",
                    matched ? fuzzy_copy_string(arena, text.data + start, end - start)
-                           : exprtk_val_str(tstr_v_from_buf("", 0)));
+                           : exprtk_val_str(vstr_from_buf("", 0)));
     if (amatch) {
         exprtk_map_set(&map, "cost", exprtk_val_int(matched ? amatch->cost : -1));
         exprtk_map_set(&map, "insertions", exprtk_val_int(matched ? amatch->num_ins : -1));
@@ -214,13 +214,13 @@ static exprtk_value_t fuzzy_result(mem_pool_t *arena, tstr_v text, int matched,
     return map;
 }
 
-static exprtk_value_t fuzzy_no_match(mem_pool_t *arena, tstr_v text, int approximate) {
+static exprtk_value_t fuzzy_no_match(mem_pool_t *arena, vstr text, int approximate) {
     regamatch_t amatch;
     memset(&amatch, 0, sizeof(amatch));
     return fuzzy_result(arena, text, 0, 0, 0, approximate ? &amatch : NULL);
 }
 
-static exprtk_value_t fuzzy_match_map(mem_pool_t *arena, tstr_v text, size_t start, size_t end,
+static exprtk_value_t fuzzy_match_map(mem_pool_t *arena, vstr text, size_t start, size_t end,
                                       size_t utf8_start, size_t utf8_end, size_t distance) {
     exprtk_value_t map = exprtk_val_map();
     if (end > text.len) end = text.len;
@@ -236,7 +236,7 @@ static exprtk_value_t fuzzy_match_map(mem_pool_t *arena, tstr_v text, size_t sta
 }
 
 static int fuzzy_mode_arg(size_t argc, exprtk_value_t *args, size_t index, int *utf8_mode) {
-    tstr_v mode;
+    vstr mode;
     if (!utf8_mode) return 0;
     *utf8_mode = 1;
     if (argc <= index) return 1;
@@ -268,7 +268,7 @@ static exprtk_value_t fuzzy_exact(size_t argc, exprtk_value_t *args,
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING ||
         !fuzzy_flags_arg(argc, args, 2, 0, &cflags)) {
-        return fuzzy_no_match(arena, tstr_v_from_buf("", 0), 0);
+        return fuzzy_no_match(arena, vstr_from_buf("", 0), 0);
     }
 
     if (!fuzzy_utf8_to_wide(args[0].data.string, arena, &pattern) ||
@@ -310,7 +310,7 @@ static exprtk_value_t fuzzy_match_impl(size_t argc, exprtk_value_t *args,
 
     if (argc < 2 || argc > 4 || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING) {
-        return fuzzy_no_match(arena, tstr_v_from_buf("", 0), 1);
+        return fuzzy_no_match(arena, vstr_from_buf("", 0), 1);
     }
 
     if (argc >= 3 && fuzzy_is_number(args[2])) {
@@ -436,7 +436,7 @@ static bool fuzzy_ac_collect(uint32_t pattern_id, size_t start, size_t end, void
                                           0);
     exprtk_map_set(&item, "pattern_id", exprtk_val_int((int64_t)pattern_id));
     if (pattern_id < ctx->pattern_count) {
-        tstr_v pattern = ctx->patterns[pattern_id].data.string;
+        vstr pattern = ctx->patterns[pattern_id].data.string;
         exprtk_map_set(&item, "pattern", fuzzy_copy_string(ctx->arena, pattern.data, pattern.len));
     }
     exprtk_list_push(&ctx->list, item);
@@ -534,7 +534,7 @@ static exprtk_value_t fn_tre_version(size_t argc, exprtk_value_t *args,
     const char *version;
     (void)args;
     (void)env;
-    if (argc != 0) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (argc != 0) return exprtk_val_str(vstr_from_buf("", 0));
     version = tre_version();
     return fuzzy_copy_string(arena, version, strlen(version));
 }

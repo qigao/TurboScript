@@ -12,7 +12,7 @@ static exprtk_builtin_fn find_function(const exprtk_module_t *mod, const char *n
 }
 
 static exprtk_value_t str_arg(const char *s) {
-    return exprtk_val_str(tstr_v_from_buf((char *)s, strlen(s)));
+    return exprtk_val_str(vstr_from_buf((char *)s, strlen(s)));
 }
 
 static exprtk_value_t map_get(exprtk_value_t *map, const char *key) {
@@ -39,19 +39,19 @@ spec("fuzzy_module") {
             args[1] = str_arg("xx caf\xC3\xA9 yy");
             result = fn(2, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_MAP);
+            check((result.type) == (EXPRTK_VAL_MAP));
             matched = map_get(&result, "matched");
             start = map_get(&result, "start");
             utf8_start = map_get(&result, "utf8_start");
             text = map_get(&result, "text");
-            check_int_eq(matched.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(matched.data.number, 1.0, 0.001);
-            check_int_eq(start.type, EXPRTK_VAL_INTEGER);
-            check_int_eq((int)start.data.integer, 3);
-            check_int_eq(utf8_start.type, EXPRTK_VAL_INTEGER);
-            check_int_eq((int)utf8_start.data.integer, 3);
-            check_int_eq(text.type, EXPRTK_VAL_STRING);
-            check_str_eq(text.data.string.data, "caf\xC3\xA9");
+            check((matched.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(matched.data.number) - (double)(1.0)) <= (double)(0.001));
+            check((start.type) == (EXPRTK_VAL_INTEGER));
+            check(((int)start.data.integer) == (3));
+            check((utf8_start.type) == (EXPRTK_VAL_INTEGER));
+            check(((int)utf8_start.data.integer) == (3));
+            check((text.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((text.data.string.data), ("caf\xC3\xA9")) == 0);
 
             mem_destroy(&arena);
         }
@@ -76,15 +76,15 @@ spec("fuzzy_module") {
             args[2] = exprtk_val_int(1);
             result = fn(3, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_MAP);
+            check((result.type) == (EXPRTK_VAL_MAP));
             matched = map_get(&result, "matched");
             cost = map_get(&result, "cost");
             text = map_get(&result, "text");
-            check_float_eq(matched.data.number, 1.0, 0.001);
-            check_int_eq(cost.type, EXPRTK_VAL_INTEGER);
-            check_int_eq((int)cost.data.integer, 1);
-            check_int_eq(text.type, EXPRTK_VAL_STRING);
-            check_str_eq(text.data.string.data, "caf\xC3\xA9");
+            check(fabs((double)(matched.data.number) - (double)(1.0)) <= (double)(0.001));
+            check((cost.type) == (EXPRTK_VAL_INTEGER));
+            check(((int)cost.data.integer) == (1));
+            check((text.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((text.data.string.data), ("caf\xC3\xA9")) == 0);
 
             mem_destroy(&arena);
         }
@@ -106,8 +106,8 @@ spec("fuzzy_module") {
             result = fn(3, args, NULL, &arena);
 
             text = map_get(&result, "text");
-            check_int_eq(text.type, EXPRTK_VAL_STRING);
-            check_str_eq(text.data.string.data, "a.c");
+            check((text.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((text.data.string.data), ("a.c")) == 0);
 
             mem_destroy(&arena);
         }
@@ -131,7 +131,7 @@ spec("fuzzy_module") {
             result = fn(3, args, NULL, &arena);
 
             matched = map_get(&result, "matched");
-            check_float_eq(matched.data.number, 1.0, 0.001);
+            check(fabs((double)(matched.data.number) - (double)(1.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -154,7 +154,7 @@ spec("fuzzy_module") {
             args[2] = exprtk_val_int(1);
             result = fn(3, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_LIST);
+            check((result.type) == (EXPRTK_VAL_LIST));
             check(result.data.list.count > 0);
             for (size_t i = 0; i < result.data.list.count; ++i) {
                 exprtk_value_t item = result.data.list.items[i];
@@ -194,15 +194,15 @@ spec("fuzzy_module") {
             args[1] = str_arg("xx caf\xC3\xA9 tea");
             result = fn(2, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_LIST);
+            check((result.type) == (EXPRTK_VAL_LIST));
             check(result.data.list.count >= 2);
             item = result.data.list.items[0];
             pattern_id = map_get(&item, "pattern_id");
             text = map_get(&item, "text");
-            check_int_eq(pattern_id.type, EXPRTK_VAL_INTEGER);
-            check_int_eq((int)pattern_id.data.integer, 0);
-            check_int_eq(text.type, EXPRTK_VAL_STRING);
-            check_str_eq(text.data.string.data, "caf\xC3\xA9");
+            check((pattern_id.type) == (EXPRTK_VAL_INTEGER));
+            check(((int)pattern_id.data.integer) == (0));
+            check((text.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((text.data.string.data), ("caf\xC3\xA9")) == 0);
 
             mem_destroy(&arena);
         }

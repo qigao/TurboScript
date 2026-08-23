@@ -270,8 +270,8 @@ open coverage_html/index.html
 2. 添加新的 `it()` 块：
    ```c
    it("should handle new feature") {
-     check_int_eq(turbo_script_run_jit(ctx, "x = 42;"), 0);
-     check_double_eq(ts_get_num(ctx, "x"), 42.0, EPS);
+     check(turbo_script_run_jit(ctx, "x = 42;") == 0);
+     check(fabs(ts_get_num(ctx, "x") - 42.0) <= EPS);
    }
    ```
 3. 重新编译并运行

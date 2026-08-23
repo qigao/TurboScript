@@ -79,7 +79,7 @@ suite("fin test") {
 
       double calmar = exprtk_calmar(equity, n, annual_factor);
 
-      check_float_eq(calmar, 2.0, EPSILON);
+      check(fabs((double)(calmar) - (double)(2.0)) <= (double)(EPSILON));
     }
 
     it("should calculate profit factor for winning trades") {

@@ -43,7 +43,7 @@ static exprtk_value_t coro_error_value(coro_ctx_t *ctx, const char *message) {
     copy = (char *)mem_alloc(&ctx->env->arena, len + 1);
     if (!copy) return coro_null_value();
     memcpy(copy, message, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(copy, len));
+    return exprtk_val_str(vstr_from_buf(copy, len));
 }
 
 static void coro_set_error(coro_ctx_t *ctx, const char *message) {

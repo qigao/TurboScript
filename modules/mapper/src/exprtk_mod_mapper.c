@@ -59,7 +59,7 @@ static int mapper_copy_string(exprtk_env_t *env, const char *data, size_t len,
                               exprtk_value_t *out) {
     exprtk_value_t borrowed;
     if (!env || !out || (!data && len != 0)) return 0;
-    borrowed = exprtk_val_str(tstr_v_from_buf(data ? data : "", len));
+    borrowed = exprtk_val_str(vstr_from_buf(data ? data : "", len));
     return exprtk_value_copy_to_env(borrowed, env, out) == 0;
 }
 

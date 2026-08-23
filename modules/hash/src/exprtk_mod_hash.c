@@ -28,7 +28,7 @@ static exprtk_value_t hash_hex_u64(uint64_t value, mem_pool_t *arena) {
         buf[15 - i] = hex[(value >> (i * 4)) & 0x0F];
     }
     buf[16] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, 16));
+    return exprtk_val_str(vstr_from_buf(buf, 16));
 }
 
 static exprtk_value_t fn_xxh32(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -42,7 +42,7 @@ static exprtk_value_t fn_xxh32(size_t argc, exprtk_value_t *args, exprtk_env_t *
     if (argc == 2 && !hash_u64_arg(&args[1], &seed64))
         return exprtk_val_num(0);
 
-    tstr_v data = args[0].data.string;
+    vstr data = args[0].data.string;
     XXH32_hash_t hash = XXH32(data.data, data.len, (XXH32_hash_t)seed64);
     return exprtk_val_num((double)hash);
 }
@@ -57,7 +57,7 @@ static exprtk_value_t fn_xxh64_hex(size_t argc, exprtk_value_t *args, exprtk_env
     if (argc == 2 && !hash_u64_arg(&args[1], &seed))
         return exprtk_val_num(0);
 
-    tstr_v data = args[0].data.string;
+    vstr data = args[0].data.string;
     return hash_hex_u64((uint64_t)XXH64(data.data, data.len, (XXH64_hash_t)seed), arena);
 }
 
@@ -67,7 +67,7 @@ static exprtk_value_t fn_xxh3_64_hex(size_t argc, exprtk_value_t *args, exprtk_e
     if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
 
-    tstr_v data = args[0].data.string;
+    vstr data = args[0].data.string;
     XXH64_hash_t hash;
     if (argc == 2) {
         uint64_t seed = 0;

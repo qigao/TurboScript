@@ -56,12 +56,12 @@ suite("Graph Algorithms") {
       exprtk_value_t result = fn(6, args, NULL, &arena);
 
       // Should succeed (no negative cycle)
-      check_float_eq(result.data.number, 0.0, EPSILON);
+      check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(EPSILON));
 
       // Check distances
-      check_float_eq(dist[0], 0.0, EPSILON);  // Source
-      check_float_eq(dist[1], 5.0, EPSILON);  // 0 -> 2 -> 1 = 3 + 2 = 5
-      check_float_eq(dist[2], 3.0, EPSILON);  // 0 -> 2 = 3
+      check(fabs((double)(dist[0]) - (double)(0.0)) <= (double)(EPSILON));  // Source
+      check(fabs((double)(dist[1]) - (double)(5.0)) <= (double)(EPSILON));  // 0 -> 2 -> 1 = 3 + 2 = 5
+      check(fabs((double)(dist[2]) - (double)(3.0)) <= (double)(EPSILON));  // 0 -> 2 = 3
 
       mem_destroy(&arena);
     }
@@ -96,7 +96,7 @@ suite("Graph Algorithms") {
       exprtk_value_t result = fn(6, args, NULL, &arena);
 
       // Should detect negative cycle
-      check_float_eq(result.data.number, -1.0, EPSILON);
+      check(fabs((double)(result.data.number) - (double)(-1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -128,9 +128,9 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "bellman_ford");
       exprtk_value_t result = fn(6, args, NULL, &arena);
 
-      check_float_eq(result.data.number, 0.0, EPSILON);
-      check_float_eq(dist[0], 0.0, EPSILON);
-      check_float_eq(dist[1], 5.0, EPSILON);
+      check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(dist[0]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(dist[1]) - (double)(5.0)) <= (double)(EPSILON));
       check(dist[2] == DBL_MAX);  // Unreachable
 
       mem_destroy(&arena);
@@ -157,7 +157,7 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "has_negative_cycle");
       exprtk_value_t result = fn(3, args, NULL, &arena);
 
-      check_float_eq(result.data.number, 1.0, EPSILON);  // Has cycle
+      check(fabs((double)(result.data.number) - (double)(1.0)) <= (double)(EPSILON));  // Has cycle
 
       mem_destroy(&arena);
     }
@@ -181,7 +181,7 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "has_negative_cycle");
       exprtk_value_t result = fn(3, args, NULL, &arena);
 
-      check_float_eq(result.data.number, 0.0, EPSILON);  // No negative cycle
+      check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(EPSILON));  // No negative cycle
 
       mem_destroy(&arena);
     }
@@ -208,13 +208,13 @@ suite("Graph Algorithms") {
       exprtk_value_t result = fn(4, args, NULL, &arena);
 
       // Path length should be 4
-      check_float_eq(result.data.number, 4.0, EPSILON);
+      check(fabs((double)(result.data.number) - (double)(4.0)) <= (double)(EPSILON));
 
       // Check path
-      check_float_eq(path[0], 0.0, EPSILON);
-      check_float_eq(path[1], 1.0, EPSILON);
-      check_float_eq(path[2], 2.0, EPSILON);
-      check_float_eq(path[3], 3.0, EPSILON);
+      check(fabs((double)(path[0]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(path[1]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(path[2]) - (double)(2.0)) <= (double)(EPSILON));
+      check(fabs((double)(path[3]) - (double)(3.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -236,7 +236,7 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "extract_path");
       exprtk_value_t result = fn(4, args, NULL, &arena);
 
-      check_float_eq(result.data.number, -1.0, EPSILON);
+      check(fabs((double)(result.data.number) - (double)(-1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -264,7 +264,7 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "detect_arbitrage");
       exprtk_value_t result = fn(2, args, NULL, &arena);
 
-      check_float_eq(result.data.number, 1.0, EPSILON);  // Arbitrage exists
+      check(fabs((double)(result.data.number) - (double)(1.0)) <= (double)(EPSILON));  // Arbitrage exists
 
       mem_destroy(&arena);
     }
@@ -289,7 +289,7 @@ suite("Graph Algorithms") {
       exprtk_builtin_fn fn = find_function(mod, "detect_arbitrage");
       exprtk_value_t result = fn(2, args, NULL, &arena);
 
-      check_float_eq(result.data.number, 0.0, EPSILON);  // No arbitrage
+      check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(EPSILON));  // No arbitrage
 
       mem_destroy(&arena);
     }

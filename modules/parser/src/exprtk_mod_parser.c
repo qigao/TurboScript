@@ -55,14 +55,14 @@ static exprtk_value_t parser_string_value(exprtk_env_t *env, const char *text) {
     exprtk_value_t value;
     exprtk_value_t borrowed;
 
-    if (!env) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!env) return exprtk_val_str(vstr_from_buf("", 0));
     if (!text) text = "";
-    borrowed = exprtk_val_str(tstr_v_from_buf(text, strlen(text)));
+    borrowed = exprtk_val_str(vstr_from_buf(text, strlen(text)));
     if (exprtk_value_copy_to_env(borrowed, env, &value) != 0) return PARSER_ZERO;
     return value;
 }
 
-static inline char *parser_arena_cstr(mem_pool_t *arena, tstr_v sv) {
+static inline char *parser_arena_cstr(mem_pool_t *arena, vstr sv) {
     char *buf = (char *)mem_alloc(arena, sv.len + 1);
     if (buf) {
         memcpy(buf, sv.data, sv.len);
@@ -84,7 +84,7 @@ static int parser_value_truthy(exprtk_value_t value) {
 }
 
 static exprtk_value_t parser_read_file(parser_ud_t *ud, exprtk_value_t path_value) {
-    exprtk_value_t result = exprtk_val_str(tstr_v_from_buf("", 0));
+    exprtk_value_t result = exprtk_val_str(vstr_from_buf("", 0));
     char *path;
     FILE *file;
     long size;
@@ -113,7 +113,7 @@ static exprtk_value_t parser_read_file(parser_ud_t *ud, exprtk_value_t path_valu
     read_size = fread(buffer, 1, (size_t)size, file);
     fclose(file);
     buffer[read_size] = '\0';
-    if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(buffer, read_size)),
+    if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_buf(buffer, read_size)),
                                  ud->env, &result) != 0)
         return PARSER_ZERO;
     return result;
@@ -328,7 +328,7 @@ static exprtk_value_t parser_toml_array_to_expr(parser_ud_t *ud, const turbo_tom
     return result;
 }
 
-static exprtk_value_t parser_toml_parse_text(parser_ud_t *ud, tstr_v text) {
+static exprtk_value_t parser_toml_parse_text(parser_ud_t *ud, vstr text) {
     turbo_toml_t *root = NULL;
     exprtk_value_t result = parser_null();
     void *ptr;
@@ -657,7 +657,7 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
     char buf[64];
     time_t ts;
 
-    if (!ud || !ud->env || argc != 1) return exprtk_val_str(tstr_v_from_buf("", 0));
+    if (!ud || !ud->env || argc != 1) return exprtk_val_str(vstr_from_buf("", 0));
     if (args[0].type == EXPRTK_VAL_INTEGER)
         ts = (time_t)args[0].data.integer;
     else if (args[0].type == EXPRTK_VAL_NUMBER)
@@ -665,10 +665,10 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
     else if (args[0].type == EXPRTK_VAL_DATETIME)
         ts = turbo_datetime_to_time(&args[0].data.datetime);
     else
-        return exprtk_val_str(tstr_v_from_buf("", 0));
+        return exprtk_val_str(vstr_from_buf("", 0));
 
     if (turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
-        return exprtk_val_str(tstr_v_from_buf("", 0));
+        return exprtk_val_str(vstr_from_buf("", 0));
     return parser_string_value(ud->env, buf);
 }
 

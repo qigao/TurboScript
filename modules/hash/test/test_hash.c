@@ -14,7 +14,7 @@ static exprtk_builtin_fn find_function(const exprtk_module_t *mod, const char *n
 }
 
 static exprtk_value_t str_arg(const char *s) {
-    return exprtk_val_str(tstr_v_from_buf((char *)s, strlen(s)));
+    return exprtk_val_str(vstr_from_buf((char *)s, strlen(s)));
 }
 
 static void hex_u64(uint64_t value, char out[17]) {
@@ -37,8 +37,8 @@ spec("hash_module") {
             exprtk_value_t args[1] = {str_arg("abc")};
             exprtk_value_t result = fn(1, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_NUMBER);
-            check_float_eq(result.data.number, (double)XXH32("abc", 3, 0), 0.001);
+            check((result.type) == (EXPRTK_VAL_NUMBER));
+            check(fabs((double)(result.data.number) - (double)((double)XXH32("abc", 3, 0))) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -54,8 +54,8 @@ spec("hash_module") {
             char expected[17];
             hex_u64((uint64_t)XXH64("abc", 3, 7), expected);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data, expected);
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), (expected)) == 0);
 
             mem_destroy(&arena);
         }
@@ -71,8 +71,8 @@ spec("hash_module") {
             char expected[17];
             hex_u64((uint64_t)XXH3_64bits("abc", 3), expected);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data, expected);
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), (expected)) == 0);
 
             mem_destroy(&arena);
         }
@@ -85,7 +85,7 @@ spec("hash_module") {
             exprtk_value_t args[2] = {str_arg("abc"), str_arg("bad")};
             exprtk_value_t result = fn(2, args, NULL, &arena);
 
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }

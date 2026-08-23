@@ -64,10 +64,10 @@ static char *exprtk_prefixed_name(exprtk_parse_ctx_t *ctx, const char *prefix,
     return d;
 }
 
-static tstr_v exprtk_unescape_to_arena(exprtk_parse_ctx_t *ctx, const char *s, size_t n) {
+static vstr exprtk_unescape_to_arena(exprtk_parse_ctx_t *ctx, const char *s, size_t n) {
     char *d = (char*)mem_alloc(ctx->arena, n + 1);
     size_t len = 0;
-    if (!d) return tstr_v_from_buf(NULL, 0);
+    if (!d) return vstr_from_buf(NULL, 0);
     for (size_t i = 0; i < n; ++i) {
         if (s[i] == '\\' && i + 1 < n) {
             i++;
@@ -85,7 +85,7 @@ static tstr_v exprtk_unescape_to_arena(exprtk_parse_ctx_t *ctx, const char *s, s
         }
     }
     d[len] = '\0';
-    return tstr_v_from_buf(d, len);
+    return vstr_from_buf(d, len);
 }
 
 static void exprtk_record_parse_error(exprtk_parse_ctx_t *ctx, int fatal, const char *fmt, ...) {
@@ -213,7 +213,7 @@ static exprtk_node_t *exprtk_make_raw_string_node(exprtk_parse_ctx_t *ctx, const
     if (!buf) return NULL;
     if (len > 0 && data) memcpy(buf, data, len);
     buf[len] = '\0';
-    node->data.string.value = tstr_v_from_buf(buf, len);
+    node->data.string.value = vstr_from_buf(buf, len);
     exprtk_node_set_pos(node, token);
     return node;
 }

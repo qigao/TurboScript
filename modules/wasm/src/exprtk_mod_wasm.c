@@ -251,7 +251,7 @@ static exprtk_value_t fn_wasm_last_error(size_t argc, exprtk_value_t *args, expr
   len = strlen(msg);
   {
     exprtk_value_t value;
-    if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_buf(msg, len)),
+    if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_buf(msg, len)),
                                  ud->env, &value) != 0)
       return WASM_ZERO;
     return value;

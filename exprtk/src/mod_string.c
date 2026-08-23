@@ -9,7 +9,7 @@
 #include "base64_utils.h"
 #include "mustache.h"
 #include "turbo_str.h"
-#include "turbo_str_view.h"
+#include "turbo_vstr.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -23,12 +23,12 @@
 /* String-view tokenization and conversion                                    */
 /* ========================================================================= */
 
-static int mod_view_contains_char(tstr_v chars, char c) {
+static int mod_view_contains_char(vstr chars, char c) {
     return chars.data && chars.len > 0 && memchr(chars.data, (unsigned char)c, chars.len) != NULL;
 }
 
-static int mod_next_token(tstr_v input, tstr_v delimiters, size_t *cursor,
-                          bool ignore_empty, tstr_v *out) {
+static int mod_next_token(vstr input, vstr delimiters, size_t *cursor,
+                          bool ignore_empty, vstr *out) {
     if (!cursor || !out || !input.data) return 0;
 
     while (*cursor <= input.len) {
@@ -40,7 +40,7 @@ static int mod_next_token(tstr_v input, tstr_v delimiters, size_t *cursor,
 
         *cursor = (end < input.len) ? end + 1 : input.len + 1;
         if (end > start || !ignore_empty) {
-            *out = tstr_v_from_buf(input.data + start, end - start);
+            *out = vstr_from_buf(input.data + start, end - start);
             return 1;
         }
     }
@@ -48,17 +48,17 @@ static int mod_next_token(tstr_v input, tstr_v delimiters, size_t *cursor,
     return 0;
 }
 
-static size_t mod_count_tokens(tstr_v input, tstr_v delimiters, bool ignore_empty) {
+static size_t mod_count_tokens(vstr input, vstr delimiters, bool ignore_empty) {
     size_t cursor = 0;
     size_t count = 0;
-    tstr_v token;
+    vstr token;
     while (mod_next_token(input, delimiters, &cursor, ignore_empty, &token)) {
         count++;
     }
     return count;
 }
 
-static char *mod_view_to_parse_cstr(tstr_v s, mem_pool_t *arena,
+static char *mod_view_to_parse_cstr(vstr s, mem_pool_t *arena,
                                     char *stack_buf, size_t stack_cap) {
     char *buf = NULL;
     if (!stack_buf || stack_cap == 0) return NULL;
@@ -73,7 +73,7 @@ static char *mod_view_to_parse_cstr(tstr_v s, mem_pool_t *arena,
     return buf;
 }
 
-static bool mod_to_double_v(tstr_v s, mem_pool_t *arena, double *out) {
+static bool mod_to_double_v(vstr s, mem_pool_t *arena, double *out) {
     char stack_buf[128];
     char *text = mod_view_to_parse_cstr(s, arena, stack_buf, sizeof(stack_buf));
     if (!text || !out) return false;
@@ -84,7 +84,7 @@ static bool mod_to_double_v(tstr_v s, mem_pool_t *arena, double *out) {
     return true;
 }
 
-static bool mod_to_int_v(tstr_v s, mem_pool_t *arena, long long *out) {
+static bool mod_to_int_v(vstr s, mem_pool_t *arena, long long *out) {
     char stack_buf[128];
     char *text = mod_view_to_parse_cstr(s, arena, stack_buf, sizeof(stack_buf));
     if (!text || !out) return false;
@@ -95,17 +95,17 @@ static bool mod_to_int_v(tstr_v s, mem_pool_t *arena, long long *out) {
     return true;
 }
 
-static bool mod_to_bool_v(tstr_v s, bool *out) {
+static bool mod_to_bool_v(vstr s, bool *out) {
     if (!out) return false;
-    if (tstr_v_ieq(s, tstr_v_from_cstr("true")) ||
-        tstr_v_ieq(s, tstr_v_from_cstr("yes")) ||
-        tstr_v_eq(s, tstr_v_from_cstr("1"))) {
+    if (vstr_ieq(s, vstr_from_cstr("true")) ||
+        vstr_ieq(s, vstr_from_cstr("yes")) ||
+        vstr_eq(s, vstr_from_cstr("1"))) {
         *out = true;
         return true;
     }
-    if (tstr_v_ieq(s, tstr_v_from_cstr("false")) ||
-        tstr_v_ieq(s, tstr_v_from_cstr("no")) ||
-        tstr_v_eq(s, tstr_v_from_cstr("0"))) {
+    if (vstr_ieq(s, vstr_from_cstr("false")) ||
+        vstr_ieq(s, vstr_from_cstr("no")) ||
+        vstr_eq(s, vstr_from_cstr("0"))) {
         *out = false;
         return true;
     }
@@ -129,7 +129,7 @@ static long long mod_number_to_signed(exprtk_value_t value) {
     return (long long)mod_number_value(value);
 }
 
-static size_t mod_normalize_byte_index(tstr_v s, exprtk_value_t value) {
+static size_t mod_normalize_byte_index(vstr s, exprtk_value_t value) {
     long long index = mod_number_to_signed(value);
     if (index < 0) index = (long long)s.len + index;
     if (index < 0) return 0;
@@ -137,7 +137,7 @@ static size_t mod_normalize_byte_index(tstr_v s, exprtk_value_t value) {
     return (size_t)index;
 }
 
-static char *mod_view_to_arena_cstr(tstr_v s, mem_pool_t *arena) {
+static char *mod_view_to_arena_cstr(vstr s, mem_pool_t *arena) {
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return NULL;
     if (s.len > 0 && s.data) memcpy(buf, s.data, s.len);
@@ -145,22 +145,22 @@ static char *mod_view_to_arena_cstr(tstr_v s, mem_pool_t *arena) {
     return buf;
 }
 
-static int mod_utf8_valid_view(tstr_v s) {
-    return tstr_v_utf8_valid(s);
+static int mod_utf8_valid_view(vstr s) {
+    return vstr_utf8_valid(s);
 }
 
-static size_t mod_utf8_byte_offset(tstr_v s, size_t codepoint_index) {
-    size_t offset = tstr_v_utf8_byte_offset(s, codepoint_index);
-    return offset == TSTR_V_NPOS ? s.len : offset;
+static size_t mod_utf8_byte_offset(vstr s, size_t codepoint_index) {
+    size_t offset = vstr_utf8_byte_offset(s, codepoint_index);
+    return offset == VSTR_NPOS ? s.len : offset;
 }
 
-static size_t mod_utf8_codepoint_count_before(tstr_v s, size_t byte_offset) {
+static size_t mod_utf8_codepoint_count_before(vstr s, size_t byte_offset) {
     if (byte_offset > s.len) byte_offset = s.len;
-    size_t count = tstr_v_utf8_len(tstr_v_from_buf(s.data, byte_offset));
-    return count == TSTR_V_NPOS ? 0 : count;
+    size_t count = vstr_utf8_len(vstr_from_buf(s.data, byte_offset));
+    return count == VSTR_NPOS ? 0 : count;
 }
 
-static int mod_utf8_is_boundary(tstr_v s, size_t byte_offset) {
+static int mod_utf8_is_boundary(vstr s, size_t byte_offset) {
     return byte_offset == 0 || byte_offset == s.len ||
            (byte_offset < s.len && ((unsigned char)s.data[byte_offset] & 0xC0) != 0x80);
 }
@@ -170,7 +170,7 @@ static exprtk_value_t mod_copy_string(mem_pool_t *arena, const char *data, size_
     if (!buf) return exprtk_val_num(0);
     if (len > 0 && data) memcpy(buf, data, len);
     buf[len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static int mod_list_append_string(exprtk_value_t *list, mem_pool_t *arena,
@@ -181,7 +181,7 @@ static int mod_list_append_string(exprtk_value_t *list, mem_pool_t *arena,
     return 1;
 }
 
-static exprtk_value_t mod_copy_tstr(mem_pool_t *arena, tstr_t s) {
+static exprtk_value_t mod_copy_tstr(mem_pool_t *arena, tstr s) {
     exprtk_value_t value;
     if (!s) return exprtk_val_num(0);
     value = mod_copy_string(arena, s, tstr_len(s));
@@ -189,24 +189,24 @@ static exprtk_value_t mod_copy_tstr(mem_pool_t *arena, tstr_t s) {
     return value;
 }
 
-static size_t mod_utf8_next_width(tstr_v s, size_t offset, uint32_t *codepoint) {
-    tstr_v rest;
+static size_t mod_utf8_next_width(vstr s, size_t offset, uint32_t *codepoint) {
+    vstr rest;
     size_t before;
     if (offset >= s.len) return 0;
-    rest = tstr_v_from_buf(s.data + offset, s.len - offset);
+    rest = vstr_from_buf(s.data + offset, s.len - offset);
     before = rest.len;
-    if (!tstr_v_utf8_next(&rest, codepoint)) return 0;
+    if (!vstr_utf8_next(&rest, codepoint)) return 0;
     return before - rest.len;
 }
 
-static size_t mod_first_utf8_char_len(tstr_v s) {
+static size_t mod_first_utf8_char_len(vstr s) {
     size_t n;
     if (s.len == 0 || !s.data) return 0;
     n = mod_utf8_next_width(s, 0, NULL);
     return n == 0 ? 1 : n;
 }
 
-static int mod_view_contains_span(tstr_v haystack, const char *data, size_t len) {
+static int mod_view_contains_span(vstr haystack, const char *data, size_t len) {
     if (!data || len == 0) return 0;
     if (haystack.len < len) return 0;
     size_t pos = 0;
@@ -227,12 +227,12 @@ static int mod_is_unreserved_url_char(unsigned char c) {
     return mod_is_ascii_alnum(c) || c == '-' || c == '_' || c == '.' || c == '~';
 }
 
-static size_t mod_string_unit_count(tstr_v s) {
-    size_t len = tstr_v_utf8_len(s);
-    return len == TSTR_V_NPOS ? s.len : len;
+static size_t mod_string_unit_count(vstr s) {
+    size_t len = vstr_utf8_len(s);
+    return len == VSTR_NPOS ? s.len : len;
 }
 
-static size_t mod_string_byte_offset(tstr_v s, size_t units) {
+static size_t mod_string_byte_offset(vstr s, size_t units) {
     return mod_utf8_valid_view(s) ? mod_utf8_byte_offset(s, units) : (units > s.len ? s.len : units);
 }
 
@@ -279,7 +279,7 @@ static uint32_t mod_utf8_fold_cp(uint32_t cp) {
 }
 
 static size_t mod_utf8_write_codepoint(char *out, size_t cap, uint32_t cp) {
-    tstr_t encoded;
+    tstr encoded;
     size_t len;
     if (!out) return 0;
     encoded = tstr_utf8_from_cp(cp);
@@ -294,33 +294,33 @@ static size_t mod_utf8_write_codepoint(char *out, size_t cap, uint32_t cp) {
     return len;
 }
 
-static int mod_utf8_ieq_view(tstr_v lhs, tstr_v rhs) {
-    tstr_v l = lhs;
-    tstr_v r = rhs;
+static int mod_utf8_ieq_view(vstr lhs, vstr rhs) {
+    vstr l = lhs;
+    vstr r = rhs;
     uint32_t lcp;
     uint32_t rcp;
     while (l.len > 0 && r.len > 0) {
-        if (!tstr_v_utf8_next(&l, &lcp) || !tstr_v_utf8_next(&r, &rcp)) return 0;
+        if (!vstr_utf8_next(&l, &lcp) || !vstr_utf8_next(&r, &rcp)) return 0;
         if (mod_utf8_fold_cp(lcp) != mod_utf8_fold_cp(rcp)) return 0;
     }
     return l.len == 0 && r.len == 0;
 }
 
-static int mod_utf8_starts_with_ci(tstr_v s, tstr_v prefix) {
+static int mod_utf8_starts_with_ci(vstr s, vstr prefix) {
     if (prefix.len > s.len || !mod_utf8_valid_view(s) || !mod_utf8_valid_view(prefix))
         return 0;
     if (!mod_utf8_is_boundary(s, prefix.len)) return 0;
-    return mod_utf8_ieq_view(tstr_v_from_buf(s.data, prefix.len), prefix);
+    return mod_utf8_ieq_view(vstr_from_buf(s.data, prefix.len), prefix);
 }
 
-static int mod_utf8_contains_ci(tstr_v haystack, tstr_v needle) {
+static int mod_utf8_contains_ci(vstr haystack, vstr needle) {
     size_t offset = 0;
     if (!mod_utf8_valid_view(haystack) || !mod_utf8_valid_view(needle)) return 0;
     if (needle.len == 0) return 1;
     if (needle.len > haystack.len) return 0;
     while (offset <= haystack.len - needle.len) {
         if (mod_utf8_is_boundary(haystack, offset + needle.len) &&
-            mod_utf8_ieq_view(tstr_v_from_buf(haystack.data + offset, needle.len), needle)) {
+            mod_utf8_ieq_view(vstr_from_buf(haystack.data + offset, needle.len), needle)) {
             return 1;
         }
         size_t width = mod_utf8_next_width(haystack, offset, NULL);
@@ -330,13 +330,13 @@ static int mod_utf8_contains_ci(tstr_v haystack, tstr_v needle) {
     return 0;
 }
 
-static exprtk_value_t mod_utf8_map_case(mem_pool_t *arena, tstr_v s, int to_upper) {
-    tstr_v rest = s;
-    tstr_t out = tstr_new();
+static exprtk_value_t mod_utf8_map_case(mem_pool_t *arena, vstr s, int to_upper) {
+    vstr rest = s;
+    tstr out = tstr_new();
     uint32_t cp;
     if (!out) return exprtk_val_num(0);
     while (rest.len > 0) {
-        if (!tstr_v_utf8_next(&rest, &cp)) {
+        if (!vstr_utf8_next(&rest, &cp)) {
             tstr_free(out);
             return exprtk_val_num(0);
         }
@@ -356,11 +356,11 @@ static exprtk_value_t fn_size(size_t argc, exprtk_value_t *args, exprtk_env_t *e
 static exprtk_value_t fn_lower(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         char *buf = mem_alloc(arena, s.len);
         if (buf) {
             for (size_t i = 0; i < s.len; ++i) buf[i] = (char)tolower((unsigned char)s.data[i]);
-            return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+            return exprtk_val_str(vstr_from_buf(buf, s.len));
         }
     }
     return exprtk_val_num(0);
@@ -369,11 +369,11 @@ static exprtk_value_t fn_lower(size_t argc, exprtk_value_t *args, exprtk_env_t *
 static exprtk_value_t fn_upper(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         char *buf = mem_alloc(arena, s.len);
         if (buf) {
             for (size_t i = 0; i < s.len; ++i) buf[i] = (char)toupper((unsigned char)s.data[i]);
-            return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+            return exprtk_val_str(vstr_from_buf(buf, s.len));
         }
     }
     return exprtk_val_num(0);
@@ -382,21 +382,21 @@ static exprtk_value_t fn_upper(size_t argc, exprtk_value_t *args, exprtk_env_t *
 static exprtk_value_t fn_trim(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING)
-        return exprtk_val_str(tstr_v_trim(args[0].data.string, " \t\r\n"));
+        return exprtk_val_str(vstr_trim(args[0].data.string, " \t\r\n"));
     return exprtk_val_num(0);
 }
 
 static exprtk_value_t fn_ltrim(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING)
-        return exprtk_val_str(tstr_v_trim_left(args[0].data.string, " \t\r\n"));
+        return exprtk_val_str(vstr_trim_left(args[0].data.string, " \t\r\n"));
     return exprtk_val_num(0);
 }
 
 static exprtk_value_t fn_rtrim(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING)
-        return exprtk_val_str(tstr_v_trim_right(args[0].data.string, " \t\r\n"));
+        return exprtk_val_str(vstr_trim_right(args[0].data.string, " \t\r\n"));
     return exprtk_val_num(0);
 }
 
@@ -409,7 +409,7 @@ static exprtk_value_t fn_is_empty(size_t argc, exprtk_value_t *args, exprtk_env_
 static exprtk_value_t fn_is_blank(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isspace((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -419,7 +419,7 @@ static exprtk_value_t fn_is_blank(size_t argc, exprtk_value_t *args, exprtk_env_
 static exprtk_value_t fn_is_ascii(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if ((unsigned char)s.data[i] > 0x7F) return exprtk_val_num(0);
     }
@@ -430,7 +430,7 @@ static exprtk_value_t fn_is_hex(size_t argc, exprtk_value_t *args, exprtk_env_t 
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isxdigit((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -440,7 +440,7 @@ static exprtk_value_t fn_is_hex(size_t argc, exprtk_value_t *args, exprtk_env_t 
 static exprtk_value_t fn_is_printable(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         unsigned char c = (unsigned char)s.data[i];
         if (c >= 0x80) return exprtk_val_num(0);
@@ -454,7 +454,7 @@ static exprtk_value_t fn_is_digit(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isdigit((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -465,7 +465,7 @@ static exprtk_value_t fn_is_alpha(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isalpha((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -476,7 +476,7 @@ static exprtk_value_t fn_is_alnum(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isalnum((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -487,7 +487,7 @@ static exprtk_value_t fn_is_space(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     for (size_t i = 0; i < s.len; ++i) {
         if (!isspace((unsigned char)s.data[i])) return exprtk_val_num(0);
     }
@@ -498,7 +498,7 @@ static exprtk_value_t fn_is_lower(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     int has_cased = 0;
     for (size_t i = 0; i < s.len; ++i) {
         unsigned char c = (unsigned char)s.data[i];
@@ -512,7 +512,7 @@ static exprtk_value_t fn_is_upper(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING || args[0].data.string.len == 0)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     int has_cased = 0;
     for (size_t i = 0; i < s.len; ++i) {
         unsigned char c = (unsigned char)s.data[i];
@@ -525,29 +525,29 @@ static exprtk_value_t fn_is_upper(size_t argc, exprtk_value_t *args, exprtk_env_
 static exprtk_value_t fn_contains(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING)
-        return exprtk_val_num(tstr_v_contains(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
+        return exprtk_val_num(vstr_contains(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
     return exprtk_val_num(0);
 }
 
 static exprtk_value_t fn_starts_with(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING)
-        return exprtk_val_num(tstr_v_starts_with(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
+        return exprtk_val_num(vstr_starts_with(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
     return exprtk_val_num(0);
 }
 
 static exprtk_value_t fn_ends_with(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING)
-        return exprtk_val_num(tstr_v_ends_with(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
+        return exprtk_val_num(vstr_ends_with(args[0].data.string, args[1].data.string) ? 1.0 : 0.0);
     return exprtk_val_num(0);
 }
 
 static exprtk_value_t fn_index_of(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING) {
-        size_t pos = tstr_v_find(args[0].data.string, args[1].data.string);
-        return exprtk_val_num(pos == TSTR_V_NPOS ? -1.0 : (double)pos);
+        size_t pos = vstr_find(args[0].data.string, args[1].data.string);
+        return exprtk_val_num(pos == VSTR_NPOS ? -1.0 : (double)pos);
     }
     return exprtk_val_num(0);
 }
@@ -555,8 +555,8 @@ static exprtk_value_t fn_index_of(size_t argc, exprtk_value_t *args, exprtk_env_
 static exprtk_value_t fn_last_index_of(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING) {
-        size_t pos = tstr_v_rfind(args[0].data.string, args[1].data.string);
-        return exprtk_val_num(pos == TSTR_V_NPOS ? -1.0 : (double)pos);
+        size_t pos = vstr_rfind(args[0].data.string, args[1].data.string);
+        return exprtk_val_num(pos == VSTR_NPOS ? -1.0 : (double)pos);
     }
     return exprtk_val_num(-1);
 }
@@ -565,12 +565,12 @@ static exprtk_value_t fn_find(size_t argc, exprtk_value_t *args, exprtk_env_t *e
     (void)env; (void)arena;
     if ((argc == 2 || argc == 3) && args[0].type == EXPRTK_VAL_STRING &&
         args[1].type == EXPRTK_VAL_STRING && (argc == 2 || mod_is_number(args[2]))) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         size_t start = argc == 3 ? mod_number_to_index(args[2]) : 0;
         if (start > s.len) return exprtk_val_num(-1);
-        tstr_v hay = tstr_v_from_buf(s.data + start, s.len - start);
-        size_t pos = tstr_v_find(hay, args[1].data.string);
-        return exprtk_val_num(pos == TSTR_V_NPOS ? -1.0 : (double)(start + pos));
+        vstr hay = vstr_from_buf(s.data + start, s.len - start);
+        size_t pos = vstr_find(hay, args[1].data.string);
+        return exprtk_val_num(pos == VSTR_NPOS ? -1.0 : (double)(start + pos));
     }
     return exprtk_val_num(-1);
 }
@@ -579,12 +579,12 @@ static exprtk_value_t fn_rfind(size_t argc, exprtk_value_t *args, exprtk_env_t *
     (void)env; (void)arena;
     if ((argc == 2 || argc == 3) && args[0].type == EXPRTK_VAL_STRING &&
         args[1].type == EXPRTK_VAL_STRING && (argc == 2 || mod_is_number(args[2]))) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         size_t end = argc == 3 ? mod_number_to_index(args[2]) : s.len;
         if (end > s.len) end = s.len;
-        tstr_v hay = tstr_v_from_buf(s.data, end);
-        size_t pos = tstr_v_rfind(hay, args[1].data.string);
-        return exprtk_val_num(pos == TSTR_V_NPOS ? -1.0 : (double)pos);
+        vstr hay = vstr_from_buf(s.data, end);
+        size_t pos = vstr_rfind(hay, args[1].data.string);
+        return exprtk_val_num(pos == VSTR_NPOS ? -1.0 : (double)pos);
     }
     return exprtk_val_num(-1);
 }
@@ -594,15 +594,15 @@ static exprtk_value_t fn_find_all(size_t argc, exprtk_value_t *args, exprtk_env_
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
-    tstr_v sub = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sub = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     if (sub.len == 0) return list;
 
     size_t cursor = 0;
     while (cursor <= s.len) {
-        size_t found = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), sub);
-        if (found == TSTR_V_NPOS) break;
+        size_t found = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), sub);
+        if (found == VSTR_NPOS) break;
         size_t pos = cursor + found;
         exprtk_list_push(&list, exprtk_val_num((double)pos));
         cursor = pos + sub.len;
@@ -615,15 +615,15 @@ static exprtk_value_t fn_find_all_overlapping(size_t argc, exprtk_value_t *args,
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
-    tstr_v sub = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sub = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     if (sub.len == 0) return list;
 
     size_t cursor = 0;
     while (cursor <= s.len) {
-        size_t found = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), sub);
-        if (found == TSTR_V_NPOS) break;
+        size_t found = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), sub);
+        if (found == VSTR_NPOS) break;
         size_t pos = cursor + found;
         exprtk_list_push(&list, exprtk_val_num((double)pos));
         cursor = pos + 1;
@@ -635,8 +635,8 @@ static exprtk_value_t fn_substr(size_t argc, exprtk_value_t *args, exprtk_env_t 
     (void)env; (void)arena;
     if ((argc == 2 || argc == 3) && args[0].type == EXPRTK_VAL_STRING) {
         size_t start = (size_t)args[1].data.number;
-        size_t len = (argc == 3) ? (size_t)args[2].data.number : TSTR_V_NPOS;
-        return exprtk_val_str(tstr_v_sub(args[0].data.string, start, len));
+        size_t len = (argc == 3) ? (size_t)args[2].data.number : VSTR_NPOS;
+        return exprtk_val_str(vstr_sub(args[0].data.string, start, len));
     }
     return exprtk_val_num(0);
 }
@@ -645,7 +645,7 @@ static exprtk_value_t fn_slice(size_t argc, exprtk_value_t *args, exprtk_env_t *
     (void)env;
     if ((argc == 2 || argc == 3) && args[0].type == EXPRTK_VAL_STRING &&
         mod_is_number(args[1]) && (argc == 2 || mod_is_number(args[2]))) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         double start_num = mod_number_value(args[1]);
         double end_num = argc == 3 ? mod_number_value(args[2]) : (double)s.len;
         long long start = start_num < 0.0 ? (long long)s.len + (long long)start_num : (long long)start_num;
@@ -663,9 +663,9 @@ static exprtk_value_t fn_slice(size_t argc, exprtk_value_t *args, exprtk_env_t *
 static exprtk_value_t fn_char_at(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && mod_is_number(args[1])) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         size_t index = mod_number_to_index(args[1]);
-        if (index >= s.len) return exprtk_val_str(tstr_v_from_buf("", 0));
+        if (index >= s.len) return exprtk_val_str(vstr_from_buf("", 0));
         return mod_copy_string(arena, s.data + index, 1);
     }
     return exprtk_val_num(0);
@@ -674,14 +674,14 @@ static exprtk_value_t fn_char_at(size_t argc, exprtk_value_t *args, exprtk_env_t
 static exprtk_value_t fn_replace(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc == 3 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING && args[2].type == EXPRTK_VAL_STRING) {
-        tstr_v s = args[0].data.string;
-        tstr_v old_v = args[1].data.string;
-        tstr_v new_v = args[2].data.string;
+        vstr s = args[0].data.string;
+        vstr old_v = args[1].data.string;
+        vstr new_v = args[2].data.string;
         if (old_v.len == 0) return args[0];
         size_t count = 0, curr = 0;
         while (curr <= s.len) {
-            size_t p = tstr_v_find(tstr_v_sub(s, curr, TSTR_V_NPOS), old_v);
-            if (p == TSTR_V_NPOS) break;
+            size_t p = vstr_find(vstr_sub(s, curr, VSTR_NPOS), old_v);
+            if (p == VSTR_NPOS) break;
             count++;
             curr += p + old_v.len;
             if (old_v.len == 0) break;
@@ -693,8 +693,8 @@ static exprtk_value_t fn_replace(size_t argc, exprtk_value_t *args, exprtk_env_t
             char *dest = buf;
             size_t last_src = 0;
             while (last_src < s.len) {
-                size_t p = tstr_v_find(tstr_v_sub(s, last_src, TSTR_V_NPOS), old_v);
-                if (p == TSTR_V_NPOS) break;
+                size_t p = vstr_find(vstr_sub(s, last_src, VSTR_NPOS), old_v);
+                if (p == VSTR_NPOS) break;
                 memcpy(dest, s.data + last_src, p);
                 dest += p;
                 memcpy(dest, new_v.data, new_v.len);
@@ -702,7 +702,7 @@ static exprtk_value_t fn_replace(size_t argc, exprtk_value_t *args, exprtk_env_t
                 last_src += p + old_v.len;
             }
             if (last_src < s.len) memcpy(dest, s.data + last_src, s.len - last_src);
-            return exprtk_val_str(tstr_v_from_buf(buf, new_len));
+            return exprtk_val_str(vstr_from_buf(buf, new_len));
         }
     }
     return exprtk_val_num(0);
@@ -711,11 +711,11 @@ static exprtk_value_t fn_replace(size_t argc, exprtk_value_t *args, exprtk_env_t
 static exprtk_value_t fn_reverse(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
-        tstr_v s = args[0].data.string;
+        vstr s = args[0].data.string;
         char *buf = mem_alloc(arena, s.len);
         if (buf) {
             for (size_t i = 0; i < s.len; ++i) buf[i] = s.data[s.len - 1 - i];
-            return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+            return exprtk_val_str(vstr_from_buf(buf, s.len));
         }
     }
     return exprtk_val_num(0);
@@ -734,9 +734,9 @@ static exprtk_value_t fn_utf8_len(size_t argc, exprtk_value_t *args, exprtk_env_
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(-1.0);
-    return exprtk_val_num((double)tstr_v_utf8_len(s));
+    return exprtk_val_num((double)vstr_utf8_len(s));
 }
 
 /* utf8_index_of(str, needle) -> number: codepoint index, -1 if not found */
@@ -744,11 +744,11 @@ static exprtk_value_t fn_utf8_index_of(size_t argc, exprtk_value_t *args, exprtk
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v needle = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr needle = args[1].data.string;
     if (!mod_utf8_valid_view(s) || !mod_utf8_valid_view(needle)) return exprtk_val_num(-1.0);
-    size_t pos = tstr_v_find(s, needle);
-    if (pos == TSTR_V_NPOS) return exprtk_val_num(-1.0);
+    size_t pos = vstr_find(s, needle);
+    if (pos == VSTR_NPOS) return exprtk_val_num(-1.0);
     return exprtk_val_num((double)mod_utf8_codepoint_count_before(s, pos));
 }
 
@@ -759,7 +759,7 @@ static exprtk_value_t fn_utf8_substr(size_t argc, exprtk_value_t *args, exprtk_e
         return exprtk_val_num(0);
     if (argc == 3 && !mod_is_number(args[2])) return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
 
     size_t start = mod_number_to_index(args[1]);
@@ -767,7 +767,7 @@ static exprtk_value_t fn_utf8_substr(size_t argc, exprtk_value_t *args, exprtk_e
     size_t end_byte = s.len;
     if (argc == 3) {
         size_t count = mod_number_to_index(args[2]);
-        end_byte = mod_utf8_byte_offset(tstr_v_from_buf(s.data + start_byte, s.len - start_byte), count) + start_byte;
+        end_byte = mod_utf8_byte_offset(vstr_from_buf(s.data + start_byte, s.len - start_byte), count) + start_byte;
     }
     return mod_copy_string(arena, s.data + start_byte, end_byte - start_byte);
 }
@@ -778,9 +778,9 @@ static exprtk_value_t fn_utf8_slice(size_t argc, exprtk_value_t *args, exprtk_en
         return exprtk_val_num(0);
     if (argc == 3 && !mod_is_number(args[2])) return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
-    size_t units = tstr_v_utf8_len(s);
+    size_t units = vstr_utf8_len(s);
     size_t start = mod_normalize_unit_index(units, args[1]);
     size_t end = argc == 3 ? mod_normalize_unit_index(units, args[2]) : units;
     if (end < start) end = start;
@@ -791,7 +791,7 @@ static exprtk_value_t fn_utf8_slice(size_t argc, exprtk_value_t *args, exprtk_en
 
 static exprtk_value_t fn_from_codepoint(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
-    tstr_t out = tstr_new();
+    tstr out = tstr_new();
     if (!out) return exprtk_val_num(0);
     for (size_t i = 0; i < argc; ++i) {
         if (!mod_is_number(args[i])) {
@@ -818,7 +818,7 @@ static exprtk_value_t fn_ord(size_t argc, exprtk_value_t *args, exprtk_env_t *en
     if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     if (argc == 2 && !mod_is_number(args[1])) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(-1.0);
     size_t index = argc == 2 ? mod_number_to_index(args[1]) : 0;
     size_t start = mod_utf8_byte_offset(s, index);
@@ -832,7 +832,7 @@ static exprtk_value_t fn_byte_at(size_t argc, exprtk_value_t *args, exprtk_env_t
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t index = mod_number_to_index(args[1]);
     if (index >= s.len) return exprtk_val_num(-1.0);
     return exprtk_val_num((double)(unsigned char)s.data[index]);
@@ -861,8 +861,8 @@ static exprtk_value_t fn_str_split(size_t argc, exprtk_value_t *args, exprtk_env
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
 
     if (sep.len == 0) {
@@ -878,11 +878,11 @@ static exprtk_value_t fn_str_split(size_t argc, exprtk_value_t *args, exprtk_env
 
     size_t cursor = 0;
     while (cursor <= s.len) {
-        tstr_v rest = tstr_v_from_buf(s.data + cursor, s.len - cursor);
-        size_t found = tstr_v_find(rest, sep);
-        size_t part_len = (found == TSTR_V_NPOS) ? (s.len - cursor) : found;
+        vstr rest = vstr_from_buf(s.data + cursor, s.len - cursor);
+        size_t found = vstr_find(rest, sep);
+        size_t part_len = (found == VSTR_NPOS) ? (s.len - cursor) : found;
         if (!mod_list_append_string(&list, arena, s.data + cursor, part_len)) return exprtk_val_num(0);
-        if (found == TSTR_V_NPOS) break;
+        if (found == VSTR_NPOS) break;
         cursor += found + sep.len;
     }
     return list;
@@ -894,8 +894,8 @@ static exprtk_value_t fn_split_limit(size_t argc, exprtk_value_t *args, exprtk_e
         !mod_is_number(args[2]))
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     size_t maxsplit = mod_number_to_index(args[2]);
     exprtk_value_t list = exprtk_val_list_empty();
 
@@ -921,8 +921,8 @@ static exprtk_value_t fn_split_limit(size_t argc, exprtk_value_t *args, exprtk_e
     size_t cursor = 0;
     size_t splits = 0;
     while (cursor <= s.len && splits < maxsplit) {
-        size_t found = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), sep);
-        if (found == TSTR_V_NPOS) break;
+        size_t found = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), sep);
+        if (found == VSTR_NPOS) break;
         if (!mod_list_append_string(&list, arena, s.data + cursor, found)) return exprtk_val_num(0);
         cursor += found + sep.len;
         splits++;
@@ -937,15 +937,15 @@ static exprtk_value_t fn_rsplit(size_t argc, exprtk_value_t *args, exprtk_env_t 
         args[1].type != EXPRTK_VAL_STRING || (argc == 3 && !mod_is_number(args[2])))
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     if (sep.len == 0) return exprtk_val_num(0);
 
     size_t total = 0;
     size_t cursor = 0;
     while (cursor <= s.len) {
-        size_t found = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), sep);
-        if (found == TSTR_V_NPOS) break;
+        size_t found = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), sep);
+        if (found == VSTR_NPOS) break;
         total++;
         cursor += found + sep.len;
     }
@@ -967,7 +967,7 @@ static exprtk_value_t fn_rsplit(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if (!positions) return exprtk_val_num(0);
     cursor = 0;
     for (size_t i = 0; i < total; ++i) {
-        size_t found = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), sep);
+        size_t found = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), sep);
         positions[i] = cursor + found;
         cursor = positions[i] + sep.len;
     }
@@ -991,12 +991,12 @@ static exprtk_value_t fn_split_once(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     if (sep.len == 0) return exprtk_val_num(0);
-    size_t pos = tstr_v_find(s, sep);
+    size_t pos = vstr_find(s, sep);
     exprtk_value_t list = exprtk_val_list_empty();
-    if (pos == TSTR_V_NPOS) {
+    if (pos == VSTR_NPOS) {
         if (!mod_list_append_string(&list, arena, s.data, s.len)) return exprtk_val_num(0);
         if (!mod_list_append_string(&list, arena, "", 0)) return exprtk_val_num(0);
         return list;
@@ -1011,12 +1011,12 @@ static exprtk_value_t fn_rsplit_once(size_t argc, exprtk_value_t *args, exprtk_e
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     if (sep.len == 0) return exprtk_val_num(0);
-    size_t pos = tstr_v_rfind(s, sep);
+    size_t pos = vstr_rfind(s, sep);
     exprtk_value_t list = exprtk_val_list_empty();
-    if (pos == TSTR_V_NPOS) {
+    if (pos == VSTR_NPOS) {
         if (!mod_list_append_string(&list, arena, s.data, s.len)) return exprtk_val_num(0);
         if (!mod_list_append_string(&list, arena, "", 0)) return exprtk_val_num(0);
         return list;
@@ -1034,7 +1034,7 @@ static exprtk_value_t fn_str_join(size_t argc, exprtk_value_t *args, exprtk_env_
         return exprtk_val_num(0);
 
     exprtk_value_t list = args[0];
-    tstr_v sep = args[1].data.string;
+    vstr sep = args[1].data.string;
     size_t cap = 1 + (list.data.list.count > 0 ? (list.data.list.count - 1) * sep.len : 0);
     char tmp[64];
     for (size_t i = 0; i < list.data.list.count; ++i) {
@@ -1065,18 +1065,18 @@ static exprtk_value_t fn_str_join(size_t argc, exprtk_value_t *args, exprtk_env_
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_utf8_rindex_of(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v needle = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr needle = args[1].data.string;
     if (!mod_utf8_valid_view(s) || !mod_utf8_valid_view(needle)) return exprtk_val_num(-1.0);
-    size_t pos = tstr_v_rfind(s, needle);
-    if (pos == TSTR_V_NPOS) return exprtk_val_num(-1.0);
+    size_t pos = vstr_rfind(s, needle);
+    if (pos == VSTR_NPOS) return exprtk_val_num(-1.0);
     return exprtk_val_num((double)mod_utf8_codepoint_count_before(s, pos));
 }
 
@@ -1084,11 +1084,11 @@ static exprtk_value_t fn_utf8_char_at(size_t argc, exprtk_value_t *args, exprtk_
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
     size_t start = mod_utf8_byte_offset(s, mod_number_to_index(args[1]));
-    if (start >= s.len) return exprtk_val_str(tstr_v_from_buf("", 0));
-    size_t end = mod_utf8_byte_offset(tstr_v_from_buf(s.data + start, s.len - start), 1) + start;
+    if (start >= s.len) return exprtk_val_str(vstr_from_buf("", 0));
+    size_t end = mod_utf8_byte_offset(vstr_from_buf(s.data + start, s.len - start), 1) + start;
     return mod_copy_string(arena, s.data + start, end - start);
 }
 
@@ -1096,7 +1096,7 @@ static exprtk_value_t fn_utf8_codepoint_at(size_t argc, exprtk_value_t *args, ex
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(-1.0);
     size_t start = mod_utf8_byte_offset(s, mod_number_to_index(args[1]));
     if (start >= s.len) return exprtk_val_num(-1.0);
@@ -1109,7 +1109,7 @@ static exprtk_value_t fn_utf8_reverse(size_t argc, exprtk_value_t *args, exprtk_
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
@@ -1123,21 +1123,21 @@ static exprtk_value_t fn_utf8_reverse(size_t argc, exprtk_value_t *args, exprtk_
         read = start;
     }
     buf[write] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, write));
+    return exprtk_val_str(vstr_from_buf(buf, write));
 }
 
 static exprtk_value_t fn_str_count_substr(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v needle = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr needle = args[1].data.string;
     if (needle.len == 0) return exprtk_val_num(0);
     size_t cursor = 0;
     size_t count = 0;
     while (cursor <= s.len) {
-        size_t pos = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), needle);
-        if (pos == TSTR_V_NPOS) break;
+        size_t pos = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), needle);
+        if (pos == VSTR_NPOS) break;
         count++;
         cursor += pos + needle.len;
     }
@@ -1148,14 +1148,14 @@ static exprtk_value_t fn_str_count_overlapping(size_t argc, exprtk_value_t *args
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v needle = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr needle = args[1].data.string;
     if (needle.len == 0) return exprtk_val_num(0);
     size_t cursor = 0;
     size_t count = 0;
     while (cursor <= s.len) {
-        size_t pos = tstr_v_find(tstr_v_from_buf(s.data + cursor, s.len - cursor), needle);
-        if (pos == TSTR_V_NPOS) break;
+        size_t pos = vstr_find(vstr_from_buf(s.data + cursor, s.len - cursor), needle);
+        if (pos == VSTR_NPOS) break;
         count++;
         cursor += pos + 1;
     }
@@ -1166,7 +1166,7 @@ static exprtk_value_t fn_str_repeat(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t count = mod_number_to_index(args[1]);
     size_t len = s.len * count;
     char *buf = (char *)mem_alloc(arena, len + 1);
@@ -1177,14 +1177,14 @@ static exprtk_value_t fn_str_repeat(size_t argc, exprtk_value_t *args, exprtk_en
         pos += s.len;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_str_lines(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     size_t start = 0;
     for (size_t i = 0; i < s.len; ++i) {
@@ -1203,7 +1203,7 @@ static exprtk_value_t fn_line_count(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (s.len == 0) return exprtk_val_num(0);
     size_t count = 0;
     size_t start = 0;
@@ -1221,7 +1221,7 @@ static exprtk_value_t fn_chomp(size_t argc, exprtk_value_t *args, exprtk_env_t *
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t len = s.len;
     if (len > 0 && s.data[len - 1] == '\n') {
         len--;
@@ -1237,7 +1237,7 @@ static exprtk_value_t fn_expand_tabs(size_t argc, exprtk_value_t *args, exprtk_e
     if ((argc != 1 && argc != 2) || args[0].type != EXPRTK_VAL_STRING ||
         (argc == 2 && !mod_is_number(args[1])))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t tabsize = argc == 2 ? mod_number_to_index(args[1]) : 8;
     int valid = mod_utf8_valid_view(s);
     size_t len = 0;
@@ -1278,7 +1278,7 @@ static exprtk_value_t fn_expand_tabs(size_t argc, exprtk_value_t *args, exprtk_e
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_indent(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1286,8 +1286,8 @@ static exprtk_value_t fn_indent(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING || (argc == 3 && !mod_is_number(args[2])))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v prefix = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr prefix = args[1].data.string;
     int include_first = argc == 3 ? fabs(mod_number_value(args[2])) > 1e-9 : 1;
     size_t lines = s.len > 0 ? 1 : 0;
     for (size_t i = 0; i < s.len; ++i) {
@@ -1327,14 +1327,14 @@ static exprtk_value_t fn_indent(size_t argc, exprtk_value_t *args, exprtk_env_t 
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_dedent(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t min_indent = (size_t)-1;
     size_t line_start = 0;
     while (line_start < s.len) {
@@ -1375,14 +1375,14 @@ static exprtk_value_t fn_dedent(size_t argc, exprtk_value_t *args, exprtk_env_t 
         line_start = line_end + 1;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_csv_escape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     int needs_quote = 0;
     size_t quote_count = 0;
     for (size_t i = 0; i < s.len; ++i) {
@@ -1400,14 +1400,14 @@ static exprtk_value_t fn_csv_escape(size_t argc, exprtk_value_t *args, exprtk_en
     }
     buf[pos++] = '"';
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_csv_unescape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (s.len < 2 || s.data[0] != '"' || s.data[s.len - 1] != '"')
         return mod_copy_string(arena, s.data, s.len);
     char *buf = (char *)mem_alloc(arena, s.len - 1);
@@ -1418,7 +1418,7 @@ static exprtk_value_t fn_csv_unescape(size_t argc, exprtk_value_t *args, exprtk_
         buf[pos++] = s.data[i];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_trim_chars(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1427,7 +1427,7 @@ static exprtk_value_t fn_trim_chars(size_t argc, exprtk_value_t *args, exprtk_en
         return exprtk_val_num(0);
     char *chars = mod_view_to_arena_cstr(args[1].data.string, arena);
     if (!chars) return exprtk_val_num(0);
-    return exprtk_val_str(tstr_v_trim(args[0].data.string, chars));
+    return exprtk_val_str(vstr_trim(args[0].data.string, chars));
 }
 
 static exprtk_value_t fn_ltrim_chars(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1436,7 +1436,7 @@ static exprtk_value_t fn_ltrim_chars(size_t argc, exprtk_value_t *args, exprtk_e
         return exprtk_val_num(0);
     char *chars = mod_view_to_arena_cstr(args[1].data.string, arena);
     if (!chars) return exprtk_val_num(0);
-    return exprtk_val_str(tstr_v_trim_left(args[0].data.string, chars));
+    return exprtk_val_str(vstr_trim_left(args[0].data.string, chars));
 }
 
 static exprtk_value_t fn_rtrim_chars(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1445,7 +1445,7 @@ static exprtk_value_t fn_rtrim_chars(size_t argc, exprtk_value_t *args, exprtk_e
         return exprtk_val_num(0);
     char *chars = mod_view_to_arena_cstr(args[1].data.string, arena);
     if (!chars) return exprtk_val_num(0);
-    return exprtk_val_str(tstr_v_trim_right(args[0].data.string, chars));
+    return exprtk_val_str(vstr_trim_right(args[0].data.string, chars));
 }
 
 static exprtk_value_t fn_str_eq_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1469,12 +1469,12 @@ static exprtk_value_t fn_replace_once(size_t argc, exprtk_value_t *args, exprtk_
     if (argc != 3 || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v old_v = args[1].data.string;
-    tstr_v new_v = args[2].data.string;
+    vstr s = args[0].data.string;
+    vstr old_v = args[1].data.string;
+    vstr new_v = args[2].data.string;
     if (old_v.len == 0) return mod_copy_string(arena, s.data, s.len);
-    size_t pos = tstr_v_find(s, old_v);
-    if (pos == TSTR_V_NPOS) return mod_copy_string(arena, s.data, s.len);
+    size_t pos = vstr_find(s, old_v);
+    if (pos == VSTR_NPOS) return mod_copy_string(arena, s.data, s.len);
     size_t new_len = s.len - old_v.len + new_v.len;
     char *buf = (char *)mem_alloc(arena, new_len + 1);
     if (!buf) return exprtk_val_num(0);
@@ -1482,16 +1482,16 @@ static exprtk_value_t fn_replace_once(size_t argc, exprtk_value_t *args, exprtk_
     memcpy(buf + pos, new_v.data, new_v.len);
     memcpy(buf + pos + new_v.len, s.data + pos + old_v.len, s.len - pos - old_v.len);
     buf[new_len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, new_len));
+    return exprtk_val_str(vstr_from_buf(buf, new_len));
 }
 
 static exprtk_value_t fn_remove_prefix(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v prefix = args[1].data.string;
-    if (tstr_v_starts_with(s, prefix))
+    vstr s = args[0].data.string;
+    vstr prefix = args[1].data.string;
+    if (vstr_starts_with(s, prefix))
         return mod_copy_string(arena, s.data + prefix.len, s.len - prefix.len);
     return mod_copy_string(arena, s.data, s.len);
 }
@@ -1500,9 +1500,9 @@ static exprtk_value_t fn_remove_suffix(size_t argc, exprtk_value_t *args, exprtk
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v suffix = args[1].data.string;
-    if (tstr_v_ends_with(s, suffix))
+    vstr s = args[0].data.string;
+    vstr suffix = args[1].data.string;
+    if (vstr_ends_with(s, suffix))
         return mod_copy_string(arena, s.data, s.len - suffix.len);
     return mod_copy_string(arena, s.data, s.len);
 }
@@ -1512,9 +1512,9 @@ static exprtk_value_t fn_surround(size_t argc, exprtk_value_t *args, exprtk_env_
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING || (argc == 3 && args[2].type != EXPRTK_VAL_STRING))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v prefix = args[1].data.string;
-    tstr_v suffix = argc == 3 ? args[2].data.string : prefix;
+    vstr s = args[0].data.string;
+    vstr prefix = args[1].data.string;
+    vstr suffix = argc == 3 ? args[2].data.string : prefix;
     size_t len = prefix.len + s.len + suffix.len;
     char *buf = (char *)mem_alloc(arena, len + 1);
     if (!buf) return exprtk_val_num(0);
@@ -1532,7 +1532,7 @@ static exprtk_value_t fn_surround(size_t argc, exprtk_value_t *args, exprtk_env_
         pos += suffix.len;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_unwrap(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1540,11 +1540,11 @@ static exprtk_value_t fn_unwrap(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING || (argc == 3 && args[2].type != EXPRTK_VAL_STRING))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v prefix = args[1].data.string;
-    tstr_v suffix = argc == 3 ? args[2].data.string : prefix;
+    vstr s = args[0].data.string;
+    vstr prefix = args[1].data.string;
+    vstr suffix = argc == 3 ? args[2].data.string : prefix;
     if (prefix.len + suffix.len <= s.len &&
-        tstr_v_starts_with(s, prefix) && tstr_v_ends_with(s, suffix)) {
+        vstr_starts_with(s, prefix) && vstr_ends_with(s, suffix)) {
         return mod_copy_string(arena, s.data + prefix.len, s.len - prefix.len - suffix.len);
     }
     return mod_copy_string(arena, s.data, s.len);
@@ -1554,7 +1554,7 @@ static exprtk_value_t fn_normalize_space(size_t argc, exprtk_value_t *args, expr
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -1573,17 +1573,17 @@ static exprtk_value_t fn_normalize_space(size_t argc, exprtk_value_t *args, expr
         buf[pos++] = s.data[i];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_center(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : tstr_v_from_cstr(" ");
+    vstr s = args[0].data.string;
+    vstr fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : vstr_from_cstr(" ");
     size_t fill_len = mod_first_utf8_char_len(fill);
-    if (fill_len == 0) fill = tstr_v_from_cstr(" "), fill_len = 1;
+    if (fill_len == 0) fill = vstr_from_cstr(" "), fill_len = 1;
     size_t width = mod_number_to_index(args[1]);
     size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
@@ -1605,7 +1605,7 @@ static exprtk_value_t fn_center(size_t argc, exprtk_value_t *args, exprtk_env_t 
         pos += fill_len;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_replace_range(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1613,8 +1613,8 @@ static exprtk_value_t fn_replace_range(size_t argc, exprtk_value_t *args, exprtk
     if (argc != 4 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]) ||
         !mod_is_number(args[2]) || args[3].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v replacement = args[3].data.string;
+    vstr s = args[0].data.string;
+    vstr replacement = args[3].data.string;
     size_t start = mod_normalize_byte_index(s, args[1]);
     size_t len = mod_number_to_index(args[2]);
     if (len > s.len - start) len = s.len - start;
@@ -1625,7 +1625,7 @@ static exprtk_value_t fn_replace_range(size_t argc, exprtk_value_t *args, exprtk
     memcpy(buf + start, replacement.data, replacement.len);
     memcpy(buf + start + replacement.len, s.data + start + len, s.len - start - len);
     buf[out_len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, out_len));
+    return exprtk_val_str(vstr_from_buf(buf, out_len));
 }
 
 static exprtk_value_t fn_insert(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1641,7 +1641,7 @@ static exprtk_value_t fn_delete_range(size_t argc, exprtk_value_t *args, exprtk_
     (void)env;
     if (argc != 3 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]) || !mod_is_number(args[2]))
         return exprtk_val_num(0);
-    exprtk_value_t range_args[4] = { args[0], args[1], args[2], exprtk_val_str(tstr_v_from_buf("", 0)) };
+    exprtk_value_t range_args[4] = { args[0], args[1], args[2], exprtk_val_str(vstr_from_buf("", 0)) };
     return fn_replace_range(4, range_args, env, arena);
 }
 
@@ -1650,8 +1650,8 @@ static exprtk_value_t fn_truncate(size_t argc, exprtk_value_t *args, exprtk_env_
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]) ||
         (argc == 3 && args[2].type != EXPRTK_VAL_STRING))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v suffix = argc == 3 ? args[2].data.string : tstr_v_from_cstr("...");
+    vstr s = args[0].data.string;
+    vstr suffix = argc == 3 ? args[2].data.string : vstr_from_cstr("...");
     size_t max_units = mod_number_to_index(args[1]);
     size_t current = mod_string_unit_count(s);
     if (current <= max_units) return mod_copy_string(arena, s.data, s.len);
@@ -1667,14 +1667,14 @@ static exprtk_value_t fn_truncate(size_t argc, exprtk_value_t *args, exprtk_env_
     memcpy(buf, s.data, keep_bytes);
     memcpy(buf + keep_bytes, suffix.data, suffix_bytes);
     buf[out_len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, out_len));
+    return exprtk_val_str(vstr_from_buf(buf, out_len));
 }
 
 static exprtk_value_t fn_left(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t count = mod_number_to_index(args[1]);
     size_t end = mod_string_byte_offset(s, count);
     return mod_copy_string(arena, s.data, end);
@@ -1684,7 +1684,7 @@ static exprtk_value_t fn_right(size_t argc, exprtk_value_t *args, exprtk_env_t *
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t count = mod_number_to_index(args[1]);
     size_t units = mod_string_unit_count(s);
     size_t start_units = count >= units ? 0 : units - count;
@@ -1696,7 +1696,7 @@ static exprtk_value_t fn_drop(size_t argc, exprtk_value_t *args, exprtk_env_t *e
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t start = mod_string_byte_offset(s, mod_number_to_index(args[1]));
     return mod_copy_string(arena, s.data + start, s.len - start);
 }
@@ -1705,7 +1705,7 @@ static exprtk_value_t fn_zfill(size_t argc, exprtk_value_t *args, exprtk_env_t *
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t width = mod_number_to_index(args[1]);
     size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
@@ -1721,17 +1721,17 @@ static exprtk_value_t fn_zfill(size_t argc, exprtk_value_t *args, exprtk_env_t *
         pos += s.len - sign;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_pad_left(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : tstr_v_from_cstr(" ");
+    vstr s = args[0].data.string;
+    vstr fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : vstr_from_cstr(" ");
     size_t fill_len = mod_first_utf8_char_len(fill);
-    if (fill_len == 0) fill = tstr_v_from_cstr(" "), fill_len = 1;
+    if (fill_len == 0) fill = vstr_from_cstr(" "), fill_len = 1;
     size_t width = mod_number_to_index(args[1]);
     size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
@@ -1747,17 +1747,17 @@ static exprtk_value_t fn_pad_left(size_t argc, exprtk_value_t *args, exprtk_env_
     memcpy(buf + pos, s.data, s.len);
     pos += s.len;
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_pad_right(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : tstr_v_from_cstr(" ");
+    vstr s = args[0].data.string;
+    vstr fill = (argc == 3 && args[2].type == EXPRTK_VAL_STRING) ? args[2].data.string : vstr_from_cstr(" ");
     size_t fill_len = mod_first_utf8_char_len(fill);
-    if (fill_len == 0) fill = tstr_v_from_cstr(" "), fill_len = 1;
+    if (fill_len == 0) fill = vstr_from_cstr(" "), fill_len = 1;
     size_t width = mod_number_to_index(args[1]);
     size_t current = mod_string_unit_count(s);
     if (width <= current) return mod_copy_string(arena, s.data, s.len);
@@ -1772,15 +1772,15 @@ static exprtk_value_t fn_pad_right(size_t argc, exprtk_value_t *args, exprtk_env
         pos += fill_len;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_starts_with_ci(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v prefix = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr prefix = args[1].data.string;
     return exprtk_val_num(mod_utf8_starts_with_ci(s, prefix) ? 1.0 : 0.0);
 }
 
@@ -1788,17 +1788,17 @@ static exprtk_value_t fn_ends_with_ci(size_t argc, exprtk_value_t *args, exprtk_
     (void)env; (void)arena;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v suffix = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr suffix = args[1].data.string;
     if (suffix.len > s.len || !mod_utf8_valid_view(s) || !mod_utf8_valid_view(suffix))
         return exprtk_val_num(0);
     size_t start = s.len - suffix.len;
     if (!mod_utf8_is_boundary(s, start))
         return exprtk_val_num(0);
-    return exprtk_val_num(mod_utf8_ieq_view(tstr_v_from_buf(s.data + start, suffix.len), suffix) ? 1.0 : 0.0);
+    return exprtk_val_num(mod_utf8_ieq_view(vstr_from_buf(s.data + start, suffix.len), suffix) ? 1.0 : 0.0);
 }
 
-static exprtk_value_t mod_partition_result(mem_pool_t *arena, tstr_v s, tstr_v sep, size_t pos, int found) {
+static exprtk_value_t mod_partition_result(mem_pool_t *arena, vstr s, vstr sep, size_t pos, int found) {
     exprtk_value_t list = exprtk_val_list_empty();
     if (!found) {
         if (!mod_list_append_string(&list, arena, s.data, s.len)) return exprtk_val_num(0);
@@ -1816,29 +1816,29 @@ static exprtk_value_t fn_str_partition(size_t argc, exprtk_value_t *args, exprtk
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     if (sep.len == 0) return exprtk_val_num(0);
-    size_t pos = tstr_v_find(s, sep);
-    return mod_partition_result(arena, s, sep, pos, pos != TSTR_V_NPOS);
+    size_t pos = vstr_find(s, sep);
+    return mod_partition_result(arena, s, sep, pos, pos != VSTR_NPOS);
 }
 
 static exprtk_value_t fn_str_rpartition(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v sep = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr sep = args[1].data.string;
     if (sep.len == 0) return exprtk_val_num(0);
-    size_t pos = tstr_v_rfind(s, sep);
-    return mod_partition_result(arena, s, sep, pos, pos != TSTR_V_NPOS);
+    size_t pos = vstr_rfind(s, sep);
+    return mod_partition_result(arena, s, sep, pos, pos != VSTR_NPOS);
 }
 
 static exprtk_value_t fn_str_words(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     size_t i = 0;
     while (i < s.len) {
@@ -1855,7 +1855,7 @@ static exprtk_value_t fn_csv_split_line(size_t argc, exprtk_value_t *args, exprt
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     exprtk_value_t list = exprtk_val_list_empty();
     char *cell = (char *)mem_alloc(arena, s.len + 1);
     if (!cell) return exprtk_val_num(0);
@@ -1884,7 +1884,7 @@ static exprtk_value_t fn_csv_split_line(size_t argc, exprtk_value_t *args, exprt
     return list;
 }
 
-static size_t mod_csv_cell_encoded_len(tstr_v s) {
+static size_t mod_csv_cell_encoded_len(vstr s) {
     int needs_quote = 0;
     size_t quote_count = 0;
     for (size_t i = 0; i < s.len; ++i) {
@@ -1894,7 +1894,7 @@ static size_t mod_csv_cell_encoded_len(tstr_v s) {
     return needs_quote ? s.len + quote_count + 2 : s.len;
 }
 
-static char *mod_csv_write_cell(char *out, tstr_v s) {
+static char *mod_csv_write_cell(char *out, vstr s) {
     int needs_quote = 0;
     for (size_t i = 0; i < s.len; ++i) {
         if (s.data[i] == '"' || s.data[i] == ',' || s.data[i] == '\n' || s.data[i] == '\r') {
@@ -1945,7 +1945,7 @@ static exprtk_value_t fn_csv_join_line(size_t argc, exprtk_value_t *args, exprtk
         }
     }
     *out = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, (size_t)(out - buf)));
+    return exprtk_val_str(vstr_from_buf(buf, (size_t)(out - buf)));
 }
 
 static exprtk_value_t fn_assert(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -1981,7 +1981,7 @@ static exprtk_value_t fn_tokenize(size_t argc, exprtk_value_t *args, exprtk_env_
     size_t index = (size_t)args[2].data.number;
     size_t cursor = 0;
     size_t current = 0;
-    tstr_v token;
+    vstr token;
 
     while (mod_next_token(args[0].data.string, args[1].data.string, &cursor, true, &token)) {
         if (current == index) {
@@ -1989,7 +1989,7 @@ static exprtk_value_t fn_tokenize(size_t argc, exprtk_value_t *args, exprtk_env_
             if (!buf) return exprtk_val_num(0);
             if (token.len > 0) memcpy(buf, token.data, token.len);
             buf[token.len] = '\0';
-            return exprtk_val_str(tstr_v_from_buf(buf, token.len));
+            return exprtk_val_str(vstr_from_buf(buf, token.len));
         }
         current++;
     }
@@ -2009,7 +2009,7 @@ static exprtk_value_t fn_split(size_t argc, exprtk_value_t *args, exprtk_env_t *
         if (vec) {
             size_t cursor = 0;
             size_t i = 0;
-            tstr_v token;
+            vstr token;
             while (i < count &&
                    mod_next_token(args[0].data.string, args[1].data.string, &cursor, true, &token)) {
                 vec[i] = 0.0;
@@ -2054,7 +2054,7 @@ static exprtk_value_t fn_to_str(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if (buf) {
         memcpy(buf, tmp, len);
         buf[len] = '\0';
-        return exprtk_val_str(tstr_v_from_buf(buf, len));
+        return exprtk_val_str(vstr_from_buf(buf, len));
     }
     return exprtk_val_num(0);
 }
@@ -2089,7 +2089,7 @@ static exprtk_value_t fn_format(size_t argc, exprtk_value_t *args, exprtk_env_t 
     (void)env;
     if (argc < 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v fmt = args[0].data.string;
+    vstr fmt = args[0].data.string;
     size_t cap = fmt.len + argc * 32;
     for (size_t i = 1; i < argc; ++i) {
         if (args[i].type == EXPRTK_VAL_STRING) cap += args[i].data.string.len;
@@ -2119,7 +2119,7 @@ static exprtk_value_t fn_format(size_t argc, exprtk_value_t *args, exprtk_env_t 
                         break;
                     case 's':
                         if (args[arg_idx].type == EXPRTK_VAL_STRING) {
-                            tstr_v s = args[arg_idx].data.string;
+                            vstr s = args[arg_idx].data.string;
                             written = snprintf(buf + pos, cap - pos, "%.*s", (int)s.len, s.data);
                         }
                         break;
@@ -2138,7 +2138,7 @@ static exprtk_value_t fn_format(size_t argc, exprtk_value_t *args, exprtk_env_t 
         buf[pos++] = fmt.data[i];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static size_t mod_value_string_len(exprtk_value_t value) {
@@ -2390,7 +2390,7 @@ static int mod_mustache_call_lambda(void *node, const char *text, size_t text_le
         return -1;
     }
 
-    exprtk_value_t arg = exprtk_val_str(tstr_v_from_buf((char *)(text ? text : ""), text_len));
+    exprtk_value_t arg = exprtk_val_str(vstr_from_buf((char *)(text ? text : ""), text_len));
     exprtk_value_t result = exprtk_call_function_value(*value, 1, &arg, provider->env);
     if (provider->env->aborted || provider->env->flow == exprtk_FLOW_THROW) return -1;
 
@@ -2442,7 +2442,7 @@ static exprtk_value_t fn_template_render(size_t argc, exprtk_value_t *args,
     char *rendered = rc == 0 ? mustache_string_renderer_get_arena(&renderer) : NULL;
     exprtk_value_t result = exprtk_val_num(0);
     if (rendered) {
-        tstr_v rendered_view = tstr_v_from_cstr(rendered);
+        vstr rendered_view = vstr_from_cstr(rendered);
         result = mod_copy_string(arena, rendered_view.data, rendered_view.len);
     }
 
@@ -2456,7 +2456,7 @@ static exprtk_value_t fn_str_format(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env;
     if (argc < 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v fmt = args[0].data.string;
+    vstr fmt = args[0].data.string;
     size_t cap = fmt.len + 1;
     for (size_t i = 1; i < argc; ++i) cap += mod_value_string_len(args[i]) + 16;
     char *buf = (char *)mem_alloc(arena, cap);
@@ -2496,7 +2496,7 @@ static exprtk_value_t fn_str_format(size_t argc, exprtk_value_t *args, exprtk_en
         buf[pos++] = fmt.data[i];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_unicode_normalize(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -2505,14 +2505,14 @@ static exprtk_value_t fn_unicode_normalize(size_t argc, exprtk_value_t *args, ex
         return exprtk_val_num(0);
     if (argc == 2 && args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
     if (argc == 2) {
-        tstr_v form = args[1].data.string;
-        if (!(tstr_v_ieq(form, tstr_v_from_cstr("NFC")) ||
-              tstr_v_ieq(form, tstr_v_from_cstr("NFD")) ||
-              tstr_v_ieq(form, tstr_v_from_cstr("NFKC")) ||
-              tstr_v_ieq(form, tstr_v_from_cstr("NFKD")))) {
+        vstr form = args[1].data.string;
+        if (!(vstr_ieq(form, vstr_from_cstr("NFC")) ||
+              vstr_ieq(form, vstr_from_cstr("NFD")) ||
+              vstr_ieq(form, vstr_from_cstr("NFKC")) ||
+              vstr_ieq(form, vstr_from_cstr("NFKD")))) {
             return exprtk_val_num(0);
         }
     }
@@ -2535,7 +2535,7 @@ static exprtk_value_t fn_grapheme_split(size_t argc, exprtk_value_t *args, exprt
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if (!mod_utf8_valid_view(s)) return exprtk_val_num(0);
     exprtk_value_t list = exprtk_val_list_empty();
     size_t offset = 0;
@@ -2556,7 +2556,7 @@ static exprtk_value_t fn_capitalize(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     for (size_t i = 0; i < s.len; ++i) {
@@ -2564,14 +2564,14 @@ static exprtk_value_t fn_capitalize(size_t argc, exprtk_value_t *args, exprtk_en
         buf[i] = (char)(i == 0 ? toupper(c) : tolower(c));
     }
     buf[s.len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+    return exprtk_val_str(vstr_from_buf(buf, s.len));
 }
 
 static exprtk_value_t fn_title(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     int word_start = 1;
@@ -2586,14 +2586,14 @@ static exprtk_value_t fn_title(size_t argc, exprtk_value_t *args, exprtk_env_t *
         }
     }
     buf[s.len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+    return exprtk_val_str(vstr_from_buf(buf, s.len));
 }
 
 static exprtk_value_t fn_swapcase(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     for (size_t i = 0; i < s.len; ++i) {
@@ -2603,7 +2603,7 @@ static exprtk_value_t fn_swapcase(size_t argc, exprtk_value_t *args, exprtk_env_
         else buf[i] = s.data[i];
     }
     buf[s.len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, s.len));
+    return exprtk_val_str(vstr_from_buf(buf, s.len));
 }
 
 static exprtk_value_t fn_word_wrap(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -2612,7 +2612,7 @@ static exprtk_value_t fn_word_wrap(size_t argc, exprtk_value_t *args, exprtk_env
         (argc == 3 && !mod_is_number(args[2])))
         return exprtk_val_num(0);
 
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t width = mod_number_to_index(args[1]);
     int break_long = argc == 3 ? fabs(mod_number_value(args[2])) > 1e-9 : 1;
     if (width == 0 || s.len == 0) return mod_copy_string(arena, s.data, s.len);
@@ -2670,7 +2670,7 @@ static exprtk_value_t fn_word_wrap(size_t argc, exprtk_value_t *args, exprtk_env
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_shorten(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -2678,8 +2678,8 @@ static exprtk_value_t fn_shorten(size_t argc, exprtk_value_t *args, exprtk_env_t
     if ((argc != 2 && argc != 3) || args[0].type != EXPRTK_VAL_STRING || !mod_is_number(args[1]) ||
         (argc == 3 && args[2].type != EXPRTK_VAL_STRING))
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v suffix = argc == 3 ? args[2].data.string : tstr_v_from_cstr("...");
+    vstr s = args[0].data.string;
+    vstr suffix = argc == 3 ? args[2].data.string : vstr_from_cstr("...");
     size_t width = mod_number_to_index(args[1]);
     if (s.len <= width) return mod_copy_string(arena, s.data, s.len);
     if (width == 0) return mod_copy_string(arena, "", 0);
@@ -2687,11 +2687,11 @@ static exprtk_value_t fn_shorten(size_t argc, exprtk_value_t *args, exprtk_env_t
 
     size_t limit = width - suffix.len;
     size_t cut = limit;
-    size_t last_space = TSTR_V_NPOS;
+    size_t last_space = VSTR_NPOS;
     for (size_t i = 0; i < limit && i < s.len; ++i) {
         if (isspace((unsigned char)s.data[i])) last_space = i;
     }
-    if (last_space != TSTR_V_NPOS && last_space > 0) cut = last_space;
+    if (last_space != VSTR_NPOS && last_space > 0) cut = last_space;
     while (cut > 0 && isspace((unsigned char)s.data[cut - 1])) cut--;
 
     char *buf = (char *)mem_alloc(arena, cut + suffix.len + 1);
@@ -2699,10 +2699,10 @@ static exprtk_value_t fn_shorten(size_t argc, exprtk_value_t *args, exprtk_env_t
     memcpy(buf, s.data, cut);
     memcpy(buf + cut, suffix.data, suffix.len);
     buf[cut + suffix.len] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, cut + suffix.len));
+    return exprtk_val_str(vstr_from_buf(buf, cut + suffix.len));
 }
 
-static exprtk_value_t mod_case_convert(tstr_v s, mem_pool_t *arena, int style) {
+static exprtk_value_t mod_case_convert(vstr s, mem_pool_t *arena, int style) {
     char sep = style == 0 ? '_' : '-';
     char *buf = (char *)mem_alloc(arena, s.len * 2 + 1);
     if (!buf) return exprtk_val_num(0);
@@ -2740,7 +2740,7 @@ static exprtk_value_t mod_case_convert(tstr_v s, mem_pool_t *arena, int style) {
         prev = c;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_snake_case(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -2777,8 +2777,8 @@ static exprtk_value_t fn_remove_chars(size_t argc, exprtk_value_t *args, exprtk_
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v chars = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr chars = args[1].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -2794,15 +2794,15 @@ static exprtk_value_t fn_remove_chars(size_t argc, exprtk_value_t *args, exprtk_
         i += n;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_keep_chars(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v chars = args[1].data.string;
+    vstr s = args[0].data.string;
+    vstr chars = args[1].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -2818,7 +2818,7 @@ static exprtk_value_t fn_keep_chars(size_t argc, exprtk_value_t *args, exprtk_en
         i += n;
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_translate(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -2826,9 +2826,9 @@ static exprtk_value_t fn_translate(size_t argc, exprtk_value_t *args, exprtk_env
     if (argc != 3 || args[0].type != EXPRTK_VAL_STRING ||
         args[1].type != EXPRTK_VAL_STRING || args[2].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    tstr_v from = args[1].data.string;
-    tstr_v to = args[2].data.string;
+    vstr s = args[0].data.string;
+    vstr from = args[1].data.string;
+    vstr to = args[2].data.string;
     char *buf = (char *)mem_alloc(arena, s.len * (to.len ? to.len : 1) + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -2842,13 +2842,13 @@ static exprtk_value_t fn_translate(size_t argc, exprtk_value_t *args, exprtk_env
         if (idx < to.len) buf[pos++] = to.data[idx];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_html_escape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t len = 0;
     for (size_t i = 0; i < s.len; ++i) {
         switch (s.data[i]) {
@@ -2874,13 +2874,13 @@ static exprtk_value_t fn_html_escape(size_t argc, exprtk_value_t *args, exprtk_e
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_html_unescape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -2903,14 +2903,14 @@ static exprtk_value_t fn_html_unescape(size_t argc, exprtk_value_t *args, exprtk
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_json_escape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
     static const char hex[] = "0123456789ABCDEF";
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t len = 0;
     for (size_t i = 0; i < s.len; ++i) {
         unsigned char c = (unsigned char)s.data[i];
@@ -2957,13 +2957,13 @@ static exprtk_value_t fn_json_escape(size_t argc, exprtk_value_t *args, exprtk_e
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_json_unescape(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -3014,14 +3014,14 @@ static exprtk_value_t fn_json_unescape(size_t argc, exprtk_value_t *args, exprtk
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_url_encode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
     static const char hex[] = "0123456789ABCDEF";
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     size_t len = 0;
     for (size_t i = 0; i < s.len; ++i) {
         len += mod_is_unreserved_url_char((unsigned char)s.data[i]) ? 1 : 3;
@@ -3040,13 +3040,13 @@ static exprtk_value_t fn_url_encode(size_t argc, exprtk_value_t *args, exprtk_en
         }
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_url_decode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -3063,18 +3063,18 @@ static exprtk_value_t fn_url_decode(size_t argc, exprtk_value_t *args, exprtk_en
         buf[pos++] = s.data[i] == '+' ? ' ' : s.data[i];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_base64_encode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    if (s.len == 0) return exprtk_val_str(tstr_v_from_buf("", 0));
+    vstr s = args[0].data.string;
+    if (s.len == 0) return exprtk_val_str(vstr_from_buf("", 0));
     char *encoded = NULL;
     if (tn_base64_encode((const uint8_t *)s.data, s.len, &encoded) != 0 || !encoded)
         return exprtk_val_num(0);
-    tstr_v encoded_view = tstr_v_from_cstr(encoded);
+    vstr encoded_view = vstr_from_cstr(encoded);
     exprtk_value_t result = mod_copy_string(arena, encoded_view.data, encoded_view.len);
     free(encoded);
     return result;
@@ -3083,8 +3083,8 @@ static exprtk_value_t fn_base64_encode(size_t argc, exprtk_value_t *args, exprtk
 static exprtk_value_t fn_base64_decode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    if (s.len == 0) return exprtk_val_str(tstr_v_from_buf("", 0));
+    vstr s = args[0].data.string;
+    if (s.len == 0) return exprtk_val_str(vstr_from_buf("", 0));
     char *input = mod_view_to_arena_cstr(s, arena);
     if (!input) return exprtk_val_num(0);
     uint8_t *decoded = NULL;
@@ -3099,13 +3099,13 @@ static exprtk_value_t fn_base64_decode(size_t argc, exprtk_value_t *args, exprtk
 static exprtk_value_t fn_base64url_encode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    if (s.len == 0) return exprtk_val_str(tstr_v_from_buf("", 0));
+    vstr s = args[0].data.string;
+    if (s.len == 0) return exprtk_val_str(vstr_from_buf("", 0));
     char *encoded = NULL;
     if (tn_base64_encode((const uint8_t *)s.data, s.len, &encoded) != 0 || !encoded)
         return exprtk_val_num(0);
 
-    tstr_v encoded_view = tstr_v_from_cstr(encoded);
+    vstr encoded_view = vstr_from_cstr(encoded);
     size_t len = encoded_view.len;
     while (len > 0 && encoded[len - 1] == '=') len--;
     char *buf = (char *)mem_alloc(arena, len + 1);
@@ -3119,14 +3119,14 @@ static exprtk_value_t fn_base64url_encode(size_t argc, exprtk_value_t *args, exp
     }
     buf[len] = '\0';
     free(encoded);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static exprtk_value_t fn_base64url_decode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
-    if (s.len == 0) return exprtk_val_str(tstr_v_from_buf("", 0));
+    vstr s = args[0].data.string;
+    if (s.len == 0) return exprtk_val_str(vstr_from_buf("", 0));
 
     size_t pad = (4 - (s.len % 4)) % 4;
     if (s.len % 4 == 1) return exprtk_val_num(0);
@@ -3152,7 +3152,7 @@ static exprtk_value_t fn_hex_encode(size_t argc, exprtk_value_t *args, exprtk_en
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
     static const char hex[] = "0123456789abcdef";
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len * 2 + 1);
     if (!buf) return exprtk_val_num(0);
     size_t pos = 0;
@@ -3162,13 +3162,13 @@ static exprtk_value_t fn_hex_encode(size_t argc, exprtk_value_t *args, exprtk_en
         buf[pos++] = hex[c & 0x0F];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_hex_decode(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     if ((s.len % 2) != 0) return exprtk_val_num(0);
     char *buf = (char *)mem_alloc(arena, s.len / 2 + 1);
     if (!buf) return exprtk_val_num(0);
@@ -3180,7 +3180,7 @@ static exprtk_value_t fn_hex_decode(size_t argc, exprtk_value_t *args, exprtk_en
         buf[pos++] = (char)((hi << 4) | lo);
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t fn_constant_time_eq(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -3188,8 +3188,8 @@ static exprtk_value_t fn_constant_time_eq(size_t argc, exprtk_value_t *args, exp
     if (argc != 2 || args[0].type != EXPRTK_VAL_STRING || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
 
-    tstr_v a = args[0].data.string;
-    tstr_v b = args[1].data.string;
+    vstr a = args[0].data.string;
+    vstr b = args[1].data.string;
     size_t max_len = a.len > b.len ? a.len : b.len;
     unsigned int diff = (unsigned int)(a.len ^ b.len);
     for (size_t i = 0; i < max_len; ++i) {
@@ -3203,11 +3203,11 @@ static exprtk_value_t fn_constant_time_eq(size_t argc, exprtk_value_t *args, exp
 static exprtk_value_t fn_bytes(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) return exprtk_val_num(0);
-    tstr_v s = args[0].data.string;
+    vstr s = args[0].data.string;
     char *buf = (char *)mem_alloc(arena, s.len);
     if (!buf && s.len > 0) return exprtk_val_num(0);
     if (s.len > 0) memcpy(buf, s.data, s.len);
-    return exprtk_val_bytes(tstr_v_from_buf(buf, s.len));
+    return exprtk_val_bytes(vstr_from_buf(buf, s.len));
 }
 
 static exprtk_value_t fn_from_bytes(size_t argc, exprtk_value_t *args, exprtk_env_t *env, mem_pool_t *arena) {
@@ -3218,12 +3218,12 @@ static exprtk_value_t fn_from_bytes(size_t argc, exprtk_value_t *args, exprtk_en
         return exprtk_val_num(0);
 
     if (args[0].type == EXPRTK_VAL_BYTES) {
-        tstr_v b = args[0].data.bytes;
+        vstr b = args[0].data.bytes;
         char *buf = (char *)mem_alloc(arena, b.len + 1);
         if (!buf) return exprtk_val_num(0);
         if (b.len > 0) memcpy(buf, b.data, b.len);
         buf[b.len] = '\0';
-        return exprtk_val_str(tstr_v_from_buf(buf, b.len));
+        return exprtk_val_str(vstr_from_buf(buf, b.len));
     }
 
     size_t n = args[0].type == EXPRTK_VAL_LIST ? args[0].data.list.count : args[0].data.vector.size;
@@ -3243,7 +3243,7 @@ static exprtk_value_t fn_from_bytes(size_t argc, exprtk_value_t *args, exprtk_en
         buf[i] = (char)((unsigned char)iv);
     }
     buf[n] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, n));
+    return exprtk_val_str(vstr_from_buf(buf, n));
 }
 
 /* join(vec, delim) → string: join numeric vector into delimited string */
@@ -3252,8 +3252,8 @@ static exprtk_value_t fn_join(size_t argc, exprtk_value_t *args, exprtk_env_t *e
     if (argc != 2 || args[0].type != EXPRTK_VAL_VECTOR || args[1].type != EXPRTK_VAL_STRING)
         return exprtk_val_num(0);
     size_t n = args[0].data.vector.size;
-    if (n == 0) return exprtk_val_str(tstr_v_from_buf("", 0));
-    tstr_v delim = args[1].data.string;
+    if (n == 0) return exprtk_val_str(vstr_from_buf("", 0));
+    vstr delim = args[1].data.string;
     size_t cap = n * 24 + (n > 0 ? (n - 1) * delim.len : 0) + 1;
     char *buf = mem_alloc(arena, cap);
     if (!buf) return exprtk_val_num(0);
@@ -3266,7 +3266,7 @@ static exprtk_value_t fn_join(size_t argc, exprtk_value_t *args, exprtk_env_t *e
         int written = snprintf(buf + pos, cap - pos, "%g", args[0].data.vector.data[i]);
         if (written > 0) pos += (size_t)written;
     }
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static const exprtk_func_entry_t string_entries[] = {

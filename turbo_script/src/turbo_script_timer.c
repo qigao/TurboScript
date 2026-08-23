@@ -507,7 +507,7 @@ static exprtk_value_t ts_timer_cron_fn(size_t argc, exprtk_value_t *args, exprtk
     return ts_timer_fail(ctx, TURBO_SCRIPT_ERROR_ARGUMENT,
                          "timer.cron: expected (cron expression, function)");
   }
-  expression = tstr_v_to_arena(args[0].data.string, &ctx->scratch_arena);
+  expression = vstr_to_arena(args[0].data.string, &ctx->scratch_arena);
   if (!expression) return ts_timer_fail(ctx, TURBO_SCRIPT_ERROR_OOM, "timer.cron: out of memory");
   if (turbo_cron_parse_ex(expression, &cron, parse_error, sizeof(parse_error)) != TURBO_CRON_OK) {
     char message[TS_TIMER_ERROR_SIZE];
@@ -565,7 +565,7 @@ static exprtk_value_t ts_timer_status_fn(size_t argc, exprtk_value_t *args, expr
   job = ts_timer_find_locked(scheduler, id);
   if (job) name = ts_timer_state_name(job->state);
   turbo_mutex_unlock(&scheduler->mutex);
-  return exprtk_val_str(tstr_v_from_cstr(name));
+  return exprtk_val_str(vstr_from_cstr(name));
 }
 
 static exprtk_value_t ts_timer_error_fn(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
@@ -582,7 +582,7 @@ static exprtk_value_t ts_timer_error_fn(size_t argc, exprtk_value_t *args, exprt
   job = ts_timer_find_locked(scheduler, id);
   if (job) ts_timer_copy_error(error, sizeof(error), job->error);
   turbo_mutex_unlock(&scheduler->mutex);
-  value = exprtk_val_str(tstr_v_from_cstr(error));
+  value = exprtk_val_str(vstr_from_cstr(error));
   return exprtk_value_clone_to_env(value, &ctx->env);
 }
 

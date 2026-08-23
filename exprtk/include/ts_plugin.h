@@ -12,6 +12,8 @@
 #ifndef TS_PLUGIN_H
 #define TS_PLUGIN_H
 
+#include "exprtk_export.h"
+
 #include "platform.h"
 #include <stddef.h>
 #include <stdint.h>
@@ -24,7 +26,7 @@ extern "C" {
 typedef struct exprtk_env_s exprtk_env_t;
 typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;
-CXX_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
+EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
 
 typedef struct ts_plugin_s {
   const char *name; /* "ta", "csv", "vec", ... */
@@ -49,11 +51,19 @@ typedef struct ts_plugin_s {
 /* Every plugin DLL exports exactly this function */
 typedef const ts_plugin_t *(*ts_api_create_fn)(void);
 
-/* Plugin export macro - works in both C and C++ */
-#ifdef __cplusplus
-  #define TS_PLUGIN_EXPORT extern "C" CXX_DLL_EXPORT
+/* Plugin entry points are always exported by the plugin binary itself. */
+#if defined(_WIN32) || defined(__CYGWIN__)
+#define TS_PLUGIN_API __declspec(dllexport)
+#elif defined(__GNUC__) && __GNUC__ >= 4
+#define TS_PLUGIN_API __attribute__((visibility("default")))
 #else
-  #define TS_PLUGIN_EXPORT CXX_DLL_EXPORT
+#define TS_PLUGIN_API
+#endif
+
+#ifdef __cplusplus
+#define TS_PLUGIN_C_API extern "C" TS_PLUGIN_API
+#else
+#define TS_PLUGIN_C_API TS_PLUGIN_API
 #endif
 
 /* ── Stateless plugin: registers one exprtk_module_t, no instance ── */
@@ -73,7 +83,7 @@ typedef const ts_plugin_t *(*ts_api_create_fn)(void);
       .load = ts__##plugin_name##_load,                                                            \
       .unload = ts__##plugin_name##_unload,                                                        \
   };                                                                                               \
-  TS_PLUGIN_EXPORT const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
+  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
 
 /* ── Stateful plugin: create ctx → register funcs → destroy ctx ──── */
 #define TS_PLUGIN_STATEFUL(plugin_name, create_fn, loader_fn, destroy_fn)                          \
@@ -94,7 +104,7 @@ typedef const ts_plugin_t *(*ts_api_create_fn)(void);
       .load = ts__##plugin_name##_load,                                                            \
       .unload = ts__##plugin_name##_unload,                                                        \
   };                                                                                               \
-  TS_PLUGIN_EXPORT const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
+  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
 
 #ifdef __cplusplus
 }

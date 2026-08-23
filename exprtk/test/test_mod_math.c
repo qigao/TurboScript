@@ -38,9 +38,9 @@ spec("SIMD Computation") {
 
       ols_result_t result = ols_fit(y, x, 5);
 
-      check_double_eq(result.slope, 2.0, TEST_TOLERANCE);
-      check_double_eq(result.intercept, 3.0, TEST_TOLERANCE);
-      check_double_eq(result.res_var, 0.0, TEST_TOLERANCE);
+      check(fabs((double)(result.slope) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(result.intercept) - (double)(3.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(result.res_var) - (double)(0.0)) <= (double)(TEST_TOLERANCE));
     }
 
     it("should handle large datasets") {
@@ -56,8 +56,8 @@ spec("SIMD Computation") {
 
       ols_result_t result = ols_fit(y, x, n);
 
-      check_double_eq(result.slope, 1.5, 0.01);
-      check_double_eq(result.intercept, 2.0, 0.1);
+      check(fabs((double)(result.slope) - (double)(1.5)) <= (double)(0.01));
+      check(fabs((double)(result.intercept) - (double)(2.0)) <= (double)(0.1));
 
       free(x);
       free(y);
@@ -71,11 +71,11 @@ spec("SIMD Computation") {
 
       simd_reverse(input, output, 5);
 
-      check_double_eq(output[0], 5.0, TEST_TOLERANCE);
-      check_double_eq(output[1], 4.0, TEST_TOLERANCE);
-      check_double_eq(output[2], 3.0, TEST_TOLERANCE);
-      check_double_eq(output[3], 2.0, TEST_TOLERANCE);
-      check_double_eq(output[4], 1.0, TEST_TOLERANCE);
+      check(fabs((double)(output[0]) - (double)(5.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(output[1]) - (double)(4.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(output[2]) - (double)(3.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(output[3]) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(output[4]) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
     }
 
     it("should reverse a single element") {
@@ -84,7 +84,7 @@ spec("SIMD Computation") {
 
       simd_reverse(input, output, 1);
 
-      check_double_eq(output[0], 42.0, TEST_TOLERANCE);
+      check(fabs((double)(output[0]) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
     }
 
     it("should reverse a large vector") {
@@ -99,7 +99,7 @@ spec("SIMD Computation") {
       simd_reverse(input, output, n);
 
       for (size_t i = 0; i < n; i++) {
-        check_double_eq(output[i], (double)(n - 1 - i), TEST_TOLERANCE);
+        check(fabs((double)(output[i]) - (double)((double)(n - 1 - i))) <= (double)(TEST_TOLERANCE));
       }
 
       free(input);
@@ -153,7 +153,7 @@ spec("SIMD Computation") {
       double data[] = {1, 2, 4, 8, 16};
       double gm = exprtk_geometric_mean(data, 5);
       double expected = pow(1.0 * 2.0 * 4.0 * 8.0 * 16.0, 1.0 / 5.0);
-      check_double_eq(gm, expected, TEST_TOLERANCE);
+      check(fabs((double)(gm) - (double)(expected)) <= (double)(TEST_TOLERANCE));
     }
 
     it("should handle large datasets") {
@@ -173,7 +173,7 @@ spec("SIMD Computation") {
       double data[] = {1, 2, 4};
       double hm = exprtk_harmonic_mean(data, 3);
       double expected = 3.0 / (1.0 / 1.0 + 1.0 / 2.0 + 1.0 / 4.0);
-      check_double_eq(hm, expected, TEST_TOLERANCE);
+      check(fabs((double)(hm) - (double)(expected)) <= (double)(TEST_TOLERANCE));
     }
 
     it("should handle large datasets") {
@@ -197,7 +197,7 @@ spec("SIMD Computation") {
       exprtk_matmul(A, I, 2, 2, 2, result);
 
       for (int i = 0; i < 4; i++) {
-        check_double_eq(result[i], A[i], TEST_TOLERANCE);
+        check(fabs((double)(result[i]) - (double)(A[i])) <= (double)(TEST_TOLERANCE));
       }
     }
 
@@ -212,7 +212,7 @@ spec("SIMD Computation") {
       exprtk_matmul(A, B, 2, 2, 2, result);
 
       for (int i = 0; i < 4; i++) {
-        check_double_eq(result[i], expected[i], TEST_TOLERANCE);
+        check(fabs((double)(result[i]) - (double)(expected[i])) <= (double)(TEST_TOLERANCE));
       }
     }
 
@@ -232,7 +232,7 @@ spec("SIMD Computation") {
       for (size_t k = 0; k < n; k++) {
         expected += A[k] * B[k * n];
       }
-      check_double_eq(C[0], expected, 1e-5);
+      check(fabs((double)(C[0]) - (double)(expected)) <= (double)(1e-5));
 
       free(A);
       free(B);
@@ -249,7 +249,7 @@ spec("SIMD Computation") {
       exprtk_transpose(A, 3, 3, result);
 
       for (int i = 0; i < 9; i++) {
-        check_double_eq(result[i], expected[i], TEST_TOLERANCE);
+        check(fabs((double)(result[i]) - (double)(expected[i])) <= (double)(TEST_TOLERANCE));
       }
     }
 
@@ -261,7 +261,7 @@ spec("SIMD Computation") {
       exprtk_transpose(A, 2, 3, result);
 
       for (int i = 0; i < 6; i++) {
-        check_double_eq(result[i], expected[i], TEST_TOLERANCE);
+        check(fabs((double)(result[i]) - (double)(expected[i])) <= (double)(TEST_TOLERANCE));
       }
     }
 
@@ -274,10 +274,9 @@ spec("SIMD Computation") {
       exprtk_transpose(A, rows, cols, B);
 
       // Verify: B[j * rows + i] = A[i * cols + j]
-      check_double_eq(B[0 * rows + 0], A[0 * cols + 0], TEST_TOLERANCE);
-      check_double_eq(B[1 * rows + 0], A[0 * cols + 1], TEST_TOLERANCE);
-      check_double_eq(B[(cols - 1) * rows + (rows - 1)], A[(rows - 1) * cols + (cols - 1)],
-                      TEST_TOLERANCE);
+      check(fabs((double)(B[0 * rows + 0]) - (double)(A[0 * cols + 0])) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(B[1 * rows + 0]) - (double)(A[0 * cols + 1])) <= (double)(TEST_TOLERANCE));
+      check(fabs((double)(B[(cols - 1) * rows + (rows - 1)]) - (double)(A[(rows - 1) * cols + (cols - 1)])) <= (double)(TEST_TOLERANCE));
 
       free(A);
       free(B);
@@ -297,7 +296,7 @@ spec("SIMD Computation") {
       check(success);
 
       for (int i = 0; i < 4; i++) {
-        check_double_eq(result[i], I[i], TEST_TOLERANCE);
+        check(fabs((double)(result[i]) - (double)(I[i])) <= (double)(TEST_TOLERANCE));
       }
 
       mem_destroy(&arena);
@@ -316,7 +315,7 @@ spec("SIMD Computation") {
       check(success);
 
       for (int i = 0; i < 4; i++) {
-        check_double_eq(A[i], expected[i], 1e-9);
+        check(fabs((double)(A[i]) - (double)(expected[i])) <= (double)(1e-9));
       }
 
       mem_destroy(&arena);
@@ -344,9 +343,9 @@ spec("SIMD Computation") {
         printf("Got number: %f\n", result.data.number);
       }
 
-      check_int_eq(result.type, EXPRTK_VAL_VECTOR);
+      check((result.type) == (EXPRTK_VAL_VECTOR));
       if (result.type == EXPRTK_VAL_VECTOR) {
-        check_int_eq(result.data.vector.size, 5);
+        check((result.data.vector.size) == (5));
         check_not_null(result.data.vector.data);
 
         if (result.data.vector.data) {
@@ -354,11 +353,11 @@ spec("SIMD Computation") {
                  result.data.vector.data[1], result.data.vector.data[2], result.data.vector.data[3],
                  result.data.vector.data[4]);
 
-          check_double_eq(result.data.vector.data[0], 5.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[1], 4.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[2], 3.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[3], 2.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[4], 1.0, TEST_TOLERANCE);
+          check(fabs((double)(result.data.vector.data[0]) - (double)(5.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[1]) - (double)(4.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[2]) - (double)(3.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[3]) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[4]) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
       }
 
@@ -381,9 +380,9 @@ spec("SIMD Computation") {
         printf("Got number: %f\n", result.data.number);
       }
 
-      check_int_eq(result.type, EXPRTK_VAL_VECTOR);
+      check((result.type) == (EXPRTK_VAL_VECTOR));
       if (result.type == EXPRTK_VAL_VECTOR) {
-        check_int_eq(result.data.vector.size, 5);
+        check((result.data.vector.size) == (5));
         check_not_null(result.data.vector.data);
 
         if (result.data.vector.data) {
@@ -391,11 +390,11 @@ spec("SIMD Computation") {
                  result.data.vector.data[1], result.data.vector.data[2], result.data.vector.data[3],
                  result.data.vector.data[4]);
 
-          check_double_eq(result.data.vector.data[0], 0.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[1], 1.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[2], 2.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[3], 3.0, TEST_TOLERANCE);
-          check_double_eq(result.data.vector.data[4], 4.0, TEST_TOLERANCE);
+          check(fabs((double)(result.data.vector.data[0]) - (double)(0.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[1]) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[2]) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[3]) - (double)(3.0)) <= (double)(TEST_TOLERANCE));
+          check(fabs((double)(result.data.vector.data[4]) - (double)(4.0)) <= (double)(TEST_TOLERANCE));
         }
       }
 

@@ -56,23 +56,22 @@ spec("turbo_script_basics") {
           TURBO_SCRIPT_INIT_DEFAULT, test_plugin_authorizer, &probe);
 
       check_not_null(ctx);
-      check_int_eq((int)probe.call_count, 1);
-      check_str_eq(probe.last_name, "parser");
+      check(((int)probe.call_count) == (1));
+      check(strcmp((probe.last_name), ("parser")) == 0);
 
-      check_int_eq(turbo_script_load_plugin(ctx, "math"), 0);
-      check_int_eq(turbo_script_run(ctx, "builtin_module = import(\"io\");"), 0);
-      check_int_eq((int)probe.call_count, 1);
+      check((turbo_script_load_plugin(ctx, "math")) == (0));
+      check((turbo_script_run(ctx, "builtin_module = import(\"io\");")) == (0));
+      check(((int)probe.call_count) == (1));
 
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), -1);
-      check_int_eq((int)probe.call_count, 2);
-      check_str_eq(probe.last_name, "ta");
-      check_int_eq((int)turbo_script_get_error_code(ctx),
-                   (int)TURBO_SCRIPT_ERROR_PLUGIN);
+      check((turbo_script_load_plugin(ctx, "ta")) == (-1));
+      check(((int)probe.call_count) == (2));
+      check(strcmp((probe.last_name), ("ta")) == 0);
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_PLUGIN));
       check_not_null(strstr(turbo_script_get_error(ctx), "ta"));
       check_not_null(strstr(turbo_script_get_error(ctx), "denied by host policy"));
 
-      check_int_eq(turbo_script_run(ctx, "import(\"ta\");"), -1);
-      check_int_eq((int)probe.call_count, 3);
+      check((turbo_script_run(ctx, "import(\"ta\");")) == (-1));
+      check(((int)probe.call_count) == (3));
       check_not_null(strstr(turbo_script_get_error(ctx), "import 'ta'"));
       check_not_null(strstr(turbo_script_get_error(ctx), "denied by host policy"));
       turbo_script_free(ctx);
@@ -84,13 +83,13 @@ spec("turbo_script_basics") {
           TURBO_SCRIPT_INIT_BARE, test_plugin_authorizer, &probe);
 
       check_not_null(ctx);
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq((int)probe.call_count, 1);
-      check_str_eq(probe.last_name, "ta");
+      check((turbo_script_load_plugin(ctx, "ta")) == (0));
+      check(((int)probe.call_count) == (1));
+      check(strcmp((probe.last_name), ("ta")) == 0);
 
       probe.allowed_name = NULL;
-      check_int_eq(turbo_script_load_plugin(ctx, "ta"), 0);
-      check_int_eq((int)probe.call_count, 1);
+      check((turbo_script_load_plugin(ctx, "ta")) == (0));
+      check(((int)probe.call_count) == (1));
       turbo_script_free(ctx);
     }
   }
@@ -102,18 +101,18 @@ spec("turbo_script_basics") {
       turbo_script_memory_stats_t stats;
 
       check_not_null(ctx);
-      check_int_eq(turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy), 0);
+      check((turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_STREAMING, &policy)) == (0));
       check_true(policy.max_external_value_bytes > 0);
       check_true(policy.max_external_value_bytes <= policy.max_task_bytes);
       check_true(policy.max_task_bytes <= policy.max_context_bytes);
-      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), 0);
-      check_int_eq(turbo_script_run(ctx, "memory_policy_probe = \"ok\";"), 0);
-      check_int_eq(turbo_script_get_memory_stats(ctx, &stats), 0);
+      check((turbo_script_set_memory_policy(ctx, &policy)) == (0));
+      check((turbo_script_run(ctx, "memory_policy_probe = \"ok\";")) == (0));
+      check((turbo_script_get_memory_stats(ctx, &stats)) == (0));
       check_true(stats.context_bytes > 0);
       check_true(stats.peak_context_bytes >= stats.context_bytes);
 
       policy.max_external_value_bytes = 0;
-      check_int_eq(turbo_script_set_memory_policy(ctx, &policy), -1);
+      check((turbo_script_set_memory_policy(ctx, &policy)) == (-1));
       turbo_script_free(ctx);
     }
 
@@ -123,11 +122,11 @@ spec("turbo_script_basics") {
       turbo_script_memory_stats_t after;
 
       check_not_null(ctx);
-      check_int_eq(turbo_script_get_memory_stats(ctx, &before), 0);
+      check((turbo_script_get_memory_stats(ctx, &before)) == (0));
       /* Each iteration creates a closure that captures a fresh 1 KiB string;
        * the captured snapshot is retained by the root env closure chain. */
-      check_int_eq(turbo_script_run(ctx, "for (i = 0; i < 50; i += 1) { txt = repeat(\"x\", 1024); f = (x) => x + txt; } result = 1;"), 0);
-      check_int_eq(turbo_script_get_memory_stats(ctx, &after), 0);
+      check((turbo_script_run(ctx, "for (i = 0; i < 50; i += 1) { txt = repeat(\"x\", 1024); f = (x) => x + txt; } result = 1;")) == (0));
+      check((turbo_script_get_memory_stats(ctx, &after)) == (0));
       check_true(after.context_bytes > before.context_bytes + 1024);
       turbo_script_free(ctx);
     }
@@ -138,8 +137,8 @@ spec("turbo_script_basics") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_run(ctx, " x = 10; y = x * 2;"), 0);
-      check_float_eq(ts_get_num(ctx, "y"), 20.0, 0.001);
+      check((turbo_script_run(ctx, " x = 10; y = x * 2;")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(20.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -149,15 +148,15 @@ spec("turbo_script_basics") {
       check_not_null(ctx);
 
       ts_bind_num(ctx, "x", 7.0);
-      check_float_eq(ts_get_num(ctx, "x"), 7.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "x")) - (double)(7.0)) <= (double)(0.001));
       ts_bind_num(ctx, "x", 9.0);
-      check_float_eq(ts_get_num(ctx, "x"), 9.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "x")) - (double)(9.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
 
     it("should expose a stable version string") {
-      check_str_eq(turbo_script_version(), TURBO_SCRIPT_VERSION_STRING);
+      check(strcmp((turbo_script_version()), (TURBO_SCRIPT_VERSION_STRING)) == 0);
     }
 
     it("should expose host map and borrowed list values") {
@@ -171,19 +170,19 @@ spec("turbo_script_basics") {
       const char *key = NULL;
       exprtk_value_t entry;
 
-      check_int_eq(list.type, EXPRTK_VAL_LIST);
-      check_ptr_eq(list.data.list.items, items);
-      check_size_eq(list.data.list.count, 2);
-      check_int_eq(list.data.list.heap_owned, 0);
+      check((list.type) == (EXPRTK_VAL_LIST));
+      check((list.data.list.items) == (items));
+      check((list.data.list.count) == (2));
+      check((list.data.list.heap_owned) == (0));
 
       turbo_script_value_map_set(&map, "values", list);
       iterator = turbo_script_value_map_iter_begin(&map);
-      check_int_eq(turbo_script_value_map_iter_next(&iterator, &key, &entry), 1);
-      check_str_eq(key, "values");
-      check_int_eq(entry.type, EXPRTK_VAL_LIST);
-      check_size_eq(entry.data.list.count, 2);
-      check_float_eq(entry.data.list.items[1].data.number, 5.0, 0.001);
-      check_int_eq(turbo_script_value_map_iter_next(&iterator, &key, &entry), 0);
+      check((turbo_script_value_map_iter_next(&iterator, &key, &entry)) == (1));
+      check(strcmp((key), ("values")) == 0);
+      check((entry.type) == (EXPRTK_VAL_LIST));
+      check((entry.data.list.count) == (2));
+      check(fabs((double)(entry.data.list.items[1].data.number) - (double)(5.0)) <= (double)(0.001));
+      check((turbo_script_value_map_iter_next(&iterator, &key, &entry)) == (0));
 
       exprtk_map_free(&map);
     }
@@ -194,29 +193,29 @@ spec("turbo_script_basics") {
       exprtk_node_t *assign = NULL;
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_run(ctx, "x = 1; y = x + 2;"), 0);
+      check((turbo_script_run(ctx, "x = 1; y = x + 2;")) == (0));
       first_expr = ctx->expr;
       check_not_null(first_expr);
 
-      check_int_eq(turbo_script_run(ctx, "x = 1; y = x + 2;"), 0);
-      check_ptr_eq(ctx->expr, first_expr);
-      check_float_eq(ts_get_num(ctx, "y"), 3.0, 0.001);
+      check((turbo_script_run(ctx, "x = 1; y = x + 2;")) == (0));
+      check((ctx->expr) == (first_expr));
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(3.0)) <= (double)(0.001));
 
-      check_int_eq(turbo_script_run(ctx, "x = 2; y = x + 2;"), 0);
-      check_float_eq(ts_get_num(ctx, "y"), 4.0, 0.001);
-      check_str_eq(ctx->expr_source, "x = 2; y = x + 2;");
-      check_int_eq(ctx->expr->type, EXPRTK_NODE_BLOCK);
-      check_int_eq((int)ctx->expr->data.block.count, 2);
+      check((turbo_script_run(ctx, "x = 2; y = x + 2;")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(4.0)) <= (double)(0.001));
+      check(strcmp((ctx->expr_source), ("x = 2; y = x + 2;")) == 0);
+      check((ctx->expr->type) == (EXPRTK_NODE_BLOCK));
+      check(((int)ctx->expr->data.block.count) == (2));
       assign = ctx->expr->data.block.statements[0];
       check_not_null(assign);
-      check_int_eq(assign->type, EXPRTK_NODE_ASSIGNMENT);
+      check((assign->type) == (EXPRTK_NODE_ASSIGNMENT));
       check_not_null(assign->data.assignment.value);
       check(assign->data.assignment.value->type == EXPRTK_NODE_NUMBER ||
             assign->data.assignment.value->type == EXPRTK_NODE_INTEGER);
       if (assign->data.assignment.value->type == EXPRTK_NODE_INTEGER) {
-        check_int_eq((int)assign->data.assignment.value->data.integer, 2);
+        check(((int)assign->data.assignment.value->data.integer) == (2));
       } else {
-        check_float_eq(assign->data.assignment.value->data.number, 2.0, 0.001);
+        check(fabs((double)(assign->data.assignment.value->data.number) - (double)(2.0)) <= (double)(0.001));
       }
 
       turbo_script_free(ctx);
@@ -224,10 +223,9 @@ spec("turbo_script_basics") {
 
     it("should support the var keyword") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_run(ctx, " var "
-                                         "a = 123; var b = 456; var c = a + b;"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "c"), 579.0, 0.001);
+      check((turbo_script_run(ctx, " var "
+                                         "a = 123; var b = 456; var c = a + b;")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "c")) - (double)(579.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -237,17 +235,17 @@ spec("turbo_script_basics") {
                            "b = 10; "
                            "c = (a + b) * 2; "
                            "d = c / 3;";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "c"), 30.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d"), 10.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "c")) - (double)(30.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d")) - (double)(10.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
     it("should persist variables across multiple runs") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_run(ctx, " x = 100;"), 0);
-      check_int_eq(turbo_script_run(ctx, " y = x + 50;"), 0);
-      check_float_eq(ts_get_num(ctx, "y"), 150.0, 0.001);
+      check((turbo_script_run(ctx, " x = 100;")) == (0));
+      check((turbo_script_run(ctx, " y = x + 50;")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "y")) - (double)(150.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -259,8 +257,8 @@ spec("turbo_script_basics") {
                            "  sum = sum + i; "
                            "  i = i + 1; "
                            "}";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "sum"), 10.0, 0.001); // 0+1+2+3+4
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "sum")) - (double)(10.0)) <= (double)(0.001)); // 0+1+2+3+4
       turbo_script_free(ctx);
     }
   }
@@ -272,11 +270,11 @@ spec("turbo_script_basics") {
       // 2024-01-01 12:00:00 UTC is 1704110400
       int res = turbo_script_run(ctx, "t = date(\"2024-01-01 12:00:00\");");
       if (res != 0) printf("DateTime Parse Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "t"), 1704110400.0, 1.0);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "t")) - (double)(1704110400.0)) <= (double)(1.0));
 
-      check_int_eq(turbo_script_run(ctx, "curr = now();"), 0);
-      check_float_gt(ts_get_num(ctx, "curr"), 1700000000.0);
+      check((turbo_script_run(ctx, "curr = now();")) == (0));
+      check((ts_get_num(ctx, "curr")) > (1700000000.0));
 
       turbo_script_free(ctx);
     }
@@ -295,9 +293,9 @@ spec("turbo_script_basics") {
 
       int res_str = turbo_script_run(ctx, script);
       if (res_str != 0) printf("String Utils Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res_str, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 123.45, 0.01);
-      check_float_eq(ts_get_num(ctx, "count"), 3.0, 0.1);
+      check((res_str) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(123.45)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "count")) - (double)(3.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -308,40 +306,35 @@ spec("turbo_script_basics") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
 
       // 1. Write
-      check_int_eq(turbo_script_run(ctx, "res "
-                                         "= write_file(\"test_ts.txt\", \"Hello Turbo Script!\");"),
-                   0);
+      check((turbo_script_run(ctx, "res "
+                                         "= write_file(\"test_ts.txt\", \"Hello Turbo Script!\");")) == (0));
       double write_res = ts_get_num(ctx, "res");
       printf("DEBUG: file_write res = %g\n", write_res);
-      check_float_eq(write_res, 0.0, 0.1);
+      check(fabs((double)(write_res) - (double)(0.0)) <= (double)(0.1));
 
       // 2. Exists
-      check_int_eq(turbo_script_run(ctx, ""
-                                         "exists = file_exists(\"test_ts.txt\");"),
-                   0);
+      check((turbo_script_run(ctx, ""
+                                         "exists = file_exists(\"test_ts.txt\");")) == (0));
       double exists_res = ts_get_num(ctx, "exists");
       printf("DEBUG: file_exists res = %g\n", exists_res);
-      check_float_eq(exists_res, 1.0, 0.1);
+      check(fabs((double)(exists_res) - (double)(1.0)) <= (double)(0.1));
 
       // 3. Read
-      check_int_eq(turbo_script_run(ctx, "data "
-                                         "= read_file(\"test_ts.txt\");"),
-                   0);
+      check((turbo_script_run(ctx, "data "
+                                         "= read_file(\"test_ts.txt\");")) == (0));
       const char *data = ts_get_str(ctx, "data");
       check_not_null(data);
-      check_str_eq(data, "Hello Turbo Script!");
+      check(strcmp((data), ("Hello Turbo Script!")) == 0);
 
       // 4. Remove
-      check_int_eq(turbo_script_run(ctx, "del "
-                                         "= file_remove(\"test_ts.txt\");"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "del"), 0.0, 0.1);
+      check((turbo_script_run(ctx, "del "
+                                         "= file_remove(\"test_ts.txt\");")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "del")) - (double)(0.0)) <= (double)(0.1));
 
       // 5. Not exists
-      check_int_eq(turbo_script_run(ctx, ""
-                                         "exists2 = file_exists(\"test_ts.txt\");"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "exists2"), 0.0, 0.1);
+      check((turbo_script_run(ctx, ""
+                                         "exists2 = file_exists(\"test_ts.txt\");")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "exists2")) - (double)(0.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -358,12 +351,12 @@ spec("turbo_script_basics") {
                            "mi = vec.min(v);"
                            "ma = vec.max(v);";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "a"), 30.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "l"), 5.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "s"), 150.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "mi"), 10.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "ma"), 50.0, 0.1);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "a")) - (double)(30.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "l")) - (double)(5.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "s")) - (double)(150.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "mi")) - (double)(10.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "ma")) - (double)(50.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -372,9 +365,9 @@ spec("turbo_script_basics") {
   describe("Error Handling") {
     it("should report parse errors") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_run(ctx, "x = 10 + * 5"), -1);
+      check((turbo_script_run(ctx, "x = 10 + * 5")) == (-1));
       check_not_null(turbo_script_get_error(ctx));
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_PARSE);
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_PARSE));
       check_not_null(strstr(turbo_script_get_error(ctx), "line 1"));
       check_not_null(strstr(turbo_script_get_error(ctx), "near '*'"));
       turbo_script_free(ctx);

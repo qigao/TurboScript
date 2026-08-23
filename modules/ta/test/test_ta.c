@@ -21,14 +21,14 @@ spec("ta_indicators") {
             size_t period = 3;
 
             size_t result = exprtk_ta_sma(in, n, period, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // SMA(3) at index 2: (1+2+3)/3 = 2.0
-            check_float_eq(out[2], 2.0, EPSILON);
+            check(fabs((double)(out[2]) - (double)(2.0)) <= (double)(EPSILON));
             // SMA(3) at index 3: (2+3+4)/3 = 3.0
-            check_float_eq(out[3], 3.0, EPSILON);
+            check(fabs((double)(out[3]) - (double)(3.0)) <= (double)(EPSILON));
             // SMA(3) at index 9: (8+9+10)/3 = 9.0
-            check_float_eq(out[9], 9.0, EPSILON);
+            check(fabs((double)(out[9]) - (double)(9.0)) <= (double)(EPSILON));
         }
 
         it("should handle period equal to length") {
@@ -36,8 +36,8 @@ spec("ta_indicators") {
             double out[3] = {0};
 
             size_t result = exprtk_ta_sma(in, 3, 3, out);
-            check_int_eq(result, 3);
-            check_float_eq(out[2], 4.0, EPSILON); // (2+4+6)/3 = 4.0
+            check((result) == (3));
+            check(fabs((double)(out[2]) - (double)(4.0)) <= (double)(EPSILON)); // (2+4+6)/3 = 4.0
         }
     }
 
@@ -50,13 +50,13 @@ spec("ta_indicators") {
             size_t period = 3;
 
             size_t result = exprtk_ta_ema(in, n, period, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // Warmup is undefined until period-1
-            check_float_eq(out[0], 0.0, EPSILON);
-            check_float_eq(out[1], 0.0, EPSILON);
+            check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));
+            check(fabs((double)(out[1]) - (double)(0.0)) <= (double)(EPSILON));
             // Seed from SMA(10,11,12)=11
-            check_float_eq(out[2], 11.0, EPSILON);
+            check(fabs((double)(out[2]) - (double)(11.0)) <= (double)(EPSILON));
             check(out[5] > out[2]);
         }
     }
@@ -71,15 +71,15 @@ spec("ta_indicators") {
             double anchored[4] = {0};
             double session_vwap[4] = {0};
 
-            check_int_eq(exprtk_ta_vwap(hi, lo, cl, vol, 4, anchored), 4);
-            check_int_eq(exprtk_ta_vwap_session(hi, lo, cl, vol, session, 4, session_vwap), 4);
+            check((exprtk_ta_vwap(hi, lo, cl, vol, 4, anchored)) == (4));
+            check((exprtk_ta_vwap_session(hi, lo, cl, vol, session, 4, session_vwap)) == (4));
 
-            check_float_eq(anchored[0], 10.0, EPSILON);
-            check_float_eq(anchored[3], 16.0, EPSILON);
-            check_float_eq(session_vwap[0], 10.0, EPSILON);
-            check_float_eq(session_vwap[1], 11.0, EPSILON);
-            check_float_eq(session_vwap[2], 20.0, EPSILON);
-            check_float_eq(session_vwap[3], 21.0, EPSILON);
+            check(fabs((double)(anchored[0]) - (double)(10.0)) <= (double)(EPSILON));
+            check(fabs((double)(anchored[3]) - (double)(16.0)) <= (double)(EPSILON));
+            check(fabs((double)(session_vwap[0]) - (double)(10.0)) <= (double)(EPSILON));
+            check(fabs((double)(session_vwap[1]) - (double)(11.0)) <= (double)(EPSILON));
+            check(fabs((double)(session_vwap[2]) - (double)(20.0)) <= (double)(EPSILON));
+            check(fabs((double)(session_vwap[3]) - (double)(21.0)) <= (double)(EPSILON));
         }
     }
 
@@ -96,7 +96,7 @@ spec("ta_indicators") {
             size_t period = 14;
 
             size_t result = exprtk_ta_rsi(in, n, period, out, &arena);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // RSI should be between 0 and 100
             for (size_t i = period; i < n; i++) {
@@ -124,14 +124,14 @@ spec("ta_indicators") {
             double hist[50] = {0};
 
             size_t result = exprtk_ta_macd(in, 50, 12, 26, 9, line, sig, hist, &arena);
-            check_int_eq(result, 50);
+            check((result) == (50));
 
             // MACD line should have values after slow period
             // Signal line needs additional 9 periods
             // Check that histogram = line - signal for later indices
             for (size_t i = 35; i < 50; i++) {
                 if (line[i] != 0.0 || sig[i] != 0.0) {
-                    check_float_eq(hist[i], line[i] - sig[i], EPSILON);
+                    check(fabs((double)(hist[i]) - (double)(line[i] - sig[i])) <= (double)(EPSILON));
                 }
             }
 
@@ -153,7 +153,7 @@ spec("ta_indicators") {
             size_t period = 3;
 
             size_t result = exprtk_ta_atr(hi, lo, cl, n, period, out, &arena);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // ATR should be positive
             for (size_t i = period - 1; i < n; i++) {
@@ -176,7 +176,7 @@ spec("ta_indicators") {
             double mult = 2.0;
 
             size_t result = exprtk_ta_bbands(in, n, period, mult, upper, middle, lower);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // Middle band should equal SMA
             // Upper should be above middle, lower should be below
@@ -196,10 +196,10 @@ spec("ta_indicators") {
             size_t period = 3;
 
             size_t result = exprtk_ta_mom(in, n, period, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // MOM at index 3: in[3] - in[0] = 103 - 100 = 3
-            check_float_eq(out[3], 3.0, EPSILON);
+            check(fabs((double)(out[3]) - (double)(3.0)) <= (double)(EPSILON));
         }
 
         it("should calculate ROC (rate of change)") {
@@ -209,10 +209,10 @@ spec("ta_indicators") {
             size_t period = 2;
 
             size_t result = exprtk_ta_roc(in, n, period, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // ROC at index 2: ((104 - 100) / 100) * 100 = 4.0
-            check_float_eq(out[2], 4.0, EPSILON);
+            check(fabs((double)(out[2]) - (double)(4.0)) <= (double)(EPSILON));
         }
     }
 
@@ -227,7 +227,7 @@ spec("ta_indicators") {
             double out[1] = {0};
 
             size_t result = exprtk_ta_bsm_call(S, K, T, r, sigma, 1, out);
-            check_int_eq(result, 1);
+            check((result) == (1));
 
             // ATM call with 1 year to expiry should have positive value
             check(out[0] > 0.0);
@@ -243,7 +243,7 @@ spec("ta_indicators") {
             double out[1] = {0};
 
             size_t result = exprtk_ta_bsm_put(S, K, T, r, sigma, 1, out);
-            check_int_eq(result, 1);
+            check((result) == (1));
 
             // ATM put with 1 year to expiry should have positive value
             check(out[0] > 0.0);
@@ -258,7 +258,7 @@ spec("ta_indicators") {
             double out[1] = {0};
 
             size_t result = exprtk_ta_bsm_delta_call(S, K, T, r, sigma, 1, out);
-            check_int_eq(result, 1);
+            check((result) == (1));
 
             // Delta should be between 0 and 1 for calls
             check(out[0] > 0.0 && out[0] < 1.0);
@@ -274,14 +274,14 @@ spec("ta_indicators") {
             size_t n = 5;
 
             size_t result = exprtk_ta_obv(cl, vol, n, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // OBV starts with first volume, then accumulates based on price direction
-            check_float_eq(out[0], 1000.0, EPSILON);  // Initial volume
-            check_float_eq(out[1], 2500.0, EPSILON);  // price up: 1000 + 1500
-            check_float_eq(out[2], 1300.0, EPSILON);  // price down: 2500 - 1200
-            check_float_eq(out[3], 3100.0, EPSILON);  // price up: 1300 + 1800
-            check_float_eq(out[4], 1800.0, EPSILON);  // price down: 3100 - 1300
+            check(fabs((double)(out[0]) - (double)(1000.0)) <= (double)(EPSILON));  // Initial volume
+            check(fabs((double)(out[1]) - (double)(2500.0)) <= (double)(EPSILON));  // price up: 1000 + 1500
+            check(fabs((double)(out[2]) - (double)(1300.0)) <= (double)(EPSILON));  // price down: 2500 - 1200
+            check(fabs((double)(out[3]) - (double)(3100.0)) <= (double)(EPSILON));  // price up: 1300 + 1800
+            check(fabs((double)(out[4]) - (double)(1800.0)) <= (double)(EPSILON));  // price down: 3100 - 1300
         }
     }
 }

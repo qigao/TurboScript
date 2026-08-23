@@ -135,16 +135,16 @@ int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_e
                                       exprtk_env_t *caller_env, exprtk_value_t *out);
 
 /* Internal JIT API - for testing and advanced use */
-CXX_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);
-CXX_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+TURBO_SCRIPT_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
                                            const char *script);
-CXX_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx);
-CXX_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script);
-CXX_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
+TURBO_SCRIPT_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
                                                   const char *script);
-CXX_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx);
-CXX_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out);
-CXX_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out);
+TURBO_SCRIPT_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script);
 
 /* Internal REPL helper */
 int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script);

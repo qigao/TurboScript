@@ -102,10 +102,10 @@ suite("Backtest and Risk") {
       size_t num_trades =
           exprtk_bt_backtest(open, close, signal, n, 10000.0, 0.001, equity, trades);
 
-      check_int_eq(num_trades, 0);
+      check((num_trades) == (0));
       // Equity should remain constant
-      check_float_eq(equity[0], 10000.0, EPSILON);
-      check_float_eq(equity[n - 1], 10000.0, EPSILON);
+      check(fabs((double)(equity[0]) - (double)(10000.0)) <= (double)(EPSILON));
+      check(fabs((double)(equity[n - 1]) - (double)(10000.0)) <= (double)(EPSILON));
     }
 
     it("should handle signal changes") {
@@ -133,7 +133,7 @@ suite("Backtest and Risk") {
       size_t num_trades =
           exprtk_bt_backtest(open, close, signal, n, 10000.0, 0.001, equity, trades);
 
-      check_int_eq((int)num_trades, 1);
+      check(((int)num_trades) == (1));
       check(equity[0] > 0.0);
       check(equity[1] > equity[0]);
       check(equity[n - 1] > 10000.0);
@@ -149,10 +149,10 @@ suite("Backtest and Risk") {
       size_t num_trades =
           exprtk_bt_backtest(open, close, signal, 2, 10000.0, 0.0, equity, trades);
 
-      check_int_eq((int)num_trades, 1);
-      check_float_eq(equity[0], 10950.0, EPSILON);
-      check_float_eq(equity[1], 10950.0, EPSILON);
-      check_float_eq(trades[1], 950.0, EPSILON);
+      check(((int)num_trades) == (1));
+      check(fabs((double)(equity[0]) - (double)(10950.0)) <= (double)(EPSILON));
+      check(fabs((double)(equity[1]) - (double)(10950.0)) <= (double)(EPSILON));
+      check(fabs((double)(trades[1]) - (double)(950.0)) <= (double)(EPSILON));
     }
   }
 
@@ -184,9 +184,9 @@ suite("Backtest and Risk") {
 
       size_t count = exprtk_bt_stats(equity, trades, n, 4, 252.0, stats);
 
-      check_int_eq(count, 10);
+      check((count) == (10));
       // Win rate should be 0.5 (2 wins, 2 losses)
-      check_float_eq(stats[4], 0.5, 0.1);
+      check(fabs((double)(stats[4]) - (double)(0.5)) <= (double)(0.1));
       // Profit factor should be > 1 (more wins than losses)
       check(stats[5] > 1.0);
     }
@@ -201,7 +201,7 @@ suite("Backtest and Risk") {
 
       check(count >= 4);
       // Total return should be 0
-      check_float_eq(stats[0], 0.0, EPSILON);
+      check(fabs((double)(stats[0]) - (double)(0.0)) <= (double)(EPSILON));
     }
 
     it("should annualize using return intervals instead of raw point count") {
@@ -212,7 +212,7 @@ suite("Backtest and Risk") {
       size_t count = exprtk_bt_stats(equity, trades, 2, 1, 1.0, stats);
 
       check(count >= 4);
-      check_float_eq(stats[1], 1.0, EPSILON);
+      check(fabs((double)(stats[1]) - (double)(1.0)) <= (double)(EPSILON));
     }
   }
 
@@ -235,7 +235,7 @@ suite("Backtest and Risk") {
     it("should use the square-root impact model per share") {
       double slippage = exprtk_bt_slippage(100.0, 1000.0, 10000.0, 10000.0, 0.1);
 
-      check_float_eq(slippage, 3.16227766, EPSILON);
+      check(fabs((double)(slippage) - (double)(3.16227766)) <= (double)(EPSILON));
     }
 
     it("should calculate total cost") {
@@ -250,14 +250,14 @@ suite("Backtest and Risk") {
       check(cost > 0.0);
       // Cost should include commission + tax + slippage
       double expected = 100 * 100 * 0.001 + 100 * 100 * 0.001 + 100 * 0.05;
-      check_float_eq(cost, expected, 1.0);
+      check(fabs((double)(cost) - (double)(expected)) <= (double)(1.0));
     }
 
     it("should apply bt_cost tax symmetrically regardless of trade side") {
       double buy_cost = exprtk_bt_cost(100.0, 100.0, 0.001, 0.001, 0.05);
       double sell_cost = exprtk_bt_cost(100.0, -100.0, 0.001, 0.001, 0.05);
 
-      check_float_eq(buy_cost, sell_cost, EPSILON);
+      check(fabs((double)(buy_cost) - (double)(sell_cost)) <= (double)(EPSILON));
     }
   }
 
@@ -273,7 +273,7 @@ suite("Backtest and Risk") {
       check_not_null(mgr);
       mgr->slippage_pct = 0.0;
       mgr->spread = 0.0;
-      check_int_eq(order_manager_market(mgr, 42, +1, 0.1, 100.0, 100.0, 0.0, 0.0), ORDER_OK);
+      check((order_manager_market(mgr, 42, +1, 0.1, 100.0, 100.0, 0.0, 0.0)) == (ORDER_OK));
 
       order_manager_mark_to_market(mgr, asset_ids, prices, 2);
       check(mgr->equity > 10000.0);
@@ -311,8 +311,8 @@ suite("Backtest and Risk") {
       size_t equity_len = 0;
 
       check_not_null(u);
-      check_int_eq(universe_add_asset(u, &a1), 0);
-      check_int_eq(universe_add_asset(u, &a2), 0);
+      check((universe_add_asset(u, &a1)) == (0));
+      check((universe_add_asset(u, &a2)) == (0));
       universe_finalize(u);
 
       cfg.warmup_bars = 0;
@@ -325,10 +325,10 @@ suite("Backtest and Risk") {
 
       ctx = strategy_create(u, &provider, &cfg, &arena);
       check_not_null(ctx);
-      check_int_eq(strategy_compile(ctx, "signal = 0;"), 0);
-      check_int_eq(strategy_run_universe(ctx, 1.0, 3.0), 6);
+      check((strategy_compile(ctx, "signal = 0;")) == (0));
+      check((strategy_run_universe(ctx, 1.0, 3.0)) == (6));
       check_not_null(strategy_equity_curve(ctx, &equity_len));
-      check_int_eq((int)equity_len, 3);
+      check(((int)equity_len) == (3));
 
       strategy_free(ctx);
       universe_free(u);
@@ -356,8 +356,8 @@ suite("Backtest and Risk") {
       bar_window_t *w;
 
       check_not_null(u);
-      check_int_eq(universe_add_asset(u, &asset), 0);
-      check_int_eq(universe_add_adjustment(u, &div), 0);
+      check((universe_add_asset(u, &asset)) == (0));
+      check((universe_add_adjustment(u, &div)) == (0));
       universe_finalize(u);
 
       cfg.warmup_bars = 0;
@@ -370,15 +370,15 @@ suite("Backtest and Risk") {
 
       ctx = strategy_create(u, &provider, &cfg, &arena);
       check_not_null(ctx);
-      check_int_eq(strategy_compile(ctx, "signal = 0;"), 0);
-      check_int_eq(strategy_run_single(ctx, 1, 1.0, 2.0), 2);
+      check((strategy_compile(ctx, "signal = 0;")) == (0));
+      check((strategy_run_single(ctx, 1, 1.0, 2.0)) == (2));
 
       w = ctx->windows[0];
       check_not_null(w);
       bar_window_linearize(w);
-      check_int_eq((int)w->count, 2);
-      check_float_eq(w->close[0], 90.0, EPSILON);
-      check_float_eq(w->close[1], 81.0, EPSILON);
+      check(((int)w->count) == (2));
+      check(fabs((double)(w->close[0]) - (double)(90.0)) <= (double)(EPSILON));
+      check(fabs((double)(w->close[1]) - (double)(81.0)) <= (double)(EPSILON));
 
       strategy_free(ctx);
       universe_free(u);
@@ -405,8 +405,8 @@ suite("Backtest and Risk") {
       universe_adj_t div = { .asset_id = 1, .date = 2.0, .type = UNIVERSE_ADJ_DIVIDEND, .factor = 10.0 };
 
       check_not_null(u);
-      check_int_eq(universe_add_asset(u, &asset), 0);
-      check_int_eq(universe_add_adjustment(u, &div), 0);
+      check((universe_add_asset(u, &asset)) == (0));
+      check((universe_add_adjustment(u, &div)) == (0));
       universe_finalize(u);
 
       cfg.warmup_bars = 0;
@@ -419,18 +419,18 @@ suite("Backtest and Risk") {
 
       ctx = strategy_create(u, &provider, &cfg, &arena);
       check_not_null(ctx);
-      check_int_eq(strategy_compile(ctx, "signal = 0;"), 0);
-      check_int_eq(strategy_run_single(ctx, 1, 1.0, 2.0), 2);
+      check((strategy_compile(ctx, "signal = 0;")) == (0));
+      check((strategy_run_single(ctx, 1, 1.0, 2.0)) == (2));
 
       check(u->current_date > 0.0);
-      check_float_eq(universe_adj_factor(u, 1), 0.9, EPSILON);
+      check(fabs((double)(universe_adj_factor(u, 1)) - (double)(0.9)) <= (double)(EPSILON));
 
       strategy_reset(ctx);
 
-      check_float_eq(u->current_date, 0.0, EPSILON);
-      check_float_eq(universe_adj_factor(u, 1), 1.0, EPSILON);
-      check_int_eq((int)u->num_delisted_today, 0);
-      check_int_eq((int)ctx->total_bars, 0);
+      check(fabs((double)(u->current_date) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(universe_adj_factor(u, 1)) - (double)(1.0)) <= (double)(EPSILON));
+      check(((int)u->num_delisted_today) == (0));
+      check(((int)ctx->total_bars) == (0));
 
       strategy_free(ctx);
       universe_free(u);
@@ -472,7 +472,7 @@ suite("Backtest and Risk") {
       wfo_result_t result = {0};
 
       check_not_null(u);
-      check_int_eq(universe_add_asset(u, &asset), 0);
+      check((universe_add_asset(u, &asset)) == (0));
       universe_finalize(u);
 
       cfg.warmup_bars = 0;
@@ -485,9 +485,9 @@ suite("Backtest and Risk") {
 
       ctx = strategy_create(u, &provider, &cfg, &arena);
       check_not_null(ctx);
-      check_int_eq(strategy_compile(ctx, "signal = 0;"), 0);
-      check_int_eq(strategy_walk_forward(ctx, NULL, 1, 1.0, 6.0, &wfo, &result, &arena), 0);
-      check_int_eq((int)result.num_windows, 2);
+      check((strategy_compile(ctx, "signal = 0;")) == (0));
+      check((strategy_walk_forward(ctx, NULL, 1, 1.0, 6.0, &wfo, &result, &arena)) == (0));
+      check(((int)result.num_windows) == (2));
 
       strategy_free(ctx);
       universe_free(u);
@@ -505,7 +505,7 @@ suite("Backtest and Risk") {
 
       exprtk_env_init(&env);
 
-      names[0] = exprtk_val_str((tstr_v){ .data = "period", .len = 6 });
+      names[0] = exprtk_val_str((vstr){ .data = "period", .len = 6 });
       args[0] = exprtk_val_list_ex(names, 1, 0);
       args[1] = exprtk_val_vec(ranges, 3);
       args[2] = exprtk_val_num(10.0);
@@ -514,9 +514,9 @@ suite("Backtest and Risk") {
       args[5] = exprtk_val_num(0.0);
 
       out = fn_walk_forward(6, args, &env, &arena);
-      check_int_eq(out.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&out, "error").data.number, -1.0, EPSILON);
-      check_float_eq(exprtk_map_get(&out, "num_windows").data.number, 0.0, EPSILON);
+      check((out.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&out, "error").data.number) - (double)(-1.0)) <= (double)(EPSILON));
+      check(fabs((double)(exprtk_map_get(&out, "num_windows").data.number) - (double)(0.0)) <= (double)(EPSILON));
 
       exprtk_map_free(&out);
       exprtk_env_free(&env);
@@ -535,7 +535,7 @@ suite("Backtest and Risk") {
       check(size > 0.0);
       check(size <= equity);
       // Size should be 200 / 0.05 = 4000
-      check_float_eq(size, 4000.0, 100.0);
+      check(fabs((double)(size) - (double)(4000.0)) <= (double)(100.0));
     }
 
     it("should cap size at equity") {
@@ -546,7 +546,7 @@ suite("Backtest and Risk") {
       double size = exprtk_fixed_frac(equity, risk_pct, stop_dist);
 
       // Should cap at equity
-      check_float_eq(size, equity, EPSILON);
+      check(fabs((double)(size) - (double)(equity)) <= (double)(EPSILON));
     }
 
     it("should handle zero stop distance") {
@@ -556,7 +556,7 @@ suite("Backtest and Risk") {
 
       double size = exprtk_fixed_frac(equity, risk_pct, stop_dist);
 
-      check_float_eq(size, 0.0, EPSILON);
+      check(fabs((double)(size) - (double)(0.0)) <= (double)(EPSILON));
     }
   }
 
@@ -582,7 +582,7 @@ suite("Backtest and Risk") {
       double opt_f = exprtk_optimal_f(trades, n, out);
 
       // No losses - can't calculate optimal f
-      check_float_eq(opt_f, 0.0, EPSILON);
+      check(fabs((double)(opt_f) - (double)(0.0)) <= (double)(EPSILON));
     }
 
     it("should handle losing system") {
@@ -613,10 +613,10 @@ suite("Backtest and Risk") {
       srand(42); // Fixed seed for reproducibility
       size_t result = exprtk_mc_simulate(s0, mu, sigma, dt, steps, paths, out, &arena);
 
-      check_int_eq(result, paths);
+      check((result) == (paths));
       // All paths should start at s0
       for (size_t p = 0; p < paths; p++) {
-        check_float_eq(out[p * steps], s0, EPSILON);
+        check(fabs((double)(out[p * steps]) - (double)(s0)) <= (double)(EPSILON));
       }
       // Prices should be positive
       for (size_t i = 0; i < paths * steps; i++) {

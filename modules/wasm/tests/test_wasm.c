@@ -54,7 +54,7 @@ static exprtk_value_t make_str(test_env_t *t, const char *s) {
   size_t len = strlen(s);
   char *buf = (char *)mem_alloc(&t->env.arena, len + 1);
   memcpy(buf, s, len + 1);
-  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = tstr_v_from_buf(buf, len)};
+  return (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = vstr_from_buf(buf, len)};
 }
 
 static exprtk_value_t make_num(double v) {
@@ -96,13 +96,13 @@ spec("wasm_module") {
       ts_plugin_handle_t *h = ts_plugin_load(WASM_PLUGIN_DLL);
       check_not_null(h);
       check_not_null(h->plugin);
-      check_str_eq(h->plugin->name, "wasm");
+      check(strcmp((h->plugin->name), ("wasm")) == 0);
 
       exprtk_env_t env;
       mem_pool_t scratch;
       exprtk_env_init(&env);
       mem_init(&scratch, 4096);
-      check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+      check((ts_plugin_init(h, &env, &scratch)) == (0));
 
       ts_plugin_unload(h);
       exprtk_env_free(&env);
@@ -120,22 +120,22 @@ spec("wasm_module") {
       exprtk_value_t out;
       exprtk_value_t args_close[1];
 
-      check_int_eq(write_fib32_wasm(tmp_wasm), 0);
+      check((write_fib32_wasm(tmp_wasm)) == (0));
 
       test_env_init(&t);
       check_not_null(t.wasm_plugin);
 
       args_open[0] = make_str(&t, tmp_wasm);
       h = call_fn(&t, "wasm.open", 1, args_open);
-      check_int_eq(h.type, EXPRTK_VAL_NUMBER);
+      check((h.type) == (EXPRTK_VAL_NUMBER));
       check(h.data.number >= 0.0);
 
       args_call[0] = h;
       args_call[1] = make_str(&t, "fib");
       args_call[2] = make_num(20.0);
       out = call_fn(&t, "wasm.call", 3, args_call);
-      check_int_eq(out.type, EXPRTK_VAL_NUMBER);
-      check_float_eq(out.data.number, 6765.0, 0.01);
+      check((out.type) == (EXPRTK_VAL_NUMBER));
+      check(fabs((double)(out.data.number) - (double)(6765.0)) <= (double)(0.01));
 
       args_close[0] = h;
       call_fn(&t, "wasm.close", 1, args_close);
@@ -157,7 +157,7 @@ spec("wasm_module") {
       exprtk_value_t args_bad_handle_call[3];
       exprtk_value_t args_close[1];
 
-      check_int_eq(write_fib32_wasm(tmp_wasm), 0);
+      check((write_fib32_wasm(tmp_wasm)) == (0));
 
       test_env_init(&t);
       check_not_null(t.wasm_plugin);
@@ -171,19 +171,19 @@ spec("wasm_module") {
       args_bad_call[1] = make_str(&t, "fib_not_found");
       args_bad_call[2] = make_num(20.0);
       bad_res = call_fn(&t, "wasm.call", 3, args_bad_call);
-      check_int_eq(bad_res.type, EXPRTK_VAL_NUMBER);
-      check_float_eq(bad_res.data.number, 0.0, 0.01);
+      check((bad_res.type) == (EXPRTK_VAL_NUMBER));
+      check(fabs((double)(bad_res.data.number) - (double)(0.0)) <= (double)(0.01));
 
       /* Plugin sets env->aborted on error; clear so we can continue testing */
       t.env.aborted = 0;
       err_handle_args[0] = h;
       err_handle = call_fn(&t, "wasm.last_error", 1, err_handle_args);
-      check_int_eq(err_handle.type, EXPRTK_VAL_STRING);
+      check((err_handle.type) == (EXPRTK_VAL_STRING));
       check(err_handle.data.string.len > 0);
       {
-        char *s = tstr_v_to_cstr(err_handle.data.string);
+        char *s = vstr_to_cstr(err_handle.data.string);
         check_not_null(s);
-        check_str_contains(s, "function");
+        check_contains(s, "function");
         free(s);
       }
 
@@ -195,12 +195,12 @@ spec("wasm_module") {
 
       t.env.aborted = 0;
       err_ctx = call_fn(&t, "wasm.last_error", 0, NULL);
-      check_int_eq(err_ctx.type, EXPRTK_VAL_STRING);
+      check((err_ctx.type) == (EXPRTK_VAL_STRING));
       check(err_ctx.data.string.len > 0);
       {
-        char *s = tstr_v_to_cstr(err_ctx.data.string);
+        char *s = vstr_to_cstr(err_ctx.data.string);
         check_not_null(s);
-        check_str_contains(s, "invalid handle");
+        check_contains(s, "invalid handle");
         free(s);
       }
 
@@ -220,14 +220,14 @@ spec("wasm_module") {
       exprtk_value_t out;
       exprtk_value_t args_close[1];
 
-      check_int_eq(write_add2_wasm(tmp_wasm), 0);
+      check((write_add2_wasm(tmp_wasm)) == (0));
 
       test_env_init(&t);
       check_not_null(t.wasm_plugin);
 
       args_open[0] = make_str(&t, tmp_wasm);
       h = call_fn(&t, "wasm.open", 1, args_open);
-      check_int_eq(h.type, EXPRTK_VAL_NUMBER);
+      check((h.type) == (EXPRTK_VAL_NUMBER));
       check(h.data.number >= 0.0);
 
       args_call[0] = h;
@@ -235,8 +235,8 @@ spec("wasm_module") {
       args_call[2] = make_num(20.0);
       args_call[3] = make_num(22.0);
       out = call_fn(&t, "wasm.call", 4, args_call);
-      check_int_eq(out.type, EXPRTK_VAL_NUMBER);
-      check_float_eq(out.data.number, 42.0, 0.01);
+      check((out.type) == (EXPRTK_VAL_NUMBER));
+      check(fabs((double)(out.data.number) - (double)(42.0)) <= (double)(0.01));
 
       args_close[0] = h;
       call_fn(&t, "wasm.close", 1, args_close);

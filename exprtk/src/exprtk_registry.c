@@ -25,7 +25,7 @@ static exprtk_value_t exprtk_call_undefined(exprtk_env_t *env, const char *name)
     env->error_line = env->last_line;
     env->error_column = env->last_column;
     env->flow = exprtk_FLOW_THROW;
-    env->error_value = exprtk_val_str(tstr_v_from_cstr(env->error_msg));
+    env->error_value = exprtk_val_str(vstr_from_cstr(env->error_msg));
     return zero;
 }
 

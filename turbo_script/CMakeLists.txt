@@ -50,7 +50,7 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core TurboParser::Parser
+  PUBLIC TurboUtils::Core TurboUtils::STL TurboParser::Parser
   PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 # Enable strict warnings for modularized code
@@ -79,12 +79,15 @@ target_include_directories(
   PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
-target_compile_definitions(${TARGET_NAME} PRIVATE SHARED_CXX)
+target_compile_definitions(
+  ${TARGET_NAME}
+  PRIVATE TURBO_SCRIPT_BUILD_SHARED
+  INTERFACE TURBO_SCRIPT_USE_SHARED)
 
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core
+  PUBLIC TurboUtils::Core TurboUtils::STL
   PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)

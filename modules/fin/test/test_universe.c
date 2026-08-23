@@ -62,7 +62,7 @@ suite("Universe Management") {
 
       universe_t *u = universe_create(&arena);
       check_not_null(u);
-      check_int_eq((int)u->num_assets, 0);
+      check(((int)u->num_assets) == (0));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -74,7 +74,7 @@ suite("Universe Management") {
 
       universe_t *u = make_test_universe(&arena);
       check_not_null(u);
-      check_int_eq((int)u->num_assets, 5);
+      check(((int)u->num_assets) == (5));
       check_not_null(u->active_mask);
       check_not_null(u->cum_adj_cache);
 
@@ -98,7 +98,7 @@ suite("Universe Management") {
       provider_t *p = provider_csv_create(&MARKET_US_EQUITY, ".", &arena);
       check_not_null(p);
 
-      check_int_eq(provider_load_universe(p, u, assets_path, "missing_adjustments.csv", &arena), -1);
+      check((provider_load_universe(p, u, assets_path, "missing_adjustments.csv", &arena)) == (-1));
 
       universe_free(u);
       remove(assets_path);
@@ -117,7 +117,7 @@ suite("Universe Management") {
 
       /* date=120: AAPL(100), MSFT(100), AMZN(100) active; GOOG(150), TSLA(200) not yet */
       universe_advance(u, 120);
-      check_int_eq((int)universe_active_count(u), 3);
+      check(((int)universe_active_count(u)) == (3));
       check(universe_is_active(u, 0));   /* AAPL */
       check(universe_is_active(u, 1));   /* MSFT */
       check(!universe_is_active(u, 2));  /* GOOG not yet */
@@ -135,7 +135,7 @@ suite("Universe Management") {
 
       /* date=200: all 5 assets are active (AMZN end_date=300 > 200) */
       universe_advance(u, 200);
-      check_int_eq((int)universe_active_count(u), 5);
+      check(((int)universe_active_count(u)) == (5));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -151,7 +151,7 @@ suite("Universe Management") {
 
       universe_advance(u, 300);
       check(!universe_is_active(u, 3)); /* AMZN delisted (end_date=300 <= 300) */
-      check_int_eq((int)universe_active_count(u), 4); /* 5 minus AMZN */
+      check(((int)universe_active_count(u)) == (4)); /* 5 minus AMZN */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -167,8 +167,8 @@ suite("Universe Management") {
 
       uint32_t delisted[8];
       size_t n = universe_delisted_today(u, delisted, 8);
-      check_int_eq((int)n, 1);
-      check_int_eq((int)delisted[0], 3); /* AMZN id=3 */
+      check(((int)n) == (1));
+      check(((int)delisted[0]) == (3)); /* AMZN id=3 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -182,10 +182,10 @@ suite("Universe Management") {
       universe_advance(u, 120);
       uint32_t ids[8];
       size_t n = universe_active_ids(u, ids, 8);
-      check_int_eq((int)n, 3);
-      check_int_eq((int)ids[0], 0); /* AAPL */
-      check_int_eq((int)ids[1], 1); /* MSFT */
-      check_int_eq((int)ids[2], 3); /* AMZN */
+      check(((int)n) == (3));
+      check(((int)ids[0]) == (0)); /* AAPL */
+      check(((int)ids[1]) == (1)); /* MSFT */
+      check(((int)ids[2]) == (3)); /* AMZN */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -221,11 +221,11 @@ suite("Universe Management") {
       /* Before the split date: factor should be 1/4 = 0.25 */
       universe_advance(u, 250);
       double factor = universe_adj_factor(u, 0);
-      check_float_eq(factor, 0.25, EPSILON);
+      check(fabs((double)(factor) - (double)(0.25)) <= (double)(EPSILON));
 
       /* Adjusted price: 400 * 0.25 = 100 */
       double adjusted = universe_adjust_price(u, 0, 400.0);
-      check_float_eq(adjusted, 100.0, EPSILON);
+      check(fabs((double)(adjusted) - (double)(100.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -255,7 +255,7 @@ suite("Universe Management") {
       /* After both splits: cum_adj = 1/(2*3) = 1/6 */
       universe_advance(u, 350);
       double factor = universe_adj_factor(u, 0);
-      check_float_eq(factor, 1.0 / 6.0, EPSILON);
+      check(fabs((double)(factor) - (double)(1.0 / 6.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -276,17 +276,17 @@ suite("Universe Management") {
         .asset_id = 0, .date = 200, .type = UNIVERSE_ADJ_DIVIDEND, .factor = 10.0
       };
 
-      check_int_eq(universe_add_asset(u, &asset), 0);
-      check_int_eq(universe_add_adjustment(u, &adj), 0);
+      check((universe_add_asset(u, &asset)) == (0));
+      check((universe_add_adjustment(u, &adj)) == (0));
       universe_finalize(u);
 
       universe_advance(u, 199);
-      check_float_eq(universe_adj_factor(u, 0), 1.0, EPSILON);
+      check(fabs((double)(universe_adj_factor(u, 0)) - (double)(1.0)) <= (double)(EPSILON));
 
       universe_advance(u, 200);
       universe_apply_runtime_adjustments(u, 0, 200, 100.0);
-      check_float_eq(universe_adj_factor(u, 0), 0.9, EPSILON);
-      check_float_eq(universe_adjust_price(u, 0, 100.0), 90.0, EPSILON);
+      check(fabs((double)(universe_adj_factor(u, 0)) - (double)(0.9)) <= (double)(EPSILON));
+      check(fabs((double)(universe_adjust_price(u, 0, 100.0)) - (double)(90.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -307,16 +307,16 @@ suite("Universe Management") {
         .asset_id = 0, .date = 200, .type = UNIVERSE_ADJ_DIVIDEND, .factor = 10.0
       };
 
-      check_int_eq(universe_add_asset(u, &asset), 0);
-      check_int_eq(universe_add_adjustment(u, &adj), 0);
+      check((universe_add_asset(u, &asset)) == (0));
+      check((universe_add_adjustment(u, &adj)) == (0));
       universe_finalize(u);
 
       universe_advance(u, 200);
       universe_apply_runtime_adjustments(u, 0, 200, 100.0);
-      check_float_eq(universe_adj_factor(u, 0), 0.9, EPSILON);
+      check(fabs((double)(universe_adj_factor(u, 0)) - (double)(0.9)) <= (double)(EPSILON));
 
       universe_advance(u, 150);
-      check_float_eq(universe_adj_factor(u, 0), 1.0, EPSILON);
+      check(fabs((double)(universe_adj_factor(u, 0)) - (double)(1.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -348,8 +348,8 @@ suite("Universe Management") {
       universe_adjust_prices(u, raw, adjusted, 2);
 
       /* Asset 0: 200 * 0.5 = 100, Asset 1: 100 * 1.0 = 100 */
-      check_float_eq(adjusted[0], 100.0, EPSILON);
-      check_float_eq(adjusted[1], 100.0, EPSILON);
+      check(fabs((double)(adjusted[0]) - (double)(100.0)) <= (double)(EPSILON));
+      check(fabs((double)(adjusted[1]) - (double)(100.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -373,11 +373,11 @@ suite("Universe Management") {
 
       /* Sorted order: MSFT(10)=0, TSLA(20)=1, GOOG(30)=2, AMZN(40)=3, AAPL(50)=4 */
       /* Rank = position / (n-1) = position / 4 */
-      check_float_eq(out[0], 4.0 / 4.0, EPSILON); /* AAPL=50 → rank 4/4 = 1.0 */
-      check_float_eq(out[1], 0.0 / 4.0, EPSILON); /* MSFT=10 → rank 0/4 = 0.0 */
-      check_float_eq(out[2], 2.0 / 4.0, EPSILON); /* GOOG=30 → rank 2/4 = 0.5 */
-      check_float_eq(out[3], 3.0 / 4.0, EPSILON); /* AMZN=40 → rank 3/4 = 0.75 */
-      check_float_eq(out[4], 1.0 / 4.0, EPSILON); /* TSLA=20 → rank 1/4 = 0.25 */
+      check(fabs((double)(out[0]) - (double)(4.0 / 4.0)) <= (double)(EPSILON)); /* AAPL=50 → rank 4/4 = 1.0 */
+      check(fabs((double)(out[1]) - (double)(0.0 / 4.0)) <= (double)(EPSILON)); /* MSFT=10 → rank 0/4 = 0.0 */
+      check(fabs((double)(out[2]) - (double)(2.0 / 4.0)) <= (double)(EPSILON)); /* GOOG=30 → rank 2/4 = 0.5 */
+      check(fabs((double)(out[3]) - (double)(3.0 / 4.0)) <= (double)(EPSILON)); /* AMZN=40 → rank 3/4 = 0.75 */
+      check(fabs((double)(out[4]) - (double)(1.0 / 4.0)) <= (double)(EPSILON)); /* TSLA=20 → rank 1/4 = 0.25 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -395,13 +395,13 @@ suite("Universe Management") {
       universe_rank(u, values, 5, out);
 
       /* GOOG(idx=2) and TSLA(idx=4) are inactive → 0.0 */
-      check_float_eq(out[2], 0.0, EPSILON);
-      check_float_eq(out[4], 0.0, EPSILON);
+      check(fabs((double)(out[2]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(out[4]) - (double)(0.0)) <= (double)(EPSILON));
 
       /* Active: MSFT(10)=rank0, AMZN(20)=rank1, AAPL(30)=rank2 */
-      check_float_eq(out[1], 0.0 / 2.0, EPSILON); /* MSFT → 0.0 */
-      check_float_eq(out[3], 1.0 / 2.0, EPSILON); /* AMZN → 0.5 */
-      check_float_eq(out[0], 2.0 / 2.0, EPSILON); /* AAPL → 1.0 */
+      check(fabs((double)(out[1]) - (double)(0.0 / 2.0)) <= (double)(EPSILON)); /* MSFT → 0.0 */
+      check(fabs((double)(out[3]) - (double)(1.0 / 2.0)) <= (double)(EPSILON)); /* AMZN → 0.5 */
+      check(fabs((double)(out[0]) - (double)(2.0 / 2.0)) <= (double)(EPSILON)); /* AAPL → 1.0 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -423,10 +423,10 @@ suite("Universe Management") {
       uint32_t top_ids[3];
       size_t n = universe_top_n(u, values, 5, 3, top_ids);
 
-      check_int_eq((int)n, 3);
-      check_int_eq((int)top_ids[0], 0); /* AAPL=50 (highest) */
-      check_int_eq((int)top_ids[1], 3); /* AMZN=40 */
-      check_int_eq((int)top_ids[2], 2); /* GOOG=30 */
+      check(((int)n) == (3));
+      check(((int)top_ids[0]) == (0)); /* AAPL=50 (highest) */
+      check(((int)top_ids[1]) == (3)); /* AMZN=40 */
+      check(((int)top_ids[2]) == (2)); /* GOOG=30 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -443,7 +443,7 @@ suite("Universe Management") {
       uint32_t top_ids[10];
       size_t n = universe_top_n(u, values, 5, 10, top_ids);
 
-      check_int_eq((int)n, 3); /* only 3 active */
+      check(((int)n) == (3)); /* only 3 active */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -465,12 +465,12 @@ suite("Universe Management") {
       uint8_t mask[5];
       size_t count = universe_filter_gt(u, values, 5, 25.0, mask);
 
-      check_int_eq((int)count, 3); /* AAPL(50), GOOG(30), AMZN(40) > 25 */
-      check_int_eq(mask[0], 1); /* AAPL */
-      check_int_eq(mask[1], 0); /* MSFT=10 */
-      check_int_eq(mask[2], 1); /* GOOG=30 */
-      check_int_eq(mask[3], 1); /* AMZN=40 */
-      check_int_eq(mask[4], 0); /* TSLA=20 */
+      check(((int)count) == (3)); /* AAPL(50), GOOG(30), AMZN(40) > 25 */
+      check((mask[0]) == (1)); /* AAPL */
+      check((mask[1]) == (0)); /* MSFT=10 */
+      check((mask[2]) == (1)); /* GOOG=30 */
+      check((mask[3]) == (1)); /* AMZN=40 */
+      check((mask[4]) == (0)); /* TSLA=20 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -498,10 +498,10 @@ suite("Universe Management") {
        * z(AAPL) = (50-30)/15.811 ≈ 1.265
        * z(MSFT) = (10-30)/15.811 ≈ -1.265
        * z(GOOG) = (30-30)/15.811 ≈ 0.0 */
-      check_float_eq(out[2], 0.0, 0.01);           /* GOOG is at the mean */
+      check(fabs((double)(out[2]) - (double)(0.0)) <= (double)(0.01));           /* GOOG is at the mean */
       check(out[0] > 0);                            /* AAPL above mean */
       check(out[1] < 0);                            /* MSFT below mean */
-      check_float_eq(out[0], -out[1], 0.01);        /* Symmetric around mean */
+      check(fabs((double)(out[0]) - (double)(-out[1])) <= (double)(0.01));        /* Symmetric around mean */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -518,8 +518,8 @@ suite("Universe Management") {
       double out[5];
       universe_zscore(u, values, 5, out);
 
-      check_float_eq(out[2], 0.0, EPSILON); /* GOOG inactive */
-      check_float_eq(out[4], 0.0, EPSILON); /* TSLA inactive */
+      check(fabs((double)(out[2]) - (double)(0.0)) <= (double)(EPSILON)); /* GOOG inactive */
+      check(fabs((double)(out[4]) - (double)(0.0)) <= (double)(EPSILON)); /* TSLA inactive */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -542,11 +542,11 @@ suite("Universe Management") {
       universe_demean(u, values, 5, out);
 
       /* Mean = 30.0 */
-      check_float_eq(out[0],  20.0, EPSILON); /* 50 - 30 */
-      check_float_eq(out[1], -20.0, EPSILON); /* 10 - 30 */
-      check_float_eq(out[2],   0.0, EPSILON); /* 30 - 30 */
-      check_float_eq(out[3],  10.0, EPSILON); /* 40 - 30 */
-      check_float_eq(out[4], -10.0, EPSILON); /* 20 - 30 */
+      check(fabs((double)(out[0]) - (double)(20.0)) <= (double)(EPSILON)); /* 50 - 30 */
+      check(fabs((double)(out[1]) - (double)(-20.0)) <= (double)(EPSILON)); /* 10 - 30 */
+      check(fabs((double)(out[2]) - (double)(0.0)) <= (double)(EPSILON)); /* 30 - 30 */
+      check(fabs((double)(out[3]) - (double)(10.0)) <= (double)(EPSILON)); /* 40 - 30 */
+      check(fabs((double)(out[4]) - (double)(-10.0)) <= (double)(EPSILON)); /* 20 - 30 */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -563,8 +563,8 @@ suite("Universe Management") {
       double out[5];
       universe_demean(u, values, 5, out);
 
-      check_float_eq(out[2], 0.0, EPSILON);
-      check_float_eq(out[4], 0.0, EPSILON);
+      check(fabs((double)(out[2]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(out[4]) - (double)(0.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -586,11 +586,11 @@ suite("Universe Management") {
       double out[5];
       universe_clip(u, values, 5, 15.0, 45.0, out);
 
-      check_float_eq(out[0], 45.0, EPSILON); /* 50 clamped to 45 */
-      check_float_eq(out[1], 15.0, EPSILON); /* 10 clamped to 15 */
-      check_float_eq(out[2], 30.0, EPSILON); /* 30 unchanged */
-      check_float_eq(out[3], 40.0, EPSILON); /* 40 unchanged */
-      check_float_eq(out[4], 20.0, EPSILON); /* 20 unchanged */
+      check(fabs((double)(out[0]) - (double)(45.0)) <= (double)(EPSILON)); /* 50 clamped to 45 */
+      check(fabs((double)(out[1]) - (double)(15.0)) <= (double)(EPSILON)); /* 10 clamped to 15 */
+      check(fabs((double)(out[2]) - (double)(30.0)) <= (double)(EPSILON)); /* 30 unchanged */
+      check(fabs((double)(out[3]) - (double)(40.0)) <= (double)(EPSILON)); /* 40 unchanged */
+      check(fabs((double)(out[4]) - (double)(20.0)) <= (double)(EPSILON)); /* 20 unchanged */
 
       universe_free(u);
       mem_destroy(&arena);
@@ -612,7 +612,7 @@ suite("Universe Management") {
       double sum = universe_cross_sum(u, values, 5);
 
       /* Only active: 30 + 10 + 20 = 60 (ignores GOOG and TSLA) */
-      check_float_eq(sum, 60.0, EPSILON);
+      check(fabs((double)(sum) - (double)(60.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -628,7 +628,7 @@ suite("Universe Management") {
       double values[] = { 50.0, 10.0, 30.0, 40.0, 20.0 };
       double sum = universe_cross_sum(u, values, 5);
 
-      check_float_eq(sum, 150.0, EPSILON);
+      check(fabs((double)(sum) - (double)(150.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -644,8 +644,8 @@ suite("Universe Management") {
       mem_init(&arena, 8192);
       universe_t *u = make_test_universe(&arena);
 
-      check_int_eq((int)universe_find_asset(u, 0), 0);
-      check_int_eq((int)universe_find_asset(u, 3), 3);
+      check(((int)universe_find_asset(u, 0)) == (0));
+      check(((int)universe_find_asset(u, 3)) == (3));
       check(universe_find_asset(u, 99) == SIZE_MAX);
 
       universe_free(u);
@@ -659,7 +659,7 @@ suite("Universe Management") {
 
       const universe_asset_t *a = universe_find_by_ticker(u, "GOOG");
       check_not_null(a);
-      check_int_eq((int)a->id, 2);
+      check(((int)a->id) == (2));
 
       check(universe_find_by_ticker(u, "NOPE") == NULL);
 
@@ -678,7 +678,7 @@ suite("Universe Management") {
       universe_t *u = universe_create(&arena);
       universe_finalize(u);
 
-      check_int_eq((int)universe_active_count(u), 0);
+      check(((int)universe_active_count(u)) == (0));
 
       double values[] = { 1.0 };
       double out[1];
@@ -703,15 +703,15 @@ suite("Universe Management") {
       universe_finalize(u);
 
       universe_advance(u, 200);
-      check_int_eq((int)universe_active_count(u), 1);
+      check(((int)universe_active_count(u)) == (1));
 
       double values[] = { 42.0 };
       double out[1];
       universe_rank(u, values, 1, out);
-      check_float_eq(out[0], 0.0, EPSILON); /* single asset rank = 0/1 = 0 */
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON)); /* single asset rank = 0/1 = 0 */
 
       double sum = universe_cross_sum(u, values, 1);
-      check_float_eq(sum, 42.0, EPSILON);
+      check(fabs((double)(sum) - (double)(42.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -728,7 +728,7 @@ suite("Universe Management") {
       universe_zscore(NULL, NULL, 0, NULL);
       universe_demean(NULL, NULL, 0, NULL);
       universe_clip(NULL, NULL, 0, 0, 0, NULL);
-      check_float_eq(universe_cross_sum(NULL, NULL, 0), 0.0, EPSILON);
+      check(fabs((double)(universe_cross_sum(NULL, NULL, 0)) - (double)(0.0)) <= (double)(EPSILON));
 
       universe_free(u);
       mem_destroy(&arena);
@@ -756,13 +756,13 @@ suite("Universe Management") {
       args[1] = exprtk_val_num(25.0);
 
       out = fn_universe_filter_gt(2, args, &env, &scratch);
-      check_int_eq(out.type, EXPRTK_VAL_VECTOR);
-      check_int_eq((int)out.data.vector.size, 5);
-      check_float_eq(out.data.vector.data[0], 1.0, EPSILON);
-      check_float_eq(out.data.vector.data[1], 0.0, EPSILON);
-      check_float_eq(out.data.vector.data[2], 0.0, EPSILON); /* inactive asset stays masked out */
-      check_float_eq(out.data.vector.data[3], 1.0, EPSILON); /* AMZN=40 > 25 */
-      check_float_eq(out.data.vector.data[4], 0.0, EPSILON); /* inactive asset */
+      check((out.type) == (EXPRTK_VAL_VECTOR));
+      check(((int)out.data.vector.size) == (5));
+      check(fabs((double)(out.data.vector.data[0]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(out.data.vector.data[1]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(out.data.vector.data[2]) - (double)(0.0)) <= (double)(EPSILON)); /* inactive asset stays masked out */
+      check(fabs((double)(out.data.vector.data[3]) - (double)(1.0)) <= (double)(EPSILON)); /* AMZN=40 > 25 */
+      check(fabs((double)(out.data.vector.data[4]) - (double)(0.0)) <= (double)(EPSILON)); /* inactive asset */
 
       exprtk_env_free(&env);
       universe_free(u);
@@ -789,8 +789,8 @@ suite("Universe Management") {
       args[0] = exprtk_val_vec(values, 5);
 
       out = fn_universe_cross_sum(1, args, &env, &scratch);
-      check_int_eq(out.type, EXPRTK_VAL_NUMBER);
-      check_float_eq(out.data.number, 60.0, EPSILON);
+      check((out.type) == (EXPRTK_VAL_NUMBER));
+      check(fabs((double)(out.data.number) - (double)(60.0)) <= (double)(EPSILON));
 
       exprtk_env_free(&env);
       universe_free(u);

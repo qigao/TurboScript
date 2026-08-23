@@ -51,9 +51,9 @@ spec("ta_advanced") {
             size_t r = exprtk_ta_ichimoku(hi, lo, cl, N, 9, kijun_period, 52,
                                           tenkan, kijun, sa, sb, chikou, &arena);
             check(r > 0);
-            check_float_eq(chikou[0], 0.0, EPSILON);
-            check_float_eq(chikou[kijun_period], cl[0], EPSILON);
-            check_float_eq(chikou[kijun_period + 5], cl[5], EPSILON);
+            check(fabs((double)(chikou[0]) - (double)(0.0)) <= (double)(EPSILON));
+            check(fabs((double)(chikou[kijun_period]) - (double)(cl[0])) <= (double)(EPSILON));
+            check(fabs((double)(chikou[kijun_period + 5]) - (double)(cl[5])) <= (double)(EPSILON));
             mem_destroy(&arena);
         }
     }
@@ -94,7 +94,7 @@ spec("ta_advanced") {
             size_t r = exprtk_ta_arbr(hi, lo, op, cl, N, 10, ar, br);
             check(r > 0);
             /* First period-1 should be zero */
-            check_float_eq(ar[0], 0.0, EPSILON);
+            check(fabs((double)(ar[0]) - (double)(0.0)) <= (double)(EPSILON));
             /* AR at period-1 should be positive for uptrending data */
             check(ar[9] > 0);
         }
@@ -133,7 +133,7 @@ spec("ta_advanced") {
             /* Fisher values should be non-zero after warmup */
             check(fisher[15] != 0.0);
             /* Trigger is previous fisher */
-            check_float_eq(trigger[16], fisher[15], EPSILON);
+            check(fabs((double)(trigger[16]) - (double)(fisher[15])) <= (double)(EPSILON));
             mem_destroy(&arena);
         }
     }

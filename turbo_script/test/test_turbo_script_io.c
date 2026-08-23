@@ -47,11 +47,11 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("FS dot Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *data_str = ts_get_str(ctx, "data");
       check_not_null(data_str);
-      check_str_eq(data_str, "dot notation works");
-      check_float_eq(ts_get_num(ctx, "gone"), 0.0, 0.1);
+      check(strcmp((data_str), ("dot notation works")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -66,8 +66,8 @@ spec("turbo_script_io") {
       const char *script = "import(\"utils_dot.tbs\"); "
                            "res = square(7);";
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "res"), 49.0, 0.1);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(49.0)) <= (double)(0.1));
 
       turbo_script_run(ctx, "file_remove(\"utils_dot.tbs\");");
       turbo_script_free(ctx);
@@ -93,9 +93,9 @@ spec("turbo_script_io") {
 
       int run_res = turbo_script_run(ctx, script);
       if (run_res != 0) printf("Net Plugin Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(run_res, 0);
-      check_float_eq(ts_get_num(ctx, "is_ok"), 1.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "has_headers"), 1.0, 0.1);
+      check((run_res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "is_ok")) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "has_headers")) - (double)(1.0)) <= (double)(0.1));
 
       turbo_script_free(ctx);
     }
@@ -109,9 +109,9 @@ spec("turbo_script_io") {
                            "var s = vec.sort(v);"
                            "var first = s[0];"
                            "var last = s[7];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "first"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 9.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(9.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -122,9 +122,9 @@ spec("turbo_script_io") {
                            "var s = vec.sort_desc(v);"
                            "var first = s[0];"
                            "var last = s[4];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "first"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -133,8 +133,8 @@ spec("turbo_script_io") {
       const char *script = "var v = [3, 1, 2];"
                            "var s = vec.sort(v);"
                            "var orig_first = v[0];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "orig_first"), 3.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "orig_first")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -143,8 +143,8 @@ spec("turbo_script_io") {
       const char *script = " var v = [42];"
                            "var s = vec.sort(v);"
                            "var val = s[0];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "val"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "val")) - (double)(42.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -157,10 +157,10 @@ spec("turbo_script_io") {
                            "var n = vec.len(u);"
                            "var first = u[0];"
                            "var last = u[2];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "first"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 3.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -169,8 +169,8 @@ spec("turbo_script_io") {
       const char *script = "var v = [5, 5, 5, 5];"
                            "var u = vec.unique(v);"
                            "var n = vec.len(u);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -180,10 +180,10 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var v = [1, 2, 3];"
                            "var s = join(v, \",\");";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *result = ts_get_str(ctx, "s");
       check_not_null(result);
-      check_str_eq(result, "1,2,3");
+      check(strcmp((result), ("1,2,3")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -191,10 +191,10 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var v = [42];"
                            "var s = join(v, \"-\");";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *result = ts_get_str(ctx, "s");
       check_not_null(result);
-      check_str_eq(result, "42");
+      check(strcmp((result), ("42")) == 0);
       turbo_script_free(ctx);
     }
   }
@@ -208,11 +208,11 @@ spec("turbo_script_io") {
                                      "var content = read_file(\"_test_csv_write.csv\");"
                                      "file_remove(\"_test_csv_write.csv\");");
       if (r1 != 0) printf("CSV write Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(r1, 0);
-      check_float_eq(ts_get_num(ctx, "res"), 0.0, 0.1);
+      check((r1) == (0));
+      check(fabs((double)(ts_get_num(ctx, "res")) - (double)(0.0)) <= (double)(0.1));
       const char *content = ts_get_str(ctx, "content");
       check_not_null(content);
-      check_str_eq(content, "name,age,role\nAlice,30,dev\nBob,40,mgr");
+      check(strcmp((content), ("name,age,role\nAlice,30,dev\nBob,40,mgr")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -226,9 +226,9 @@ spec("turbo_script_io") {
                            "var r = vec.reverse(v);"
                            "var first = r[0];"
                            "var last = r[4];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "first"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -238,8 +238,8 @@ spec("turbo_script_io") {
       const char *script = " var v = [42];"
                            "var r = vec.reverse(v);"
                            "var val = r[0];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "val"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "val")) - (double)(42.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -249,8 +249,8 @@ spec("turbo_script_io") {
       const char *script = " var v = [1, 2, 3];"
                            "var r = vec.reverse(v);"
                            "var orig = v[0];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "orig"), 1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "orig")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -264,9 +264,9 @@ spec("turbo_script_io") {
                            "var c = vec.concat(a, b);"
                            "var n = vec.len(c);"
                            "var last = c[4];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 5.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(5.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -277,8 +277,8 @@ spec("turbo_script_io") {
       const char *script = " var b = vec.range(0);"
                            "var c = vec.concat(a, b);"
                            "var n = vec.len(c);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(2.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -291,10 +291,10 @@ spec("turbo_script_io") {
                            "var n = vec.len(v);"
                            "var first = v[0];"
                            "var last = v[4];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "first"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 4.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(4.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -305,10 +305,10 @@ spec("turbo_script_io") {
                            "var n = vec.len(v);"
                            "var first = v[0];"
                            "var last = v[2];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "first"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 4.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "first")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(4.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -317,8 +317,8 @@ spec("turbo_script_io") {
 
       const char *script = "var v = vec.range(0);"
                            "var n = vec.len(v);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 0.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(0.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -331,10 +331,10 @@ spec("turbo_script_io") {
                            "var a = cs[0];"
                            "var b = cs[1];"
                            "var c = cs[2];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "a"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "b"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c"), 6.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "a")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "b")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c")) - (double)(6.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -343,8 +343,8 @@ spec("turbo_script_io") {
       const char *script = "var v = [42];"
                            "var cs = vec.cumsum(v);"
                            "var val = cs[0];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "val"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "val")) - (double)(42.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -358,10 +358,10 @@ spec("turbo_script_io") {
                            "var n = vec.len(d);"
                            "var a = d[0];"
                            "var b = d[1];";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "b"), 3.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "b")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -371,8 +371,8 @@ spec("turbo_script_io") {
       const char *script = " var v = [42];"
                            "var d = vec.diff(v);"
                            "var n = vec.len(d);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "n"), 0.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(0.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -383,8 +383,8 @@ spec("turbo_script_io") {
 
       const char *script = " var v = [10, 20, 30, 40];"
                            "var idx = vec.find(v, 30);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "idx"), 2.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "idx")) - (double)(2.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -393,8 +393,8 @@ spec("turbo_script_io") {
 
       const char *script = " var v = [10, 20, 30];"
                            "var idx = vec.find(v, 99);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "idx"), -1.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "idx")) - (double)(-1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -404,30 +404,30 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var s = "
                            "format(\"%s is %d\", \"age\", 30);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *val = ts_get_str(ctx, "s");
       check_not_null(val);
-      check_str_eq(val, "age is 30");
+      check(strcmp((val), ("age is 30")) == 0);
       turbo_script_free(ctx);
     }
 
     it("should format with %%g") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var s = format(\"pi=%g\", 3.14);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *val = ts_get_str(ctx, "s");
       check_not_null(val);
-      check_str_eq(val, "pi=3.14");
+      check(strcmp((val), ("pi=3.14")) == 0);
       turbo_script_free(ctx);
     }
 
     it("should escape %% as literal percent") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var s = format(\"%d%%\", 100);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *val = ts_get_str(ctx, "s");
       check_not_null(val);
-      check_str_eq(val, "100%");
+      check(strcmp((val), ("100%")) == 0);
       turbo_script_free(ctx);
     }
   }
@@ -452,17 +452,17 @@ spec("turbo_script_io") {
           "var lb = l[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Pipeline primitives Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "out_n"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "out_a"), 10.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "out_b"), 30.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "total"), 10.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "tn"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "dn"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ta"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "db"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "la"), -1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "lb"), 10.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "out_n")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "out_a")) - (double)(10.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "out_b")) - (double)(30.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(10.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "tn")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "dn")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ta")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "db")) - (double)(7.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "la")) - (double)(-1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "lb")) - (double)(10.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -482,9 +482,9 @@ spec("turbo_script_io") {
           "var score = total + nums.length() + nums[0] + entries.length() + line_count + marker_len;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Java-style container stream Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 67.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(28.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(67.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -500,9 +500,9 @@ spec("turbo_script_io") {
           "var score = total + count;";
       int res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style JIT stream Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "total"), 28.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 30.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(28.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(30.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -522,10 +522,10 @@ spec("turbo_script_io") {
           "var score = line_total + token_total;";
       int res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style text stream JIT Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "line_total"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "token_total"), 12.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 18.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "line_total")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "token_total")) - (double)(12.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(18.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -543,9 +543,9 @@ spec("turbo_script_io") {
       ts_test_make_name(token_path, sizeof(token_path), "_test_stream_file_tokens", ".txt");
 
       buf = turbo_fs_buf_init((char *)line_text, strlen(line_text));
-      check_int_eq(turbo_fs_write_file(line_path, &buf), 0);
+      check((turbo_fs_write_file(line_path, &buf)) == (0));
       buf = turbo_fs_buf_init((char *)token_text, strlen(token_text));
-      check_int_eq(turbo_fs_write_file(token_path, &buf), 0);
+      check((turbo_fs_write_file(token_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
           "var line_total = stream.text(io.read_file(\"%s\"))"
@@ -563,10 +563,10 @@ spec("turbo_script_io") {
 
       res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("Java-style file source stream Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "line_total"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "token_total"), 12.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "score"), 18.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "line_total")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "token_total")) - (double)(12.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(18.0)) <= (double)(0.001));
       turbo_fs_unlink(line_path);
       turbo_fs_unlink(token_path);
       turbo_script_free(ctx);
@@ -579,8 +579,8 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "var r = "
                            "print(\"hello\", 42, [1, 2, 3]);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "r"), 0.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(0.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }
@@ -605,17 +605,17 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("IO failure contract Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "wr"), -1.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "wr")) - (double)(-1.0)) <= (double)(0.1));
       check_null(ts_get_str(ctx, "rf"));
-      check_float_eq(ts_get_num(ctx, "rf"), 0.0, 0.1);
-      check_int_eq(ts_get_vec(ctx, "st", &st_data, &st_len), -1);
-      check_float_eq(ts_get_num(ctx, "st"), 0.0, 0.1);
+      check(fabs((double)(ts_get_num(ctx, "rf")) - (double)(0.0)) <= (double)(0.1));
+      check((ts_get_vec(ctx, "st", &st_data, &st_len)) == (-1));
+      check(fabs((double)(ts_get_num(ctx, "st")) - (double)(0.0)) <= (double)(0.1));
       check_null(ts_get_str(ctx, "pj"));
-      check_float_eq(ts_get_num(ctx, "pj"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "dt"), 0.0, 0.1);
+      check(fabs((double)(ts_get_num(ctx, "pj")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "dt")) - (double)(0.0)) <= (double)(0.1));
       check_null(ts_get_str(ctx, "fd"));
-      check_float_eq(ts_get_num(ctx, "fd"), 0.0, 0.1);
+      check(fabs((double)(ts_get_num(ctx, "fd")) - (double)(0.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -628,11 +628,11 @@ spec("turbo_script_io") {
                            "file_remove(\"_test_append.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("append_file Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "r"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(0.0)) <= (double)(0.1));
       const char *data = ts_get_str(ctx, "data");
       check_not_null(data);
-      check_str_eq(data, "hello world");
+      check(strcmp((data), ("hello world")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -654,11 +654,11 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("copy/truncate Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "c"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "t"), 0.0, 0.1);
-      check_str_eq(ts_get_str(ctx, "copied"), "abcdef");
-      check_str_eq(ts_get_str(ctx, "truncated"), "abc");
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "c")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "t")) - (double)(0.0)) <= (double)(0.1));
+      check(strcmp((ts_get_str(ctx, "copied")), ("abcdef")) == 0);
+      check(strcmp((ts_get_str(ctx, "truncated")), ("abc")) == 0);
 
       turbo_fs_unlink(src_path);
       turbo_fs_unlink(dst_path);
@@ -673,8 +673,8 @@ spec("turbo_script_io") {
                            "file_remove(\"_test_size.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("file_size Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "sz"), 5.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "sz")) - (double)(5.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -682,8 +682,8 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = ""
                            "var sz = file_size(\"_nonexistent_xyz.txt\");";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "sz"), -1.0, 0.1);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "sz")) - (double)(-1.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -699,11 +699,11 @@ spec("turbo_script_io") {
                            "file_remove(\"_test_stat.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("file_stat Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "n"), 4.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "sz"), 3.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "isf"), 1.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "isd"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "n")) - (double)(4.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "sz")) - (double)(3.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "isf")) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "isd")) - (double)(0.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -716,9 +716,9 @@ spec("turbo_script_io") {
                            "file_remove(\"_test_isfile.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("is_file/is_dir Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "f"), 1.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "d"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "f")) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "d")) - (double)(0.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -731,11 +731,11 @@ spec("turbo_script_io") {
                            "file_remove(\"_test_rename_b.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("file_rename Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "r"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(0.0)) <= (double)(0.1));
       const char *data = ts_get_str(ctx, "data");
       check_not_null(data);
-      check_str_eq(data, "renamed");
+      check(strcmp((data), ("renamed")) == 0);
       turbo_script_free(ctx);
     }
   }
@@ -756,11 +756,11 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("mkdir/rmdir Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "r1"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "exists"), 1.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "r2"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "gone"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r1")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "exists")) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "r2")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -791,12 +791,12 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("recursive dir Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "mk"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "exists"), 1.0, 0.1);
-      check_str_eq(ts_get_str(ctx, "data"), "nested");
-      check_float_eq(ts_get_num(ctx, "rm"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "gone"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "mk")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "exists")) - (double)(1.0)) <= (double)(0.1));
+      check(strcmp((ts_get_str(ctx, "data")), ("nested")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "rm")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
 
       if (ts_get_num(ctx, "rm") != 0.0) {
         turbo_fs_unlink(file_path);
@@ -814,10 +814,10 @@ spec("turbo_script_io") {
                            "var exists = is_dir(td);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("tmpdir Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *td = ts_get_str(ctx, "td");
       check_not_null(td);
-      check_float_eq(ts_get_num(ctx, "exists"), 1.0, 0.1);
+      check(fabs((double)(ts_get_num(ctx, "exists")) - (double)(1.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
 
@@ -851,10 +851,10 @@ spec("turbo_script_io") {
 
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("listdir/glob Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "r"), 0.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "entry_score"), 6.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "glob_score"), 4.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(0.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "entry_score")) - (double)(6.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "glob_score")) - (double)(4.0)) <= (double)(0.1));
 
       turbo_fs_unlink(a_path);
       turbo_fs_unlink(b_path);
@@ -871,7 +871,7 @@ spec("turbo_script_io") {
                            "var p = path_join(\"foo\", \"bar.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("path_join Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *p = ts_get_str(ctx, "p");
       check_not_null(p);
       printf("  path_join result: %s\n", p);
@@ -891,13 +891,13 @@ spec("turbo_script_io") {
 #endif
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("dirname/basename Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *d = ts_get_str(ctx, "d");
       const char *b = ts_get_str(ctx, "b");
       check_not_null(d);
       check_not_null(b);
       printf("  dirname: %s, basename: %s\n", d, b);
-      check_str_eq(b, "bar.txt");
+      check(strcmp((b), ("bar.txt")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -914,9 +914,9 @@ spec("turbo_script_io") {
 #endif
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("path_is_absolute Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "a"), 1.0, 0.1);
-      check_float_eq(ts_get_num(ctx, "r"), 0.0, 0.1);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "a")) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(0.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
   }
@@ -926,8 +926,8 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = ""
                            "var t = now();";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_gt(ts_get_num(ctx, "t"), 1700000000.0);
+      check((turbo_script_run(ctx, script)) == (0));
+      check((ts_get_num(ctx, "t")) > (1700000000.0));
       turbo_script_free(ctx);
     }
 
@@ -937,8 +937,8 @@ spec("turbo_script_io") {
                            "var t = date(\"2024-01-01 00:00:00\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("date Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_gt(ts_get_num(ctx, "t"), 0.0);
+      check((res) == (0));
+      check((ts_get_num(ctx, "t")) > (0.0));
       turbo_script_free(ctx);
     }
 
@@ -950,14 +950,14 @@ spec("turbo_script_io") {
                            "var s2 = format_date(t, \"%Y-%m-%d %H:%M:%S\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("format_date Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *s1 = ts_get_str(ctx, "s1");
       const char *s2 = ts_get_str(ctx, "s2");
       check_not_null(s1);
       check_not_null(s2);
       check(strlen(s1) > 0);
       check_not_null(strstr(s1, "2024"));
-      check_int_eq((int)strlen(s2), 19);
+      check(((int)strlen(s2)) == (19));
       check_not_null(strstr(s2, "2024-01-02 "));
       printf("  format_date default: %s\n", s1);
       printf("  format_date custom:  %s\n", s2);
@@ -972,9 +972,9 @@ spec("turbo_script_io") {
                            "var s = format_date_utc(t1, \"%Y-%m-%d %H:%M:%S\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("UTC date/time Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "t1"), ts_get_num(ctx, "t2"), 0.1);
-      check_str_eq(ts_get_str(ctx, "s"), "2024-01-02 03:04:05");
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "t1")) - (double)(ts_get_num(ctx, "t2"))) <= (double)(0.1));
+      check(strcmp((ts_get_str(ctx, "s")), ("2024-01-02 03:04:05")) == 0);
       turbo_script_free(ctx);
     }
   }
@@ -984,7 +984,7 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = ""
                            "var os = os_name();";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       const char *os = ts_get_str(ctx, "os");
       check_not_null(os);
       printf("  os_name: %s\n", os);
@@ -995,8 +995,8 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = ""
                            "var p = pid();";
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_gt(ts_get_num(ctx, "p"), 0.0);
+      check((turbo_script_run(ctx, script)) == (0));
+      check((ts_get_num(ctx, "p")) > (0.0));
       turbo_script_free(ctx);
     }
 
@@ -1005,12 +1005,12 @@ spec("turbo_script_io") {
       const char *script = ""
                            "var u = uptime_ms(); "
                            "var m = monotonic_ms();";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
       double u = ts_get_num(ctx, "u");
       double m = ts_get_num(ctx, "m");
       printf("  uptime_ms: %g, monotonic_ms: %g\n", u, m);
-      check_float_eq(u >= 0.0, 1.0, 0.1);
-      check_float_eq(m >= 0.0, 1.0, 0.1);
+      check(fabs((double)(u >= 0.0) - (double)(1.0)) <= (double)(0.1));
+      check(fabs((double)(m >= 0.0) - (double)(1.0)) <= (double)(0.1));
       turbo_script_free(ctx);
     }
   }
@@ -1030,10 +1030,10 @@ spec("turbo_script_io") {
                            "var gone = file_exists(\"_test_e2e_renamed.txt\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("E2E IO Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_gt(ts_get_num(ctx, "sz"), 0.0);
-      check_float_eq(ts_get_num(ctx, "sz"), ts_get_num(ctx, "st_sz"), 0.1);
-      check_float_eq(ts_get_num(ctx, "gone"), 0.0, 0.1);
+      check((res) == (0));
+      check((ts_get_num(ctx, "sz")) > (0.0));
+      check(fabs((double)(ts_get_num(ctx, "sz")) - (double)(ts_get_num(ctx, "st_sz"))) <= (double)(0.1));
+      check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
       const char *data = ts_get_str(ctx, "data");
       check_not_null(data);
       printf("  E2E data: %s\n", data);
@@ -1050,15 +1050,15 @@ spec("turbo_script_io") {
                            "file_remove(p);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("tmpdir pipeline Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
       const char *td = ts_get_str(ctx, "td");
       const char *p = ts_get_str(ctx, "p");
       printf("  tmpdir: %s\n", td ? td : "(null)");
       printf("  path:   %s\n", p ? p : "(null)");
-      check_float_eq(ts_get_num(ctx, "wr"), 0.0, 0.1);
+      check(fabs((double)(ts_get_num(ctx, "wr")) - (double)(0.0)) <= (double)(0.1));
       const char *data = ts_get_str(ctx, "data");
       check_not_null(data);
-      check_str_eq(data, "temp data");
+      check(strcmp((data), ("temp data")) == 0);
       turbo_script_free(ctx);
     }
   }
@@ -1068,8 +1068,8 @@ spec("turbo_script_io") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_run(ctx, "var result = await 42;"), 0);
-      check_float_eq(ts_get_num(ctx, "result"), 42.0, 0.001);
+      check((turbo_script_run(ctx, "var result = await 42;")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -1080,8 +1080,8 @@ spec("turbo_script_io") {
                            "var result = await add_one(41);";
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "result"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -1092,8 +1092,8 @@ spec("turbo_script_io") {
                            "var result = await packet;";
       check_not_null(ctx);
 
-      check_int_eq(turbo_script_run(ctx, script), 0);
-      check_float_eq(ts_get_num(ctx, "result"), 42.0, 0.001);
+      check((turbo_script_run(ctx, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }

@@ -12,11 +12,11 @@ static exprtk_builtin_fn find_function(const exprtk_module_t *mod, const char *n
 }
 
 static exprtk_value_t str_arg(const char *s) {
-    return exprtk_val_str(tstr_v_from_buf((char *)s, strlen(s)));
+    return exprtk_val_str(vstr_from_buf((char *)s, strlen(s)));
 }
 
 static exprtk_value_t bytes_arg(const void *data, size_t len) {
-    return exprtk_val_bytes(tstr_v_from_buf((char *)data, len));
+    return exprtk_val_bytes(vstr_from_buf((char *)data, len));
 }
 
 spec("crypto_module") {
@@ -31,9 +31,8 @@ spec("crypto_module") {
             exprtk_value_t args[1] = {str_arg("abc")};
             exprtk_value_t result = fn(1, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data,
-                         "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), ("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")) == 0);
 
             mem_destroy(&arena);
         }
@@ -48,9 +47,9 @@ spec("crypto_module") {
             exprtk_value_t args[1] = {str_arg("abc")};
             exprtk_value_t result = fn(1, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_BYTES);
-            check_size_eq(result.data.bytes.len, 32);
-            check_int_eq((unsigned char)result.data.bytes.data[0], 0xba);
+            check((result.type) == (EXPRTK_VAL_BYTES));
+            check((result.data.bytes.len) == (32));
+            check(((unsigned char)result.data.bytes.data[0]) == (0xba));
 
             mem_destroy(&arena);
         }
@@ -68,9 +67,8 @@ spec("crypto_module") {
             exprtk_value_t args[1] = {str_arg("abc")};
             exprtk_value_t result = fn(1, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data,
-                         "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923");
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), ("ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923")) == 0);
 
             mem_destroy(&arena);
         }
@@ -83,9 +81,8 @@ spec("crypto_module") {
             exprtk_value_t args[2] = {str_arg("abc"), exprtk_val_num(32)};
             exprtk_value_t result = fn(2, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data,
-                         "bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319");
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), ("bddd813c634239723171ef3fee98579b94964e3bb1cb3e427262c8c068d52319")) == 0);
 
             mem_destroy(&arena);
         }
@@ -98,8 +95,8 @@ spec("crypto_module") {
             exprtk_value_t args[3] = {str_arg("abc"), str_arg("key"), exprtk_val_num(4)};
             exprtk_value_t result = fn(3, args, NULL, &arena);
 
-            check_int_eq(result.type, EXPRTK_VAL_STRING);
-            check_str_eq(result.data.string.data, "34d401b4");
+            check((result.type) == (EXPRTK_VAL_STRING));
+            check(strcmp((result.data.string.data), ("34d401b4")) == 0);
 
             mem_destroy(&arena);
         }
@@ -115,7 +112,7 @@ spec("crypto_module") {
             };
             exprtk_value_t result = fn(2, args, NULL, &arena);
 
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -135,8 +132,8 @@ spec("crypto_module") {
             exprtk_value_t ok = fn(2, ok_args, NULL, &arena);
             exprtk_value_t bad = fn(2, bad_args, NULL, &arena);
 
-            check_float_eq(ok.data.number, 1.0, 0.001);
-            check_float_eq(bad.data.number, 0.0, 0.001);
+            check(fabs((double)(ok.data.number) - (double)(1.0)) <= (double)(0.001));
+            check(fabs((double)(bad.data.number) - (double)(0.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -149,7 +146,7 @@ spec("crypto_module") {
             exprtk_value_t args[2] = {str_arg("short"), str_arg("short")};
             exprtk_value_t result = fn(2, args, NULL, &arena);
 
-            check_float_eq(result.data.number, 0.0, 0.001);
+            check(fabs((double)(result.data.number) - (double)(0.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -184,8 +181,8 @@ spec("crypto_module") {
                 bytes_arg(iv, sizeof(iv))
             };
             exprtk_value_t cipher = enc(3, enc_args, NULL, &arena);
-            check_int_eq(cipher.type, EXPRTK_VAL_BYTES);
-            check_size_eq(cipher.data.bytes.len, sizeof(plain));
+            check((cipher.type) == (EXPRTK_VAL_BYTES));
+            check((cipher.data.bytes.len) == (sizeof(plain)));
 
             exprtk_value_t dec_args[3] = {
                 cipher,
@@ -193,8 +190,8 @@ spec("crypto_module") {
                 bytes_arg(iv, sizeof(iv))
             };
             exprtk_value_t roundtrip = dec(3, dec_args, NULL, &arena);
-            check_int_eq(roundtrip.type, EXPRTK_VAL_BYTES);
-            check_size_eq(roundtrip.data.bytes.len, sizeof(plain));
+            check((roundtrip.type) == (EXPRTK_VAL_BYTES));
+            check((roundtrip.data.bytes.len) == (sizeof(plain)));
             check(memcmp(roundtrip.data.bytes.data, plain, sizeof(plain)) == 0);
 
             mem_destroy(&arena);
@@ -225,13 +222,13 @@ spec("crypto_module") {
                 bytes_arg(ad, strlen(ad))
             };
             exprtk_value_t locked = lock(4, lock_args, NULL, &arena);
-            check_int_eq(locked.type, EXPRTK_VAL_OBJECT);
+            check((locked.type) == (EXPRTK_VAL_OBJECT));
 
             exprtk_value_t cipher = exprtk_map_get(&locked, "cipher");
             exprtk_value_t mac = exprtk_map_get(&locked, "mac");
-            check_int_eq(cipher.type, EXPRTK_VAL_BYTES);
-            check_int_eq(mac.type, EXPRTK_VAL_BYTES);
-            check_size_eq(mac.data.bytes.len, 16);
+            check((cipher.type) == (EXPRTK_VAL_BYTES));
+            check((mac.type) == (EXPRTK_VAL_BYTES));
+            check((mac.data.bytes.len) == (16));
 
             exprtk_value_t unlock_args[5] = {
                 cipher,
@@ -241,8 +238,8 @@ spec("crypto_module") {
                 bytes_arg(ad, strlen(ad))
             };
             exprtk_value_t opened = unlock(5, unlock_args, NULL, &arena);
-            check_int_eq(opened.type, EXPRTK_VAL_BYTES);
-            check_size_eq(opened.data.bytes.len, strlen(plain));
+            check((opened.type) == (EXPRTK_VAL_BYTES));
+            check((opened.data.bytes.len) == (strlen(plain)));
             check(memcmp(opened.data.bytes.data, plain, strlen(plain)) == 0);
 
             mem_destroy(&arena);
@@ -281,7 +278,7 @@ spec("crypto_module") {
                 bytes_arg("", 0)
             };
             exprtk_value_t opened = unlock(5, unlock_args, NULL, &arena);
-            check_int_eq(opened.type, EXPRTK_VAL_NULL);
+            check((opened.type) == (EXPRTK_VAL_NULL));
 
             mem_destroy(&arena);
         }
@@ -306,9 +303,9 @@ spec("crypto_module") {
             exprtk_value_t first = fn(6, args, NULL, &arena);
             exprtk_value_t second = fn(6, args, NULL, &arena);
 
-            check_int_eq(first.type, EXPRTK_VAL_BYTES);
-            check_int_eq(second.type, EXPRTK_VAL_BYTES);
-            check_size_eq(first.data.bytes.len, 32);
+            check((first.type) == (EXPRTK_VAL_BYTES));
+            check((second.type) == (EXPRTK_VAL_BYTES));
+            check((first.data.bytes.len) == (32));
             check(memcmp(first.data.bytes.data, second.data.bytes.data, 32) == 0);
 
             mem_destroy(&arena);
@@ -346,8 +343,8 @@ spec("crypto_module") {
             exprtk_value_t alice_shared = shared(2, alice_shared_args, NULL, &arena);
             exprtk_value_t bob_shared = shared(2, bob_shared_args, NULL, &arena);
 
-            check_int_eq(alice_shared.type, EXPRTK_VAL_BYTES);
-            check_size_eq(alice_shared.data.bytes.len, 32);
+            check((alice_shared.type) == (EXPRTK_VAL_BYTES));
+            check((alice_shared.data.bytes.len) == (32));
             check(memcmp(alice_shared.data.bytes.data, bob_shared.data.bytes.data, 32) == 0);
 
             mem_destroy(&arena);
@@ -370,26 +367,26 @@ spec("crypto_module") {
             memset(seed, 0x7a, sizeof(seed));
             exprtk_value_t kp_args[1] = {bytes_arg(seed, sizeof(seed))};
             exprtk_value_t kp = key_pair(1, kp_args, NULL, &arena);
-            check_int_eq(kp.type, EXPRTK_VAL_OBJECT);
+            check((kp.type) == (EXPRTK_VAL_OBJECT));
 
             exprtk_value_t secret_key = exprtk_map_get(&kp, "secret_key");
             exprtk_value_t public_key = exprtk_map_get(&kp, "public_key");
-            check_int_eq(secret_key.type, EXPRTK_VAL_BYTES);
-            check_int_eq(public_key.type, EXPRTK_VAL_BYTES);
-            check_size_eq(secret_key.data.bytes.len, 64);
-            check_size_eq(public_key.data.bytes.len, 32);
+            check((secret_key.type) == (EXPRTK_VAL_BYTES));
+            check((public_key.type) == (EXPRTK_VAL_BYTES));
+            check((secret_key.data.bytes.len) == (64));
+            check((public_key.data.bytes.len) == (32));
 
             exprtk_value_t sign_args[2] = {secret_key, str_arg("message")};
             exprtk_value_t signature = sign(2, sign_args, NULL, &arena);
-            check_int_eq(signature.type, EXPRTK_VAL_BYTES);
-            check_size_eq(signature.data.bytes.len, 64);
+            check((signature.type) == (EXPRTK_VAL_BYTES));
+            check((signature.data.bytes.len) == (64));
 
             exprtk_value_t ok_args[3] = {signature, public_key, str_arg("message")};
             exprtk_value_t bad_args[3] = {signature, public_key, str_arg("tampered")};
             exprtk_value_t ok = check_sig(3, ok_args, NULL, &arena);
             exprtk_value_t bad = check_sig(3, bad_args, NULL, &arena);
-            check_float_eq(ok.data.number, 1.0, 0.001);
-            check_float_eq(bad.data.number, 0.0, 0.001);
+            check(fabs((double)(ok.data.number) - (double)(1.0)) <= (double)(0.001));
+            check(fabs((double)(bad.data.number) - (double)(0.0)) <= (double)(0.001));
 
             mem_destroy(&arena);
         }
@@ -418,7 +415,7 @@ spec("crypto_module") {
                 exprtk_val_num(0)
             };
             exprtk_value_t cipher = chacha(4, enc_args, NULL, &arena);
-            check_int_eq(cipher.type, EXPRTK_VAL_BYTES);
+            check((cipher.type) == (EXPRTK_VAL_BYTES));
 
             exprtk_value_t dec_args[4] = {
                 cipher,
@@ -427,13 +424,13 @@ spec("crypto_module") {
                 exprtk_val_num(0)
             };
             exprtk_value_t opened = chacha(4, dec_args, NULL, &arena);
-            check_int_eq(opened.type, EXPRTK_VAL_BYTES);
+            check((opened.type) == (EXPRTK_VAL_BYTES));
             check(memcmp(opened.data.bytes.data, plain, strlen(plain)) == 0);
 
             exprtk_value_t mac_args[2] = {cipher, bytes_arg(key, sizeof(key))};
             exprtk_value_t mac = poly(2, mac_args, NULL, &arena);
-            check_int_eq(mac.type, EXPRTK_VAL_BYTES);
-            check_size_eq(mac.data.bytes.len, 16);
+            check((mac.type) == (EXPRTK_VAL_BYTES));
+            check((mac.data.bytes.len) == (16));
 
             mem_destroy(&arena);
         }
@@ -457,26 +454,26 @@ spec("crypto_module") {
             memset(seed, 0x42, sizeof(seed));
             exprtk_value_t kp_args[1] = {bytes_arg(seed, sizeof(seed))};
             exprtk_value_t kp = key_pair(1, kp_args, NULL, &arena);
-            check_int_eq(kp.type, EXPRTK_VAL_OBJECT);
+            check((kp.type) == (EXPRTK_VAL_OBJECT));
 
             exprtk_value_t hidden = exprtk_map_get(&kp, "hidden");
             exprtk_value_t secret_key = exprtk_map_get(&kp, "secret_key");
-            check_int_eq(hidden.type, EXPRTK_VAL_BYTES);
-            check_int_eq(secret_key.type, EXPRTK_VAL_BYTES);
+            check((hidden.type) == (EXPRTK_VAL_BYTES));
+            check((secret_key.type) == (EXPRTK_VAL_BYTES));
 
             exprtk_value_t map_args[1] = {hidden};
             exprtk_value_t curve_from_hidden = map(1, map_args, NULL, &arena);
             exprtk_value_t dirty_args[1] = {secret_key};
             exprtk_value_t curve_from_secret = dirty(1, dirty_args, NULL, &arena);
-            check_int_eq(curve_from_hidden.type, EXPRTK_VAL_BYTES);
-            check_int_eq(curve_from_secret.type, EXPRTK_VAL_BYTES);
+            check((curve_from_hidden.type) == (EXPRTK_VAL_BYTES));
+            check((curve_from_secret.type) == (EXPRTK_VAL_BYTES));
             check(memcmp(curve_from_hidden.data.bytes.data,
                          curve_from_secret.data.bytes.data, 32) == 0);
 
             exprtk_value_t rev_args[2] = {curve_from_hidden, exprtk_val_num(0)};
             exprtk_value_t recovered = rev(2, rev_args, NULL, &arena);
-            check_int_eq(recovered.type, EXPRTK_VAL_BYTES);
-            check_size_eq(recovered.data.bytes.len, 32);
+            check((recovered.type) == (EXPRTK_VAL_BYTES));
+            check((recovered.data.bytes.len) == (32));
 
             mem_destroy(&arena);
         }

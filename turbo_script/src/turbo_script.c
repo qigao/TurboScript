@@ -893,7 +893,7 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, exprtk_env_t 
     return TS_ZERO;
   }
 
-  char *name = tstr_v_to_arena(args[0].data.string, &ctx->scratch_arena);
+  char *name = vstr_to_arena(args[0].data.string, &ctx->scratch_arena);
   if (!name) {
     TS_ERROR(ctx, TURBO_SCRIPT_ERROR_OOM, "import: out of memory");
     return TS_ZERO;
@@ -926,7 +926,7 @@ static exprtk_value_t ts_import_module(size_t argc, exprtk_value_t *args, exprtk
     return TS_ZERO;
   }
 
-  name = tstr_v_to_arena(args[0].data.string, &ctx->scratch_arena);
+  name = vstr_to_arena(args[0].data.string, &ctx->scratch_arena);
   if (!name) {
     TS_ERROR(ctx, TURBO_SCRIPT_ERROR_OOM, "import_module: out of memory");
     return TS_ZERO;
@@ -1352,7 +1352,7 @@ void ts_bind_num(turbo_script_ctx_t *ctx, const char *name, double value) {
 void ts_bind_str(turbo_script_ctx_t *ctx, const char *name, const char *value) {
   if (!ctx || !name || !value) return;
   exprtk_value_t owned;
-  if (exprtk_value_copy_to_env(exprtk_val_str(tstr_v_from_cstr(value)), &ctx->env,
+  if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_cstr(value)), &ctx->env,
                                &owned) != 0)
     return;
   exprtk_env_set(&ctx->env, name, owned);

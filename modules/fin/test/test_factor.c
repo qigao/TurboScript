@@ -21,12 +21,12 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_rank(in, n, out, &arena);
 
-      check_int_eq(result, n);
-      check_float_eq(out[0], 3.0, EPSILON); // 3.0 is rank 3
-      check_float_eq(out[1], 0.0, EPSILON); // 1.0 is rank 0
-      check_float_eq(out[2], 4.0, EPSILON); // 4.0 is rank 4
-      check_float_eq(out[3], 1.0, EPSILON); // 1.5 is rank 1
-      check_float_eq(out[4], 2.0, EPSILON); // 2.0 is rank 2
+      check((result) == (n));
+      check(fabs((double)(out[0]) - (double)(3.0)) <= (double)(EPSILON)); // 3.0 is rank 3
+      check(fabs((double)(out[1]) - (double)(0.0)) <= (double)(EPSILON)); // 1.0 is rank 0
+      check(fabs((double)(out[2]) - (double)(4.0)) <= (double)(EPSILON)); // 4.0 is rank 4
+      check(fabs((double)(out[3]) - (double)(1.0)) <= (double)(EPSILON)); // 1.5 is rank 1
+      check(fabs((double)(out[4]) - (double)(2.0)) <= (double)(EPSILON)); // 2.0 is rank 2
 
       mem_destroy(&arena);
     }
@@ -40,11 +40,11 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_rank(in, n, out, &arena);
 
-      check_int_eq(result, n);
-      check_float_eq(out[0], 0.0, EPSILON);  // 1.0 is rank 0
-      check_float_eq(out[1], 1.5, EPSILON);  // 2.0 tied, avg rank (1+2)/2 = 1.5
-      check_float_eq(out[2], 1.5, EPSILON);  // 2.0 tied, avg rank 1.5
-      check_float_eq(out[3], 3.0, EPSILON);  // 3.0 is rank 3
+      check((result) == (n));
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));  // 1.0 is rank 0
+      check(fabs((double)(out[1]) - (double)(1.5)) <= (double)(EPSILON));  // 2.0 tied, avg rank (1+2)/2 = 1.5
+      check(fabs((double)(out[2]) - (double)(1.5)) <= (double)(EPSILON));  // 2.0 tied, avg rank 1.5
+      check(fabs((double)(out[3]) - (double)(3.0)) <= (double)(EPSILON));  // 3.0 is rank 3
 
       mem_destroy(&arena);
     }
@@ -57,8 +57,8 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_rank(in, 1, out, &arena);
 
-      check_int_eq(result, 1);
-      check_float_eq(out[0], 0.0, EPSILON);
+      check((result) == (1));
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -74,7 +74,7 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_zscore(in, n, out, &arena);
 
-      check_int_eq(result, n);
+      check((result) == (n));
 
       // Check mean is close to 0
       double sum = 0.0;
@@ -82,7 +82,7 @@ suite("Factor Processing") {
         sum += out[i];
       }
       double mean = sum / n;
-      check_float_eq(mean, 0.0, 0.01);
+      check(fabs((double)(mean) - (double)(0.0)) <= (double)(0.01));
 
       // Check std is close to 1
       double var_sum = 0.0;
@@ -90,7 +90,7 @@ suite("Factor Processing") {
         var_sum += out[i] * out[i];
       }
       double variance = var_sum / n;
-      check_float_eq(variance, 1.0, 0.01);
+      check(fabs((double)(variance) - (double)(1.0)) <= (double)(0.01));
 
       mem_destroy(&arena);
     }
@@ -104,9 +104,9 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_zscore(in, n, out, &arena);
 
-      check_int_eq(result, n);
+      check((result) == (n));
       for (size_t i = 0; i < n; i++) {
-        check_float_eq(out[i], 0.0, EPSILON);
+        check(fabs((double)(out[i]) - (double)(0.0)) <= (double)(EPSILON));
       }
 
       mem_destroy(&arena);
@@ -120,8 +120,8 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_zscore(in, 1, out, &arena);
 
-      check_int_eq(result, 1);
-      check_float_eq(out[0], 0.0, EPSILON);
+      check((result) == (1));
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -137,7 +137,7 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_winsorize(in, n, 0.2, out, &arena);
 
-      check_int_eq(result, n);
+      check((result) == (n));
       // 20th percentile should cap the extreme value
       check(out[4] < 100.0); // Extreme value should be capped
       check(out[0] >= 1.0);  // Lower values should be preserved or raised
@@ -154,10 +154,10 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_winsorize(in, n, 0.6, out, &arena); // Invalid: > 0.5
 
-      check_int_eq(result, n);
+      check((result) == (n));
       // Should just copy input
       for (size_t i = 0; i < n; i++) {
-        check_float_eq(out[i], in[i], EPSILON);
+        check(fabs((double)(out[i]) - (double)(in[i])) <= (double)(EPSILON));
       }
 
       mem_destroy(&arena);
@@ -174,12 +174,12 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_standardize(in, n, out, &arena);
 
-      check_int_eq(result, n);
-      check_float_eq(out[0], 0.0, EPSILON);   // Min maps to 0
-      check_float_eq(out[1], 0.25, EPSILON);
-      check_float_eq(out[2], 0.5, EPSILON);
-      check_float_eq(out[3], 0.75, EPSILON);
-      check_float_eq(out[4], 1.0, EPSILON);   // Max maps to 1
+      check((result) == (n));
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));   // Min maps to 0
+      check(fabs((double)(out[1]) - (double)(0.25)) <= (double)(EPSILON));
+      check(fabs((double)(out[2]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(out[3]) - (double)(0.75)) <= (double)(EPSILON));
+      check(fabs((double)(out[4]) - (double)(1.0)) <= (double)(EPSILON));   // Max maps to 1
 
       mem_destroy(&arena);
     }
@@ -193,9 +193,9 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_standardize(in, n, out, &arena);
 
-      check_int_eq(result, n);
+      check((result) == (n));
       for (size_t i = 0; i < n; i++) {
-        check_float_eq(out[i], 0.0, EPSILON);
+        check(fabs((double)(out[i]) - (double)(0.0)) <= (double)(EPSILON));
       }
 
       mem_destroy(&arena);
@@ -211,7 +211,7 @@ suite("Factor Processing") {
       double skew_right = exprtk_vec_skewness(right_skewed, 5);
 
       // Symmetric distribution should have skewness near 0
-      check_float_eq(skew_sym, 0.0, 0.1);
+      check(fabs((double)(skew_sym) - (double)(0.0)) <= (double)(0.1));
       // Right-skewed should have positive skewness
       check(skew_right > 0.5);
     }
@@ -270,7 +270,7 @@ suite("Factor Processing") {
         expected += returns[i] * returns[i];
       }
       expected /= n;
-      check_float_eq(rvar, expected, EPSILON);
+      check(fabs((double)(rvar) - (double)(expected)) <= (double)(EPSILON));
     }
 
     it("should calculate realized skewness") {
@@ -281,7 +281,7 @@ suite("Factor Processing") {
       double rskew_right = exprtk_vec_rskew(right_skewed, 5);
 
       // Symmetric should be near 0
-      check_float_eq(rskew_sym, 0.0, 0.5);
+      check(fabs((double)(rskew_sym) - (double)(0.0)) <= (double)(0.5));
       // Right-skewed should be positive
       check(rskew_right > 0.0);
     }
@@ -368,7 +368,7 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_csad(returns, 3, 4, out, &arena);
 
-      check_int_eq(result, 4);
+      check((result) == (4));
       // CSAD should be positive
       for (size_t i = 0; i < 4; i++) {
         check(out[i] >= 0.0);
@@ -385,11 +385,11 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_quantile(in, 5, 3, out, &arena);
 
-      check_int_eq(result, 5);
+      check((result) == (5));
       // Last value (5.0) in window [3,4,5] has rank 2/3 = 0.667
-      check_float_eq(out[4], 0.667, 0.01);
+      check(fabs((double)(out[4]) - (double)(0.667)) <= (double)(0.01));
       // First value (1.0) in window [1] has rank 0/1 = 0.0
-      check_float_eq(out[0], 0.0, EPSILON);
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -430,10 +430,10 @@ suite("Factor Processing") {
 
       size_t result = exprtk_vec_cgo(prices, volumes, 6, 3, out, &arena);
 
-      check_int_eq(result, 6);
+      check((result) == (6));
       // First period-1 values should be 0
-      check_float_eq(out[0], 0.0, EPSILON);
-      check_float_eq(out[1], 0.0, EPSILON);
+      check(fabs((double)(out[0]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(out[1]) - (double)(0.0)) <= (double)(EPSILON));
       // Later values should be calculated
       check(out[5] != 0.0 || out[5] == 0.0); // Just check it's a valid number
 

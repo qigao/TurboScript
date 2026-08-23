@@ -4,15 +4,15 @@
  */
 
 #include "exprtk_module.h"
-#include "turbo_hash.h"
-
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct {
-  turbo_hash_map_t entries;
+  hash_map_t entries;
   mem_pool_t pool;
 } exprtk_map_storage_t;
+
+#define EXPRTK_MAP_ENTRY_LIMIT (SIZE_MAX / sizeof(exprtk_value_t))
 
 static size_t exprtk_map_key_hash(const void *key, size_t key_size, void *ctx) {
   const char *text;
@@ -45,20 +45,23 @@ static bool exprtk_map_key_equal(const void *left, const void *right, size_t key
 }
 
 static exprtk_map_storage_t *exprtk_map_storage_create(void) {
-  exprtk_map_storage_t *storage = (exprtk_map_storage_t *)malloc(sizeof(*storage));
+  exprtk_map_storage_t *storage = (exprtk_map_storage_t *)calloc(1, sizeof(*storage));
   if (!storage) return NULL;
   if (mem_init(&storage->pool, 0) != 0) {
     free(storage);
     return NULL;
   }
-  if (turbo_hash_map_init(&storage->entries, sizeof(char *), sizeof(exprtk_value_t),
-                          exprtk_map_key_hash, exprtk_map_key_equal, NULL) != TURBO_OK) {
+  if (hash_map_init_bytes(&storage->entries,
+                          sizeof(char *), _Alignof(char *),
+                          sizeof(exprtk_value_t), _Alignof(exprtk_value_t),
+                          EXPRTK_MAP_ENTRY_LIMIT,
+                          exprtk_map_key_hash, exprtk_map_key_equal, NULL) != STL_OK) {
     mem_destroy(&storage->pool);
     free(storage);
     return NULL;
   }
-  if (turbo_hash_map_reserve(&storage->entries, 8) != TURBO_OK) {
-    turbo_hash_map_destroy(&storage->entries);
+  if (hash_map_reserve(&storage->entries, 8) != STL_OK) {
+    hash_map_destroy(&storage->entries);
     mem_destroy(&storage->pool);
     free(storage);
     return NULL;
@@ -70,9 +73,9 @@ static char **exprtk_map_find_key_slot(const exprtk_map_storage_t *storage, cons
   size_t capacity;
 
   if (!storage || !key) return NULL;
-  capacity = turbo_hash_map_capacity(&storage->entries);
+  capacity = hash_map_capacity(&storage->entries);
   for (size_t i = 0; i < capacity; ++i) {
-    const void *slot = turbo_hash_map_key_at(&storage->entries, i);
+    const void *slot = hash_map_key_at(&storage->entries, i);
     char *const *stored_key = (char *const *)slot;
     if (stored_key && *stored_key && strcmp(*stored_key, key) == 0)
       return (char **)stored_key;
@@ -107,7 +110,7 @@ exprtk_value_t exprtk_map_get(const exprtk_value_t *map, const char *key) {
   if (!exprtk_value_is_object_like(map) || !map->data.map.htab || !key)
     return exprtk_val_num(0);
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  value = (exprtk_value_t *)turbo_hash_map_get(&storage->entries, &lookup);
+  value = (exprtk_value_t *)hash_map_get(&storage->entries, &lookup);
   return value ? exprtk_value_borrow(*value) : exprtk_val_num(0);
 }
 
@@ -130,7 +133,7 @@ int exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
 
   storage = (exprtk_map_storage_t *)map->data.map.htab;
   if (exprtk_value_copy_to_pool(value, &storage->pool, &value_copy) != 0) return -1;
-  slot = (exprtk_value_t *)turbo_hash_map_get(&storage->entries, &lookup);
+  slot = (exprtk_value_t *)hash_map_get(&storage->entries, &lookup);
   if (slot) {
     exprtk_value_destroy(slot);
     *slot = value_copy;
@@ -142,7 +145,7 @@ int exprtk_map_set(exprtk_value_t *map, const char *key, exprtk_value_t value) {
     exprtk_value_destroy(&value_copy);
     return -1;
   }
-  if (turbo_hash_map_put(&storage->entries, &owned_key, &value_copy) != TURBO_OK) {
+  if (hash_map_put(&storage->entries, &owned_key, &value_copy) != STL_OK) {
     mem_free(&storage->pool, owned_key);
     exprtk_value_destroy(&value_copy);
     return -1;
@@ -157,7 +160,7 @@ int exprtk_map_has(const exprtk_value_t *map, const char *key) {
   if (!exprtk_value_is_object_like(map) || !map->data.map.htab || !key)
     return 0;
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  return turbo_hash_map_contains(&storage->entries, &lookup) ? 1 : 0;
+  return hash_map_contains(&storage->entries, &lookup) ? 1 : 0;
 }
 
 int exprtk_map_delete(exprtk_value_t *map, const char *key) {
@@ -173,7 +176,7 @@ int exprtk_map_delete(exprtk_value_t *map, const char *key) {
   storage = (exprtk_map_storage_t *)map->data.map.htab;
   key_slot = exprtk_map_find_key_slot(storage, key);
   owned_key = key_slot ? *key_slot : NULL;
-  if (turbo_hash_map_remove(&storage->entries, &lookup, &removed) != TURBO_OK)
+  if (hash_map_remove(&storage->entries, &lookup, &removed) != STL_OK)
     return 0;
 
   mem_free(&storage->pool, owned_key);
@@ -187,7 +190,7 @@ size_t exprtk_map_count(const exprtk_value_t *map) {
   if (!exprtk_value_is_object_like(map) || !map->data.map.htab)
     return 0;
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  return turbo_hash_map_size(&storage->entries);
+  return hash_map_size(&storage->entries);
 }
 
 exprtk_value_t *exprtk_map_get_ptr(const exprtk_value_t *map, const char *key) {
@@ -197,7 +200,7 @@ exprtk_value_t *exprtk_map_get_ptr(const exprtk_value_t *map, const char *key) {
   if (!exprtk_value_is_object_like(map) || !map->data.map.htab || !key)
     return NULL;
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  return (exprtk_value_t *)turbo_hash_map_get(&storage->entries, &lookup);
+  return (exprtk_value_t *)hash_map_get(&storage->entries, &lookup);
 }
 
 void exprtk_map_free(exprtk_value_t *map) {
@@ -208,10 +211,10 @@ void exprtk_map_free(exprtk_value_t *map) {
     return;
 
   storage = (exprtk_map_storage_t *)map->data.map.htab;
-  capacity = turbo_hash_map_capacity(&storage->entries);
+  capacity = hash_map_capacity(&storage->entries);
   for (size_t i = 0; i < capacity; ++i) {
-    const void *key_slot = turbo_hash_map_key_at(&storage->entries, i);
-    const void *value_slot = turbo_hash_map_value_at_const(&storage->entries, i);
+    const void *key_slot = hash_map_key_at(&storage->entries, i);
+    const void *value_slot = hash_map_value_at_const(&storage->entries, i);
     char *const *key = (char *const *)key_slot;
     const exprtk_value_t *value = (const exprtk_value_t *)value_slot;
     if (!key || !value) continue;
@@ -219,7 +222,7 @@ void exprtk_map_free(exprtk_value_t *map) {
     exprtk_value_destroy((exprtk_value_t *)value);
   }
 
-  turbo_hash_map_destroy(&storage->entries);
+  hash_map_destroy(&storage->entries);
   mem_destroy(&storage->pool);
   free(storage);
   map->data.map.htab = NULL;
@@ -234,7 +237,7 @@ exprtk_map_iter_t exprtk_map_iter_begin(const exprtk_value_t *map) {
   storage = (exprtk_map_storage_t *)map->data.map.htab;
   it.htab = storage;
   it.pos = 0;
-  it.bound = turbo_hash_map_capacity(&storage->entries);
+  it.bound = hash_map_capacity(&storage->entries);
   return it;
 }
 
@@ -247,8 +250,8 @@ int exprtk_map_iter_next(exprtk_map_iter_t *it, const char **key, exprtk_value_t
   storage = (exprtk_map_storage_t *)it->htab;
   while (it->pos < it->bound) {
     size_t slot = it->pos++;
-    const void *key_slot = turbo_hash_map_key_at(&storage->entries, slot);
-    const void *value_slot = turbo_hash_map_value_at_const(&storage->entries, slot);
+    const void *key_slot = hash_map_key_at(&storage->entries, slot);
+    const void *value_slot = hash_map_value_at_const(&storage->entries, slot);
     char *const *stored_key = (char *const *)key_slot;
     const exprtk_value_t *stored_value = (const exprtk_value_t *)value_slot;
     if (!stored_key || !stored_value) continue;

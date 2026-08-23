@@ -1,6 +1,7 @@
 #ifndef TURBO_SCRIPT_H
 #define TURBO_SCRIPT_H
 
+#include "turbo_script_export.h"
 #include "platform.h"
 #include <stdbool.h>
 #include <stddef.h>
@@ -123,7 +124,7 @@ typedef enum {
  * @param flags TURBO_SCRIPT_INIT_DEFAULT for full init, TURBO_SCRIPT_INIT_BARE for plugin-based
  * init.
  */
-CXX_C_API turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags);
+TURBO_SCRIPT_C_API turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags);
 
 /**
  * @brief Initialize a context with an optional native-plugin authorization policy.
@@ -135,12 +136,12 @@ CXX_C_API turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags)
  * returns. Denying that optional plugin does not make context initialization
  * fail.
  */
-CXX_C_API turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
+TURBO_SCRIPT_C_API turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
     turbo_script_init_flags_t flags, turbo_script_plugin_authorizer_fn authorizer,
     void *user_data);
 
 /** Fill @p policy with the bounded defaults for @p profile. */
-CXX_C_API int turbo_script_memory_policy_init(turbo_script_memory_profile_t profile,
+TURBO_SCRIPT_C_API int turbo_script_memory_policy_init(turbo_script_memory_profile_t profile,
                                               turbo_script_memory_policy_t *policy);
 
 /**
@@ -150,17 +151,17 @@ CXX_C_API int turbo_script_memory_policy_init(turbo_script_memory_profile_t prof
  * memory limit has been exceeded, or when the new limits are already below
  * current usage. There is no compatibility/unbounded mode.
  */
-CXX_C_API int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
+TURBO_SCRIPT_C_API int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
                                              const turbo_script_memory_policy_t *policy);
 
 /** Return a point-in-time memory usage snapshot. */
-CXX_C_API int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
+TURBO_SCRIPT_C_API int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
                                             turbo_script_memory_stats_t *stats);
 
 /**
  * @brief Get Turbo Script ABI/API version string.
  */
-CXX_C_API const char *turbo_script_version(void);
+TURBO_SCRIPT_C_API const char *turbo_script_version(void);
 
 /**
  * @brief Set the serialized executor used by timer callbacks.
@@ -173,7 +174,7 @@ CXX_C_API const char *turbo_script_version(void);
  *
  * @return 0 on success, or -1 on invalid state or arguments.
  */
-CXX_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
+TURBO_SCRIPT_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
                                         const turbo_script_executor_t *executor);
 
 /**
@@ -190,7 +191,7 @@ CXX_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
  * coro_context_create_ex(). The TurboScript CLI passes stack_size == 0 by
  * default so TurboUtils owns the default; --coro-stack-kib sets an override.
  */
-CXX_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx);
+TURBO_SCRIPT_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx);
 
 /**
  * @brief Configure the bounded timer job registry.
@@ -200,13 +201,13 @@ CXX_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_conte
  *
  * @return 0 on success, or -1 on invalid state, zero capacity, or allocation failure.
  */
-CXX_C_API int turbo_script_set_timer_capacity(turbo_script_ctx_t *ctx, size_t capacity);
+TURBO_SCRIPT_C_API int turbo_script_set_timer_capacity(turbo_script_ctx_t *ctx, size_t capacity);
 
 /** @brief Return the number of scheduled, queued, or running timer jobs. */
-CXX_C_API size_t turbo_script_timer_active_count(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API size_t turbo_script_timer_active_count(turbo_script_ctx_t *ctx);
 
 /** @brief Return the number of retained timer jobs in the failed state. */
-CXX_C_API size_t turbo_script_timer_failed_count(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API size_t turbo_script_timer_failed_count(turbo_script_ctx_t *ctx);
 
 /**
  * @brief Configure the bounded managed-task registry.
@@ -217,13 +218,13 @@ CXX_C_API size_t turbo_script_timer_failed_count(turbo_script_ctx_t *ctx);
  *
  * @return 0 on success, or -1 on invalid state, capacity, or allocation failure.
  */
-CXX_C_API int turbo_script_set_task_capacity(turbo_script_ctx_t *ctx, size_t capacity);
+TURBO_SCRIPT_C_API int turbo_script_set_task_capacity(turbo_script_ctx_t *ctx, size_t capacity);
 
 /** @brief Return the number of scheduled, running, or waiting managed tasks. */
-CXX_C_API size_t turbo_script_task_active_count(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API size_t turbo_script_task_active_count(turbo_script_ctx_t *ctx);
 
 /** @brief Return the number of retained managed tasks in the failed state. */
-CXX_C_API size_t turbo_script_task_failed_count(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API size_t turbo_script_task_failed_count(turbo_script_ctx_t *ctx);
 
 /**
  * @brief Return the borrowed cancellation token for the running managed task.
@@ -232,12 +233,12 @@ CXX_C_API size_t turbo_script_task_failed_count(turbo_script_ctx_t *ctx);
  * is NULL outside task.spawn() and must not be retained after the native call
  * returns.
  */
-CXX_C_API const coro_cancel_token_t *turbo_script_current_task_cancel_token(void);
+TURBO_SCRIPT_C_API const coro_cancel_token_t *turbo_script_current_task_cancel_token(void);
 
 /**
  * @brief Free a Turbo Script context.
  */
-CXX_C_API void turbo_script_free(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API void turbo_script_free(turbo_script_ctx_t *ctx);
 
 /**
  * @brief Run a script from a string using the MIR interpreter backend.
@@ -245,7 +246,7 @@ CXX_C_API void turbo_script_free(turbo_script_ctx_t *ctx);
  * @param script Script content.
  * @return 0 on success, <0 on failure.
  */
-CXX_C_API int turbo_script_run(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_run(turbo_script_ctx_t *ctx, const char *script);
 
 /**
  * @brief Run a script using the MIR JIT backend for maximum performance.
@@ -271,7 +272,7 @@ CXX_C_API int turbo_script_run(turbo_script_ctx_t *ctx, const char *script);
  * @param script Script content.
  * @return 0 on success, <0 on failure (check turbo_script_get_error_code()).
  */
-CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script);
 
 /**
  * @brief Run a script and print the result to stdout (for REPL use).
@@ -279,7 +280,7 @@ CXX_C_API int turbo_script_run_jit(turbo_script_ctx_t *ctx, const char *script);
  * @param script Script content.
  * @return 0 on success, <0 on failure.
  */
-CXX_C_API int turbo_script_run_and_print(turbo_script_ctx_t *ctx, const char *script);
+TURBO_SCRIPT_C_API int turbo_script_run_and_print(turbo_script_ctx_t *ctx, const char *script);
 
 /**
  * @brief Run a script from a file using the MIR interpreter backend.
@@ -287,49 +288,49 @@ CXX_C_API int turbo_script_run_and_print(turbo_script_ctx_t *ctx, const char *sc
  * @param filename File path.
  * @return 0 on success, <0 on failure.
  */
-CXX_C_API int turbo_script_run_file(turbo_script_ctx_t *ctx, const char *filename);
+TURBO_SCRIPT_C_API int turbo_script_run_file(turbo_script_ctx_t *ctx, const char *filename);
 
 /**
  * @brief Compile a script into a reusable source-backed object for MIR interpreter execution.
  * @return Compiled object, or NULL on parse error.
  */
-CXX_C_API turbo_script_compiled_t *turbo_script_compile(turbo_script_ctx_t *ctx,
+TURBO_SCRIPT_C_API turbo_script_compiled_t *turbo_script_compile(turbo_script_ctx_t *ctx,
                                                         const char *script);
 
 /**
  * @brief Execute a previously compiled script.
  */
-CXX_C_API int turbo_script_exec(turbo_script_ctx_t *ctx, turbo_script_compiled_t *compiled);
+TURBO_SCRIPT_C_API int turbo_script_exec(turbo_script_ctx_t *ctx, turbo_script_compiled_t *compiled);
 
 /**
  * @brief Free a compiled script object.
  */
-CXX_C_API void turbo_script_compiled_free(turbo_script_compiled_t *compiled);
+TURBO_SCRIPT_C_API void turbo_script_compiled_free(turbo_script_compiled_t *compiled);
 
 /**
  * @brief Get error message of last operation.
  */
-CXX_C_API const char *turbo_script_get_error(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API const char *turbo_script_get_error(turbo_script_ctx_t *ctx);
 
 /**
  * @brief Get categorized error code of last operation.
  */
-CXX_C_API turbo_script_error_code_t turbo_script_get_error_code(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API turbo_script_error_code_t turbo_script_get_error_code(turbo_script_ctx_t *ctx);
 
 /**
  * @brief Bind a number variable into the script environment.
  */
-CXX_C_API void ts_bind_num(turbo_script_ctx_t *ctx, const char *name, double value);
+TURBO_SCRIPT_C_API void ts_bind_num(turbo_script_ctx_t *ctx, const char *name, double value);
 
 /**
  * @brief Bind a string variable into the script environment.
  */
-CXX_C_API void ts_bind_str(turbo_script_ctx_t *ctx, const char *name, const char *value);
+TURBO_SCRIPT_C_API void ts_bind_str(turbo_script_ctx_t *ctx, const char *name, const char *value);
 
 /**
  * @brief Bind a double[] vector into the script environment.
  */
-CXX_C_API int ts_bind_vec(turbo_script_ctx_t *ctx, const char *name, const double *data,
+TURBO_SCRIPT_C_API int ts_bind_vec(turbo_script_ctx_t *ctx, const char *name, const double *data,
                           size_t len);
 
 /**
@@ -345,26 +346,26 @@ typedef exprtk_value_t (*turbo_script_func_t)(size_t arg_count, exprtk_value_t *
 /**
  * @brief Register a native C function callable from script.
  */
-CXX_C_API void ts_bind_func(turbo_script_ctx_t *ctx, const char *name, turbo_script_func_t fn,
+TURBO_SCRIPT_C_API void ts_bind_func(turbo_script_ctx_t *ctx, const char *name, turbo_script_func_t fn,
                             void *user_data);
 
 /**
  * @brief Get a number variable from the script environment.
  * Returns 0.0 if not found or not a number.
  */
-CXX_C_API double ts_get_num(turbo_script_ctx_t *ctx, const char *name);
+TURBO_SCRIPT_C_API double ts_get_num(turbo_script_ctx_t *ctx, const char *name);
 
 /**
  * @brief Get a string variable from the script environment.
  * @return Pointer to null-terminated string, or NULL if not found/not a string.
  */
-CXX_C_API const char *ts_get_str(turbo_script_ctx_t *ctx, const char *name);
+TURBO_SCRIPT_C_API const char *ts_get_str(turbo_script_ctx_t *ctx, const char *name);
 
 /**
  * @brief Get a vector variable from the script environment.
  * @return 0 on success, -1 if not found or not a vector.
  */
-CXX_C_API int ts_get_vec(turbo_script_ctx_t *ctx, const char *name, const double **data,
+TURBO_SCRIPT_C_API int ts_get_vec(turbo_script_ctx_t *ctx, const char *name, const double **data,
                          size_t *len);
 
 /**
@@ -372,35 +373,35 @@ CXX_C_API int ts_get_vec(turbo_script_ctx_t *ctx, const char *name, const double
  * Equivalent to import("name") in script.
  * @return 0 on success, -1 on failure.
  */
-CXX_C_API int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name);
+TURBO_SCRIPT_C_API int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name);
 
 /**
  * @brief Convert an exprtk_value_t to boolean (0.0 or 1.0).
  */
-CXX_C_API bool turbo_script_value_as_bool(exprtk_value_t val);
+TURBO_SCRIPT_C_API bool turbo_script_value_as_bool(exprtk_value_t val);
 
 /**
  * @brief Create an empty map value owned by the TurboScript value runtime.
  */
-CXX_C_API exprtk_value_t turbo_script_value_map(void);
+TURBO_SCRIPT_C_API exprtk_value_t turbo_script_value_map(void);
 
 /**
  * @brief Set a map entry, copying the key and value according to TurboScript value semantics.
  */
-CXX_C_API void turbo_script_value_map_set(exprtk_value_t *map, const char *key,
+TURBO_SCRIPT_C_API void turbo_script_value_map_set(exprtk_value_t *map, const char *key,
                                           exprtk_value_t value);
 
 /**
  * @brief Start iterating over a map without taking ownership of it.
  */
-CXX_C_API turbo_script_value_map_iterator_t
+TURBO_SCRIPT_C_API turbo_script_value_map_iterator_t
 turbo_script_value_map_iter_begin(const exprtk_value_t *map);
 
 /**
  * @brief Read the next map entry.
  * @return 1 when an entry was produced, 0 when iteration is complete or invalid.
  */
-CXX_C_API int turbo_script_value_map_iter_next(turbo_script_value_map_iterator_t *iterator,
+TURBO_SCRIPT_C_API int turbo_script_value_map_iter_next(turbo_script_value_map_iterator_t *iterator,
                                                const char **key, exprtk_value_t *value);
 
 /**
@@ -409,7 +410,7 @@ CXX_C_API int turbo_script_value_map_iter_next(turbo_script_value_map_iterator_t
  * The returned value does not free @p items. The storage must remain valid for
  * as long as TurboScript can observe the returned list.
  */
-CXX_C_API exprtk_value_t turbo_script_value_list_borrowed(exprtk_value_t *items, size_t count);
+TURBO_SCRIPT_C_API exprtk_value_t turbo_script_value_list_borrowed(exprtk_value_t *items, size_t count);
 
 /* ========================================================================
  * JIT Statistics API
@@ -436,7 +437,7 @@ typedef struct {
  * @param ctx Context
  * @param enable 1 启用，0 禁用
  */
-CXX_C_API void turbo_script_enable_jit_stats(turbo_script_ctx_t *ctx, int enable);
+TURBO_SCRIPT_C_API void turbo_script_enable_jit_stats(turbo_script_ctx_t *ctx, int enable);
 
 /**
  * @brief 获取 JIT 统计数据
@@ -444,14 +445,14 @@ CXX_C_API void turbo_script_enable_jit_stats(turbo_script_ctx_t *ctx, int enable
  * @param ctx Context
  * @return 统计数据指针（只读），如果统计未启用则返回 NULL
  */
-CXX_C_API const turbo_script_jit_stats_t *turbo_script_get_jit_stats(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API const turbo_script_jit_stats_t *turbo_script_get_jit_stats(turbo_script_ctx_t *ctx);
 
 /**
  * @brief 重置 JIT 统计计数器
  * 
  * @param ctx Context
  */
-CXX_C_API void turbo_script_reset_jit_stats(turbo_script_ctx_t *ctx);
+TURBO_SCRIPT_C_API void turbo_script_reset_jit_stats(turbo_script_ctx_t *ctx);
 
 /**
  * @brief 打印 JIT 统计信息到文件流（用于调试）
@@ -465,7 +466,7 @@ CXX_C_API void turbo_script_reset_jit_stats(turbo_script_ctx_t *ctx);
  * @param ctx Context
  * @param fp 文件流（如 stdout, stderr 或文件）
  */
-CXX_C_API void turbo_script_print_jit_stats(turbo_script_ctx_t *ctx, FILE *fp);
+TURBO_SCRIPT_C_API void turbo_script_print_jit_stats(turbo_script_ctx_t *ctx, FILE *fp);
 
 #ifdef __cplusplus
 }

@@ -23,13 +23,13 @@ spec("timeseries") {
             size_t n = 5;
 
             size_t result = exprtk_ts_diff(data, n, 1, out, &arena);
-            check_int_eq(result, n - 1);  // Returns n - order
+            check((result) == (n - 1));  // Returns n - order
 
             // First diff: out[i] = data[i] - data[i-1]
-            check_float_eq(out[1], 2.0, EPSILON);   // 12 - 10
-            check_float_eq(out[2], 3.0, EPSILON);   // 15 - 12
-            check_float_eq(out[3], -2.0, EPSILON);  // 13 - 15
-            check_float_eq(out[4], 5.0, EPSILON);   // 18 - 13
+            check(fabs((double)(out[1]) - (double)(2.0)) <= (double)(EPSILON));   // 12 - 10
+            check(fabs((double)(out[2]) - (double)(3.0)) <= (double)(EPSILON));   // 15 - 12
+            check(fabs((double)(out[3]) - (double)(-2.0)) <= (double)(EPSILON));  // 13 - 15
+            check(fabs((double)(out[4]) - (double)(5.0)) <= (double)(EPSILON));   // 18 - 13
 
             mem_destroy(&arena);
         }
@@ -44,10 +44,10 @@ spec("timeseries") {
             size_t max_lag = 3;
 
             size_t result = exprtk_ts_autocorr(data, n, max_lag, out);
-            check_int_eq(result, max_lag + 1);
+            check((result) == (max_lag + 1));
 
             // ACF at lag 0 should be 1.0
-            check_float_eq(out[0], 1.0, EPSILON);
+            check(fabs((double)(out[0]) - (double)(1.0)) <= (double)(EPSILON));
 
             // ACF should be between -1 and 1
             for (size_t i = 0; i <= max_lag; i++) {
@@ -64,7 +64,7 @@ spec("timeseries") {
             double out[2] = {0};
 
             mem_init(&arena, 4096);
-            check_int_eq(exprtk_ts_adf(data, 8, 1, out, &arena), 2);
+            check((exprtk_ts_adf(data, 8, 1, out, &arena)) == (2));
             check_true(isfinite(out[0]));
             check_true(isfinite(out[1]));
             mem_destroy(&arena);
@@ -76,11 +76,11 @@ spec("timeseries") {
             double out[2] = {0};
 
             mem_init(&arena, 4096);
-            check_int_eq(exprtk_ts_adf(data, 3, 1, out, &arena), 0);
-            check_int_eq(exprtk_ts_adf(NULL, 3, 1, out, &arena), 0);
-            check_int_eq(exprtk_ts_adf(data, 3, 1, NULL, &arena), 0);
-            check_int_eq(exprtk_ts_adf(data, 3, 1, out, NULL), 0);
-            check_int_eq(exprtk_ts_adf(data, 3, SIZE_MAX, out, &arena), 0);
+            check((exprtk_ts_adf(data, 3, 1, out, &arena)) == (0));
+            check((exprtk_ts_adf(NULL, 3, 1, out, &arena)) == (0));
+            check((exprtk_ts_adf(data, 3, 1, NULL, &arena)) == (0));
+            check((exprtk_ts_adf(data, 3, 1, out, NULL)) == (0));
+            check((exprtk_ts_adf(data, 3, SIZE_MAX, out, &arena)) == (0));
             mem_destroy(&arena);
         }
     }
@@ -95,7 +95,7 @@ spec("timeseries") {
             double beta = 0.85;
 
             size_t result = exprtk_ts_garch(returns, n, alpha, beta, out);
-            check_int_eq(result, n);
+            check((result) == (n));
 
             // Volatility should be positive
             for (size_t i = 0; i < n; i++) {
@@ -137,7 +137,7 @@ spec("timeseries") {
             size_t m = 3;
 
             size_t result = exprtk_ts_match(data, pattern, n, m, out);
-            check_int_eq(result, n - m + 1);  // Returns number of valid windows
+            check((result) == (n - m + 1));  // Returns number of valid windows
 
             // Should find matches (lower distance = better match)
             // Pattern [1,2,3] appears at index 0 and index 4
@@ -160,7 +160,7 @@ spec("timeseries") {
             size_t m = 3;
 
             size_t result = exprtk_ts_match_cosine(data, pattern, n, m, out);
-            check_int_eq(result, n - m + 1);  // Returns number of valid windows
+            check((result) == (n - m + 1));  // Returns number of valid windows
 
             // Cosine similarity should be between -1 and 1
             for (size_t i = 0; i < result; i++) {
@@ -184,7 +184,7 @@ spec("timeseries") {
             size_t m = 3;
 
             size_t result = exprtk_ts_match_dtw(data, pattern, n, m, out, &arena);
-            check_int_eq(result, n - m + 1);  // Returns number of valid windows
+            check((result) == (n - m + 1));  // Returns number of valid windows
 
             // DTW distance should be non-negative
             for (size_t i = 0; i < result; i++) {

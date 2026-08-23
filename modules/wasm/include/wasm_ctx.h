@@ -44,7 +44,7 @@ static inline mem_pool_t *wasm_tmp_arena(wasm_ud_t *ud) {
   return &ud->env->arena;
 }
 
-static inline char *wasm_arena_cstr(mem_pool_t *a, tstr_v sv) {
+static inline char *wasm_arena_cstr(mem_pool_t *a, vstr sv) {
   char *buf = (char *)mem_alloc(a, sv.len + 1);
   if (!buf)
     return NULL;

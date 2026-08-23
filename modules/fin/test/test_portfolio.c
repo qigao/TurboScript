@@ -31,9 +31,9 @@ suite("Portfolio Optimization") {
       check(cov[8] > 0.0); // Var(Asset 3)
 
       // Matrix should be symmetric
-      check_float_eq(cov[1], cov[3], EPSILON);
-      check_float_eq(cov[2], cov[6], EPSILON);
-      check_float_eq(cov[5], cov[7], EPSILON);
+      check(fabs((double)(cov[1]) - (double)(cov[3])) <= (double)(EPSILON));
+      check(fabs((double)(cov[2]) - (double)(cov[6])) <= (double)(EPSILON));
+      check(fabs((double)(cov[5]) - (double)(cov[7])) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -62,10 +62,10 @@ suite("Portfolio Optimization") {
 
       exprtk_pf_cov_matrix(returns, 2, 2, cov, &arena);
 
-      check_float_eq(cov[0], 1.0, EPSILON);
-      check_float_eq(cov[1], 1.0, EPSILON);
-      check_float_eq(cov[2], 1.0, EPSILON);
-      check_float_eq(cov[3], 1.0, EPSILON);
+      check(fabs((double)(cov[0]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(cov[1]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(cov[2]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(cov[3]) - (double)(1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -86,7 +86,7 @@ suite("Portfolio Optimization") {
 
       // Weights should sum to 1
       double sum = weights[0] + weights[1];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Weights should be positive (or close to it)
       check(weights[0] >= -EPSILON);
@@ -110,8 +110,8 @@ suite("Portfolio Optimization") {
       exprtk_pf_min_variance(cov, 2, weights, &arena);
 
       // With equal variance and zero correlation, should be ~50/50
-      check_float_eq(weights[0], 0.5, 0.1);
-      check_float_eq(weights[1], 0.5, 0.1);
+      check(fabs((double)(weights[0]) - (double)(0.5)) <= (double)(0.1));
+      check(fabs((double)(weights[1]) - (double)(0.5)) <= (double)(0.1));
 
       mem_destroy(&arena);
     }
@@ -130,7 +130,7 @@ suite("Portfolio Optimization") {
 
       // Weights should sum to 1
       double sum = weights[0] + weights[1] + weights[2];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Variance should be positive
       check(variance >= 0.0);
@@ -155,7 +155,7 @@ suite("Portfolio Optimization") {
 
       // Weights should sum to 1
       double sum = weights[0] + weights[1];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Sharpe ratio should be positive
       check(sharpe >= 0.0);
@@ -178,7 +178,7 @@ suite("Portfolio Optimization") {
 
       // Weights should sum to 1
       double sum = weights[0] + weights[1] + weights[2];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Sharpe should be positive
       check(sharpe >= 0.0);
@@ -198,7 +198,7 @@ suite("Portfolio Optimization") {
 
       exprtk_pf_max_sharpe(mu, cov, 2, 0.02, weights, &arena);
 
-      check_float_eq(weights[0] + weights[1], 1.0, EPSILON);
+      check(fabs((double)(weights[0] + weights[1]) - (double)(1.0)) <= (double)(EPSILON));
       check(weights[0] > 1.0);
       check(weights[1] < 0.0);
 
@@ -217,8 +217,8 @@ suite("Portfolio Optimization") {
 
       exprtk_pf_max_sharpe(mu, cov, 2, 0.0, weights, &arena);
 
-      check_float_eq(weights[0], 0.0, EPSILON);
-      check_float_eq(weights[1], 1.0, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(weights[1]) - (double)(1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -240,11 +240,11 @@ suite("Portfolio Optimization") {
 
       // Weights should sum to 1
       double sum = weights[0] + weights[1];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Portfolio return should be close to target
       double port_ret = weights[0] * mu[0] + weights[1] * mu[1];
-      check_float_eq(port_ret, target, 0.05);
+      check(fabs((double)(port_ret) - (double)(target)) <= (double)(0.05));
 
       // Variance should be positive
       check(variance >= 0.0);
@@ -264,9 +264,9 @@ suite("Portfolio Optimization") {
 
       exprtk_pf_markowitz(mu, cov, 2, 0.10, weights, &arena);
 
-      check_float_eq(weights[0], 0.5, EPSILON);
-      check_float_eq(weights[1], 0.5, EPSILON);
-      check_float_eq(weights[0] * mu[0] + weights[1] * mu[1], 0.10, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(weights[1]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(weights[0] * mu[0] + weights[1] * mu[1]) - (double)(0.10)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -285,12 +285,12 @@ suite("Portfolio Optimization") {
       // Target at minimum
       exprtk_pf_markowitz(mu, cov, 3, 0.05, weights, &arena);
       double sum = weights[0] + weights[1] + weights[2];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       // Target at maximum
       exprtk_pf_markowitz(mu, cov, 3, 0.15, weights, &arena);
       sum = weights[0] + weights[1] + weights[2];
-      check_float_eq(sum, 1.0, EPSILON);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -307,9 +307,9 @@ suite("Portfolio Optimization") {
 
       exprtk_pf_markowitz(mu, cov, 2, 0.15, weights, &arena);
 
-      check_float_eq(weights[0], 0.0, EPSILON);
-      check_float_eq(weights[1], 1.0, EPSILON);
-      check_float_eq(weights[0] * mu[0] + weights[1] * mu[1], 0.15, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(0.0)) <= (double)(EPSILON));
+      check(fabs((double)(weights[1]) - (double)(1.0)) <= (double)(EPSILON));
+      check(fabs((double)(weights[0] * mu[0] + weights[1] * mu[1]) - (double)(0.15)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -325,15 +325,15 @@ suite("Portfolio Optimization") {
 
       // Min variance
       exprtk_pf_min_variance(cov, 1, weights, &arena);
-      check_float_eq(weights[0], 1.0, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(1.0)) <= (double)(EPSILON));
 
       // Max Sharpe
       exprtk_pf_max_sharpe(mu, cov, 1, 0.02, weights, &arena);
-      check_float_eq(weights[0], 1.0, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(1.0)) <= (double)(EPSILON));
 
       // Markowitz
       exprtk_pf_markowitz(mu, cov, 1, 0.10, weights, &arena);
-      check_float_eq(weights[0], 1.0, EPSILON);
+      check(fabs((double)(weights[0]) - (double)(1.0)) <= (double)(EPSILON));
 
       mem_destroy(&arena);
     }
@@ -351,7 +351,7 @@ suite("Portfolio Optimization") {
 
       // Should still return valid weights
       double sum = weights[0] + weights[1];
-      check_float_eq(sum, 1.0, 0.1);
+      check(fabs((double)(sum) - (double)(1.0)) <= (double)(0.1));
 
       mem_destroy(&arena);
     }

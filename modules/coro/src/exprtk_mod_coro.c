@@ -20,7 +20,7 @@ static exprtk_value_t make_result_map(mem_pool_t *scratch, const char *status, e
     exprtk_value_t map = exprtk_val_map();
 
     (void)scratch;
-    exprtk_map_set(&map, "status", exprtk_val_str(tstr_v_from_cstr(status)));
+    exprtk_map_set(&map, "status", exprtk_val_str(vstr_from_cstr(status)));
 
     /* Value */
     exprtk_map_set(&map, "value", value);
@@ -29,7 +29,7 @@ static exprtk_value_t make_result_map(mem_pool_t *scratch, const char *status, e
 }
 
 static exprtk_value_t coro_str(const char *text) {
-    return exprtk_val_str(tstr_v_from_cstr(text));
+    return exprtk_val_str(vstr_from_cstr(text));
 }
 
 /* ========================================================================
@@ -44,7 +44,7 @@ static exprtk_value_t fn_coro_create(size_t argc, exprtk_value_t *args, exprtk_e
     }
     
     /* Extract function name */
-    tstr_v func_name_sv = args[0].data.string;
+    vstr func_name_sv = args[0].data.string;
     char *func_name = (char *)mem_alloc(mod->scratch, func_name_sv.len + 1);
     if (!func_name) return exprtk_val_num(0);
     

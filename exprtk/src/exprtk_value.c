@@ -10,8 +10,8 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int exprtk_copy_view(mem_pool_t *pool, tstr_v source, int nul_terminate,
-                            mem_buffer_t **out_storage, tstr_v *out_view) {
+static int exprtk_copy_view(mem_pool_t *pool, vstr source, int nul_terminate,
+                            mem_buffer_t **out_storage, vstr *out_view) {
     size_t capacity;
     mem_buffer_t *buffer;
     char *data;
@@ -20,7 +20,7 @@ static int exprtk_copy_view(mem_pool_t *pool, tstr_v source, int nul_terminate,
     if (!source.data && source.len != 0) return -1;
     if (source.len == 0) {
         *out_storage = NULL;
-        *out_view = tstr_v_from_buf("", 0);
+        *out_view = vstr_from_buf("", 0);
         return 0;
     }
     if (nul_terminate && source.len == SIZE_MAX) return -1;
@@ -33,7 +33,7 @@ static int exprtk_copy_view(mem_pool_t *pool, tstr_v source, int nul_terminate,
     if (nul_terminate) data[source.len] = '\0';
     mem_set_used(buffer, capacity);
     *out_storage = buffer;
-    *out_view = tstr_v_from_buf(data, source.len);
+    *out_view = vstr_from_buf(data, source.len);
     return 0;
 }
 
@@ -266,7 +266,7 @@ static mem_pool_t *exprtk_list_pool(exprtk_value_t *list) {
 int exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
     mem_pool_t *pool;
     exprtk_value_t stored;
-    turbo_vec_t vec;
+    vec_t vec = {0};
     size_t new_capacity;
 
     if (!list || (list->type != EXPRTK_VAL_LIST && list->type != EXPRTK_VAL_SET))
@@ -289,13 +289,18 @@ int exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
         vec.size = list->data.list.count;
         vec.capacity = list->data.list.capacity;
         vec.elem_size = sizeof(exprtk_value_t);
+        vec.elem_stride = sizeof(exprtk_value_t);
+        vec.elem_align = _Alignof(exprtk_value_t);
+        vec.element_limit = SIZE_MAX / sizeof(exprtk_value_t);
+        vec.initialized = true;
     } else {
-        if (turbo_vec_init(&vec, sizeof(exprtk_value_t)) != TURBO_OK) {
+        if (vec_init_bytes(&vec, sizeof(exprtk_value_t), _Alignof(exprtk_value_t),
+                           SIZE_MAX / sizeof(exprtk_value_t)) != STL_OK) {
             exprtk_value_destroy(&stored);
             return -1;
         }
-        if (turbo_vec_reserve(&vec, new_capacity) != TURBO_OK) {
-            turbo_vec_destroy(&vec);
+        if (vec_reserve(&vec, new_capacity) != STL_OK) {
+            vec_destroy(&vec);
             exprtk_value_destroy(&stored);
             return -1;
         }
@@ -306,9 +311,9 @@ int exprtk_list_push(exprtk_value_t *list, exprtk_value_t item) {
         }
     }
 
-    if (turbo_vec_reserve(&vec, new_capacity) != TURBO_OK ||
-        turbo_vec_push(&vec, &stored) != TURBO_OK) {
-        if (!list->data.list.heap_owned) turbo_vec_destroy(&vec);
+    if (vec_reserve(&vec, new_capacity) != STL_OK ||
+        vec_push(&vec, &stored) != STL_OK) {
+        if (!list->data.list.heap_owned) vec_destroy(&vec);
         exprtk_value_destroy(&stored);
         return -1;
     }
@@ -347,13 +352,17 @@ void exprtk_value_destroy(exprtk_value_t *value) {
         for (i = 0; i < value->data.list.count; ++i)
             exprtk_value_destroy(&value->data.list.items[i]);
         if (value->data.list.heap_owned) {
-            turbo_vec_t vec = {
-                value->data.list.items,
-                value->data.list.count,
-                value->data.list.capacity,
-                sizeof(exprtk_value_t)
+            vec_t vec = {
+                .data = value->data.list.items,
+                .size = value->data.list.count,
+                .capacity = value->data.list.capacity,
+                .elem_size = sizeof(exprtk_value_t),
+                .elem_stride = sizeof(exprtk_value_t),
+                .elem_align = _Alignof(exprtk_value_t),
+                .element_limit = SIZE_MAX / sizeof(exprtk_value_t),
+                .initialized = true,
             };
-            turbo_vec_destroy(&vec);
+            vec_destroy(&vec);
         }
         if (value->data.list.value_pool) {
             mem_destroy(value->data.list.value_pool);

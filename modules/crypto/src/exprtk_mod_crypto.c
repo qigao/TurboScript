@@ -18,7 +18,7 @@ static exprtk_value_t crypto_null(void) {
     return value;
 }
 
-static int crypto_value_bytes(exprtk_value_t value, tstr_v *out) {
+static int crypto_value_bytes(exprtk_value_t value, vstr *out) {
     if (value.type == EXPRTK_VAL_BYTES) {
         *out = value.data.bytes;
         return 1;
@@ -85,7 +85,7 @@ static exprtk_value_t crypto_hex_bytes(const uint8_t *bytes, size_t len, mem_poo
         buf[pos++] = hex[bytes[i] & 0x0F];
     }
     buf[pos] = '\0';
-    return exprtk_val_str(tstr_v_from_buf(buf, pos));
+    return exprtk_val_str(vstr_from_buf(buf, pos));
 }
 
 static exprtk_value_t crypto_copy_bytes(const uint8_t *bytes, size_t len, mem_pool_t *arena) {
@@ -95,12 +95,12 @@ static exprtk_value_t crypto_copy_bytes(const uint8_t *bytes, size_t len, mem_po
         if (!buf) return crypto_null();
         memcpy(buf, bytes, len);
     }
-    return exprtk_val_bytes(tstr_v_from_buf(buf, len));
+    return exprtk_val_bytes(vstr_from_buf(buf, len));
 }
 
 static exprtk_value_t crypto_bytes32_unary(size_t argc, exprtk_value_t *args, mem_pool_t *arena,
                                            int (*fn)(uint8_t[32], const uint8_t[32])) {
-    tstr_v in;
+    vstr in;
     if (argc != 1 || !crypto_value_bytes(args[0], &in) || in.len != 32)
         return crypto_null();
     uint8_t out[32];
@@ -112,8 +112,8 @@ static exprtk_value_t crypto_bytes32_unary(size_t argc, exprtk_value_t *args, me
 static exprtk_value_t crypto_bytes32_binary(size_t argc, exprtk_value_t *args, mem_pool_t *arena,
                                             int (*fn)(uint8_t[32], const uint8_t[32],
                                                       const uint8_t[32])) {
-    tstr_v a;
-    tstr_v b;
+    vstr a;
+    vstr b;
     if (argc != 2 ||
         !crypto_value_bytes(args[0], &a) ||
         !crypto_value_bytes(args[1], &b) ||
@@ -128,7 +128,7 @@ static exprtk_value_t crypto_bytes32_binary(size_t argc, exprtk_value_t *args, m
 static exprtk_value_t fn_sha256(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                 mem_pool_t *arena) {
     (void)env;
-    tstr_v data;
+    vstr data;
     if (argc != 1 || !crypto_value_bytes(args[0], &data))
         return crypto_null();
 
@@ -141,7 +141,7 @@ static exprtk_value_t fn_sha256(size_t argc, exprtk_value_t *args, exprtk_env_t 
 static exprtk_value_t fn_sha256_bytes(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                       mem_pool_t *arena) {
     (void)env;
-    tstr_v data;
+    vstr data;
     if (argc != 1 || !crypto_value_bytes(args[0], &data))
         return crypto_null();
 
@@ -154,7 +154,7 @@ static exprtk_value_t fn_sha256_bytes(size_t argc, exprtk_value_t *args, exprtk_
 static exprtk_value_t fn_blake2b(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                  mem_pool_t *arena) {
     (void)env;
-    tstr_v data;
+    vstr data;
     if ((argc != 1 && argc != 2) || !crypto_value_bytes(args[0], &data))
         return crypto_null();
 
@@ -171,8 +171,8 @@ static exprtk_value_t fn_blake2b(size_t argc, exprtk_value_t *args, exprtk_env_t
 static exprtk_value_t fn_blake2b_keyed(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                        mem_pool_t *arena) {
     (void)env;
-    tstr_v data;
-    tstr_v key;
+    vstr data;
+    vstr key;
     if ((argc != 2 && argc != 3) ||
         !crypto_value_bytes(args[0], &data) ||
         !crypto_value_bytes(args[1], &key))
@@ -192,8 +192,8 @@ static exprtk_value_t fn_blake2b_keyed(size_t argc, exprtk_value_t *args, exprtk
 }
 
 static exprtk_value_t crypto_verify_fixed(size_t argc, exprtk_value_t *args, size_t len) {
-    tstr_v a;
-    tstr_v b;
+    vstr a;
+    vstr b;
     if (argc != 2 || !crypto_value_bytes(args[0], &a) || !crypto_value_bytes(args[1], &b))
         return exprtk_val_num(0);
     if (a.len != len || b.len != len)
@@ -226,9 +226,9 @@ static exprtk_value_t fn_verify64(size_t argc, exprtk_value_t *args, exprtk_env_
 static exprtk_value_t fn_aes_ctr_crypt(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                        mem_pool_t *arena) {
     (void)env;
-    tstr_v data;
-    tstr_v key;
-    tstr_v iv;
+    vstr data;
+    vstr key;
+    vstr iv;
     if (argc != 3 ||
         !crypto_value_bytes(args[0], &data) ||
         !crypto_value_bytes(args[1], &key) ||
@@ -247,16 +247,16 @@ static exprtk_value_t fn_aes_ctr_crypt(size_t argc, exprtk_value_t *args, exprtk
     struct AES_ctx ctx;
     AES_init_ctx_iv(&ctx, (const uint8_t *)key.data, (const uint8_t *)iv.data);
     AES_CTR_xcrypt_buffer(&ctx, (uint8_t *)buf, data.len);
-    return exprtk_val_bytes(tstr_v_from_buf(buf, data.len));
+    return exprtk_val_bytes(vstr_from_buf(buf, data.len));
 }
 
 static exprtk_value_t fn_aead_lock(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                    mem_pool_t *arena) {
     (void)env;
-    tstr_v plain;
-    tstr_v key;
-    tstr_v nonce;
-    tstr_v ad;
+    vstr plain;
+    vstr key;
+    vstr nonce;
+    vstr ad;
     if (argc != 4 ||
         !crypto_value_bytes(args[0], &plain) ||
         !crypto_value_bytes(args[1], &key) ||
@@ -279,7 +279,7 @@ static exprtk_value_t fn_aead_lock(size_t argc, exprtk_value_t *args, exprtk_env
         return crypto_null();
 
     exprtk_value_t result = exprtk_val_object();
-    exprtk_map_set(&result, "cipher", exprtk_val_bytes(tstr_v_from_buf(cipher, plain.len)));
+    exprtk_map_set(&result, "cipher", exprtk_val_bytes(vstr_from_buf(cipher, plain.len)));
     exprtk_map_set(&result, "mac", crypto_copy_bytes(mac, sizeof(mac), arena));
     return result;
 }
@@ -287,11 +287,11 @@ static exprtk_value_t fn_aead_lock(size_t argc, exprtk_value_t *args, exprtk_env
 static exprtk_value_t fn_aead_unlock(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                      mem_pool_t *arena) {
     (void)env;
-    tstr_v cipher;
-    tstr_v mac;
-    tstr_v key;
-    tstr_v nonce;
-    tstr_v ad;
+    vstr cipher;
+    vstr mac;
+    vstr key;
+    vstr nonce;
+    vstr ad;
     if (argc != 5 ||
         !crypto_value_bytes(args[0], &cipher) ||
         !crypto_value_bytes(args[1], &mac) ||
@@ -315,7 +315,7 @@ static exprtk_value_t fn_aead_unlock(size_t argc, exprtk_value_t *args, exprtk_e
                                  ad.data, ad.len, cipher.data, cipher.len) != TURBO_CRYPTO_OK)
         return crypto_null();
 
-    return exprtk_val_bytes(tstr_v_from_buf(plain, cipher.len));
+    return exprtk_val_bytes(vstr_from_buf(plain, cipher.len));
 }
 
 static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -324,8 +324,8 @@ static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t 
     if (argc != 6 && argc != 8)
         return crypto_null();
 
-    tstr_v pass;
-    tstr_v salt;
+    vstr pass;
+    vstr salt;
     if (!crypto_value_bytes(args[0], &pass) || !crypto_value_bytes(args[1], &salt))
         return crypto_null();
 
@@ -339,8 +339,8 @@ static exprtk_value_t fn_argon2(size_t argc, exprtk_value_t *args, exprtk_env_t 
         !crypto_value_u32(args[5], TURBO_CRYPTO_ARGON2_D, TURBO_CRYPTO_ARGON2_ID, &algorithm))
         return crypto_null();
 
-    tstr_v key = {0};
-    tstr_v ad = {0};
+    vstr key = {0};
+    vstr ad = {0};
     if (argc == 8 &&
         (!crypto_value_bytes(args[6], &key) || !crypto_value_bytes(args[7], &ad)))
         return crypto_null();
@@ -434,7 +434,7 @@ static exprtk_value_t fn_x25519_dirty_fast(size_t argc, exprtk_value_t *args, ex
 static exprtk_value_t fn_eddsa_key_pair(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                         mem_pool_t *arena) {
     (void)env;
-    tstr_v seed;
+    vstr seed;
     if (argc != 1 || !crypto_value_bytes(args[0], &seed) || seed.len != 32)
         return crypto_null();
     uint8_t seed_copy[32];
@@ -455,8 +455,8 @@ static exprtk_value_t fn_eddsa_key_pair(size_t argc, exprtk_value_t *args, exprt
 static exprtk_value_t fn_eddsa_sign(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                     mem_pool_t *arena) {
     (void)env;
-    tstr_v secret_key;
-    tstr_v message;
+    vstr secret_key;
+    vstr message;
     if (argc != 2 ||
         !crypto_value_bytes(args[0], &secret_key) ||
         !crypto_value_bytes(args[1], &message) ||
@@ -473,9 +473,9 @@ static exprtk_value_t fn_eddsa_check(size_t argc, exprtk_value_t *args, exprtk_e
                                      mem_pool_t *arena) {
     (void)env;
     (void)arena;
-    tstr_v signature;
-    tstr_v public_key;
-    tstr_v message;
+    vstr signature;
+    vstr public_key;
+    vstr message;
     if (argc != 3 ||
         !crypto_value_bytes(args[0], &signature) ||
         !crypto_value_bytes(args[1], &public_key) ||
@@ -504,7 +504,7 @@ static exprtk_value_t fn_eddsa_trim_scalar(size_t argc, exprtk_value_t *args, ex
 static exprtk_value_t fn_eddsa_reduce(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                       mem_pool_t *arena) {
     (void)env;
-    tstr_v expanded;
+    vstr expanded;
     if (argc != 1 || !crypto_value_bytes(args[0], &expanded) || expanded.len != 64)
         return crypto_null();
     uint8_t reduced[32];
@@ -516,9 +516,9 @@ static exprtk_value_t fn_eddsa_reduce(size_t argc, exprtk_value_t *args, exprtk_
 static exprtk_value_t fn_eddsa_mul_add(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                        mem_pool_t *arena) {
     (void)env;
-    tstr_v a;
-    tstr_v b;
-    tstr_v c;
+    vstr a;
+    vstr b;
+    vstr c;
     if (argc != 3 ||
         !crypto_value_bytes(args[0], &a) ||
         !crypto_value_bytes(args[1], &b) ||
@@ -542,8 +542,8 @@ static exprtk_value_t fn_eddsa_scalarbase(size_t argc, exprtk_value_t *args, exp
 static exprtk_value_t fn_chacha20_h(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                     mem_pool_t *arena) {
     (void)env;
-    tstr_v key;
-    tstr_v in;
+    vstr key;
+    vstr in;
     if (argc != 2 ||
         !crypto_value_bytes(args[0], &key) ||
         !crypto_value_bytes(args[1], &in) ||
@@ -558,9 +558,9 @@ static exprtk_value_t fn_chacha20_h(size_t argc, exprtk_value_t *args, exprtk_en
 
 static exprtk_value_t crypto_chacha20_crypt(size_t argc, exprtk_value_t *args,
                                             mem_pool_t *arena, size_t nonce_len) {
-    tstr_v data;
-    tstr_v key;
-    tstr_v nonce;
+    vstr data;
+    vstr key;
+    vstr nonce;
     uint32_t ctr32 = 0;
     if ((argc != 3 && argc != 4) ||
         !crypto_value_bytes(args[0], &data) ||
@@ -596,7 +596,7 @@ static exprtk_value_t crypto_chacha20_crypt(size_t argc, exprtk_value_t *args,
                                     (uint64_t)ctr32) != TURBO_CRYPTO_OK)
             return crypto_null();
     }
-    return exprtk_val_bytes(tstr_v_from_buf(buf, data.len));
+    return exprtk_val_bytes(vstr_from_buf(buf, data.len));
 }
 
 static exprtk_value_t fn_chacha20_djb(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
@@ -620,8 +620,8 @@ static exprtk_value_t fn_chacha20_x(size_t argc, exprtk_value_t *args, exprtk_en
 static exprtk_value_t fn_poly1305(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                   mem_pool_t *arena) {
     (void)env;
-    tstr_v message;
-    tstr_v key;
+    vstr message;
+    vstr key;
     if (argc != 2 ||
         !crypto_value_bytes(args[0], &message) ||
         !crypto_value_bytes(args[1], &key) ||
@@ -643,7 +643,7 @@ static exprtk_value_t fn_elligator_map(size_t argc, exprtk_value_t *args, exprtk
 static exprtk_value_t fn_elligator_rev(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                        mem_pool_t *arena) {
     (void)env;
-    tstr_v curve;
+    vstr curve;
     uint32_t tweak;
     if (argc != 2 ||
         !crypto_value_bytes(args[0], &curve) ||
@@ -660,7 +660,7 @@ static exprtk_value_t fn_elligator_rev(size_t argc, exprtk_value_t *args, exprtk
 static exprtk_value_t fn_elligator_key_pair(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                             mem_pool_t *arena) {
     (void)env;
-    tstr_v seed;
+    vstr seed;
     if (argc != 1 || !crypto_value_bytes(args[0], &seed) || seed.len != 32)
         return crypto_null();
     uint8_t seed_copy[32];

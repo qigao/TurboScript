@@ -48,7 +48,7 @@ static exprtk_value_t core_string_value(mem_pool_t *arena, const char *text) {
     buf = (char *)mem_alloc(arena, len + 1);
     if (!buf) return exprtk_val_num(0);
     memcpy(buf, text, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static int core_datetime_from_value(exprtk_value_t value, turbo_datetime_t *out) {
@@ -375,7 +375,7 @@ static int core_decimal_text(exprtk_decimal_t value, char *out, size_t out_size)
     }
 }
 
-static int core_bigint_valid_text(tstr_v text) {
+static int core_bigint_valid_text(vstr text) {
     size_t i = 0;
     if (!text.data || text.len == 0) return 0;
     if (text.data[0] == '-' || text.data[0] == '+') i = 1;
@@ -408,7 +408,7 @@ static exprtk_value_t core_bigint_from_value(exprtk_value_t value, mem_pool_t *a
     if (!copy) return core_null_value();
     memcpy(copy, text, len);
     copy[len] = '\0';
-    return exprtk_val_bigint(tstr_v_from_buf(copy, len));
+    return exprtk_val_bigint(vstr_from_buf(copy, len));
 }
 
 static int core_money_text(exprtk_money_t money, char *out, size_t out_size) {
@@ -549,14 +549,14 @@ static exprtk_value_t exprtk_call_callable(exprtk_value_t callable, size_t argc,
 static exprtk_value_t stream_make(exprtk_value_t source) {
     exprtk_value_t stream = exprtk_val_map();
     exprtk_map_set(&stream, "__ts_stream_kind",
-                   exprtk_val_str(tstr_v_from_cstr("TurboScript.Stream.v1")));
+                   exprtk_val_str(vstr_from_cstr("TurboScript.Stream.v1")));
     exprtk_map_set(&stream, "source", source);
     return stream;
 }
 
 static exprtk_value_t stream_make_text(exprtk_value_t text) {
     exprtk_value_t stream = stream_make(text);
-    exprtk_map_set(&stream, "source_kind", exprtk_val_str(tstr_v_from_cstr("text")));
+    exprtk_map_set(&stream, "source_kind", exprtk_val_str(vstr_from_cstr("text")));
     exprtk_map_set(&stream, "text_text", text);
     return stream;
 }
@@ -612,7 +612,7 @@ static exprtk_value_t stream_lines_from_string(exprtk_value_t text, mem_pool_t *
             if (!buf) return lines;
             memcpy(buf, text.data.string.data + start, end - start);
             buf[end - start] = '\0';
-            exprtk_list_push(&lines, exprtk_val_str(tstr_v_from_buf(buf, end - start)));
+            exprtk_list_push(&lines, exprtk_val_str(vstr_from_buf(buf, end - start)));
             start = i + 1;
         }
     }
@@ -628,15 +628,15 @@ static int stream_list_append_string(exprtk_value_t *list, mem_pool_t *arena,
     if (!buf) return 0;
     memcpy(buf, data, len);
     buf[len] = '\0';
-    exprtk_list_push(list, exprtk_val_str(tstr_v_from_buf(buf, len)));
+    exprtk_list_push(list, exprtk_val_str(vstr_from_buf(buf, len)));
     return 1;
 }
 
 static exprtk_value_t stream_split_string(exprtk_value_t text, exprtk_value_t sep,
                                           mem_pool_t *arena) {
     exprtk_value_t parts = exprtk_val_list_empty();
-    tstr_v s;
-    tstr_v delimiter;
+    vstr s;
+    vstr delimiter;
     size_t cursor = 0;
 
     if (text.type != EXPRTK_VAL_STRING || sep.type != EXPRTK_VAL_STRING || !arena)
@@ -652,14 +652,14 @@ static exprtk_value_t stream_split_string(exprtk_value_t text, exprtk_value_t se
     }
 
     while (cursor <= s.len) {
-        size_t found = TSTR_V_NPOS;
+        size_t found = VSTR_NPOS;
         for (size_t i = cursor; i + delimiter.len <= s.len; ++i) {
             if (memcmp(s.data + i, delimiter.data, delimiter.len) == 0) {
                 found = i;
                 break;
             }
         }
-        if (found == TSTR_V_NPOS) {
+        if (found == VSTR_NPOS) {
             if (!stream_list_append_string(&parts, arena, s.data + cursor, s.len - cursor))
                 return exprtk_val_list_empty();
             break;
@@ -979,7 +979,7 @@ static exprtk_value_t fn_typeof(size_t argc, exprtk_value_t *args,
     if (!buf) return exprtk_val_num(0);
     memcpy(buf, name, len);
     buf[len] = '\0';
-    tstr_v sv;
+    vstr sv;
     sv.data = buf;
     sv.len = len;
     return exprtk_val_str(sv);
@@ -1128,7 +1128,7 @@ static exprtk_value_t fn_uuid_string(size_t argc, exprtk_value_t *args,
     char text[TURBO_UUID_STRING_SIZE];
 
     if (argc != 1 || !core_uuid_text(args[0], text, sizeof(text)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, text);
 }
 
@@ -1159,10 +1159,10 @@ static exprtk_value_t fn_datetime_string(size_t argc, exprtk_value_t *args,
     time_t ts;
     char buf[64];
     if (argc != 1 || !core_datetime_from_value(args[0], &dt))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     ts = turbo_datetime_to_time(&dt);
     if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1172,7 +1172,7 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
     time_t ts;
     char buf[64];
     if (argc != 1)
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     if (args[0].type == EXPRTK_VAL_INTEGER)
         ts = (time_t)args[0].data.integer;
     else if (args[0].type == EXPRTK_VAL_NUMBER)
@@ -1180,9 +1180,9 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
     else if (args[0].type == EXPRTK_VAL_DATETIME)
         ts = turbo_datetime_to_time(&args[0].data.datetime);
     else
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1231,7 +1231,7 @@ static exprtk_value_t fn_date_string(size_t argc, exprtk_value_t *args,
     char buf[32];
     if (argc != 1 || !core_date_from_value(args[0], &date) ||
         !core_date_text(date, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1251,7 +1251,7 @@ static exprtk_value_t fn_time_string(size_t argc, exprtk_value_t *args,
     char buf[32];
     if (argc != 1 || !core_time_from_value(args[0], &time) ||
         !core_time_text(time, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1289,7 +1289,7 @@ static exprtk_value_t fn_duration_string(size_t argc, exprtk_value_t *args,
     char buf[64];
     if (argc != 1 || !core_duration_from_value(args[0], &ms) ||
         !core_duration_text(ms, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1309,7 +1309,7 @@ static exprtk_value_t fn_decimal_to_string(size_t argc, exprtk_value_t *args,
     char buf[64];
     if (argc != 1 || !core_decimal_from_value(args[0], &value) ||
         !core_decimal_text(value, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
 
@@ -1630,7 +1630,7 @@ static exprtk_value_t fn_stream_text(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING)
-        return stream_make_text(exprtk_val_str(tstr_v_from_buf("", 0)));
+        return stream_make_text(exprtk_val_str(vstr_from_buf("", 0)));
     return stream_make_text(args[0]);
 }
 

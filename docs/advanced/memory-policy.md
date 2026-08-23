@@ -11,7 +11,7 @@ TurboScript 以一个 `turbo_script_ctx_t` 作为状态事实源。内存策略�
 | --- | --- | --- | --- |
 | definition | 根 `exprtk_env_t::arena` | context | AST、函数、类和模块元数据 |
 | managed payload | owner env 的 `mem_pool_t` + `mem_buffer_t` | 最后一个 owner 释放 | string、bytes、bigint、enum、vector、typed-array |
-| container | map/list 本身 | replace/delete/destroy | map hash/key pool、list `turbo_vec_t`/value pool |
+| container | map/list 本身 | replace/delete/destroy | map hash/key pool、list `vec_t`/value pool |
 | task | `ts_task_job_t` | `task.release` 或 shutdown | callback 局部状态与终态结果 |
 | callback frame | script callback local env | callback 返回 | WebSocket 帧、临时解析结果 |
 | builtin scratch | 单次 builtin 调用 | builtin 返回后立即 destroy | 字符串构造、编码和算法临时结果 |
@@ -33,7 +33,7 @@ TurboScript 以一个 `turbo_script_ctx_t` 作为状态事实源。内存策略�
 网络缓冲区只在 `ws.consume` callback 期间 borrow。callback 参数绑定会复制到
 callback local env；只有 callback 明确返回的值才会复制到 task 环境并逃逸。
 
-`tstr_v` 只表达 borrowed view，不能成为所有权事实源；`tstr_t` 用于局部字符串
+`vstr` 只表达 borrowed view，不能成为所有权事实源；`tstr` 用于局部字符串
 构建；`mem_pool_t` 用于有明确 reset/destroy 边界的存储；跨 owner 共享的 payload
 使用 TurboUtils `mem_buffer_t`。`mem_slice_t` 只适合受控的零拷贝子视图，slice 不得
 长于其 buffer owner。vector 与 typed-array 也由 `mem_buffer_t` 支撑，变量替换会把

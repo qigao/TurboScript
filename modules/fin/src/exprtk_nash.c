@@ -1210,7 +1210,7 @@ exprtk_value_t exprtk_nash_lemke_howson(size_t argc, exprtk_value_t *args,
                                              mixed_col_payoff(&game, row_strategy, col_strategy),
                                              arena);
     exprtk_map_set(&eq, "label", exprtk_val_num((double)(label % num_labels)));
-    exprtk_map_set(&eq, "engine", exprtk_val_str((tstr_v){ .data = "tableau", .len = 7 }));
+    exprtk_map_set(&eq, "engine", exprtk_val_str((vstr){ .data = "tableau", .len = 7 }));
     return eq;
   }
 
@@ -1232,7 +1232,7 @@ exprtk_value_t exprtk_nash_lemke_howson(size_t argc, exprtk_value_t *args,
     {
       exprtk_value_t eq = clone_equilibrium_map(&equilibria.data.list.items[index], arena);
       exprtk_map_set(&eq, "label", exprtk_val_num((double)(label % num_labels)));
-      exprtk_map_set(&eq, "engine", exprtk_val_str((tstr_v){ .data = "fallback", .len = 8 }));
+      exprtk_map_set(&eq, "engine", exprtk_val_str((vstr){ .data = "fallback", .len = 8 }));
       exprtk_map_free(&result);
       return eq;
     }

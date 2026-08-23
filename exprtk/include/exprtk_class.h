@@ -13,6 +13,8 @@
 #ifndef EXPRTK_CLASS_H
 #define EXPRTK_CLASS_H
 
+#include "exprtk_export.h"
+
 #include "exprtk_types.h"
 #include "turbo_buffer.h"
 #include <stddef.h>
@@ -113,7 +115,7 @@ typedef struct {
  * @param method_count Number of methods
  * @return New class object, or NULL on failure
  */
-CXX_C_API exprtk_class_t *exprtk_class_create(
+EXPRTK_C_API exprtk_class_t *exprtk_class_create(
     mem_pool_t *arena,
     const char *name,
     exprtk_node_t *constructor_node,
@@ -127,7 +129,7 @@ CXX_C_API exprtk_class_t *exprtk_class_create(
  * @param arena Destination arena
  * @return Class metadata owned by arena, or NULL on failure
  */
-CXX_C_API exprtk_class_t *exprtk_class_clone_to_arena(
+EXPRTK_C_API exprtk_class_t *exprtk_class_clone_to_arena(
     exprtk_class_t *klass,
     mem_pool_t *arena
 );
@@ -137,25 +139,25 @@ CXX_C_API exprtk_class_t *exprtk_class_clone_to_arena(
  * @param klass Child class
  * @param parent Parent class
  */
-CXX_C_API void exprtk_class_set_prototype(exprtk_class_t *klass, exprtk_class_t *parent);
+EXPRTK_C_API void exprtk_class_set_prototype(exprtk_class_t *klass, exprtk_class_t *parent);
 
 /**
  * @brief Mark a class as explicitly abstract
  * @param klass The class
  * @param is_abstract Non-zero if abstract
  */
-CXX_C_API void exprtk_class_set_abstract(exprtk_class_t *klass, int is_abstract);
+EXPRTK_C_API void exprtk_class_set_abstract(exprtk_class_t *klass, int is_abstract);
 
-CXX_C_API void exprtk_class_set_interface(exprtk_class_t *klass, int is_interface);
+EXPRTK_C_API void exprtk_class_set_interface(exprtk_class_t *klass, int is_interface);
 
-CXX_C_API void exprtk_class_set_final(exprtk_class_t *klass, int is_final);
+EXPRTK_C_API void exprtk_class_set_final(exprtk_class_t *klass, int is_final);
 
-CXX_C_API int exprtk_class_is_final(exprtk_class_t *klass);
+EXPRTK_C_API int exprtk_class_is_final(exprtk_class_t *klass);
 
-CXX_C_API void exprtk_class_add_interface(exprtk_class_t *klass,
+EXPRTK_C_API void exprtk_class_add_interface(exprtk_class_t *klass,
                                           exprtk_class_t *interface_class);
 
-CXX_C_API int exprtk_class_is_a(exprtk_class_t *klass, exprtk_class_t *target);
+EXPRTK_C_API int exprtk_class_is_a(exprtk_class_t *klass, exprtk_class_t *target);
 
 /**
  * @brief Add a method to a class
@@ -164,19 +166,19 @@ CXX_C_API int exprtk_class_is_a(exprtk_class_t *klass, exprtk_class_t *target);
  * @param method_func Method function
  * @param is_static Whether this is a static method
  */
-CXX_C_API void exprtk_class_add_method(
+EXPRTK_C_API void exprtk_class_add_method(
     exprtk_class_t *klass,
     const char *name,
     exprtk_func_t *method_func,
     int is_static
 );
 
-CXX_C_API void exprtk_class_add_constructor(
+EXPRTK_C_API void exprtk_class_add_constructor(
     exprtk_class_t *klass,
     exprtk_func_t *constructor_func
 );
 
-CXX_C_API exprtk_func_t *exprtk_class_lookup_constructor_typed(
+EXPRTK_C_API exprtk_func_t *exprtk_class_lookup_constructor_typed(
     exprtk_class_t *klass,
     size_t argc,
     const exprtk_value_t *args
@@ -187,18 +189,18 @@ CXX_C_API exprtk_func_t *exprtk_class_lookup_constructor_typed(
  * @param klass The class
  * @param name Method name
  */
-CXX_C_API void exprtk_class_add_abstract_method(
+EXPRTK_C_API void exprtk_class_add_abstract_method(
     exprtk_class_t *klass,
     const char *name
 );
 
-CXX_C_API void exprtk_class_add_abstract_method_arity(
+EXPRTK_C_API void exprtk_class_add_abstract_method_arity(
     exprtk_class_t *klass,
     const char *name,
     size_t argc
 );
 
-CXX_C_API void exprtk_class_add_abstract_method_signature(
+EXPRTK_C_API void exprtk_class_add_abstract_method_signature(
     exprtk_class_t *klass,
     const char *name,
     exprtk_node_t **arg_params,
@@ -207,7 +209,7 @@ CXX_C_API void exprtk_class_add_abstract_method_signature(
     int is_static_method
 );
 
-CXX_C_API void exprtk_class_add_abstract_methods_from(
+EXPRTK_C_API void exprtk_class_add_abstract_methods_from(
     exprtk_class_t *klass,
     exprtk_class_t *interface_class
 );
@@ -219,25 +221,25 @@ CXX_C_API void exprtk_class_add_abstract_methods_from(
  * @param is_static Whether to search static methods
  * @return Method function, or NULL if not found
  */
-CXX_C_API exprtk_func_t *exprtk_class_lookup_method(
+EXPRTK_C_API exprtk_func_t *exprtk_class_lookup_method(
     exprtk_class_t *klass,
     const char *name,
     int is_static
 );
 
-CXX_C_API exprtk_func_t *exprtk_class_lookup_method_arity(
+EXPRTK_C_API exprtk_func_t *exprtk_class_lookup_method_arity(
     exprtk_class_t *klass,
     const char *name,
     int is_static,
     size_t argc
 );
 
-CXX_C_API exprtk_func_t *exprtk_class_lookup_method_signature(
+EXPRTK_C_API exprtk_func_t *exprtk_class_lookup_method_signature(
     exprtk_class_t *klass,
     exprtk_func_t *signature
 );
 
-CXX_C_API exprtk_func_t *exprtk_class_lookup_method_typed(
+EXPRTK_C_API exprtk_func_t *exprtk_class_lookup_method_typed(
     exprtk_class_t *klass,
     const char *name,
     int is_static,
@@ -252,13 +254,13 @@ CXX_C_API exprtk_func_t *exprtk_class_lookup_method_typed(
  * @param out_value Output parameter for the value
  * @return 1 if field exists, 0 if not found
  */
-CXX_C_API int exprtk_class_get_static_field(
+EXPRTK_C_API int exprtk_class_get_static_field(
     exprtk_class_t *klass,
     const char *name,
     exprtk_value_t *out_value
 );
 
-CXX_C_API exprtk_value_t *exprtk_class_get_static_field_slot(
+EXPRTK_C_API exprtk_value_t *exprtk_class_get_static_field_slot(
     exprtk_class_t *klass,
     const char *name,
     exprtk_class_t **owner_class
@@ -270,20 +272,20 @@ CXX_C_API exprtk_value_t *exprtk_class_get_static_field_slot(
  * @param name Field name (copied if new)
  * @param value Field value
  */
-CXX_C_API void exprtk_class_set_static_field(
+EXPRTK_C_API void exprtk_class_set_static_field(
     exprtk_class_t *klass,
     const char *name,
     exprtk_value_t value
 );
 
-CXX_C_API void exprtk_class_declare_static_field(
+EXPRTK_C_API void exprtk_class_declare_static_field(
     exprtk_class_t *klass,
     const char *name,
     exprtk_value_t value,
     int access_level
 );
 
-CXX_C_API int exprtk_class_declare_static_field_typed(
+EXPRTK_C_API int exprtk_class_declare_static_field_typed(
     exprtk_class_t *klass,
     const char *name,
     const char *declared_type,
@@ -291,12 +293,12 @@ CXX_C_API int exprtk_class_declare_static_field_typed(
     int access_level
 );
 
-CXX_C_API const char *exprtk_class_get_static_field_type(
+EXPRTK_C_API const char *exprtk_class_get_static_field_type(
     exprtk_class_t *klass,
     const char *name
 );
 
-CXX_C_API int exprtk_class_set_static_field_checked(
+EXPRTK_C_API int exprtk_class_set_static_field_checked(
     exprtk_class_t *klass,
     const char *name,
     exprtk_value_t value,
@@ -304,13 +306,13 @@ CXX_C_API int exprtk_class_set_static_field_checked(
     size_t error_msg_len
 );
 
-CXX_C_API int exprtk_class_get_static_field_access(
+EXPRTK_C_API int exprtk_class_get_static_field_access(
     exprtk_class_t *klass,
     const char *name,
     exprtk_class_t **owner_class
 );
 
-CXX_C_API int exprtk_class_declare_instance_field(
+EXPRTK_C_API int exprtk_class_declare_instance_field(
     exprtk_class_t *klass,
     const char *name,
     exprtk_value_t default_value,
@@ -318,7 +320,7 @@ CXX_C_API int exprtk_class_declare_instance_field(
     int access_level
 );
 
-CXX_C_API int exprtk_class_declare_instance_field_typed(
+EXPRTK_C_API int exprtk_class_declare_instance_field_typed(
     exprtk_class_t *klass,
     const char *name,
     const char *declared_type,
@@ -327,17 +329,17 @@ CXX_C_API int exprtk_class_declare_instance_field_typed(
     int access_level
 );
 
-CXX_C_API const char *exprtk_class_get_instance_field_type(
+EXPRTK_C_API const char *exprtk_class_get_instance_field_type(
     exprtk_class_t *klass,
     const char *name
 );
 
-CXX_C_API int exprtk_class_has_instance_field(
+EXPRTK_C_API int exprtk_class_has_instance_field(
     exprtk_class_t *klass,
     const char *name
 );
 
-CXX_C_API int exprtk_class_get_instance_field_access(
+EXPRTK_C_API int exprtk_class_get_instance_field_access(
     exprtk_class_t *klass,
     const char *name,
     exprtk_class_t **owner_class
@@ -347,22 +349,22 @@ CXX_C_API int exprtk_class_get_instance_field_access(
  * @brief Finalize abstract method requirements after methods/prototype are set
  * @param klass The class
  */
-CXX_C_API void exprtk_class_finalize_abstract_methods(exprtk_class_t *klass);
+EXPRTK_C_API void exprtk_class_finalize_abstract_methods(exprtk_class_t *klass);
 
 /**
  * @brief Check whether a class is abstract
  * @param klass The class
  * @return Non-zero if the class cannot be instantiated
  */
-CXX_C_API int exprtk_class_is_abstract(exprtk_class_t *klass);
+EXPRTK_C_API int exprtk_class_is_abstract(exprtk_class_t *klass);
 
-CXX_C_API int exprtk_class_is_interface(exprtk_class_t *klass);
+EXPRTK_C_API int exprtk_class_is_interface(exprtk_class_t *klass);
 
 /**
  * @brief Free class resources
  * @param klass Class to free
  */
-CXX_C_API void exprtk_class_destroy(exprtk_class_t *klass);
+EXPRTK_C_API void exprtk_class_destroy(exprtk_class_t *klass);
 
 /* ========================================================================
  * Instance Management API
@@ -374,7 +376,7 @@ CXX_C_API void exprtk_class_destroy(exprtk_class_t *klass);
  * @param arena Memory arena for instance data
  * @return New instance object, or NULL on failure
  */
-CXX_C_API exprtk_instance_t *exprtk_instance_create(
+EXPRTK_C_API exprtk_instance_t *exprtk_instance_create(
     exprtk_class_t *klass,
     mem_pool_t *arena
 );
@@ -386,13 +388,13 @@ CXX_C_API exprtk_instance_t *exprtk_instance_create(
  * @param out_value Output parameter for the value
  * @return 1 if field exists, 0 if not found
  */
-CXX_C_API int exprtk_instance_get_field(
+EXPRTK_C_API int exprtk_instance_get_field(
     exprtk_instance_t *instance,
     const char *name,
     exprtk_value_t *out_value
 );
 
-CXX_C_API exprtk_value_t *exprtk_instance_get_field_slot(
+EXPRTK_C_API exprtk_value_t *exprtk_instance_get_field_slot(
     exprtk_instance_t *instance,
     const char *name
 );
@@ -403,13 +405,13 @@ CXX_C_API exprtk_value_t *exprtk_instance_get_field_slot(
  * @param name Field name (copied if new)
  * @param value Field value
  */
-CXX_C_API void exprtk_instance_set_field(
+EXPRTK_C_API void exprtk_instance_set_field(
     exprtk_instance_t *instance,
     const char *name,
     exprtk_value_t value
 );
 
-CXX_C_API int exprtk_instance_set_field_checked(
+EXPRTK_C_API int exprtk_instance_set_field_checked(
     exprtk_instance_t *instance,
     const char *name,
     exprtk_value_t value,
@@ -428,7 +430,7 @@ typedef void (*exprtk_instance_named_field_visitor_t)(const char *name,
  * @param visitor Callback invoked for each field value
  * @param user_data Opaque callback data
  */
-CXX_C_API void exprtk_instance_foreach_field(
+EXPRTK_C_API void exprtk_instance_foreach_field(
     exprtk_instance_t *instance,
     exprtk_instance_field_visitor_t visitor,
     void *user_data
@@ -440,7 +442,7 @@ CXX_C_API void exprtk_instance_foreach_field(
  * @param visitor Callback invoked for each field name and value
  * @param user_data Opaque callback data
  */
-CXX_C_API void exprtk_instance_foreach_named_field(
+EXPRTK_C_API void exprtk_instance_foreach_named_field(
     exprtk_instance_t *instance,
     exprtk_instance_named_field_visitor_t visitor,
     void *user_data
@@ -452,7 +454,7 @@ CXX_C_API void exprtk_instance_foreach_named_field(
  * @param visitor Callback invoked for each field value
  * @param user_data Opaque callback data
  */
-CXX_C_API void exprtk_class_foreach_static_field(
+EXPRTK_C_API void exprtk_class_foreach_static_field(
     exprtk_class_t *klass,
     exprtk_instance_field_visitor_t visitor,
     void *user_data
@@ -464,7 +466,7 @@ CXX_C_API void exprtk_class_foreach_static_field(
  * @param visitor Callback invoked for each field name and value
  * @param user_data Opaque callback data
  */
-CXX_C_API void exprtk_class_foreach_named_static_field(
+EXPRTK_C_API void exprtk_class_foreach_named_static_field(
     exprtk_class_t *klass,
     exprtk_instance_named_field_visitor_t visitor,
     void *user_data
@@ -476,12 +478,12 @@ CXX_C_API void exprtk_class_foreach_named_static_field(
  * @param name Method name
  * @return Method function, or NULL if not found
  */
-CXX_C_API exprtk_func_t *exprtk_instance_get_method(
+EXPRTK_C_API exprtk_func_t *exprtk_instance_get_method(
     exprtk_instance_t *instance,
     const char *name
 );
 
-CXX_C_API exprtk_func_t *exprtk_instance_get_method_arity(
+EXPRTK_C_API exprtk_func_t *exprtk_instance_get_method_arity(
     exprtk_instance_t *instance,
     const char *name,
     size_t argc
@@ -493,7 +495,7 @@ CXX_C_API exprtk_func_t *exprtk_instance_get_method_arity(
  * @param klass The class to check against
  * @return 1 if instance is of type klass, 0 otherwise
  */
-CXX_C_API int exprtk_instance_of(
+EXPRTK_C_API int exprtk_instance_of(
     exprtk_instance_t *instance,
     exprtk_class_t *klass
 );
@@ -502,7 +504,7 @@ CXX_C_API int exprtk_instance_of(
  * @brief Free instance resources
  * @param instance Instance to free
  */
-CXX_C_API void exprtk_instance_destroy(exprtk_instance_t *instance);
+EXPRTK_C_API void exprtk_instance_destroy(exprtk_instance_t *instance);
 
 /* ========================================================================
  * Value Constructors

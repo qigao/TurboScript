@@ -31,11 +31,11 @@ suite("Nash Equilibrium") {
       args[3] = exprtk_val_num(2.0);
 
       result = exprtk_nash_game(4, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "rows").data.number, 2.0, 1e-9);
-      check_float_eq(exprtk_map_get(&result, "cols").data.number, 2.0, 1e-9);
-      check_float_eq(exprtk_map_get(&result, "zero_sum").data.number, 1.0, 1e-9);
-      check_float_eq(exprtk_map_get(&result, "symmetric").data.number, 0.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "rows").data.number) - (double)(2.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&result, "cols").data.number) - (double)(2.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&result, "zero_sum").data.number) - (double)(1.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&result, "symmetric").data.number) - (double)(0.0)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -63,12 +63,12 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(1e-8);
 
       result = exprtk_nash_support_enumeration(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "count").data.number, 3.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "count").data.number) - (double)(3.0)) <= (double)(1e-9));
 
       equilibria = exprtk_map_get(&result, "equilibria");
-      check_int_eq(equilibria.type, EXPRTK_VAL_LIST);
-      check_int_eq((int)equilibria.data.list.count, 3);
+      check((equilibria.type) == (EXPRTK_VAL_LIST));
+      check(((int)equilibria.data.list.count) == (3));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -97,11 +97,11 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(1e-8);
 
       result = exprtk_nash_support_enumeration(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "count").data.number, 3.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "count").data.number) - (double)(3.0)) <= (double)(1e-9));
 
       equilibria = exprtk_map_get(&result, "equilibria");
-      check_int_eq(equilibria.type, EXPRTK_VAL_LIST);
+      check((equilibria.type) == (EXPRTK_VAL_LIST));
       for (size_t i = 0; i < equilibria.data.list.count; i++) {
         exprtk_value_t eq = equilibria.data.list.items[i];
         exprtk_value_t row_vec = exprtk_map_get(&eq, "row_strategy");
@@ -154,21 +154,21 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(1e-8);
 
       result = exprtk_nash_support_enumeration(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "count").data.number, 1.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "count").data.number) - (double)(1.0)) <= (double)(1e-9));
 
       equilibria = exprtk_map_get(&result, "equilibria");
-      check_int_eq(equilibria.type, EXPRTK_VAL_LIST);
-      check_int_eq((int)equilibria.data.list.count, 1);
+      check((equilibria.type) == (EXPRTK_VAL_LIST));
+      check(((int)equilibria.data.list.count) == (1));
 
       eq0 = equilibria.data.list.items[0];
       row_vec = exprtk_map_get(&eq0, "row_strategy");
       col_vec = exprtk_map_get(&eq0, "col_strategy");
 
-      check_float_eq(row_vec.data.vector.data[0], 0.5, EPSILON);
-      check_float_eq(row_vec.data.vector.data[1], 0.5, EPSILON);
-      check_float_eq(col_vec.data.vector.data[0], 0.5, EPSILON);
-      check_float_eq(col_vec.data.vector.data[1], 0.5, EPSILON);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(EPSILON));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -207,8 +207,8 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(1e-8);
 
       result = exprtk_nash_vertex_enumeration(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "count").data.number, 3.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "count").data.number) - (double)(3.0)) <= (double)(1e-9));
 
       equilibria = exprtk_map_get(&result, "equilibria");
       for (size_t i = 0; i < equilibria.data.list.count; i++) {
@@ -273,33 +273,33 @@ suite("Nash Equilibrium") {
 
       args[4] = exprtk_val_num(0.0);
       eq = exprtk_nash_lemke_howson(5, args, &env, &arena);
-      check_int_eq(exprtk_map_get(&eq, "engine").type, EXPRTK_VAL_STRING);
+      check((exprtk_map_get(&eq, "engine").type) == (EXPRTK_VAL_STRING));
       check(strncmp(exprtk_map_get(&eq, "engine").data.string.data, "tableau", 7) == 0);
       row_vec = exprtk_map_get(&eq, "row_strategy");
       col_vec = exprtk_map_get(&eq, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[0], 1.0, 1e-9);
-      check_float_eq(col_vec.data.vector.data[0], 1.0, 1e-9);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(1.0)) <= (double)(1e-9));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0)) <= (double)(1e-9));
       exprtk_map_free(&eq);
 
       args[4] = exprtk_val_num(1.0);
       eq = exprtk_nash_lemke_howson(5, args, &env, &arena);
       row_vec = exprtk_map_get(&eq, "row_strategy");
       col_vec = exprtk_map_get(&eq, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[0], 0.0, 1e-6);
-      check_float_eq(row_vec.data.vector.data[1], 1.0 / 3.0, 1e-6);
-      check_float_eq(row_vec.data.vector.data[2], 2.0 / 3.0, 1e-6);
-      check_float_eq(col_vec.data.vector.data[0], 1.0 / 3.0, 1e-6);
-      check_float_eq(col_vec.data.vector.data[1], 2.0 / 3.0, 1e-6);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-6));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(2.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(2.0 / 3.0)) <= (double)(1e-6));
       exprtk_map_free(&eq);
 
       args[4] = exprtk_val_num(4.0);
       eq = exprtk_nash_lemke_howson(5, args, &env, &arena);
       row_vec = exprtk_map_get(&eq, "row_strategy");
       col_vec = exprtk_map_get(&eq, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[1], 1.0 / 3.0, 1e-6);
-      check_float_eq(row_vec.data.vector.data[2], 2.0 / 3.0, 1e-6);
-      check_float_eq(col_vec.data.vector.data[0], 1.0 / 3.0, 1e-6);
-      check_float_eq(col_vec.data.vector.data[1], 2.0 / 3.0, 1e-6);
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(2.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(1e-6));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(2.0 / 3.0)) <= (double)(1e-6));
       exprtk_map_free(&eq);
 
       exprtk_env_free(&env);
@@ -336,16 +336,16 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(10000.0);
 
       result = exprtk_nash_fictitious_play(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
 
-      check_float_eq(row_vec.data.vector.data[0], 1.0 / 3.0, 0.08);
-      check_float_eq(row_vec.data.vector.data[1], 1.0 / 3.0, 0.08);
-      check_float_eq(row_vec.data.vector.data[2], 1.0 / 3.0, 0.08);
-      check_float_eq(col_vec.data.vector.data[0], 1.0 / 3.0, 0.08);
-      check_float_eq(col_vec.data.vector.data[1], 1.0 / 3.0, 0.08);
-      check_float_eq(col_vec.data.vector.data[2], 1.0 / 3.0, 0.08);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(0.08));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(0.08));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(1.0 / 3.0)) <= (double)(0.08));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(0.08));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(0.08));
+      check(fabs((double)(col_vec.data.vector.data[2]) - (double)(1.0 / 3.0)) <= (double)(0.08));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -372,14 +372,14 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(2000.0);
 
       result = exprtk_nash_fictitious_play(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
 
-      check_float_eq(row_vec.data.vector.data[0], 0.5, 0.15);
-      check_float_eq(row_vec.data.vector.data[1], 0.5, 0.15);
-      check_float_eq(col_vec.data.vector.data[0], 0.5, 0.15);
-      check_float_eq(col_vec.data.vector.data[1], 0.5, 0.15);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(0.15));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(0.15));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(0.15));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(0.15));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -412,23 +412,23 @@ suite("Nash Equilibrium") {
 
       first = exprtk_nash_stochastic_fictitious_play(7, args, &env, &arena);
       second = exprtk_nash_stochastic_fictitious_play(7, args, &env, &arena);
-      check_int_eq(first.type, EXPRTK_VAL_MAP);
-      check_int_eq(second.type, EXPRTK_VAL_MAP);
+      check((first.type) == (EXPRTK_VAL_MAP));
+      check((second.type) == (EXPRTK_VAL_MAP));
 
       row_first = exprtk_map_get(&first, "row_strategy");
       col_first = exprtk_map_get(&first, "col_strategy");
       row_second = exprtk_map_get(&second, "row_strategy");
       col_second = exprtk_map_get(&second, "col_strategy");
 
-      check_float_eq(row_first.data.vector.data[0], row_second.data.vector.data[0], 1e-12);
-      check_float_eq(row_first.data.vector.data[1], row_second.data.vector.data[1], 1e-12);
-      check_float_eq(col_first.data.vector.data[0], col_second.data.vector.data[0], 1e-12);
-      check_float_eq(col_first.data.vector.data[1], col_second.data.vector.data[1], 1e-12);
+      check(fabs((double)(row_first.data.vector.data[0]) - (double)(row_second.data.vector.data[0])) <= (double)(1e-12));
+      check(fabs((double)(row_first.data.vector.data[1]) - (double)(row_second.data.vector.data[1])) <= (double)(1e-12));
+      check(fabs((double)(col_first.data.vector.data[0]) - (double)(col_second.data.vector.data[0])) <= (double)(1e-12));
+      check(fabs((double)(col_first.data.vector.data[1]) - (double)(col_second.data.vector.data[1])) <= (double)(1e-12));
 
-      check_float_eq(row_first.data.vector.data[0], 0.5, 0.12);
-      check_float_eq(row_first.data.vector.data[1], 0.5, 0.12);
-      check_float_eq(col_first.data.vector.data[0], 0.5, 0.12);
-      check_float_eq(col_first.data.vector.data[1], 0.5, 0.12);
+      check(fabs((double)(row_first.data.vector.data[0]) - (double)(0.5)) <= (double)(0.12));
+      check(fabs((double)(row_first.data.vector.data[1]) - (double)(0.5)) <= (double)(0.12));
+      check(fabs((double)(col_first.data.vector.data[0]) - (double)(0.5)) <= (double)(0.12));
+      check(fabs((double)(col_first.data.vector.data[1]) - (double)(0.5)) <= (double)(0.12));
 
       exprtk_map_free(&first);
       exprtk_map_free(&second);
@@ -461,12 +461,12 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_num(2.0);
 
       result = exprtk_nash_discrete_replicator_dynamics(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       history = exprtk_map_get(&result, "history");
-      check_int_eq(history.type, EXPRTK_VAL_LIST);
-      check_int_eq((int)history.data.list.count, 1);
-      check_float_eq(history.data.list.items[0].data.vector.data[0], 15.0, 1e-9);
-      check_float_eq(history.data.list.items[0].data.vector.data[1], 85.0, 1e-9);
+      check((history.type) == (EXPRTK_VAL_LIST));
+      check(((int)history.data.list.count) == (1));
+      check(fabs((double)(history.data.list.items[0].data.vector.data[0]) - (double)(15.0)) <= (double)(1e-9));
+      check(fabs((double)(history.data.list.items[0].data.vector.data[1]) - (double)(85.0)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -496,10 +496,10 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_num(1.0);
 
       result = exprtk_nash_discrete_replicator_dynamics(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       population_out = exprtk_map_get(&result, "population");
-      check_float_eq(population_out.data.vector.data[0], 0.8, 1e-9);
-      check_float_eq(population_out.data.vector.data[1], 99.2, 1e-9);
+      check(fabs((double)(population_out.data.vector.data[0]) - (double)(0.8)) <= (double)(1e-9));
+      check(fabs((double)(population_out.data.vector.data[1]) - (double)(99.2)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -535,7 +535,7 @@ suite("Nash Equilibrium") {
       args[7] = exprtk_val_num(0.5);
 
       result = exprtk_nash_imitation_dynamics(8, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
       raw_row = exprtk_map_get(&result, "raw_row_strategy");
@@ -553,7 +553,7 @@ suite("Nash Equilibrium") {
       args[0] = exprtk_val_vec(row_negative, 4);
       args[1] = exprtk_val_vec(col_negative, 4);
       result = exprtk_nash_imitation_dynamics(8, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
       for (size_t i = 0; i < row_vec.data.vector.size; i++) {
@@ -595,17 +595,17 @@ suite("Nash Equilibrium") {
 
       first = exprtk_nash_imitation_dynamics(8, args, &env, &arena);
       second = exprtk_nash_imitation_dynamics(8, args, &env, &arena);
-      check_int_eq(first.type, EXPRTK_VAL_MAP);
-      check_int_eq(second.type, EXPRTK_VAL_MAP);
+      check((first.type) == (EXPRTK_VAL_MAP));
+      check((second.type) == (EXPRTK_VAL_MAP));
 
       row_first = exprtk_map_get(&first, "row_strategy");
       col_first = exprtk_map_get(&first, "col_strategy");
       row_second = exprtk_map_get(&second, "row_strategy");
       col_second = exprtk_map_get(&second, "col_strategy");
-      check_float_eq(row_first.data.vector.data[0], row_second.data.vector.data[0], 1e-12);
-      check_float_eq(row_first.data.vector.data[1], row_second.data.vector.data[1], 1e-12);
-      check_float_eq(col_first.data.vector.data[0], col_second.data.vector.data[0], 1e-12);
-      check_float_eq(col_first.data.vector.data[1], col_second.data.vector.data[1], 1e-12);
+      check(fabs((double)(row_first.data.vector.data[0]) - (double)(row_second.data.vector.data[0])) <= (double)(1e-12));
+      check(fabs((double)(row_first.data.vector.data[1]) - (double)(row_second.data.vector.data[1])) <= (double)(1e-12));
+      check(fabs((double)(col_first.data.vector.data[0]) - (double)(col_second.data.vector.data[0])) <= (double)(1e-12));
+      check(fabs((double)(col_first.data.vector.data[1]) - (double)(col_second.data.vector.data[1])) <= (double)(1e-12));
 
       exprtk_map_free(&first);
       exprtk_map_free(&second);
@@ -644,15 +644,15 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_num(100.0);
 
       result = exprtk_nash_regret_minimization(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[0], 1.0 / 3.0, 1e-12);
-      check_float_eq(row_vec.data.vector.data[1], 1.0 / 3.0, 1e-12);
-      check_float_eq(row_vec.data.vector.data[2], 1.0 / 3.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[0], 1.0 / 3.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[1], 1.0 / 3.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[2], 1.0 / 3.0, 1e-12);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[2]) - (double)(1.0 / 3.0)) <= (double)(1e-12));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -688,15 +688,15 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_num(100.0);
 
       result = exprtk_nash_regret_minimization(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[0], 0.0, 1e-12);
-      check_float_eq(row_vec.data.vector.data[1], 1.0, 1e-12);
-      check_float_eq(row_vec.data.vector.data[2], 0.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[0], 0.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[1], 0.0, 1e-12);
-      check_float_eq(col_vec.data.vector.data[2], 1.0, 1e-12);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-12));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0)) <= (double)(1e-12));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(0.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(0.0)) <= (double)(1e-12));
+      check(fabs((double)(col_vec.data.vector.data[2]) - (double)(1.0)) <= (double)(1e-12));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -738,20 +738,20 @@ suite("Nash Equilibrium") {
 
       first = exprtk_nash_introspection_dynamics(8, args, &env, &arena);
       second = exprtk_nash_introspection_dynamics(8, args, &env, &arena);
-      check_int_eq(first.type, EXPRTK_VAL_MAP);
-      check_int_eq(second.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&first, "steps").data.number, 11.0, 1e-9);
-      check_float_eq(exprtk_map_get(&second, "steps").data.number, 11.0, 1e-9);
+      check((first.type) == (EXPRTK_VAL_MAP));
+      check((second.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&first, "steps").data.number) - (double)(11.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&second, "steps").data.number) - (double)(11.0)) <= (double)(1e-9));
 
       history = exprtk_map_get(&first, "history");
-      check_int_eq(history.type, EXPRTK_VAL_LIST);
-      check_int_eq((int)history.data.list.count, 11);
+      check((history.type) == (EXPRTK_VAL_LIST));
+      check(((int)history.data.list.count) == (11));
       for (size_t i = 0; i < history.data.list.count; i++) {
         exprtk_value_t step_a = history.data.list.items[i];
         exprtk_value_t step_b = exprtk_map_get(&second, "history").data.list.items[i];
-        check_int_eq(step_a.type, EXPRTK_VAL_LIST);
-        check_float_eq(step_a.data.list.items[0].data.number, step_b.data.list.items[0].data.number, 1e-12);
-        check_float_eq(step_a.data.list.items[1].data.number, step_b.data.list.items[1].data.number, 1e-12);
+        check((step_a.type) == (EXPRTK_VAL_LIST));
+        check(fabs((double)(step_a.data.list.items[0].data.number) - (double)(step_b.data.list.items[0].data.number)) <= (double)(1e-12));
+        check(fabs((double)(step_a.data.list.items[1].data.number) - (double)(step_b.data.list.items[1].data.number)) <= (double)(1e-12));
         check(step_a.data.list.items[0].data.number >= 0.0 && step_a.data.list.items[0].data.number < 3.0);
         check(step_a.data.list.items[1].data.number >= 0.0 && step_a.data.list.items[1].data.number < 2.0);
       }
@@ -782,10 +782,10 @@ suite("Nash Equilibrium") {
       args[4] = exprtk_val_num(2.0);
 
       result = exprtk_nash_repeated_game(5, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "rows").data.number, 32.0, 1e-9);
-      check_float_eq(exprtk_map_get(&result, "cols").data.number, 32.0, 1e-9);
-      check_float_eq(exprtk_map_get(&result, "states").data.number, 5.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "rows").data.number) - (double)(32.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&result, "cols").data.number) - (double)(32.0)) <= (double)(1e-9));
+      check(fabs((double)(exprtk_map_get(&result, "states").data.number) - (double)(5.0)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -822,14 +822,14 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_num(0.0);
 
       result = exprtk_nash_moran_process(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
-      check_float_eq(exprtk_map_get(&result, "steps").data.number, 1.0, 1e-9);
+      check((result.type) == (EXPRTK_VAL_MAP));
+      check(fabs((double)(exprtk_map_get(&result, "steps").data.number) - (double)(1.0)) <= (double)(1e-9));
       history = exprtk_map_get(&result, "history");
-      check_int_eq(history.type, EXPRTK_VAL_LIST);
-      check_int_eq((int)history.data.list.count, 1);
-      check_float_eq(history.data.list.items[0].data.list.items[0].data.number, 0.0, 1e-9);
-      check_float_eq(history.data.list.items[0].data.list.items[1].data.number, 0.0, 1e-9);
-      check_float_eq(history.data.list.items[0].data.list.items[2].data.number, 0.0, 1e-9);
+      check((history.type) == (EXPRTK_VAL_LIST));
+      check(((int)history.data.list.count) == (1));
+      check(fabs((double)(history.data.list.items[0].data.list.items[0].data.number) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(history.data.list.items[0].data.list.items[1].data.number) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(history.data.list.items[0].data.list.items[2].data.number) - (double)(0.0)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -871,12 +871,12 @@ suite("Nash Equilibrium") {
       args[7] = exprtk_val_num(0.0);
 
       result = exprtk_nash_moran_process(7, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       history = exprtk_map_get(&result, "history");
       for (size_t i = 0; i < history.data.list.count; i++) {
-        check_float_eq(history.data.list.items[i].data.list.items[0].data.number, 0.0, 1e-9);
-        check_float_eq(history.data.list.items[i].data.list.items[1].data.number, 1.0, 1e-9);
-        check_float_eq(history.data.list.items[i].data.list.items[2].data.number, 2.0, 1e-9);
+        check(fabs((double)(history.data.list.items[i].data.list.items[0].data.number) - (double)(0.0)) <= (double)(1e-9));
+        check(fabs((double)(history.data.list.items[i].data.list.items[1].data.number) - (double)(1.0)) <= (double)(1e-9));
+        check(fabs((double)(history.data.list.items[i].data.list.items[2].data.number) - (double)(2.0)) <= (double)(1e-9));
       }
 
       exprtk_map_free(&result);
@@ -907,10 +907,10 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_vec(initial, 2);
 
       result = exprtk_nash_replicator_mutation(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       strategy = exprtk_map_get(&result, "strategy");
-      check_float_eq(strategy.data.vector.data[0], 0.5, 1e-6);
-      check_float_eq(strategy.data.vector.data[1], 0.5, 1e-6);
+      check(fabs((double)(strategy.data.vector.data[0]) - (double)(0.5)) <= (double)(1e-6));
+      check(fabs((double)(strategy.data.vector.data[1]) - (double)(0.5)) <= (double)(1e-6));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -950,14 +950,14 @@ suite("Nash Equilibrium") {
       args[5] = exprtk_val_vec(col_state, 2);
 
       result = exprtk_nash_asymmetric_replicator_derivative(6, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_derivative = exprtk_map_get(&result, "row_derivative");
       col_derivative = exprtk_map_get(&result, "col_derivative");
-      check_float_eq(row_derivative.data.vector.data[0], 0.0, 1e-9);
-      check_float_eq(row_derivative.data.vector.data[1], 0.0, 1e-9);
-      check_float_eq(row_derivative.data.vector.data[2], 0.0, 1e-9);
-      check_float_eq(col_derivative.data.vector.data[0], 0.0, 1e-9);
-      check_float_eq(col_derivative.data.vector.data[1], 0.0, 1e-9);
+      check(fabs((double)(row_derivative.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(row_derivative.data.vector.data[1]) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(row_derivative.data.vector.data[2]) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(col_derivative.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-9));
+      check(fabs((double)(col_derivative.data.vector.data[1]) - (double)(0.0)) <= (double)(1e-9));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -997,15 +997,15 @@ suite("Nash Equilibrium") {
       args[7] = exprtk_val_vec(col_state, 2);
 
       result = exprtk_nash_asymmetric_replicator(8, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
 
-      check_float_eq(row_vec.data.vector.data[0], 0.0, 1e-6);
-      check_float_eq(row_vec.data.vector.data[1], 1.0 / 3.0, 1e-4);
-      check_float_eq(row_vec.data.vector.data[2], 2.0 / 3.0, 1e-4);
-      check_float_eq(col_vec.data.vector.data[0], 1.0 / 3.0, 1e-4);
-      check_float_eq(col_vec.data.vector.data[1], 2.0 / 3.0, 1e-4);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.0)) <= (double)(1e-6));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(1.0 / 3.0)) <= (double)(1e-4));
+      check(fabs((double)(row_vec.data.vector.data[2]) - (double)(2.0 / 3.0)) <= (double)(1e-4));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(1.0 / 3.0)) <= (double)(1e-4));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(2.0 / 3.0)) <= (double)(1e-4));
 
       exprtk_map_free(&result);
       exprtk_env_free(&env);
@@ -1036,14 +1036,14 @@ suite("Nash Equilibrium") {
       args[6] = exprtk_val_num(1e-6);
 
       result = exprtk_nash_replicator(7, args, &env, &arena);
-      check_int_eq(result.type, EXPRTK_VAL_MAP);
+      check((result.type) == (EXPRTK_VAL_MAP));
 
       row_vec = exprtk_map_get(&result, "row_strategy");
       col_vec = exprtk_map_get(&result, "col_strategy");
-      check_float_eq(row_vec.data.vector.data[0], 0.5, EPSILON);
-      check_float_eq(row_vec.data.vector.data[1], 0.5, EPSILON);
-      check_float_eq(col_vec.data.vector.data[0], 0.5, EPSILON);
-      check_float_eq(col_vec.data.vector.data[1], 0.5, EPSILON);
+      check(fabs((double)(row_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(row_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(col_vec.data.vector.data[0]) - (double)(0.5)) <= (double)(EPSILON));
+      check(fabs((double)(col_vec.data.vector.data[1]) - (double)(0.5)) <= (double)(EPSILON));
       check(exprtk_map_get(&result, "converged").data.number >= 1.0);
 
       exprtk_map_free(&result);

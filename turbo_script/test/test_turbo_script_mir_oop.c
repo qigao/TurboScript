@@ -1,4 +1,4 @@
-﻿#include "../src/turbo_script_internal.h"
+#include "../src/turbo_script_internal.h"
 #include "tinytest.h"
 #include "turbo_script.h"
 #include <math.h>
@@ -39,9 +39,8 @@ spec("turbo_script_mir_oop") {
 
     it("should define and call a function") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(turbo_script_run_jit(ctx, "func double(x) { return x * 2; } r = double(21);"),
-                   0);
-      check_double_eq(ts_get_num(ctx, "r"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx, "func double(x) { return x * 2; } r = double(21);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "r")) - (double)(42.0)) <= (double)(EPS));
       turbo_script_free(ctx);
     }
 
@@ -57,10 +56,10 @@ spec("turbo_script_mir_oop") {
       }
       len += (size_t)snprintf(script + len, sizeof(script) - len, "result = f69(1);");
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "_ts_f"), 70);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 70.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "_ts_f")) == (70));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(70.0)) <= (double)(EPS));
       turbo_script_free(ctx);
     }
 
@@ -70,10 +69,10 @@ spec("turbo_script_mir_oop") {
                            "func apply(f, x) { return f(x); }"
                            "result = apply(add1, 41);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_apply_add1"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 42.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_apply_add1")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -84,10 +83,10 @@ spec("turbo_script_mir_oop") {
                            "func both(f, x, y) { return f(x) + f(y); }"
                            "result = both(add1, 20, 20);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_both_add1"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 42.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_both_add1")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -98,10 +97,10 @@ spec("turbo_script_mir_oop") {
                            "func twice(f, x) { return f(f(x)); }"
                            "result = twice(add1, 40);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_twice_add1"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 42.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_twice_add1")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -113,10 +112,10 @@ spec("turbo_script_mir_oop") {
                            "func compose(f, g, x) { return f(g(x)); }"
                            "result = compose(inc, triple, 13);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_compose_inc_triple"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 40.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_compose_inc_triple")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(40.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -127,10 +126,10 @@ spec("turbo_script_mir_oop") {
                            "func stage(f, x) { y = f(x); return f(y); }"
                            "result = stage(add1, 40);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_stage_add1"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 42.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_stage_add1")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -140,10 +139,10 @@ spec("turbo_script_mir_oop") {
       const char *script = "func apply(f, x) { return f(x); }"
                            "result = apply(x => x + 1, 41);";
 
-      check_int_eq(turbo_script_compile_mir(ctx, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx, "hof_apply___lambda"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx), 0);
-      check_double_eq(ts_get_num(ctx, "result"), 42.0, EPS);
+      check((turbo_script_compile_mir(ctx, script)) == (0));
+      check((count_last_module_functions_containing(ctx, "hof_apply___lambda")) == (1));
+      check((turbo_script_exec_jit(ctx)) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx);
     }
@@ -155,12 +154,12 @@ spec("turbo_script_mir_oop") {
                            "func addBase(x) { return base + x; }"
                            "result = addBase(2);";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_compile_mir(ctx_jit, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx_jit, "_ts_addBase"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx_jit), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_compile_mir(ctx_jit, script)) == (0));
+      check((count_last_module_functions_containing(ctx_jit, "_ts_addBase")) == (1));
+      check((turbo_script_exec_jit(ctx_jit)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -173,12 +172,12 @@ spec("turbo_script_mir_oop") {
                            "base = 40;"
                            "result = apply(x => base + x, 2);";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_compile_mir(ctx_jit, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx_jit, "hof_apply___lambda"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx_jit), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_compile_mir(ctx_jit, script)) == (0));
+      check((count_last_module_functions_containing(ctx_jit, "hof_apply___lambda")) == (1));
+      check((turbo_script_exec_jit(ctx_jit)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -191,12 +190,12 @@ spec("turbo_script_mir_oop") {
                            "base = 1;"
                            "result = twice(x => base + x, 40);";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_compile_mir(ctx_jit, script), 0);
-      check_int_eq(count_last_module_functions_containing(ctx_jit, "hof_twice___lambda"), 1);
-      check_int_eq(turbo_script_exec_jit(ctx_jit), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_compile_mir(ctx_jit, script)) == (0));
+      check((count_last_module_functions_containing(ctx_jit, "hof_twice___lambda")) == (1));
+      check((turbo_script_exec_jit(ctx_jit)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -204,11 +203,9 @@ spec("turbo_script_mir_oop") {
 
     it("should call user function in a loop") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
-      check_int_eq(
-          turbo_script_run_jit(ctx, "func add(a, b) { return a + b; }"
-                                    "sum = 0; for (i = 0; i < 10; i += 1) { sum = add(sum, i); }"),
-          0);
-      check_double_eq(ts_get_num(ctx, "sum"), 45.0, EPS);
+      check((turbo_script_run_jit(ctx, "func add(a, b) { return a + b; }"
+                                    "sum = 0; for (i = 0; i < 10; i += 1) { sum = add(sum, i); }")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "sum")) - (double)(45.0)) <= (double)(EPS));
       turbo_script_free(ctx);
     }
 
@@ -219,7 +216,7 @@ spec("turbo_script_mir_oop") {
                            "sum = 0; for (i = 1; i <= 5; i += 1) { sum += square(i); }";
       turbo_script_run(ctx_interp, script);
       turbo_script_run_jit(ctx_jit, script);
-      check_double_eq(ts_get_num(ctx_jit, "sum"), ts_get_num(ctx_interp, "sum"), EPS);
+      check(fabs((double)(ts_get_num(ctx_jit, "sum")) - (double)(ts_get_num(ctx_interp, "sum"))) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -231,12 +228,12 @@ spec("turbo_script_mir_oop") {
                            "func greet(name = \"world\") { return name; }"
                            "result = add(5) + add(5, 20);"
                            "label = greet();";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 40.0, EPS);
-      check_str_eq(ts_get_str(ctx_jit, "label"), ts_get_str(ctx_interp, "label"));
-      check_str_eq(ts_get_str(ctx_jit, "label"), "world");
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(40.0)) <= (double)(EPS));
+      check(strcmp((ts_get_str(ctx_jit, "label")), (ts_get_str(ctx_interp, "label"))) == 0);
+      check(strcmp((ts_get_str(ctx_jit, "label")), ("world")) == 0);
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -247,10 +244,10 @@ spec("turbo_script_mir_oop") {
       const char *script = "func add1(x) { return x + 1; }"
                            "func mul2(x) { return x * 2; }"
                            "result = 3 |> add1() |> mul2();";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 8.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(8.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -269,10 +266,10 @@ spec("turbo_script_mir_oop") {
                            "  return total * m;"
                            "};"
                            "result = sum(1, 2, 3, 4) + mul(10, 1, 2, 3);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 70.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(70.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -287,10 +284,10 @@ spec("turbo_script_mir_oop") {
                            "func unpack(a, b, c) { return (a == \"x\") * 100 + b.code * 10 + c; }"
                            "values = list(\"x\", map {code: 4}, 2);"
                            "result = inspect(\"x\", map {code: 4}) + unpack(...values);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 1284.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(1284.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -310,10 +307,10 @@ spec("turbo_script_mir_oop") {
                            "  return total;"
                            "}"
                            "result = calc(6);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 13.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(13.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -329,10 +326,10 @@ spec("turbo_script_mir_oop") {
                            "  return total;"
                            "}"
                            "result = calc(5);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 16.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(16.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -348,10 +345,10 @@ spec("turbo_script_mir_oop") {
                            "  return total;"
                            "}"
                            "result = collect([1, 2], list(3, 4), map {a: 5, b: 6});";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 21.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(21.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -367,10 +364,10 @@ spec("turbo_script_mir_oop") {
                            "  }"
                            "}"
                            "result = choose(1) + choose(\"a\") + choose(0);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 60.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(60.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -384,10 +381,10 @@ spec("turbo_script_mir_oop") {
                            "  return a + b + rest[0] + rest[1] + x + extra.y + extra.z;"
                            "}"
                            "result = unpack();";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 106.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(106.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -400,10 +397,10 @@ spec("turbo_script_mir_oop") {
                            "  return inner(2);"
                            "}"
                            "result = outer(40);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -419,10 +416,10 @@ spec("turbo_script_mir_oop") {
                            "}"
                            "add = make(40);"
                            "result = add(2);";
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
@@ -441,10 +438,10 @@ spec("turbo_script_mir_oop") {
                            "result.value = to_bool(\"YES\");"
                            "flag = result.get();";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_float_eq(ts_get_num(ctx_interp, "flag"), 1.0, EPS);
-      check_float_eq(ts_get_num(ctx_jit, "flag"), 1.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "flag")) - (double)(1.0)) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "flag")) - (double)(1.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -461,10 +458,10 @@ spec("turbo_script_mir_oop") {
                            "next = counter.next;"
                            "result = next();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -483,10 +480,10 @@ spec("turbo_script_mir_oop") {
                            "a.set(40);"
                            "result = a.get() + b.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -502,10 +499,10 @@ spec("turbo_script_mir_oop") {
                            "c = Counter(42);"
                            "result = is_instance(c) * 100 + c.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 142.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(142.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -525,10 +522,10 @@ spec("turbo_script_mir_oop") {
                            "p.set_a(40);"
                            "result = p.sum();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -553,10 +550,10 @@ spec("turbo_script_mir_oop") {
                            "child.set_base(40);"
                            "result = child.get_base() + child.get_extra();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -580,10 +577,10 @@ spec("turbo_script_mir_oop") {
                            "result = c.value(10) + b.value(10, 20) + "
                            "Base.seed() + Base.seed(8);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 84.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(84.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -613,10 +610,10 @@ spec("turbo_script_mir_oop") {
                            "c.value(fn) + "
                            "c.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -638,10 +635,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square();"
                            "result = p.value(c) * 100 + p.value(s) * 10 + p.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 40201.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(40201.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -671,10 +668,10 @@ spec("turbo_script_mir_oop") {
                            "Counter(fn).get() + "
                            "Counter(null).get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -692,10 +689,10 @@ spec("turbo_script_mir_oop") {
                            "q = new Alias(10, 11);"
                            "result = p.sum() + q.sum() + (p instanceof Alias);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -716,10 +713,10 @@ spec("turbo_script_mir_oop") {
                            "counter = CounterClass(20);"
                            "result = counter.value() + CounterClass.add(18);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -737,10 +734,10 @@ spec("turbo_script_mir_oop") {
                            "value = Child.value;"
                            "result = value(20);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -772,10 +769,10 @@ spec("turbo_script_mir_oop") {
                            "Child.value(fn) + "
                            "Child.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -790,10 +787,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base {};"
                            "result = Child.value() + 2;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -808,10 +805,10 @@ spec("turbo_script_mir_oop") {
                            "add = Math2.add;"
                            "result = add(20, 22);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -831,10 +828,10 @@ spec("turbo_script_mir_oop") {
                            "add = make_add(40);"
                            "result = add(2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -854,10 +851,10 @@ spec("turbo_script_mir_oop") {
                            "add = make_add(40);"
                            "result = add(2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -877,10 +874,10 @@ spec("turbo_script_mir_oop") {
                            "result = Picker.value(Circle()) * 100 + "
                            "Picker.value(Square()) * 10 + Picker.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 40201.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(40201.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -909,10 +906,10 @@ spec("turbo_script_mir_oop") {
                            "Picker.value(fn) + "
                            "Picker.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -929,10 +926,10 @@ spec("turbo_script_mir_oop") {
                            "value = make_value();"
                            "result = value(40);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -951,10 +948,10 @@ spec("turbo_script_mir_oop") {
                            "child = Child();"
                            "result = child.value() * 21;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -974,10 +971,10 @@ spec("turbo_script_mir_oop") {
                            "counter = make_counter(40);"
                            "result = counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -997,10 +994,10 @@ spec("turbo_script_mir_oop") {
                            "counter = make_counter(40);"
                            "result = counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1015,10 +1012,10 @@ spec("turbo_script_mir_oop") {
                            "Child.extra = 1;"
                            "result = Child.value + Child.extra + 1;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1034,10 +1031,10 @@ spec("turbo_script_mir_oop") {
                            "result = is_class(Counter) * 100 + is_instance(c) * 10 + "
                            "is_function(c.get);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1055,10 +1052,10 @@ spec("turbo_script_mir_oop") {
                            "(typeof(c.get) == \"function\") * 10 + "
                            "(typeof(c) != \"class\");";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 1111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(1111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1081,12 +1078,12 @@ spec("turbo_script_mir_oop") {
                            "text_value = payload.text;"
                            "result = payload.flag * 100 + payload.count + payload.details.value;";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_str_eq(ts_get_str(ctx_jit, "text_value"), ts_get_str(ctx_interp, "text_value"));
-      check_str_eq(ts_get_str(ctx_jit, "text_value"), "ok");
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 149.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(strcmp((ts_get_str(ctx_jit, "text_value")), (ts_get_str(ctx_interp, "text_value"))) == 0);
+      check(strcmp((ts_get_str(ctx_jit, "text_value")), ("ok")) == 0);
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(149.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1100,8 +1097,8 @@ spec("turbo_script_mir_oop") {
                            "payload.platform = os.platform_name();"
                            "result = payload.platform;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), 0);
-      check_int_eq((int)(strlen(ts_get_str(ctx, "result")) > 0), 1);
+      check((turbo_script_run_jit(ctx, script)) == (0));
+      check(((int)(strlen(ts_get_str(ctx, "result")) > 0)) == (1));
 
       turbo_script_free(ctx);
     }
@@ -1123,10 +1120,10 @@ spec("turbo_script_mir_oop") {
                            "is_instance(other) * 10 + "
                            "is_function(counter.get);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1144,10 +1141,10 @@ spec("turbo_script_mir_oop") {
                            "is_function(bundle.make) * 10 + "
                            "(typeof(bundle.Counter) == \"class\");";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1178,10 +1175,10 @@ spec("turbo_script_mir_oop") {
                            "is_instance(Maker().make_instance().value) * 10 + "
                            "is_function(Maker().make_method().value);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1196,10 +1193,10 @@ spec("turbo_script_mir_oop") {
                            "args = list(\"x\", map {code: 4}, 2);"
                            "result = Counter().value(...args);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 142.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(142.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1215,10 +1212,10 @@ spec("turbo_script_mir_oop") {
                            "child = Child();"
                            "result = child.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1236,10 +1233,10 @@ spec("turbo_script_mir_oop") {
                            "c = Child();"
                            "result = c.value(10);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 22.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(22.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1272,10 +1269,10 @@ spec("turbo_script_mir_oop") {
                            "c.value(fn) + "
                            "c.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1292,10 +1289,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child().value(list(\"x\", map {code: 4}, 2));";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 142.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(142.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1316,10 +1313,10 @@ spec("turbo_script_mir_oop") {
                            "child = Child();"
                            "result = child.value(20);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1337,10 +1334,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child(40).get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1360,10 +1357,10 @@ spec("turbo_script_mir_oop") {
                            "c.set(42);"
                            "result = c.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1383,10 +1380,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child.value(20);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1398,10 +1395,10 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Child { value() { return 42; } };"
                            "result = Child().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1418,10 +1415,10 @@ spec("turbo_script_mir_oop") {
                            "(new Alias() instanceof BaseAlias) * 10 + "
                            "(Alias() instanceof Base);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1438,10 +1435,10 @@ spec("turbo_script_mir_oop") {
                            "result = (dog instanceof DogAlias) * 10 + "
                            "(dog instanceof AnimalAlias);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 11.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(11.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1462,10 +1459,10 @@ spec("turbo_script_mir_oop") {
                            "result = dog.score() + (dog instanceof Dog) * 10 + "
                            "(dog instanceof Animal) * 100;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 120.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(120.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1480,10 +1477,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1498,10 +1495,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child().value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1513,8 +1510,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { override value() { return 1; } };"
                            "result = Child().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "override"));
 
       turbo_script_free(ctx);
@@ -1526,8 +1523,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { override value(x: map) { return 2; } };"
                            "result = Child().value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "override"));
 
       turbo_script_free(ctx);
@@ -1539,8 +1536,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base {};"
                            "result = Child();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "final class"));
 
       turbo_script_free(ctx);
@@ -1552,8 +1549,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { value() { return 2; } };"
                            "result = Child().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "final method"));
 
       turbo_script_free(ctx);
@@ -1565,8 +1562,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { value(x: map) { return 3; } };"
                            "result = Child().value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "final method"));
 
       turbo_script_free(ctx);
@@ -1585,10 +1582,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child(42).get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1621,10 +1618,10 @@ spec("turbo_script_mir_oop") {
                            "Child(fn).get() + "
                            "Child(null).get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 127.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(127.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1642,10 +1639,10 @@ spec("turbo_script_mir_oop") {
                            "args = list(\"x\", map {code: 4}, 2);"
                            "result = Counter(...args).get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 142.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(142.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1662,10 +1659,10 @@ spec("turbo_script_mir_oop") {
                            "dog = Dog(20, 22);"
                            "result = dog.score() + (dog instanceof Animal);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1681,10 +1678,10 @@ spec("turbo_script_mir_oop") {
                            "(make_child() instanceof Base) * 10 + "
                            "make_child().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1699,10 +1696,10 @@ spec("turbo_script_mir_oop") {
                            "child = ChildClass();"
                            "result = child.value() + is_class(ChildClass);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1720,10 +1717,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = make_counter(41).next();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1743,10 +1740,10 @@ spec("turbo_script_mir_oop") {
                            "c = Child(41);"
                            "result = c.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1768,10 +1765,10 @@ spec("turbo_script_mir_oop") {
                            "c = Child(40);"
                            "result = c.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1788,10 +1785,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square(6);"
                            "result = s.area() + 6;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1811,10 +1808,10 @@ spec("turbo_script_mir_oop") {
                            "g = Good();"
                            "result = g.accept(map {x: 1}) + g.make(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1833,10 +1830,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square(6);"
                            "result = s.area() + s.perimeter();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 60.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(60.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1852,10 +1849,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Counter.make();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1869,10 +1866,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base implements Factory {};"
                            "result = Child.make();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1893,10 +1890,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square(6);"
                            "result = s.area() + s.color() + s.label();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1918,10 +1915,10 @@ spec("turbo_script_mir_oop") {
                            "(s instanceof Colored) * 10 + "
                            "(s instanceof ColoredShape);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1938,10 +1935,10 @@ spec("turbo_script_mir_oop") {
                            "(c instanceof Base) * 10 + "
                            "(c instanceof Shape);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 111.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(111.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1956,10 +1953,10 @@ spec("turbo_script_mir_oop") {
                            "c = Child();"
                            "result = c.area() + (c instanceof Shape);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -1975,10 +1972,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base implements Handler {};"
                            "result = Child().handle(Square());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2003,10 +2000,10 @@ spec("turbo_script_mir_oop") {
                            "result = p.value(Square()) * 100 + "
                            "p.value(Triangle()) * 10 + p.value(null);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 40201.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(40201.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2023,10 +2020,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Good().handle(Square());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2057,10 +2054,10 @@ spec("turbo_script_mir_oop") {
                            "g.accept_null(null) + "
                            "Good.make_map(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 31.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(31.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2073,10 +2070,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { value(x: number) { return x + 1; } };"
                            "result = Child().value(41);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2096,10 +2093,10 @@ spec("turbo_script_mir_oop") {
                            "square = SquareAlias();"
                            "result = square instanceof ShapeAlias;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 1.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(1.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2119,10 +2116,10 @@ spec("turbo_script_mir_oop") {
                            "result = (square instanceof bundle.Shape) * 10 + "
                            "(square instanceof bundle.nested.Shape);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 11.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(11.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2141,10 +2138,10 @@ spec("turbo_script_mir_oop") {
                            "bundle = make_bundle();"
                            "result = bundle.Counter(41).get() + bundle.add_one(0);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2167,10 +2164,10 @@ spec("turbo_script_mir_oop") {
                            "PickerAlias = bundle.Picker;"
                            "result = PickerAlias().value(SquareAlias());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2196,10 +2193,10 @@ spec("turbo_script_mir_oop") {
                            "result = PickerAlias().value(SquareAlias()) * 100 + "
                            "PickerAlias().value(Other());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 4201.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(4201.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2224,10 +2221,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Good().handle(SquareAlias());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2263,10 +2260,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Good().handle(LeftClass()) + Good().handle(RightClass());";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 60.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(60.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2281,10 +2278,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square();"
                            "result = s.area() + (s instanceof Alias);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2303,10 +2300,10 @@ spec("turbo_script_mir_oop") {
                            "s = Square();"
                            "result = s.area() + s.label() + (s instanceof Alias);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 43.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(43.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2325,10 +2322,10 @@ spec("turbo_script_mir_oop") {
                            "counter = make_counter(41);"
                            "result = counter.next();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2345,10 +2342,10 @@ spec("turbo_script_mir_oop") {
                            "c = OtherCounter();"
                            "result = a.get() + b.get() + (c instanceof Counter) * 14;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2360,8 +2357,8 @@ spec("turbo_script_mir_oop") {
                            "var Counter = 2;"
                            "result = Counter().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
 
       turbo_script_free(ctx);
     }
@@ -2372,8 +2369,8 @@ spec("turbo_script_mir_oop") {
                            "var Counter = 2;"
                            "result = new Counter();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
 
       turbo_script_free(ctx);
     }
@@ -2386,10 +2383,10 @@ spec("turbo_script_mir_oop") {
                            "var Counter = 2;"
                            "result = c instanceof Counter;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 0.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(0.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2408,10 +2405,10 @@ spec("turbo_script_mir_oop") {
                            "CounterClass = make_counter_class();"
                            "result = CounterClass.value + CounterClass.extra + 1;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2433,10 +2430,10 @@ spec("turbo_script_mir_oop") {
                            "counter = CounterClass(42);"
                            "result = counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2457,10 +2454,10 @@ spec("turbo_script_mir_oop") {
                            "counter = Maker().make(41);"
                            "result = counter.next();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2482,10 +2479,10 @@ spec("turbo_script_mir_oop") {
                            "add = Maker().make(40);"
                            "result = add(2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2511,10 +2508,10 @@ spec("turbo_script_mir_oop") {
                            "counter = CounterClass(42);"
                            "result = counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2539,10 +2536,10 @@ spec("turbo_script_mir_oop") {
                            "counter = Maker().make(41).value;"
                            "result = counter.next();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2568,10 +2565,10 @@ spec("turbo_script_mir_oop") {
                            "add = Maker().make(40).value;"
                            "result = add(2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2592,10 +2589,10 @@ spec("turbo_script_mir_oop") {
                            "counter = Counter(20);"
                            "result = counter.add2() + Counter.seed_plus(0);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2617,10 +2614,10 @@ spec("turbo_script_mir_oop") {
                            "c = Child();"
                            "result = c.add() + Child.total();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2635,10 +2632,10 @@ spec("turbo_script_mir_oop") {
                            "b = Box();"
                            "result = is_null(b.value) * 40 + ((b.value == null) * 2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2657,10 +2654,10 @@ spec("turbo_script_mir_oop") {
                            "CounterAlias = make_counter();"
                            "result = CounterAlias().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2679,10 +2676,10 @@ spec("turbo_script_mir_oop") {
                            "Counter.init(20);"
                            "result = Counter.get() + Counter.value(2);";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2699,10 +2696,10 @@ spec("turbo_script_mir_oop") {
                            "Alias.extra = 1;"
                            "result = Child.value * 2 + Base.value + Alias.extra;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2716,10 +2713,10 @@ spec("turbo_script_mir_oop") {
                            "Alias.value = 42;"
                            "result = Store.value;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2735,10 +2732,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2755,10 +2752,10 @@ spec("turbo_script_mir_oop") {
                            "Child.set(42);"
                            "result = Base.value;";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -2772,8 +2769,8 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "static field"));
 
       turbo_script_free(ctx);
@@ -2785,8 +2782,8 @@ spec("turbo_script_mir_oop") {
                            "shape = Shape();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2799,8 +2796,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2813,8 +2810,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2827,8 +2824,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2842,8 +2839,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2860,8 +2857,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2882,8 +2879,8 @@ spec("turbo_script_mir_oop") {
                            "bad = Bad();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2913,8 +2910,8 @@ spec("turbo_script_mir_oop") {
                            "bad = Bad();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2927,8 +2924,8 @@ spec("turbo_script_mir_oop") {
                            "class Broken implements Alias {};"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not an interface"));
 
       turbo_script_free(ctx);
@@ -2941,8 +2938,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2955,8 +2952,8 @@ spec("turbo_script_mir_oop") {
                            "broken = Broken();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "abstract"));
 
       turbo_script_free(ctx);
@@ -2967,8 +2964,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Child extends MissingParent {};"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Undefined parent class"));
 
       turbo_script_free(ctx);
@@ -2981,8 +2978,8 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base {};"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Undefined parent class"));
 
       turbo_script_free(ctx);
@@ -2993,8 +2990,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { static value() { return this; } };"
                            "result = Counter.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "this"));
 
       turbo_script_free(ctx);
@@ -3004,8 +3001,8 @@ spec("turbo_script_mir_oop") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script = "result = this;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_JIT);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_JIT));
 
       turbo_script_free(ctx);
     }
@@ -3016,8 +3013,8 @@ spec("turbo_script_mir_oop") {
                            "base = Base();"
                            "result = base.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "no parent"));
 
       turbo_script_free(ctx);
@@ -3032,8 +3029,8 @@ spec("turbo_script_mir_oop") {
                            "child = Child();"
                            "result = child.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "constructors"));
 
       turbo_script_free(ctx);
@@ -3048,8 +3045,8 @@ spec("turbo_script_mir_oop") {
                            "child = Child();"
                            "result = child.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "no method"));
 
       turbo_script_free(ctx);
@@ -3066,8 +3063,8 @@ spec("turbo_script_mir_oop") {
                            "CounterClass = Maker().make();"
                            "result = CounterClass.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "this"));
 
       turbo_script_free(ctx);
@@ -3078,8 +3075,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "missing = new MissingClass();"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Undefined class"));
 
       turbo_script_free(ctx);
@@ -3093,8 +3090,8 @@ spec("turbo_script_mir_oop") {
                            "c = Counter(1);"
                            "result = c._value;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3106,8 +3103,8 @@ spec("turbo_script_mir_oop") {
                            "c = Counter();"
                            "result = c.value;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private field"));
 
       turbo_script_free(ctx);
@@ -3118,8 +3115,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { protected static value = 1; };"
                            "result = Counter.value;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Protected field"));
 
       turbo_script_free(ctx);
@@ -3133,8 +3130,8 @@ spec("turbo_script_mir_oop") {
                            "c = Counter();"
                            "result = c._value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3149,8 +3146,8 @@ spec("turbo_script_mir_oop") {
                            "c._value = 2;"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3162,8 +3159,8 @@ spec("turbo_script_mir_oop") {
                            "Counter.init();"
                            "result = Counter._value;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3176,8 +3173,8 @@ spec("turbo_script_mir_oop") {
                            "Counter.init();"
                            "result = Alias._value;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3189,8 +3186,8 @@ spec("turbo_script_mir_oop") {
                            "Counter._value = 1;"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3207,8 +3204,8 @@ spec("turbo_script_mir_oop") {
                            "Maker().make().value = 42;"
                            "result = 0;";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_JIT);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_JIT));
 
       turbo_script_free(ctx);
     }
@@ -3218,8 +3215,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { static _value() { return 1; } };"
                            "result = Counter._value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "Private"));
 
       turbo_script_free(ctx);
@@ -3234,10 +3231,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Counter().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3253,10 +3250,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Counter().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3267,8 +3264,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { private value() { return 1; } };"
                            "result = Counter().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3279,8 +3276,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { private value(x: map) { return 1; } };"
                            "result = Counter().value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3293,10 +3290,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { get() { return super.value() + 2; } };"
                            "result = Child().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3314,10 +3311,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child().get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3328,8 +3325,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Base { protected value() { return 1; } };"
                            "result = Base().value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3344,10 +3341,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3363,10 +3360,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Counter.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3377,8 +3374,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { private static value() { return 1; } };"
                            "result = Counter.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3389,8 +3386,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Counter { private static value(x: map) { return 1; } };"
                            "result = Counter.value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3403,10 +3400,10 @@ spec("turbo_script_mir_oop") {
                            "class Child extends Base { static get() { return super.value() + 2; } };"
                            "result = Child.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3424,10 +3421,10 @@ spec("turbo_script_mir_oop") {
                            "};"
                            "result = Child.get();";
 
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_double_eq(ts_get_num(ctx_jit, "result"), ts_get_num(ctx_interp, "result"), EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3438,8 +3435,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Base { protected static value() { return 1; } };"
                            "result = Base.value();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3450,8 +3447,8 @@ spec("turbo_script_mir_oop") {
       const char *script = "class Base { protected static value(x: map) { return 1; } };"
                            "result = Base.value(map {x: 1});";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "not accessible"));
 
       turbo_script_free(ctx);
@@ -3486,10 +3483,10 @@ spec("turbo_script_mir_oop") {
           "subject.notify(41);"
           "result = counter.value;";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_interp, "result"), 42.0, EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(42.0)) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3513,10 +3510,10 @@ spec("turbo_script_mir_oop") {
           "command.execute(41);"
           "result = counter.value;";
 
-      check_int_eq(turbo_script_run(ctx_interp, script), 0);
-      check_int_eq(turbo_script_run_jit(ctx_jit, script), 0);
-      check_double_eq(ts_get_num(ctx_interp, "result"), 42.0, EPS);
-      check_double_eq(ts_get_num(ctx_jit, "result"), 42.0, EPS);
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(42.0)) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <= (double)(EPS));
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
@@ -3528,8 +3525,8 @@ spec("turbo_script_mir_oop") {
                            "c = Counter();"
                            "result = c.missing();";
 
-      check_int_eq(turbo_script_run_jit(ctx, script), -1);
-      check_int_eq((int)turbo_script_get_error_code(ctx), (int)TURBO_SCRIPT_ERROR_RUNTIME);
+      check((turbo_script_run_jit(ctx, script)) == (-1));
+      check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_RUNTIME));
       check_not_null(strstr(turbo_script_get_error(ctx), "no method"));
 
       turbo_script_free(ctx);

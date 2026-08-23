@@ -15,8 +15,8 @@ spec("net_ctx") {
             check_not_null(ctx);
             check_null(ctx->client);
             check_null(ctx->ws_client);
-            check_size_eq(ctx->ws_task_connection_count, 0);
-            check_str_eq(ctx->error_msg, "");
+            check((ctx->ws_task_connection_count) == (0));
+            check(strcmp((ctx->error_msg), ("")) == 0);
             net_ctx_destroy(ctx);
         }
 
@@ -54,12 +54,12 @@ spec("net_ctx") {
             mem_pool_t arena = {0};
             mem_init(&arena, 256);
 
-            tstr_v sv = tstr_v_from_buf("hello", 5);
+            vstr sv = vstr_from_buf("hello", 5);
             char *cstr = net_arena_cstr(&arena, sv);
 
             check_not_null(cstr);
-            check_str_eq(cstr, "hello");
-            check_int_eq(strlen(cstr), 5);
+            check(strcmp((cstr), ("hello")) == 0);
+            check((strlen(cstr)) == (5));
 
             mem_destroy(&arena);
         }
@@ -68,8 +68,8 @@ spec("net_ctx") {
             mem_pool_t arena = {0};
             mem_init(&arena, 256);
 
-            tstr_v sv1 = tstr_v_from_buf("hello", 5);
-            tstr_v sv2 = tstr_v_from_buf("world", 5);
+            vstr sv1 = vstr_from_buf("hello", 5);
+            vstr sv2 = vstr_from_buf("world", 5);
 
             char *cstr1 = net_arena_cstr(&arena, sv1);
             char *cstr2 = net_arena_cstr(&arena, sv2);
@@ -77,8 +77,8 @@ spec("net_ctx") {
             check_not_null(cstr1);
             check_not_null(cstr2);
             check(cstr1 != cstr2);
-            check_str_eq(cstr1, "hello");
-            check_str_eq(cstr2, "world");
+            check(strcmp((cstr1), ("hello")) == 0);
+            check(strcmp((cstr2), ("world")) == 0);
 
             mem_destroy(&arena);
         }
@@ -87,11 +87,11 @@ spec("net_ctx") {
             mem_pool_t arena = {0};
             mem_init(&arena, 256);
 
-            tstr_v sv = tstr_v_from_buf("", 0);
+            vstr sv = vstr_from_buf("", 0);
             char *cstr = net_arena_cstr(&arena, sv);
 
             check_not_null(cstr);
-            check_str_eq(cstr, "");
+            check(strcmp((cstr), ("")) == 0);
 
             mem_destroy(&arena);
         }

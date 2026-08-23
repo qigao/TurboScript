@@ -39,9 +39,6 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc, exprtk_val
 exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env);
 exprtk_value_t eval_class_instantiation(const char *class_name, exprtk_node_t **arg_nodes,
                                         size_t arg_count, exprtk_env_t *env);
-time_t turbo_datetime_to_time(const turbo_datetime_t *dt);
-int turbo_datetime_format_rfc822(time_t t, char *buf, size_t buf_size);
-
 static void ts_mir_value_arg_error(exprtk_env_t *env, exprtk_node_t *node);
 static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
                                     exprtk_value_t *out);
@@ -492,7 +489,7 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     const char *r_data = NULL;
     size_t l_len = 0;
     size_t r_len = 0;
-    tstr_t data = NULL;
+    tstr data = NULL;
     exprtk_value_t promoted = { .type = EXPRTK_VAL_NULL };
 
     if (!ts_mir_runtime_value_text(lhs, l_buf, sizeof(l_buf), &l_data, &l_len) ||
@@ -507,7 +504,7 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
     if (r_len > 0) memcpy(data + l_len, r_data, r_len);
     data[l_len + r_len] = '\0';
     if (exprtk_value_copy_to_env(
-            exprtk_val_str(tstr_v_from_buf(data, l_len + r_len)), env,
+            exprtk_val_str(vstr_from_buf(data, l_len + r_len)), env,
             &promoted) != 0) {
       tstr_free(data);
       return 0;
@@ -585,8 +582,8 @@ static int ts_mir_eval_value_binary(exprtk_node_t *node, exprtk_env_t *env,
   }
 }
 
-static int ts_mir_template_append(tstr_t *buf, const char *data, size_t data_len) {
-  tstr_t next;
+static int ts_mir_template_append(tstr *buf, const char *data, size_t data_len) {
+  tstr next;
 
   if (!buf || !*buf || (!data && data_len > 0)) return 0;
   next = tstr_cat_len(*buf, data, data_len);
@@ -595,7 +592,7 @@ static int ts_mir_template_append(tstr_t *buf, const char *data, size_t data_len
   return 1;
 }
 
-static int ts_mir_template_append_value(tstr_t *buf, exprtk_value_t value) {
+static int ts_mir_template_append_value(tstr *buf, exprtk_value_t value) {
   char num_buf[64];
   int n;
 
@@ -652,7 +649,7 @@ static int ts_mir_runtime_template_value(exprtk_node_t *node, exprtk_env_t *env,
   const char *str;
   size_t len;
   size_t i = 0;
-  tstr_t result = NULL;
+  tstr result = NULL;
   exprtk_value_t promoted = { .type = EXPRTK_VAL_NULL };
 
   if (!node || !env || !out || node->type != EXPRTK_NODE_TEMPLATE_STRING) return 0;
@@ -717,7 +714,7 @@ static int ts_mir_runtime_template_value(exprtk_node_t *node, exprtk_env_t *env,
   }
 
   if (exprtk_value_copy_to_env(
-          exprtk_val_str(tstr_v_from_buf(result, tstr_len(result))), env,
+          exprtk_val_str(vstr_from_buf(result, tstr_len(result))), env,
           &promoted) != 0) {
     tstr_free(result);
     return 0;
@@ -957,7 +954,7 @@ static int ts_mir_runtime_for_in_value(exprtk_node_t *node, exprtk_env_t *env,
     const char *key = NULL;
     while (exprtk_map_iter_next(&it, &key, NULL)) {
       int done = 0;
-      tstr_v sv;
+      vstr sv;
       if (!ts_mir_runtime_loop_tick(env)) break;
       sv.data = (char *)key;
       sv.len = key ? strlen(key) : 0;
@@ -1653,7 +1650,7 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     size_t actual = 0;
     size_t cap = 0;
     exprtk_value_t *vals = NULL;
-    turbo_vec_t vector_data = {0};
+    vec_t vector_data = {0};
 
     for (size_t i = 0; i < node->data.vector.count; ++i) {
       exprtk_value_t value;
@@ -1720,17 +1717,18 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
       vals[actual++] = value;
     }
 
-    if (turbo_vec_init(&vector_data, sizeof(double)) != TURBO_OK ||
-        turbo_vec_reserve(&vector_data, actual) != TURBO_OK) {
-      if (vector_data.data) turbo_vec_destroy(&vector_data);
+    if (vec_init_bytes(&vector_data, sizeof(double), _Alignof(double),
+                       actual > 0 ? actual : 1) != STL_OK ||
+        vec_reserve(&vector_data, actual) != STL_OK) {
+      if (vector_data.data) vec_destroy(&vector_data);
       exprtk_values_destroy(vals, actual);
       free(vals);
       return 0;
     }
     for (size_t i = 0; i < actual; ++i) {
       double element_value = ts_mir_numeric_value(vals[i]);
-      if (turbo_vec_push(&vector_data, &element_value) != TURBO_OK) {
-        turbo_vec_destroy(&vector_data);
+      if (vec_push(&vector_data, &element_value) != STL_OK) {
+        vec_destroy(&vector_data);
         exprtk_values_destroy(vals, actual);
         free(vals);
         return 0;
@@ -1738,12 +1736,12 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env,
     }
     if (exprtk_value_copy_to_env(
             exprtk_val_vec((double *)vector_data.data, vector_data.size), env, out) != 0) {
-      turbo_vec_destroy(&vector_data);
+      vec_destroy(&vector_data);
       exprtk_values_destroy(vals, actual);
       free(vals);
       return 0;
     }
-    turbo_vec_destroy(&vector_data);
+    vec_destroy(&vector_data);
     exprtk_values_destroy(vals, actual);
     free(vals);
     return 1;

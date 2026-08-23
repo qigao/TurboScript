@@ -6,6 +6,7 @@
 #ifndef exprtk_H
 #define exprtk_H
 
+#include "exprtk_export.h"
 #include "platform.h"
 #include "exprtk_module.h"
 #include "exprtk_types.h"
@@ -17,34 +18,34 @@ extern "C" {
 
 
 // Parse the input string into an AST (simplified API, creates internal arena if needed)
-CXX_C_API exprtk_node_t *exprtk_parse(const char *input, size_t length);
+EXPRTK_C_API exprtk_node_t *exprtk_parse(const char *input, size_t length);
 
 // Extended parse API allowing custom arena and error reporting
-CXX_C_API exprtk_node_t *exprtk_parse_ext(const char *input, size_t length, mem_pool_t *arena, int *error,
+EXPRTK_C_API exprtk_node_t *exprtk_parse_ext(const char *input, size_t length, mem_pool_t *arena, int *error,
                                           char *error_msg, size_t error_msg_len);
 
 // Validate AST (undefined variables, duplicate params, simple type checks)
-CXX_C_API int exprtk_validate(exprtk_node_t *root, exprtk_env_t *env, char *error_msg, size_t msg_len);
+EXPRTK_C_API int exprtk_validate(exprtk_node_t *root, exprtk_env_t *env, char *error_msg, size_t msg_len);
 
 // Clean up (frees the arena)
-CXX_C_API void exprtk_free(exprtk_node_t *node);
+EXPRTK_C_API void exprtk_free(exprtk_node_t *node);
 
 // Evaluate AST
-CXX_C_API exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env);
+EXPRTK_C_API exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env);
 
 // Complexity checks
-CXX_C_API size_t exprtk_node_count(const exprtk_node_t *node);
-CXX_C_API size_t exprtk_node_depth(const exprtk_node_t *node);
+EXPRTK_C_API size_t exprtk_node_count(const exprtk_node_t *node);
+EXPRTK_C_API size_t exprtk_node_depth(const exprtk_node_t *node);
 
 // Node allocation (internal/parser use)
-CXX_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_t type);
+EXPRTK_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_t type);
 
 // Environment management
-CXX_C_API void exprtk_env_init(exprtk_env_t *env);
-CXX_C_API void exprtk_env_free(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_init(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_free(exprtk_env_t *env);
 
 /** Retain a captured snapshot environment (no-op for non-snapshot scopes). */
-CXX_C_API void exprtk_env_retain(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_retain(exprtk_env_t *env);
 
 /**
  * Create a captured snapshot that copies only the named variables instead of
@@ -52,7 +53,7 @@ CXX_C_API void exprtk_env_retain(exprtk_env_t *env);
  * repeated closure assignment does not chain-capture the previous closure.
  * Pass NULL/0 for names to copy everything (class closures, module imports).
  */
-CXX_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
+EXPRTK_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
                                                   const char *const *names,
                                                   size_t name_count);
 
@@ -62,13 +63,13 @@ CXX_C_API exprtk_env_t *exprtk_env_snapshot_names(exprtk_env_t *env,
  * capturing snapshot. Returns a NULL-terminated string array or NULL on OOM;
  * the array and strings are allocated in @p arena.
  */
-CXX_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
+EXPRTK_C_API char **exprtk_collect_closure_free_vars(const exprtk_node_t *body,
                                                   exprtk_node_t *const *arg_params,
                                                   size_t arg_count,
                                                   mem_pool_t *arena);
 
 /** Release a captured snapshot environment; freed when the last reference drops. */
-CXX_C_API void exprtk_env_release(exprtk_env_t *env);
+EXPRTK_C_API void exprtk_env_release(exprtk_env_t *env);
 
 /**
  * Reclaim snapshot environments on @p root closure chain that were created by
@@ -77,95 +78,95 @@ CXX_C_API void exprtk_env_release(exprtk_env_t *env);
  * so short-lived closures do not accumulate. Thread-local ownership makes
  * concurrent sweeps from the host and the event-loop thread safe.
  */
-CXX_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
+EXPRTK_C_API void exprtk_env_sweep_closures(exprtk_env_t *root);
 /**
  * Store a value in an environment owner domain. Borrowed and cross-domain
  * values are copied. An owned mem_buffer payload already belonging to this
  * environment may be adopted; callers must then treat the argument as moved.
  */
-CXX_C_API void exprtk_env_set(exprtk_env_t *env, const char *name, exprtk_value_t value);
-CXX_C_API void exprtk_env_set_local(exprtk_env_t *env, const char *name, exprtk_value_t value);
+EXPRTK_C_API void exprtk_env_set(exprtk_env_t *env, const char *name, exprtk_value_t value);
+EXPRTK_C_API void exprtk_env_set_local(exprtk_env_t *env, const char *name, exprtk_value_t value);
 /** Return a borrowed value invalidated by replacement or environment release. */
-CXX_C_API exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name);
+EXPRTK_C_API exprtk_value_t exprtk_env_get(exprtk_env_t *env, const char *name);
 /** Return an independently owned value; destroy it unless ownership is moved. */
-CXX_C_API exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value,
+EXPRTK_C_API exprtk_value_t exprtk_value_clone_to_env(exprtk_value_t value,
                                                     exprtk_env_t *dst_env);
-CXX_C_API int exprtk_env_has(exprtk_env_t *env, const char *name);
-CXX_C_API void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native_fn fn,
+EXPRTK_C_API int exprtk_env_has(exprtk_env_t *env, const char *name);
+EXPRTK_C_API void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native_fn fn,
                                         void *user_data);
-CXX_C_API int exprtk_env_has_func(exprtk_env_t *env, const char *name);
-CXX_C_API void exprtk_env_set_constant(exprtk_env_t *env, const char *name, exprtk_value_t value);
-CXX_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
+EXPRTK_C_API int exprtk_env_has_func(exprtk_env_t *env, const char *name);
+EXPRTK_C_API void exprtk_env_set_constant(exprtk_env_t *env, const char *name, exprtk_value_t value);
+EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
 
 // OOP - Class registration
-CXX_C_API void exprtk_env_register_class(exprtk_env_t *env, const char *name, struct exprtk_class_s *klass);
-CXX_C_API struct exprtk_class_s *exprtk_env_lookup_class(exprtk_env_t *env, const char *name);
+EXPRTK_C_API void exprtk_env_register_class(exprtk_env_t *env, const char *name, struct exprtk_class_s *klass);
+EXPRTK_C_API struct exprtk_class_s *exprtk_env_lookup_class(exprtk_env_t *env, const char *name);
 
-CXX_C_API int exprtk_env_last_line(const exprtk_env_t *env);
-CXX_C_API int exprtk_env_last_column(const exprtk_env_t *env);
+EXPRTK_C_API int exprtk_env_last_line(const exprtk_env_t *env);
+EXPRTK_C_API int exprtk_env_last_column(const exprtk_env_t *env);
 
 // Global Registry
-CXX_C_API void exprtk_registry_init(void);
-CXX_C_API void exprtk_registry_add_module(const exprtk_module_t *mod);
-CXX_C_API exprtk_builtin_fn exprtk_registry_find(const char *name);
+EXPRTK_C_API void exprtk_registry_init(void);
+EXPRTK_C_API void exprtk_registry_add_module(const exprtk_module_t *mod);
+EXPRTK_C_API exprtk_builtin_fn exprtk_registry_find(const char *name);
 
 /**
  * @brief Full internal call dispatch (user functions + module registry).
  * Called by the evaluator for NODE_FUNCTION_CALL.
  */
-CXX_C_API exprtk_value_t exprtk_call_internal(const char *name, size_t argc, exprtk_value_t *args,
+EXPRTK_C_API exprtk_value_t exprtk_call_internal(const char *name, size_t argc, exprtk_value_t *args,
                                               exprtk_env_t *env);
 
 /**
  * Invoke a builtin with an ephemeral scratch pool and promote its result into
  * @p env. Builtins must not retain scratch pointers after returning.
  */
-CXX_C_API exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
                                              exprtk_value_t *args, exprtk_env_t *env);
 
-CXX_C_API exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env);
+EXPRTK_C_API exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env);
 
 /* OOP runtime entry points used by JIT lowering. These operate on already-lowered
  * names and numeric arguments instead of evaluating arbitrary AST expressions. */
-CXX_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const char *source_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, exprtk_env_t *env);
+EXPRTK_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const char *source_name,
                                                 exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class_value,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class_value,
                                                             const char *class_name, size_t argc,
                                                             exprtk_value_t *args,
                                                             exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
                                                         const char *method_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_member_call_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_member_call_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_numeric(const char *object_name,
                                                              const char *expected_class_name,
                                                              const char *method_name, size_t argc,
                                                              const double *argv,
                                                              exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, const exprtk_node_t *call_node, exprtk_env_t *env);
 typedef struct exprtk_oop_method_cache_s {
@@ -183,41 +184,41 @@ typedef struct exprtk_oop_field_cache_s {
   int access_level;
   int is_static;
 } exprtk_oop_field_cache_t;
-CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_cached_numeric(
     const char *object_name, const char *method_name, exprtk_oop_method_cache_t *cache,
     size_t argc, const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
     const char *object_name, const char *method_name, exprtk_oop_method_cache_t *cache,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_method, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_method, size_t argc,
                                                       exprtk_value_t *args, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_value, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_value, size_t argc,
                                                     exprtk_value_t *args, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_get_member(const char *object_name, const char *member_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member(const char *object_name, const char *member_name,
                                                exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member_checked(
     const char *object_name, const char *member_name, const exprtk_node_t *object_node,
     exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
     const char *object_name, const char *member_name, exprtk_oop_field_cache_t *cache,
     const exprtk_node_t *object_node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_set_member_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_numeric(const char *object_name,
                                                        const char *member_name, double value,
                                                        exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
     const char *object_name, const char *member_name, double value,
     const exprtk_node_t *object_node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
     const char *object_name, const char *member_name, double value,
     exprtk_oop_field_cache_t *cache, const exprtk_node_t *object_node, exprtk_env_t *env);
-CXX_C_API exprtk_value_t exprtk_oop_instanceof_name(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instanceof_name(const char *object_name,
                                                     const char *class_name, exprtk_env_t *env);
 
-CXX_C_API exprtk_node_t *exprtk_node_copy(const exprtk_node_t *src, mem_pool_t *dest_arena);
-CXX_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_t type);
-CXX_C_API void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *env,
+EXPRTK_C_API exprtk_node_t *exprtk_node_copy(const exprtk_node_t *src, mem_pool_t *dest_arena);
+EXPRTK_C_API exprtk_node_t *exprtk_node_create(mem_pool_t *arena, exprtk_node_type_t type);
+EXPRTK_C_API void eval_destructure(exprtk_node_t *target, exprtk_value_t rhs, exprtk_env_t *env,
                                 int is_constant);
-CXX_C_API void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent);
+EXPRTK_C_API void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent);
 
 /* =========================================================================
  * Coroutine API
@@ -231,7 +232,7 @@ CXX_C_API void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent);
  * @param arg_count 参数数量
  * @return 协程实例，或 NULL
  */
-CXX_C_API exprtk_coroutine_t *exprtk_coroutine_create(
+EXPRTK_C_API exprtk_coroutine_t *exprtk_coroutine_create(
     exprtk_env_t *env,
     exprtk_node_t *generator_node,
     exprtk_value_t *args,
@@ -243,7 +244,7 @@ CXX_C_API exprtk_coroutine_t *exprtk_coroutine_create(
  * @param coro 协程实例
  * @return 1 如果有值，0 如果完成，-1 如果错误
  */
-CXX_C_API int exprtk_coroutine_next(exprtk_coroutine_t *coro);
+EXPRTK_C_API int exprtk_coroutine_next(exprtk_coroutine_t *coro);
 
 /**
  * @brief 向协程发送值（send）
@@ -251,33 +252,33 @@ CXX_C_API int exprtk_coroutine_next(exprtk_coroutine_t *coro);
  * @param value 发送的值
  * @return 1 如果有值，0 如果完成，-1 如果错误
  */
-CXX_C_API int exprtk_coroutine_send(exprtk_coroutine_t *coro, exprtk_value_t value);
+EXPRTK_C_API int exprtk_coroutine_send(exprtk_coroutine_t *coro, exprtk_value_t value);
 
 /**
  * @brief 获取协程当前值
  * @param coro 协程实例
  * @return 当前 yield 的值
  */
-CXX_C_API exprtk_value_t exprtk_coroutine_value(const exprtk_coroutine_t *coro);
+EXPRTK_C_API exprtk_value_t exprtk_coroutine_value(const exprtk_coroutine_t *coro);
 
 /**
  * @brief 检查协程是否完成
  * @param coro 协程实例
  * @return 1 如果完成，0 如果未完成
  */
-CXX_C_API int exprtk_coroutine_done(const exprtk_coroutine_t *coro);
+EXPRTK_C_API int exprtk_coroutine_done(const exprtk_coroutine_t *coro);
 
 /**
  * @brief 增加协程引用计数
  * @param coro 协程实例
  */
-CXX_C_API void exprtk_coroutine_retain(exprtk_coroutine_t *coro);
+EXPRTK_C_API void exprtk_coroutine_retain(exprtk_coroutine_t *coro);
 
 /**
  * @brief 减少协程引用计数，为 0 时释放
  * @param coro 协程实例
  */
-CXX_C_API void exprtk_coroutine_release(exprtk_coroutine_t *coro);
+EXPRTK_C_API void exprtk_coroutine_release(exprtk_coroutine_t *coro);
 
 #ifdef __cplusplus
 }

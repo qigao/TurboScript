@@ -88,11 +88,10 @@ spec("turbo_script_timer") {
     it("fails fast when no serialized executor is configured") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);
-      check_int_lt(turbo_script_run(ctx, "import(\"timer\");"
-                                         "job = timer.after(1, () => 1);"),
-                   0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_STATE);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
+      check((turbo_script_run(ctx, "import(\"timer\");"
+                                         "job = timer.after(1, () => 1);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_STATE));
+      check((turbo_script_timer_active_count(ctx)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -101,16 +100,15 @@ spec("turbo_script_timer") {
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(timer_test_run(ctx, "import(\"timer\");"
-                                       "job = timer.after(5, () => { timer.status(1); });"),
-                   0);
-      check_size_eq(turbo_script_timer_active_count(ctx), 1);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
-      check_size_eq(turbo_script_timer_failed_count(ctx), 0);
+      check((timer_test_run(ctx, "import(\"timer\");"
+                                       "job = timer.after(5, () => { timer.status(1); });")) == (0));
+      check((turbo_script_timer_active_count(ctx)) == (1));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_timer_active_count(ctx)) == (0));
+      check((turbo_script_timer_failed_count(ctx)) == (0));
 
-      check_int_eq(timer_test_run(ctx, "state = timer.status(job);"), 0);
-      check_str_eq(ts_get_str(ctx, "state"), "completed");
+      check((timer_test_run(ctx, "state = timer.status(job);")) == (0));
+      check(strcmp((ts_get_str(ctx, "state")), ("completed")) == 0);
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -127,16 +125,15 @@ spec("turbo_script_timer") {
       atomic_init(&probe.inside_coro, 0);
       ts_bind_func(ctx, "timer_probe", timer_coro_probe, &probe);
 
-      check_int_eq(timer_test_run(ctx, "import(\"timer\");"
+      check((timer_test_run(ctx, "import(\"timer\");"
                                        "first = timer.after(1, () => { timer_probe(); });"
-                                       "second = timer.after(1, () => { timer_probe(); });"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_int_eq(atomic_load_explicit(&probe.calls, memory_order_acquire), 2);
-      check_int_eq(atomic_load_explicit(&probe.inside_coro, memory_order_acquire), 2);
-      check_int_eq(atomic_load_explicit(&probe.max_active, memory_order_acquire), 1);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
-      check_size_eq(turbo_script_timer_failed_count(ctx), 0);
+                                       "second = timer.after(1, () => { timer_probe(); });")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((atomic_load_explicit(&probe.calls, memory_order_acquire)) == (2));
+      check((atomic_load_explicit(&probe.inside_coro, memory_order_acquire)) == (2));
+      check((atomic_load_explicit(&probe.max_active, memory_order_acquire)) == (1));
+      check((turbo_script_timer_active_count(ctx)) == (0));
+      check((turbo_script_timer_failed_count(ctx)) == (0));
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -145,21 +142,19 @@ spec("turbo_script_timer") {
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(timer_test_run(ctx, "job = timer.after(1, () => {"
+      check((timer_test_run(ctx, "job = timer.after(1, () => {"
                                        "  task.sleep(5000); return 1;"
                                        "});"
                                        "canceller = task.spawn(() => {"
                                        "  task.sleep(20); return timer.cancel(job);"
-                                       "});"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
-      check_size_eq(turbo_script_task_active_count(ctx), 0);
-      check_int_eq(timer_test_run(ctx, "timer_state = timer.status(job);"
-                                       "cancel_accepted = task.result(canceller);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "timer_state"), "cancelled");
-      check_float_eq(ts_get_num(ctx, "cancel_accepted"), 1.0, 0.001);
+                                       "});")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_timer_active_count(ctx)) == (0));
+      check((turbo_script_task_active_count(ctx)) == (0));
+      check((timer_test_run(ctx, "timer_state = timer.status(job);"
+                                       "cancel_accepted = task.result(canceller);")) == (0));
+      check(strcmp((ts_get_str(ctx, "timer_state")), ("cancelled")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "cancel_accepted")) - (double)(1.0)) <= (double)(0.001));
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -168,22 +163,20 @@ spec("turbo_script_timer") {
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(timer_test_run(ctx, "import(\"net\");"
+      check((timer_test_run(ctx, "import(\"net\");"
                                        "import(\"timer\");"
                                        "request = timer.after(1, () => {"
                                        "  http.get(\"http://127.0.0.1:1/\","
                                        "           {timeout: 100});"
                                        "});"
-                                       "later = timer.after(25, () => 1);"),
-                   0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
-      check_size_eq(turbo_script_timer_failed_count(ctx), 0);
-      check_int_eq(timer_test_run(ctx, "request_state = timer.status(request);"
-                                       "later_state = timer.status(later);"),
-                   0);
-      check_str_eq(ts_get_str(ctx, "request_state"), "completed");
-      check_str_eq(ts_get_str(ctx, "later_state"), "completed");
+                                       "later = timer.after(25, () => 1);")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_timer_active_count(ctx)) == (0));
+      check((turbo_script_timer_failed_count(ctx)) == (0));
+      check((timer_test_run(ctx, "request_state = timer.status(request);"
+                                       "later_state = timer.status(later);")) == (0));
+      check(strcmp((ts_get_str(ctx, "request_state")), ("completed")) == 0);
+      check(strcmp((ts_get_str(ctx, "later_state")), ("completed")) == 0);
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -192,14 +185,14 @@ spec("turbo_script_timer") {
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_eq(timer_test_run(ctx, "job = timer.every(5, () => { throw \"stop\"; });"), 0);
-      check_int_eq(coro_context_run(coro_ctx, TURBO_RUN_DEFAULT), 0);
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
-      check_size_eq(turbo_script_timer_failed_count(ctx), 1);
-      check_int_eq(timer_test_run(ctx, "state = timer.status(job);"), 0);
-      check_str_eq(ts_get_str(ctx, "state"), "failed");
-      check_int_eq(timer_test_run(ctx, "callback_error = timer.error(job);"), 0);
-      check_str_eq(ts_get_str(ctx, "callback_error"), "stop");
+      check((timer_test_run(ctx, "job = timer.every(5, () => { throw \"stop\"; });")) == (0));
+      check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
+      check((turbo_script_timer_active_count(ctx)) == (0));
+      check((turbo_script_timer_failed_count(ctx)) == (1));
+      check((timer_test_run(ctx, "state = timer.status(job);")) == (0));
+      check(strcmp((ts_get_str(ctx, "state")), ("failed")) == 0);
+      check((timer_test_run(ctx, "callback_error = timer.error(job);")) == (0));
+      check(strcmp((ts_get_str(ctx, "callback_error")), ("stop")) == 0);
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -208,16 +201,15 @@ spec("turbo_script_timer") {
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
 
-      check_int_lt(turbo_script_run(ctx, "job = timer.cron(\"invalid cron\", () => 1);"), 0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_ARGUMENT);
+      check((turbo_script_run(ctx, "job = timer.cron(\"invalid cron\", () => 1);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_ARGUMENT));
 
-      check_int_eq(timer_test_run(ctx, "job = timer.cron(\"* * * * *\", () => 1);"
+      check((timer_test_run(ctx, "job = timer.cron(\"* * * * *\", () => 1);"
                                        "cancelled = timer.cancel(job);"
-                                       "state = timer.status(job);"),
-                   0);
-      check_float_eq(ts_get_num(ctx, "cancelled"), 1.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "state"), "cancelled");
-      check_size_eq(turbo_script_timer_active_count(ctx), 0);
+                                       "state = timer.status(job);")) == (0));
+      check(fabs((double)(ts_get_num(ctx, "cancelled")) - (double)(1.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "state")), ("cancelled")) == 0);
+      check((turbo_script_timer_active_count(ctx)) == (0));
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -225,12 +217,11 @@ spec("turbo_script_timer") {
       coro_context_t *coro_ctx = NULL;
       turbo_script_ctx_t *ctx = timer_test_context(&coro_ctx);
       check_not_null(ctx);
-      check_int_eq(turbo_script_set_timer_capacity(ctx, 1), 0);
-      check_int_lt(turbo_script_run(ctx, "first = timer.after(1000, () => 1);"
-                                         "second = timer.after(1000, () => 2);"),
-                   0);
-      check_int_eq(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_STATE);
-      check_size_eq(turbo_script_timer_active_count(ctx), 1);
+      check((turbo_script_set_timer_capacity(ctx, 1)) == (0));
+      check((turbo_script_run(ctx, "first = timer.after(1000, () => 1);"
+                                         "second = timer.after(1000, () => 2);")) < (0));
+      check((turbo_script_get_error_code(ctx)) == (TURBO_SCRIPT_ERROR_STATE));
+      check((turbo_script_timer_active_count(ctx)) == (1));
       timer_test_destroy(ctx, coro_ctx);
     }
 
@@ -241,14 +232,14 @@ spec("turbo_script_timer") {
       int attempts = 0;
       atomic_init(&queued.ready, 0);
       check_not_null(ctx);
-      check_int_eq(turbo_script_set_executor(ctx, &executor), 0);
-      check_int_eq(timer_test_run(ctx, "job = timer.after(1, () => 1);"), 0);
+      check((turbo_script_set_executor(ctx, &executor)) == (0));
+      check((timer_test_run(ctx, "job = timer.after(1, () => 1);")) == (0));
 
       while (!atomic_load_explicit(&queued.ready, memory_order_acquire) && attempts < 100) {
         turbo_sleep_ms(1);
         attempts++;
       }
-      check_int_eq(atomic_load_explicit(&queued.ready, memory_order_acquire), 1);
+      check((atomic_load_explicit(&queued.ready, memory_order_acquire)) == (1));
       check_not_null(queued.task);
 
       turbo_script_free(ctx);

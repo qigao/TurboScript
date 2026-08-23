@@ -48,7 +48,7 @@ spec("turbo_script_scientific") {
                            "hm = harmonic_mean(v);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Stats Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double med = ts_get_num(ctx, "med");
       double p75 = ts_get_num(ctx, "p75");
@@ -61,12 +61,12 @@ spec("turbo_script_scientific") {
       printf("  Geometric Mean: %.4f\n", gm);
       printf("  Harmonic Mean: %.4f\n", hm);
 
-      check_float_eq(med, 5.5, 0.1);
-      check_float_gt(p75, med);
+      check(fabs((double)(med) - (double)(5.5)) <= (double)(0.1));
+      check((p75) > (med));
       // Uniform distribution: skewness ≈ 0
-      check_float_eq(sk, 0.0, 0.5);
+      check(fabs((double)(sk) - (double)(0.0)) <= (double)(0.5));
       // GM < AM < nothing, HM < GM
-      check_float_lt(hm, gm);
+      check((hm) < (gm));
 
       turbo_script_free(ctx);
     }
@@ -81,10 +81,10 @@ spec("turbo_script_scientific") {
                            "cs_len = vec.len(cs);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Stats2 Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "cs_last"), 14.0, 0.001); // 3+1+4+1+5
-      check_float_eq(ts_get_num(ctx, "cs_len"), 5.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "cs_last")) - (double)(14.0)) <= (double)(0.001)); // 3+1+4+1+5
+      check(fabs((double)(ts_get_num(ctx, "cs_len")) - (double)(5.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -105,14 +105,14 @@ spec("turbo_script_scientific") {
                            "h = ts.hurst(v);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("TimeSeries Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double d_len = ts_get_num(ctx, "d_len");
       double ac_len = ts_get_num(ctx, "ac_len");
       printf("  Diff len: %.0f\n", d_len);
       printf("  Autocorr len: %.0f\n", ac_len);
-      check_float_gt(d_len, 0.0);
-      check_float_gt(ac_len, 0.0);
+      check((d_len) > (0.0));
+      check((ac_len) > (0.0));
 
       turbo_script_free(ctx);
     }
@@ -129,15 +129,15 @@ spec("turbo_script_scientific") {
           "slope = derivative(\"f\", 2);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Calculus Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
       double area = ts_get_num(ctx, "area");
       double slope = ts_get_num(ctx, "slope");
       printf("  Integral of x^2 from 0..3: %.4f (expected 9)\n", area);
       printf("  Derivative of x^2 at x=2: %.4f (expected 4)\n", slope);
 
-      check_float_eq(area, 9.0, 0.01);
-      check_float_eq(slope, 4.0, 0.01);
+      check(fabs((double)(area) - (double)(9.0)) <= (double)(0.01));
+      check(fabs((double)(slope) - (double)(4.0)) <= (double)(0.01));
 
       turbo_script_free(ctx);
     }
@@ -157,18 +157,18 @@ spec("turbo_script_scientific") {
                            "ab = abs(-42); "
                            "fib = fibonacci(10); "
                            "g = gcd(12, 8);";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
 
-      check_float_eq(ts_get_num(ctx, "s"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "sq"), 12.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "lg"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cl"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "fl"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rn"), 3.0, 1.0); // platform-dependent rounding
-      check_float_eq(ts_get_num(ctx, "ab"), 42.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "fib"), 55.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "g"), 4.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "s")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "sq")) - (double)(12.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "lg")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cl")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "fl")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rn")) - (double)(3.0)) <= (double)(1.0)); // platform-dependent rounding
+      check(fabs((double)(ts_get_num(ctx, "ab")) - (double)(42.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "fib")) - (double)(55.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "g")) - (double)(4.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -186,12 +186,12 @@ spec("turbo_script_scientific") {
                            "ix = index_of(\"foobar\", \"bar\"); "
                            "ss = substr(\"hello world\", 6, 5); "
                            "rp = replace(\"aabbcc\", \"bb\", \"XX\");";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
 
-      check_float_eq(ts_get_num(ctx, "ct"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "sw"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ew"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ix"), 3.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "ct")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "sw")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ew")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ix")) - (double)(3.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -206,14 +206,14 @@ spec("turbo_script_scientific") {
                            "num = to_num(\"42.5\"); "
                            "ival = to_int(\"0x10\"); "
                            "truth = to_bool(\"YES\");";
-      check_int_eq(turbo_script_run(ctx, script), 0);
+      check((turbo_script_run(ctx, script)) == (0));
 
-      check_float_eq(ts_get_num(ctx, "count"), 3.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "tok"), "20");
-      check_float_eq(ts_get_num(ctx, "total"), 60.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "num"), 42.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "ival"), 16.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "truth"), 1.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "count")) - (double)(3.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "tok")), ("20")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(60.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "num")) - (double)(42.5)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ival")) - (double)(16.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "truth")) - (double)(1.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -230,12 +230,12 @@ spec("turbo_script_scientific") {
                            "var total = valid + len + idx;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("UTF8 string Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "total"), 7.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "slice"), "\xE4\xBD\xA0" "\xF0\x9F\x99\x82");
-      check_str_eq(ts_get_str(ctx, "upper"), "\xC3\x89");
-      check_str_eq(ts_get_str(ctx, "lower"), "\xC3\xA9");
+      check(fabs((double)(ts_get_num(ctx, "total")) - (double)(7.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "slice")), ("\xE4\xBD\xA0" "\xF0\x9F\x99\x82")) == 0);
+      check(strcmp((ts_get_str(ctx, "upper")), ("\xC3\x89")) == 0);
+      check(strcmp((ts_get_str(ctx, "lower")), ("\xC3\xA9")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -249,10 +249,10 @@ spec("turbo_script_scientific") {
                            "parts[1].length() + parts[2].length() + chars.length();";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String split/join Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 15.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "joined"), "alpha|beta|");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(15.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "joined")), ("alpha|beta|")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -267,11 +267,11 @@ spec("turbo_script_scientific") {
                            "var score = cp + last + utf8_len(rev);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("UTF8 helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 20327.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "ch"), "\xE4\xBD\xA0");
-      check_str_eq(ts_get_str(ctx, "rev"), "\xE4\xBD\xA0" "\xF0\x9F\x99\x82" "\xE4\xBD\xA0" "a");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(20327.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "ch")), ("\xE4\xBD\xA0")) == 0);
+      check(strcmp((ts_get_str(ctx, "rev")), ("\xE4\xBD\xA0" "\xF0\x9F\x99\x82" "\xE4\xBD\xA0" "a")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -290,12 +290,12 @@ spec("turbo_script_scientific") {
                            "var score = cp0 + cp1 + cp2 + byte + bytes;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Codepoint helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 169343.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "built"), "\xE4\xBD\xA0" "\xF0\x9F\x99\x82");
-      check_str_eq(ts_get_str(ctx, "single"), "\xE4\xBD\xA0");
-      check_str_eq(ts_get_str(ctx, "sliced"), "\xE4\xBD\xA0" "\xF0\x9F\x99\x82");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(169343.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "built")), ("\xE4\xBD\xA0" "\xF0\x9F\x99\x82")) == 0);
+      check(strcmp((ts_get_str(ctx, "single")), ("\xE4\xBD\xA0")) == 0);
+      check(strcmp((ts_get_str(ctx, "sliced")), ("\xE4\xBD\xA0" "\xF0\x9F\x99\x82")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -310,12 +310,12 @@ spec("turbo_script_scientific") {
                            "var score = lines.length() + count;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Data string helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 5.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "escaped"), "\"a,\"\"b\"\"\n\"");
-      check_str_eq(ts_get_str(ctx, "raw"), "a,\"b\"\n");
-      check_str_eq(ts_get_str(ctx, "repeated"), "ababab");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(5.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "escaped")), ("\"a,\"\"b\"\"\n\"")) == 0);
+      check(strcmp((ts_get_str(ctx, "raw")), ("a,\"b\"\n")) == 0);
+      check(strcmp((ts_get_str(ctx, "repeated")), ("ababab")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -337,19 +337,19 @@ spec("turbo_script_scientific") {
                            "var score = ci_eq + ci_contains;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String cleanup helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 2.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "trimmed"), "value");
-      check_str_eq(ts_get_str(ctx, "left"), "value..");
-      check_str_eq(ts_get_str(ctx, "right"), "..value");
-      check_str_eq(ts_get_str(ctx, "once"), "baa");
-      check_str_eq(ts_get_str(ctx, "no_prefix"), "name");
-      check_str_eq(ts_get_str(ctx, "no_suffix"), "name");
-      check_str_eq(ts_get_str(ctx, "padded_left"), "\xF0\x9F\x99\x82" "\xF0\x9F\x99\x82" "\xE4\xBD\xA0");
-      check_str_eq(ts_get_str(ctx, "padded_right"), "x..");
-      check_float_eq(ts_get_num(ctx, "bad_prefix"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "bad_suffix"), 0.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(2.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "trimmed")), ("value")) == 0);
+      check(strcmp((ts_get_str(ctx, "left")), ("value..")) == 0);
+      check(strcmp((ts_get_str(ctx, "right")), ("..value")) == 0);
+      check(strcmp((ts_get_str(ctx, "once")), ("baa")) == 0);
+      check(strcmp((ts_get_str(ctx, "no_prefix")), ("name")) == 0);
+      check(strcmp((ts_get_str(ctx, "no_suffix")), ("name")) == 0);
+      check(strcmp((ts_get_str(ctx, "padded_left")), ("\xF0\x9F\x99\x82" "\xF0\x9F\x99\x82" "\xE4\xBD\xA0")) == 0);
+      check(strcmp((ts_get_str(ctx, "padded_right")), ("x..")) == 0);
+      check(fabs((double)(ts_get_num(ctx, "bad_prefix")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "bad_suffix")) - (double)(0.0)) <= (double)(0.001));
 
       turbo_script_free(ctx);
     }
@@ -375,19 +375,19 @@ spec("turbo_script_scientific") {
                            "var score = sw + ew + p.length() + rp.length() + words.length() + cells.length();";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String partition/csv helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 14.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "p0"), "a");
-      check_str_eq(ts_get_str(ctx, "p1"), "=");
-      check_str_eq(ts_get_str(ctx, "p2"), "b=c");
-      check_str_eq(ts_get_str(ctx, "rp0"), "a=b");
-      check_str_eq(ts_get_str(ctx, "rp1"), "=");
-      check_str_eq(ts_get_str(ctx, "rp2"), "c");
-      check_str_eq(ts_get_str(ctx, "word1"), "beta");
-      check_str_eq(ts_get_str(ctx, "cell1"), "b,c");
-      check_str_eq(ts_get_str(ctx, "cell2"), "d\"e");
-      check_str_eq(ts_get_str(ctx, "line"), "a,\"b,c\",\"d\"\"e\"");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(14.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "p0")), ("a")) == 0);
+      check(strcmp((ts_get_str(ctx, "p1")), ("=")) == 0);
+      check(strcmp((ts_get_str(ctx, "p2")), ("b=c")) == 0);
+      check(strcmp((ts_get_str(ctx, "rp0")), ("a=b")) == 0);
+      check(strcmp((ts_get_str(ctx, "rp1")), ("=")) == 0);
+      check(strcmp((ts_get_str(ctx, "rp2")), ("c")) == 0);
+      check(strcmp((ts_get_str(ctx, "word1")), ("beta")) == 0);
+      check(strcmp((ts_get_str(ctx, "cell1")), ("b,c")) == 0);
+      check(strcmp((ts_get_str(ctx, "cell2")), ("d\"e")) == 0);
+      check(strcmp((ts_get_str(ctx, "line")), ("a,\"b,c\",\"d\"\"e\"")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -410,20 +410,20 @@ spec("turbo_script_scientific") {
                            "var score = gl + split.length();";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Python/JS string helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 6.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "fmt"), "x:42:{}");
-      check_str_eq(ts_get_str(ctx, "norm"), "\xC3\xA9");
-      check_str_eq(ts_get_str(ctx, "gs"), "\xE4\xBD\xA0");
-      check_str_eq(ts_get_str(ctx, "gr"), "b" "\xE4\xBD\xA0" "a");
-      check_str_eq(ts_get_str(ctx, "titled"), "Hello Turbo Script");
-      check_str_eq(ts_get_str(ctx, "cap"), "Hello");
-      check_str_eq(ts_get_str(ctx, "swapped"), "aBc1");
-      check_str_eq(ts_get_str(ctx, "folded"), "\xC3\xA9");
-      check_str_eq(ts_get_str(ctx, "removed"), "ab");
-      check_str_eq(ts_get_str(ctx, "kept"), "123");
-      check_str_eq(ts_get_str(ctx, "trans"), "123xyz");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(6.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "fmt")), ("x:42:{}")) == 0);
+      check(strcmp((ts_get_str(ctx, "norm")), ("\xC3\xA9")) == 0);
+      check(strcmp((ts_get_str(ctx, "gs")), ("\xE4\xBD\xA0")) == 0);
+      check(strcmp((ts_get_str(ctx, "gr")), ("b" "\xE4\xBD\xA0" "a")) == 0);
+      check(strcmp((ts_get_str(ctx, "titled")), ("Hello Turbo Script")) == 0);
+      check(strcmp((ts_get_str(ctx, "cap")), ("Hello")) == 0);
+      check(strcmp((ts_get_str(ctx, "swapped")), ("aBc1")) == 0);
+      check(strcmp((ts_get_str(ctx, "folded")), ("\xC3\xA9")) == 0);
+      check(strcmp((ts_get_str(ctx, "removed")), ("ab")) == 0);
+      check(strcmp((ts_get_str(ctx, "kept")), ("123")) == 0);
+      check(strcmp((ts_get_str(ctx, "trans")), ("123xyz")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -442,15 +442,15 @@ spec("turbo_script_scientific") {
                            "var neg = is_digit(\"12a\") + is_ascii(\"" "\xE4\xBD\xA0" "\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String predicate/search Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 9.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "last"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "f"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rf"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "neg"), 0.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "sliced"), "cde");
-      check_str_eq(ts_get_str(ctx, "ch"), "b");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(9.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "last")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "f")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rf")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "neg")) - (double)(0.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "sliced")), ("cde")) == 0);
+      check(strcmp((ts_get_str(ctx, "ch")), ("b")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -467,16 +467,16 @@ spec("turbo_script_scientific") {
                            "var hx_raw = hex_decode(hx);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String codec Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "html"), "&lt;a&amp;&quot;&#39;&gt;");
-      check_str_eq(ts_get_str(ctx, "html_raw"), "<a&\"'>");
-      check_str_eq(ts_get_str(ctx, "url"), "a%20b%2Bc%2F%E4%BD%A0");
-      check_str_eq(ts_get_str(ctx, "url_raw"), "a b+c/" "\xE4\xBD\xA0");
-      check_str_eq(ts_get_str(ctx, "b64"), "aGVsbG8=");
-      check_str_eq(ts_get_str(ctx, "b64_raw"), "hello");
-      check_str_eq(ts_get_str(ctx, "hx"), "417a");
-      check_str_eq(ts_get_str(ctx, "hx_raw"), "Az");
+      check(strcmp((ts_get_str(ctx, "html")), ("&lt;a&amp;&quot;&#39;&gt;")) == 0);
+      check(strcmp((ts_get_str(ctx, "html_raw")), ("<a&\"'>")) == 0);
+      check(strcmp((ts_get_str(ctx, "url")), ("a%20b%2Bc%2F%E4%BD%A0")) == 0);
+      check(strcmp((ts_get_str(ctx, "url_raw")), ("a b+c/" "\xE4\xBD\xA0")) == 0);
+      check(strcmp((ts_get_str(ctx, "b64")), ("aGVsbG8=")) == 0);
+      check(strcmp((ts_get_str(ctx, "b64_raw")), ("hello")) == 0);
+      check(strcmp((ts_get_str(ctx, "hx")), ("417a")) == 0);
+      check(strcmp((ts_get_str(ctx, "hx_raw")), ("Az")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -501,14 +501,14 @@ spec("turbo_script_scientific") {
                            "var part2 = limited[2];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Advanced string helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 21.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "part0"), "a");
-      check_str_eq(ts_get_str(ctx, "part1"), "b");
-      check_str_eq(ts_get_str(ctx, "part2"), "c,d");
-      check_str_eq(ts_get_str(ctx, "b64u"), "aGVsbG8_");
-      check_str_eq(ts_get_str(ctx, "b64u_raw"), "hello?");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(21.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "part0")), ("a")) == 0);
+      check(strcmp((ts_get_str(ctx, "part1")), ("b")) == 0);
+      check(strcmp((ts_get_str(ctx, "part2")), ("c,d")) == 0);
+      check(strcmp((ts_get_str(ctx, "b64u")), ("aGVsbG8_")) == 0);
+      check(strcmp((ts_get_str(ctx, "b64u_raw")), ("hello?")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -535,21 +535,21 @@ spec("turbo_script_scientific") {
                            "overlap_count + bs.length() + bs[0] + bs[1] + type_score;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String extended helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 200.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "wrapped"), "alpha beta\ngamma");
-      check_str_eq(ts_get_str(ctx, "hard_wrap"), "abc\ndef\ngh");
-      check_str_eq(ts_get_str(ctx, "unbroken"), "abcdefgh");
-      check_str_eq(ts_get_str(ctx, "short"), "alpha beta...");
-      check_str_eq(ts_get_str(ctx, "tiny"), "..");
-      check_str_eq(ts_get_str(ctx, "snake"), "hello_http_response_code42");
-      check_str_eq(ts_get_str(ctx, "kebab"), "hello-http-response-code42");
-      check_str_eq(ts_get_str(ctx, "camel"), "helloHttpResponseCode42");
-      check_str_eq(ts_get_str(ctx, "pascal"), "HelloHttpResponseCode42");
-      check_str_eq(ts_get_str(ctx, "slug"), "hello-turbo-script");
-      check_str_eq(ts_get_str(ctx, "raw"), "Az");
-      check_str_eq(ts_get_str(ctx, "raw_vec"), "AB");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(200.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "wrapped")), ("alpha beta\ngamma")) == 0);
+      check(strcmp((ts_get_str(ctx, "hard_wrap")), ("abc\ndef\ngh")) == 0);
+      check(strcmp((ts_get_str(ctx, "unbroken")), ("abcdefgh")) == 0);
+      check(strcmp((ts_get_str(ctx, "short")), ("alpha beta...")) == 0);
+      check(strcmp((ts_get_str(ctx, "tiny")), ("..")) == 0);
+      check(strcmp((ts_get_str(ctx, "snake")), ("hello_http_response_code42")) == 0);
+      check(strcmp((ts_get_str(ctx, "kebab")), ("hello-http-response-code42")) == 0);
+      check(strcmp((ts_get_str(ctx, "camel")), ("helloHttpResponseCode42")) == 0);
+      check(strcmp((ts_get_str(ctx, "pascal")), ("HelloHttpResponseCode42")) == 0);
+      check(strcmp((ts_get_str(ctx, "slug")), ("hello-turbo-script")) == 0);
+      check(strcmp((ts_get_str(ctx, "raw")), ("Az")) == 0);
+      check(strcmp((ts_get_str(ctx, "raw_vec")), ("AB")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -575,21 +575,21 @@ spec("turbo_script_scientific") {
                            "var rpart1 = rparts[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String split variant Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 9.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "normalized"), "alpha beta gamma");
-      check_str_eq(ts_get_str(ctx, "centered"), "..x..");
-      check_str_eq(ts_get_str(ctx, "truncated"), "ab...");
-      check_str_eq(ts_get_str(ctx, "short_suffix"), "..");
-      check_str_eq(ts_get_str(ctx, "stripped"), "name");
-      check_str_eq(ts_get_str(ctx, "word1"), "b");
-      check_str_eq(ts_get_str(ctx, "once0"), "a");
-      check_str_eq(ts_get_str(ctx, "once1"), "b=c");
-      check_str_eq(ts_get_str(ctx, "ronce0"), "a=b");
-      check_str_eq(ts_get_str(ctx, "ronce1"), "c");
-      check_str_eq(ts_get_str(ctx, "rpart0"), "a,b");
-      check_str_eq(ts_get_str(ctx, "rpart1"), "c");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(9.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "normalized")), ("alpha beta gamma")) == 0);
+      check(strcmp((ts_get_str(ctx, "centered")), ("..x..")) == 0);
+      check(strcmp((ts_get_str(ctx, "truncated")), ("ab...")) == 0);
+      check(strcmp((ts_get_str(ctx, "short_suffix")), ("..")) == 0);
+      check(strcmp((ts_get_str(ctx, "stripped")), ("name")) == 0);
+      check(strcmp((ts_get_str(ctx, "word1")), ("b")) == 0);
+      check(strcmp((ts_get_str(ctx, "once0")), ("a")) == 0);
+      check(strcmp((ts_get_str(ctx, "once1")), ("b=c")) == 0);
+      check(strcmp((ts_get_str(ctx, "ronce0")), ("a=b")) == 0);
+      check(strcmp((ts_get_str(ctx, "ronce1")), ("c")) == 0);
+      check(strcmp((ts_get_str(ctx, "rpart0")), ("a,b")) == 0);
+      check(strcmp((ts_get_str(ctx, "rpart1")), ("c")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -609,17 +609,17 @@ spec("turbo_script_scientific") {
                            "var score = lines.length() + line_count(\"a\\r\\nb\\nc\\r\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String line/fixed helper Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 6.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "left_part"), "a" "\xE4\xBD\xA0" "\xF0\x9F\x99\x82");
-      check_str_eq(ts_get_str(ctx, "right_part"), "\xF0\x9F\x99\x82" "b");
-      check_str_eq(ts_get_str(ctx, "taken"), "ab");
-      check_str_eq(ts_get_str(ctx, "dropped"), "cdef");
-      check_str_eq(ts_get_str(ctx, "filled"), "-0042");
-      check_str_eq(ts_get_str(ctx, "expanded"), "a   b\n    c");
-      check_str_eq(ts_get_str(ctx, "chomped"), "line");
-      check_str_eq(ts_get_str(ctx, "line1"), "b");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(6.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "left_part")), ("a" "\xE4\xBD\xA0" "\xF0\x9F\x99\x82")) == 0);
+      check(strcmp((ts_get_str(ctx, "right_part")), ("\xF0\x9F\x99\x82" "b")) == 0);
+      check(strcmp((ts_get_str(ctx, "taken")), ("ab")) == 0);
+      check(strcmp((ts_get_str(ctx, "dropped")), ("cdef")) == 0);
+      check(strcmp((ts_get_str(ctx, "filled")), ("-0042")) == 0);
+      check(strcmp((ts_get_str(ctx, "expanded")), ("a   b\n    c")) == 0);
+      check(strcmp((ts_get_str(ctx, "chomped")), ("line")) == 0);
+      check(strcmp((ts_get_str(ctx, "line1")), ("b")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -635,15 +635,15 @@ spec("turbo_script_scientific") {
                            "var score = line_count(indented) + line_count(dedented);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String indent/wrap Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 4.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "indented"), "> a\n> b");
-      check_str_eq(ts_get_str(ctx, "skipped"), "a\n--b");
-      check_str_eq(ts_get_str(ctx, "dedented"), "a\n  b\n");
-      check_str_eq(ts_get_str(ctx, "surrounded"), "[value]");
-      check_str_eq(ts_get_str(ctx, "unwrapped"), "value");
-      check_str_eq(ts_get_str(ctx, "unchanged"), "value");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(4.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "indented")), ("> a\n> b")) == 0);
+      check(strcmp((ts_get_str(ctx, "skipped")), ("a\n--b")) == 0);
+      check(strcmp((ts_get_str(ctx, "dedented")), ("a\n  b\n")) == 0);
+      check(strcmp((ts_get_str(ctx, "surrounded")), ("[value]")) == 0);
+      check(strcmp((ts_get_str(ctx, "unwrapped")), ("value")) == 0);
+      check(strcmp((ts_get_str(ctx, "unchanged")), ("value")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -657,13 +657,13 @@ spec("turbo_script_scientific") {
                            "var clipped = delete_range(\"abcdef\", 4, 20);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String range edit Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "inserted"), "aXXb");
-      check_str_eq(ts_get_str(ctx, "deleted"), "abf");
-      check_str_eq(ts_get_str(ctx, "replaced"), "abcXYf");
-      check_str_eq(ts_get_str(ctx, "appended"), "ab!");
-      check_str_eq(ts_get_str(ctx, "clipped"), "abcd");
+      check(strcmp((ts_get_str(ctx, "inserted")), ("aXXb")) == 0);
+      check(strcmp((ts_get_str(ctx, "deleted")), ("abf")) == 0);
+      check(strcmp((ts_get_str(ctx, "replaced")), ("abcXYf")) == 0);
+      check(strcmp((ts_get_str(ctx, "appended")), ("ab!")) == 0);
+      check(strcmp((ts_get_str(ctx, "clipped")), ("abcd")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -687,21 +687,21 @@ spec("turbo_script_scientific") {
                            "var score = inc + counted;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("String alias/json Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 3.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "repeated"), "abab");
-      check_str_eq(ts_get_str(ctx, "replaced"), "xxbb");
-      check_str_eq(ts_get_str(ctx, "padded_left"), "00x");
-      check_str_eq(ts_get_str(ctx, "padded_right"), "x..");
-      check_str_eq(ts_get_str(ctx, "stripped"), "hi");
-      check_str_eq(ts_get_str(ctx, "left"), "hi");
-      check_str_eq(ts_get_str(ctx, "right"), "hi");
-      check_str_eq(ts_get_str(ctx, "trimmed_start"), "js");
-      check_str_eq(ts_get_str(ctx, "trimmed_end"), "js");
-      check_str_eq(ts_get_str(ctx, "json"), "a\\n\\\"b\\\\c");
-      check_str_eq(ts_get_str(ctx, "raw"), "a\n\"b\\c");
-      check_str_eq(ts_get_str(ctx, "unicode"), "\xE4\xBD\xA0" "\xF0\x9F\x99\x82");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(3.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "repeated")), ("abab")) == 0);
+      check(strcmp((ts_get_str(ctx, "replaced")), ("xxbb")) == 0);
+      check(strcmp((ts_get_str(ctx, "padded_left")), ("00x")) == 0);
+      check(strcmp((ts_get_str(ctx, "padded_right")), ("x..")) == 0);
+      check(strcmp((ts_get_str(ctx, "stripped")), ("hi")) == 0);
+      check(strcmp((ts_get_str(ctx, "left")), ("hi")) == 0);
+      check(strcmp((ts_get_str(ctx, "right")), ("hi")) == 0);
+      check(strcmp((ts_get_str(ctx, "trimmed_start")), ("js")) == 0);
+      check(strcmp((ts_get_str(ctx, "trimmed_end")), ("js")) == 0);
+      check(strcmp((ts_get_str(ctx, "json")), ("a\\n\\\"b\\\\c")) == 0);
+      check(strcmp((ts_get_str(ctx, "raw")), ("a\n\"b\\c")) == 0);
+      check(strcmp((ts_get_str(ctx, "unicode")), ("\xE4\xBD\xA0" "\xF0\x9F\x99\x82")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -724,11 +724,10 @@ spec("turbo_script_scientific") {
           "var alias = mustache_render(\"{{name}}\", data);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache template Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"),
-                   "Hi Ada Paris &lt;b&gt; <b> one,two,1;2;none yes");
-      check_str_eq(ts_get_str(ctx, "alias"), "Ada");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("Hi Ada Paris &lt;b&gt; <b> one,two,1;2;none yes")) == 0);
+      check(strcmp((ts_get_str(ctx, "alias")), ("Ada")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -744,9 +743,9 @@ spec("turbo_script_scientific") {
           "var rendered = template_render(\"{{emit}} {{#wrap}}inside{{/wrap}}\", data);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache lambda Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"), "Ada [Ada:inside]");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("Ada [Ada:inside]")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -766,9 +765,9 @@ spec("turbo_script_scientific") {
           "var rendered = template_render(\"{{>outer}}\", data, partials);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache partial Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"), "one;two;count=2");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("one;two;count=2")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -781,9 +780,9 @@ spec("turbo_script_scientific") {
           "var rendered = template_render(\"{{>item}}/{{>item}}/{{>missing}}\", data, partials);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache repeated partial Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"), "Ada/Ada/");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("Ada/Ada/")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -798,9 +797,9 @@ spec("turbo_script_scientific") {
           "var rendered = template_render(\"{{num}}/{{null_value}}\", data);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache scalar lambda Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"), "42/null");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("42/null")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -816,9 +815,9 @@ spec("turbo_script_scientific") {
           "var rendered = template_render(\"{{#items}}{{>layout.item}}{{/items}}\", data, partials);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Mustache nested partial Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_str_eq(ts_get_str(ctx, "rendered"), "one/2;two/2;");
+      check(strcmp((ts_get_str(ctx, "rendered")), ("one/2;two/2;")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -838,9 +837,9 @@ spec("turbo_script_scientific") {
                            "var score = full + no_full + pos + direct + freed;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Core regex Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 6.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(6.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -858,16 +857,16 @@ spec("turbo_script_scientific") {
                            "var score = parts.length() + matches.length();";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Core regex transform Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 5.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "replaced"), "a#b#c");
-      check_str_eq(ts_get_str(ctx, "once"), "a#b345c");
-      check_str_eq(ts_get_str(ctx, "p0"), "a");
-      check_str_eq(ts_get_str(ctx, "p1"), "b");
-      check_str_eq(ts_get_str(ctx, "p2"), "c");
-      check_str_eq(ts_get_str(ctx, "m0"), "12");
-      check_str_eq(ts_get_str(ctx, "m1"), "345");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(5.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "replaced")), ("a#b#c")) == 0);
+      check(strcmp((ts_get_str(ctx, "once")), ("a#b345c")) == 0);
+      check(strcmp((ts_get_str(ctx, "p0")), ("a")) == 0);
+      check(strcmp((ts_get_str(ctx, "p1")), ("b")) == 0);
+      check(strcmp((ts_get_str(ctx, "p2")), ("c")) == 0);
+      check(strcmp((ts_get_str(ctx, "m0")), ("12")) == 0);
+      check(strcmp((ts_get_str(ctx, "m1")), ("345")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -884,12 +883,12 @@ spec("turbo_script_scientific") {
                            "var score = ci + info.start + info.end + iter.length();";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Regex match info Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 10.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "info_text"), "ABC");
-      check_str_eq(ts_get_str(ctx, "iter0"), "12");
-      check_str_eq(ts_get_str(ctx, "iter1"), "345");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(10.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "info_text")), ("ABC")) == 0);
+      check(strcmp((ts_get_str(ctx, "iter0")), ("12")) == 0);
+      check(strcmp((ts_get_str(ctx, "iter1")), ("345")) == 0);
 
       turbo_script_free(ctx);
     }
@@ -910,10 +909,10 @@ spec("turbo_script_scientific") {
                            "            all.length() + ci.test(\"ABC\") + (none == null);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("RegExp object Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 11.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "source"), "[0-9]+");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(11.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "source")), ("[0-9]+")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -929,10 +928,10 @@ spec("turbo_script_scientific") {
                            "var score = ok + bad + pos + ci + div;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Regex literal Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "score"), 12.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "source"), "\\d{3}-\\d{4}");
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(12.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "source")), ("\\d{3}-\\d{4}")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -942,8 +941,8 @@ spec("turbo_script_scientific") {
                            "var matched = regex.search(h, \"abc123def\");";
       int res = turbo_script_run_jit(ctx, script);
       if (res != 0) printf("JIT regex teardown Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "matched"), 3.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "matched")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -956,9 +955,9 @@ spec("turbo_script_scientific") {
                            "var score = has_groups + dot_caught + flat_caught;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Core regex groups rejection Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "score"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "has_groups"), 0.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "score")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "has_groups")) - (double)(0.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -979,12 +978,12 @@ spec("turbo_script_scientific") {
           "i11 = I[3];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "d"), -2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "Ainv_len"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "i00"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "i11"), 1.0, 0.01);
+      check(fabs((double)(ts_get_num(ctx, "d")) - (double)(-2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "Ainv_len")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "i00")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "i11")) - (double)(1.0)) <= (double)(0.01));
 
       turbo_script_free(ctx);
     }
@@ -1016,20 +1015,20 @@ spec("turbo_script_scientific") {
           "d1 = D[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix backend Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "i30"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g0"), 23.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g3"), 46.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l0"), 2.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l1"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l2"), 0.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "x0"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "x1"), 0.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "u0"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "u3"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "d0"), 4.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "d1"), 9.0, 0.01);
+      check(fabs((double)(ts_get_num(ctx, "i30")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g0")) - (double)(23.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g3")) - (double)(46.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l0")) - (double)(2.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l1")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l2")) - (double)(0.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "x0")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "x1")) - (double)(0.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "u0")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "u3")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "d0")) - (double)(4.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "d1")) - (double)(9.0)) <= (double)(0.01));
       turbo_script_free(ctx);
     }
 
@@ -1066,25 +1065,25 @@ spec("turbo_script_scientific") {
           "d1 = D[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Row-major matrix Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "r0"), 19.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "r1"), 22.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "r2"), 43.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "r3"), 50.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g0"), 19.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g3"), 50.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g20"), 38.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "g23"), 100.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l0"), 2.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l1"), 0.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "l2"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "x0"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "x1"), 0.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "u0"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "u3"), 1.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "d0"), 4.0, 0.01);
-      check_float_eq(ts_get_num(ctx, "d1"), 9.0, 0.01);
+      check(fabs((double)(ts_get_num(ctx, "r0")) - (double)(19.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "r1")) - (double)(22.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "r2")) - (double)(43.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "r3")) - (double)(50.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g0")) - (double)(19.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g3")) - (double)(50.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g20")) - (double)(38.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "g23")) - (double)(100.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l0")) - (double)(2.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l1")) - (double)(0.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "l2")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "x0")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "x1")) - (double)(0.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "u0")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "u3")) - (double)(1.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "d0")) - (double)(4.0)) <= (double)(0.01));
+      check(fabs((double)(ts_get_num(ctx, "d1")) - (double)(9.0)) <= (double)(0.01));
       turbo_script_free(ctx);
     }
 
@@ -1111,20 +1110,20 @@ spec("turbo_script_scientific") {
           "r1 = R[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix metadata/solve Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "s0"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s1"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rows"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cols"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "inv0"), 0.6, 0.001);
-      check_float_eq(ts_get_num(ctx, "inv3"), 0.4, 0.001);
-      check_float_eq(ts_get_num(ctx, "x0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "x1"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r1"), 3.0, 0.001);
-      check_str_eq(ts_get_str(ctx, "order"), "col");
-      check_str_eq(ts_get_str(ctx, "dtype"), "f64");
+      check(fabs((double)(ts_get_num(ctx, "s0")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s1")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rows")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cols")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "inv0")) - (double)(0.6)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "inv3")) - (double)(0.4)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "x0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "x1")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r1")) - (double)(3.0)) <= (double)(0.001));
+      check(strcmp((ts_get_str(ctx, "order")), ("col")) == 0);
+      check(strcmp((ts_get_str(ctx, "dtype")), ("f64")) == 0);
       turbo_script_free(ctx);
     }
 
@@ -1145,16 +1144,16 @@ spec("turbo_script_scientific") {
           "n_alias = mat_norm(Mcol, 2, 3, \"inf\");";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix determinant/norm Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "d_col"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d_row"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d_alias"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "nf"), sqrt(30.0), 0.001);
-      check_float_eq(ts_get_num(ctx, "nf_row"), sqrt(91.0), 0.001);
-      check_float_eq(ts_get_num(ctx, "nl1"), 9.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ninf"), 15.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "n_alias"), 15.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "d_col")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d_row")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d_alias")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "nf")) - (double)(sqrt(30.0))) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "nf_row")) - (double)(sqrt(91.0))) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "nl1")) - (double)(9.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ninf")) - (double)(15.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "n_alias")) - (double)(15.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1178,18 +1177,18 @@ spec("turbo_script_scientific") {
           "dn = vec.len(d_col);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix trace/diag Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "t_col"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "t_row"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "t_alias"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d1"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r1"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a1"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "dn"), 2.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "t_col")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "t_row")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "t_alias")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d1")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r1")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a1")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "dn")) - (double)(2.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1208,24 +1207,24 @@ spec("turbo_script_scientific") {
           "o0 = Told[0]; o5 = Told[5];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix transpose Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "c0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c1"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c2"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c3"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c4"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c5"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r1"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r2"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r3"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r4"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r5"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a5"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "o0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "o5"), 6.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "c0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c1")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c2")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c3")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c4")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c5")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r1")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r2")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r3")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r4")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r5")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a5")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "o0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "o5")) - (double)(6.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1245,19 +1244,19 @@ spec("turbo_script_scientific") {
           "s0 = S[0]; s1 = S[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix constructors Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "zn"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "z0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "z5"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "o0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "o5"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "f0"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "f5"), 7.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a0"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a5"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s0"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s1"), 3.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "zn")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "z0")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "z5")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "o0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "o5")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "f0")) - (double)(7.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "f5")) - (double)(7.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a0")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a5")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s0")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s1")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1280,15 +1279,15 @@ spec("turbo_script_scientific") {
           "a2 = Alias[2];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix elementwise Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "s0"), 11.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s3"), 44.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "d1"), 18.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "h2"), 90.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "m3"), 160.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c3"), 8.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a2"), 90.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "s0")) - (double)(11.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s3")) - (double)(44.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "d1")) - (double)(18.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "h2")) - (double)(90.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "m3")) - (double)(160.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c3")) - (double)(8.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a2")) - (double)(90.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1313,22 +1312,22 @@ spec("turbo_script_scientific") {
           "a0 = alias[0]; a2 = alias[2];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix reduce Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "s"), 21.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "avg"), 3.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "mn"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "mx"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cs0"), 5.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cs2"), 9.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rs0"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rs1"), 15.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cm0"), 2.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "cm2"), 4.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "rm0"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rm1"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "a2"), 3.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "s")) - (double)(21.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "avg")) - (double)(3.5)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "mn")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "mx")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cs0")) - (double)(5.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cs2")) - (double)(9.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rs0")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rs1")) - (double)(15.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cm0")) - (double)(2.5)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cm2")) - (double)(4.5)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rm0")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rm1")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "a2")) - (double)(3.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1347,16 +1346,16 @@ spec("turbo_script_scientific") {
           "ca0 = ca[0]; ca1 = ca[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix row/col Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "r0"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "r2"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c0"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c1"), 6.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ra0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ra2"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ca0"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "ca1"), 5.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "r0")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "r2")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c0")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c1")) - (double)(6.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ra0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ra2")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ca0")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "ca1")) - (double)(5.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1378,8 +1377,8 @@ spec("turbo_script_scientific") {
           "O[0] + O[5] + AR[0] + AR[4] + MC[1] + dotv;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix utility Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "result"), 179.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(179.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1397,8 +1396,8 @@ spec("turbo_script_scientific") {
           "round(cv[0] * 1000) + round(rs[0] * 1000);";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Matrix stats Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "result"), 7696.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(7696.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1422,8 +1421,8 @@ spec("turbo_script_scientific") {
           "EV[0] + EV[1] + np + nc + nq + tp + tc + tq + tt.df;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Linalg/stats Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "result"), 1822.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(1822.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1453,32 +1452,32 @@ spec("turbo_script_scientific") {
           "rp0 = RP[0]; rp1 = RP[1]; rx0 = RX[0]; rx1 = RX[1];";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Extended linalg Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
+      check((res) == (0));
 
-      check_float_eq(ts_get_num(ctx, "l0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "l1"), 0.5, 0.001);
-      check_float_eq(ts_get_num(ctx, "u0"), 4.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "u3"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "p0"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "p1"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "x0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "x1"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "c1"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rank_full"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rank_def"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "cond"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "e0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "e1"), 3.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s0"), 2.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "s1"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "det_lu"), 8.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "sl0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "sl1"), 2079.0, 1.0);
-      check_float_eq(ts_get_num(ctx, "rp0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rp1"), 0.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rx0"), 1.0, 0.001);
-      check_float_eq(ts_get_num(ctx, "rx1"), 1.0, 0.001);
+      check(fabs((double)(ts_get_num(ctx, "l0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "l1")) - (double)(0.5)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "u0")) - (double)(4.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "u3")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "p0")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "p1")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "x0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "x1")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "c1")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rank_full")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rank_def")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "cond")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "e0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "e1")) - (double)(3.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s0")) - (double)(2.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "s1")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "det_lu")) - (double)(8.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "sl0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "sl1")) - (double)(2079.0)) <= (double)(1.0));
+      check(fabs((double)(ts_get_num(ctx, "rp0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rp1")) - (double)(0.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rx0")) - (double)(1.0)) <= (double)(0.001));
+      check(fabs((double)(ts_get_num(ctx, "rx1")) - (double)(1.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
 
@@ -1497,8 +1496,8 @@ spec("turbo_script_scientific") {
           "joined.length() + joined[1].id;";
       int res = turbo_script_run(ctx, script);
       if (res != 0) printf("Table Error: %s\n", turbo_script_get_error(ctx));
-      check_int_eq(res, 0);
-      check_float_eq(ts_get_num(ctx, "result"), 40.0, 0.001);
+      check((res) == (0));
+      check(fabs((double)(ts_get_num(ctx, "result")) - (double)(40.0)) <= (double)(0.001));
       turbo_script_free(ctx);
     }
   }

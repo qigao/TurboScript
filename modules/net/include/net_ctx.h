@@ -47,7 +47,7 @@ static inline turbo_http_t *net_ctx_ensure_client(net_ctx_t *ctx) {
     return ctx->client;
 }
 
-static inline char *net_arena_cstr(mem_pool_t *a, tstr_v sv) {
+static inline char *net_arena_cstr(mem_pool_t *a, vstr sv) {
     char *buf = mem_alloc(a, sv.len + 1);
     if (buf) { memcpy(buf, sv.data, sv.len); buf[sv.len] = '\0'; }
     return buf;

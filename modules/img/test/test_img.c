@@ -27,35 +27,35 @@ spec("img_module") {
       exprtk_env_init(&env);
       exprtk_env_add_module(&env, exprtk_module_img());
       result = exprtk_call_internal("img_create", 3, create_args, &env);
-      check_int_eq(result.type, EXPRTK_VAL_INTEGER);
-      check_int_gt(result.data.integer, 0);
+      check((result.type) == (EXPRTK_VAL_INTEGER));
+      check((result.data.integer) > (0));
 
       handle_arg = exprtk_val_num((double)result.data.integer);
       stale_handle = handle_arg;
       result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 4);
+      check((result.data.integer) == (4));
       result = exprtk_call_internal("img_height", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 3);
+      check((result.data.integer) == (3));
       result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 1);
+      check((result.data.integer) == (1));
       result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
       result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
 
       result = exprtk_call_internal("img_create", 3, create_args, &env);
-      check_int_eq(result.type, EXPRTK_VAL_INTEGER);
-      check_int_gt(result.data.integer, 0);
+      check((result.type) == (EXPRTK_VAL_INTEGER));
+      check((result.data.integer) > (0));
       handle_arg = exprtk_val_num((double)result.data.integer);
       check_true(handle_arg.data.number != stale_handle.data.number);
       result = exprtk_call_internal("img_width", 1, &stale_handle, &env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
       result = exprtk_call_internal("img_free", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 1);
+      check((result.data.integer) == (1));
 
       handle_arg = exprtk_val_num(999999999.0);
       result = exprtk_call_internal("img_width", 1, &handle_arg, &env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
       exprtk_env_free(&env);
     }
 
@@ -71,14 +71,14 @@ spec("img_module") {
       exprtk_env_add_module(&owner_env, exprtk_module_img());
       exprtk_env_add_module(&other_env, exprtk_module_img());
       result = exprtk_call_internal("img_create", 3, create_args, &owner_env);
-      check_int_gt(result.data.integer, 0);
+      check((result.data.integer) > (0));
       handle_arg = exprtk_val_num((double)result.data.integer);
 
       result = exprtk_call_internal("img_width", 1, &handle_arg, &other_env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
       exprtk_img_release_handles(&owner_env);
       result = exprtk_call_internal("img_width", 1, &handle_arg, &owner_env);
-      check_int_eq(result.data.integer, 0);
+      check((result.data.integer) == (0));
 
       exprtk_env_free(&other_env);
       exprtk_env_free(&owner_env);
@@ -89,9 +89,9 @@ spec("img_module") {
     it("should create and free images") {
       img_t *img = img_create(TEST_WIDTH, TEST_HEIGHT, 3);
       check_not_null(img);
-      check_int_eq(img->width, TEST_WIDTH);
-      check_int_eq(img->height, TEST_HEIGHT);
-      check_int_eq(img->channels, 3);
+      check((img->width) == (TEST_WIDTH));
+      check((img->height) == (TEST_HEIGHT));
+      check((img->channels) == (3));
       check_not_null(img->data);
       img_free(img);
     }
@@ -107,9 +107,9 @@ spec("img_module") {
 
       img_t *dst = img_clone(src);
       check_not_null(dst);
-      check_int_eq(dst->width, src->width);
-      check_int_eq(dst->height, src->height);
-      check_int_eq(dst->channels, src->channels);
+      check((dst->width) == (src->width));
+      check((dst->height) == (src->height));
+      check((dst->channels) == (src->channels));
       check(memcmp(dst->data, src->data, 100 * 100 * 3) == 0);
 
       img_free(src);
@@ -128,9 +128,9 @@ spec("img_module") {
       img_set_pixel(img, 5, 5, 2, 64);  /* B */
 
       /* 读取像素 */
-      check_int_eq(img_get_pixel(img, 5, 5, 0), 255);
-      check_int_eq(img_get_pixel(img, 5, 5, 1), 128);
-      check_int_eq(img_get_pixel(img, 5, 5, 2), 64);
+      check((img_get_pixel(img, 5, 5, 0)) == (255));
+      check((img_get_pixel(img, 5, 5, 1)) == (128));
+      check((img_get_pixel(img, 5, 5, 2)) == (64));
 
       img_free(img);
     }
@@ -140,9 +140,9 @@ spec("img_module") {
       check_not_null(img);
 
       /* 边界测试 */
-      check_int_eq(img_get_pixel(img, -1, 5, 0), -1);
-      check_int_eq(img_get_pixel(img, 10, 5, 0), -1);
-      check_int_eq(img_get_pixel(img, 5, 5, 3), -1);
+      check((img_get_pixel(img, -1, 5, 0)) == (-1));
+      check((img_get_pixel(img, 10, 5, 0)) == (-1));
+      check((img_get_pixel(img, 5, 5, 3)) == (-1));
 
       img_free(img);
     }
@@ -165,9 +165,9 @@ spec("img_module") {
 
       img_t *resized = img_resize(src, 50, 50);
       check_not_null(resized);
-      check_int_eq(resized->width, 50);
-      check_int_eq(resized->height, 50);
-      check_int_eq(resized->channels, 3);
+      check((resized->width) == (50));
+      check((resized->height) == (50));
+      check((resized->channels) == (3));
 
       img_free(src);
       img_free(resized);
@@ -180,9 +180,9 @@ spec("img_module") {
       /* 裁剪中心区域 */
       img_t *cropped = img_crop(src, 25, 25, 50, 50);
       check_not_null(cropped);
-      check_int_eq(cropped->width, 50);
-      check_int_eq(cropped->height, 50);
-      check_int_eq(cropped->channels, 3);
+      check((cropped->width) == (50));
+      check((cropped->height) == (50));
+      check((cropped->channels) == (3));
 
       img_free(src);
       img_free(cropped);
@@ -212,7 +212,7 @@ spec("img_module") {
       /* 水平翻转后应该在右上角 */
       img_t *h_flip = img_flip_horizontal(src);
       check_not_null(h_flip);
-      check_int_eq(img_get_pixel(h_flip, 9, 0, 0), 255);
+      check((img_get_pixel(h_flip, 9, 0, 0)) == (255));
 
       img_free(src);
       img_free(h_flip);
@@ -228,7 +228,7 @@ spec("img_module") {
       /* 垂直翻转后应该在左下角 */
       img_t *v_flip = img_flip_vertical(src);
       check_not_null(v_flip);
-      check_int_eq(img_get_pixel(v_flip, 0, 9, 0), 255);
+      check((img_get_pixel(v_flip, 0, 9, 0)) == (255));
 
       img_free(src);
       img_free(v_flip);
@@ -242,12 +242,12 @@ spec("img_module") {
 
       img_t *rotated = img_rotate_90(src);
       check_not_null(rotated);
-      check_int_eq(rotated->width, 10);  /* 宽高互换 */
-      check_int_eq(rotated->height, 20);
-      check_int_eq(rotated->channels, 3);
+      check((rotated->width) == (10));  /* 宽高互换 */
+      check((rotated->height) == (20));
+      check((rotated->channels) == (3));
 
       /* 左上角 (0,0) 旋转后到右上角 */
-      check_int_eq(img_get_pixel(rotated, 9, 0, 0), 255);
+      check((img_get_pixel(rotated, 9, 0, 0)) == (255));
 
       img_free(src);
       img_free(rotated);
@@ -266,9 +266,9 @@ spec("img_module") {
 
       img_t *gray = img_to_grayscale(src);
       check_not_null(gray);
-      check_int_eq(gray->width, 10);
-      check_int_eq(gray->height, 10);
-      check_int_eq(gray->channels, 1);
+      check((gray->width) == (10));
+      check((gray->height) == (10));
+      check((gray->channels) == (1));
 
       /* 灰度值应该约为 0.299 * 255 ≈ 76 */
       int gray_value = img_get_pixel(gray, 5, 5, 0);

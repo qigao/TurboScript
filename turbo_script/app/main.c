@@ -175,11 +175,21 @@ int main(int argc, char **argv) {
     size_t coro_stack_size = 0;
 
     turbo_cmd_parser_t *parser = turbo_cmd_create("TurboScript REPL", "1.0");
-    turbo_cmd_add_string(parser, &eval_str, "eval", "e", "Evaluate a string of code and exit");
-    turbo_cmd_add_string(parser, &file_path, "file", "f", "Run the given script file and exit");
-    turbo_cmd_add_flag(parser, &enable_jit_stats, "jit-stats", "", "Enable JIT statistics collection and print at exit");
-    turbo_cmd_add_integer(parser, &coro_stack_kib, "coro-stack-kib", "",
-                          "Coroutine stack override in KiB (0=TurboUtils default; 32-1024)");
+    turbo_cmd_node_t *root = turbo_cmd_root(parser);
+    if (!root ||
+        turbo_cmd_node_add_string(root, &eval_str, "eval", "e",
+                                  "Evaluate a string of code and exit") != 0 ||
+        turbo_cmd_node_add_string(root, &file_path, "file", "f",
+                                  "Run the given script file and exit") != 0 ||
+        turbo_cmd_node_add_flag(root, &enable_jit_stats, "jit-stats", NULL,
+                                "Enable JIT statistics collection and print at exit") != 0 ||
+        turbo_cmd_node_add_integer(
+            root, &coro_stack_kib, "coro-stack-kib", NULL,
+            "Coroutine stack override in KiB (0=TurboUtils default; 32-1024)") != 0) {
+        fprintf(stderr, "Failed to initialize command-line options.\n");
+        turbo_cmd_destroy(parser);
+        return 2;
+    }
     
     turbo_cmd_parse(parser, argc, argv, true);
     turbo_cmd_destroy(parser);

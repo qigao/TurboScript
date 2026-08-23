@@ -857,13 +857,17 @@ static void exprtk_release_list_value(exprtk_value_t *list, exprtk_release_state
     }
 
     if (list->data.list.heap_owned) {
-        turbo_vec_t vec = {
-            list->data.list.items,
-            list->data.list.count,
-            list->data.list.capacity,
-            sizeof(exprtk_value_t)
+        vec_t vec = {
+            .data = list->data.list.items,
+            .size = list->data.list.count,
+            .capacity = list->data.list.capacity,
+            .elem_size = sizeof(exprtk_value_t),
+            .elem_stride = sizeof(exprtk_value_t),
+            .elem_align = _Alignof(exprtk_value_t),
+            .element_limit = SIZE_MAX / sizeof(exprtk_value_t),
+            .initialized = true,
         };
-        turbo_vec_destroy(&vec);
+        vec_destroy(&vec);
     }
     list->data.list.items = NULL;
     list->data.list.count = 0;
@@ -1163,7 +1167,7 @@ exprtk_value_t throw_error(exprtk_env_t *env, const exprtk_node_t *node, const c
     env->error_line = node ? node->line : env->last_line;
     env->error_column = node ? node->column : env->last_column;
     env->flow = exprtk_FLOW_THROW;
-    env->error_value = exprtk_val_str(tstr_v_from_cstr(env->error_msg));
+    env->error_value = exprtk_val_str(vstr_from_cstr(env->error_msg));
 
     return exprtk_val_num(0);
 }
@@ -1219,7 +1223,7 @@ int values_match(exprtk_value_t lhs, exprtk_value_t rhs) {
     if (lhs.type == EXPRTK_VAL_BOOL && rhs.type == EXPRTK_VAL_BOOL)
         return lhs.data.boolean == rhs.data.boolean;
     if (lhs.type == EXPRTK_VAL_STRING && rhs.type == EXPRTK_VAL_STRING)
-        return tstr_v_eq(lhs.data.string, rhs.data.string);
+        return vstr_eq(lhs.data.string, rhs.data.string);
     if (lhs.type == EXPRTK_VAL_BYTES && rhs.type == EXPRTK_VAL_BYTES)
         return lhs.data.bytes.len == rhs.data.bytes.len &&
                (lhs.data.bytes.len == 0 ||
@@ -1259,14 +1263,14 @@ int values_match(exprtk_value_t lhs, exprtk_value_t rhs) {
         return l.mantissa == r.mantissa && l.scale == r.scale;
     }
     if (lhs.type == EXPRTK_VAL_BIGINT && rhs.type == EXPRTK_VAL_BIGINT)
-        return tstr_v_eq(lhs.data.bigint.text, rhs.data.bigint.text);
+        return vstr_eq(lhs.data.bigint.text, rhs.data.bigint.text);
     if (lhs.type == EXPRTK_VAL_MONEY && rhs.type == EXPRTK_VAL_MONEY)
         return lhs.data.money.amount.mantissa == rhs.data.money.amount.mantissa &&
                lhs.data.money.amount.scale == rhs.data.money.amount.scale &&
                memcmp(lhs.data.money.currency, rhs.data.money.currency, 4) == 0;
     if ((lhs.type == EXPRTK_VAL_ENUM || lhs.type == EXPRTK_VAL_FLAGS) && lhs.type == rhs.type)
         return lhs.data.enum_val.value == rhs.data.enum_val.value &&
-               tstr_v_eq(lhs.data.enum_val.type_name, rhs.data.enum_val.type_name);
+               vstr_eq(lhs.data.enum_val.type_name, rhs.data.enum_val.type_name);
     if (lhs.type == EXPRTK_VAL_NULL && rhs.type == EXPRTK_VAL_NULL)
         return 1;
 
@@ -1939,11 +1943,11 @@ static exprtk_value_t *numeric_args_to_values_buffer(size_t argc, const double *
     return args;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, exprtk_env_t *env) {
+EXPRTK_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, exprtk_env_t *env) {
     return eval_class_def_node(node, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const char *source_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const char *source_name,
                                                 exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!target_name || !source_name || !env) return zero;
@@ -1959,7 +1963,7 @@ CXX_C_API exprtk_value_t exprtk_oop_alias_class(const char *target_name, const c
     return class_value;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!class_name || !env) return zero;
@@ -2007,7 +2011,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_numeric(const char *class_name, 
     return exprtk_val_instance(instance);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class_value,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class_value,
                                                             const char *class_name, size_t argc,
                                                             exprtk_value_t *args,
                                                             exprtk_env_t *env) {
@@ -2054,7 +2058,7 @@ CXX_C_API exprtk_value_t exprtk_oop_instantiate_class_value(exprtk_value_t class
     return exprtk_val_instance(instance);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2067,7 +2071,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_numeric(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2105,7 +2109,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_values(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2123,14 +2127,14 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
                                                         const char *method_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env) {
     return exprtk_oop_call_method_checked_numeric(object_name, method_name, NULL, argc, argv,
                                                   env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2167,7 +2171,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
                                                   argv, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
     const char *object_name, const char *expected_class_name, const char *method_name,
     const exprtk_node_t *object_node, const exprtk_node_t *call_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2208,7 +2212,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_mono_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_numeric(const char *object_name,
                                                               const char *expected_class_name,
                                                               const char *method_name, size_t argc,
                                                               const double *argv,
@@ -2237,7 +2241,7 @@ static uint64_t oop_method_arg_signature(size_t argc, const exprtk_value_t *args
     return hash ? hash : 1;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
     const char *object_name, const char *method_name, exprtk_oop_method_cache_t *cache,
     const exprtk_node_t *object_node, size_t argc, const double *argv, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2299,14 +2303,14 @@ CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_method_cached_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_cached_numeric(
     const char *object_name, const char *method_name, exprtk_oop_method_cache_t *cache,
     size_t argc, const double *argv, exprtk_env_t *env) {
     return exprtk_oop_call_method_cached_checked_numeric(object_name, method_name, cache, NULL,
                                                          argc, argv, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_method, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_method, size_t argc,
                                                       exprtk_value_t *args, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (bound_method.type != EXPRTK_VAL_BOUND_METHOD || !env) return zero;
@@ -2316,7 +2320,7 @@ CXX_C_API exprtk_value_t exprtk_oop_call_bound_method(exprtk_value_t bound_metho
                                        argc, args, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_value, size_t argc,
+EXPRTK_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_value, size_t argc,
                                                     exprtk_value_t *args, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (function_value.type != EXPRTK_VAL_FUNCTION ||
@@ -2341,7 +2345,7 @@ CXX_C_API exprtk_value_t exprtk_call_function_value(exprtk_value_t function_valu
     return eval_script_function(&func, argc, args, parent_env, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
                                                        const char *member_name,
                                                        const exprtk_node_t *object_node,
                                                        exprtk_env_t *env) {
@@ -2416,7 +2420,7 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_checked(const char *object_name,
     return zero;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
     const char *object_name, const char *member_name, exprtk_oop_field_cache_t *cache,
     const exprtk_node_t *object_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2532,12 +2536,12 @@ CXX_C_API exprtk_value_t exprtk_oop_get_member_cached_checked(
     return exprtk_oop_get_member_checked(object_name, member_name, object_node, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_get_member(const char *object_name, const char *member_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_get_member(const char *object_name, const char *member_name,
                                                exprtk_env_t *env) {
     return exprtk_oop_get_member_checked(object_name, member_name, NULL, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
     const char *object_name, const char *member_name, double value,
     const exprtk_node_t *object_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2586,7 +2590,7 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_checked_numeric(
     return zero;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
     const char *object_name, const char *member_name, double value,
     exprtk_oop_field_cache_t *cache, const exprtk_node_t *object_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -2687,13 +2691,13 @@ CXX_C_API exprtk_value_t exprtk_oop_set_member_cached_checked_numeric(
     return zero;
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_set_member_numeric(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_set_member_numeric(const char *object_name,
                                                        const char *member_name, double value,
                                                        exprtk_env_t *env) {
     return exprtk_oop_set_member_checked_numeric(object_name, member_name, value, NULL, env);
 }
 
-CXX_C_API exprtk_value_t exprtk_oop_instanceof_name(const char *object_name,
+EXPRTK_C_API exprtk_value_t exprtk_oop_instanceof_name(const char *object_name,
                                                     const char *class_name, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!object_name || !class_name || !env) return zero;
@@ -2812,7 +2816,7 @@ extern exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const cha
 static exprtk_value_t rt_stream_make(exprtk_value_t source) {
     exprtk_value_t stream = exprtk_val_map();
     exprtk_map_set(&stream, "__ts_stream_kind",
-                   exprtk_val_str(tstr_v_from_cstr("TurboScript.Stream.v1")));
+                   exprtk_val_str(vstr_from_cstr("TurboScript.Stream.v1")));
     exprtk_map_set(&stream, "source", source);
     return stream;
 }
@@ -2859,7 +2863,7 @@ static exprtk_value_t rt_stream_string_lines(exprtk_value_t text, mem_pool_t *ar
             if (!buf) return lines;
             memcpy(buf, text.data.string.data + start, end - start);
             buf[end - start] = '\0';
-            exprtk_list_push(&lines, exprtk_val_str(tstr_v_from_buf(buf, end - start)));
+            exprtk_list_push(&lines, exprtk_val_str(vstr_from_buf(buf, end - start)));
             start = i + 1;
         }
     }
@@ -2967,7 +2971,7 @@ exprtk_value_t eval_map_method(mc_ctx_t *mc) {
         exprtk_map_iter_t it = exprtk_map_iter_begin(&mc->obj);
         const char *key;
         while (exprtk_map_iter_next(&it, &key, NULL)) {
-            if (exprtk_list_push(&list, exprtk_val_str(tstr_v_from_cstr(key))) != 0) {
+            if (exprtk_list_push(&list, exprtk_val_str(vstr_from_cstr(key))) != 0) {
                 exprtk_value_destroy(&list);
                 return exprtk_val_list_empty();
             }
@@ -3060,7 +3064,7 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
             char *buf = (char*)mem_alloc(mc->arena, len + 1);
             memcpy(buf, mc->obj.data.string.data + start, len);
             buf[len] = '\0';
-            tstr_v sv; sv.data = buf; sv.len = len;
+            vstr sv; sv.data = buf; sv.len = len;
             result = exprtk_val_str(sv);
             handled = 1;
         } else if (strcmp(m, "toUpper") == 0) {
@@ -3068,7 +3072,7 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
             for (size_t i = 0; i < mc->obj.data.string.len; ++i)
                 buf[i] = (char)toupper((unsigned char)mc->obj.data.string.data[i]);
             buf[mc->obj.data.string.len] = '\0';
-            tstr_v sv; sv.data = buf; sv.len = mc->obj.data.string.len;
+            vstr sv; sv.data = buf; sv.len = mc->obj.data.string.len;
             result = exprtk_val_str(sv);
             handled = 1;
         } else if (strcmp(m, "toLower") == 0) {
@@ -3076,7 +3080,7 @@ exprtk_value_t eval_string_method(mc_ctx_t *mc) {
             for (size_t i = 0; i < mc->obj.data.string.len; ++i)
                 buf[i] = (char)tolower((unsigned char)mc->obj.data.string.data[i]);
             buf[mc->obj.data.string.len] = '\0';
-            tstr_v sv; sv.data = buf; sv.len = mc->obj.data.string.len;
+            vstr sv; sv.data = buf; sv.len = mc->obj.data.string.len;
             result = exprtk_val_str(sv);
             handled = 1;
         }
@@ -3106,7 +3110,7 @@ exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
     buf = (char *)mem_alloc(mc->arena, len + 1);
     if (!buf) return exprtk_val_num(0);
     memcpy(buf, text, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 static exprtk_value_t runtime_string_value(mem_pool_t *arena, const char *text) {
@@ -3117,7 +3121,7 @@ static exprtk_value_t runtime_string_value(mem_pool_t *arena, const char *text) 
     buf = (char *)mem_alloc(arena, len + 1);
     if (!buf) return exprtk_val_num(0);
     memcpy(buf, text, len + 1);
-    return exprtk_val_str(tstr_v_from_buf(buf, len));
+    return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
 int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
@@ -3156,7 +3160,7 @@ exprtk_value_t eval_datetime_method(mc_ctx_t *mc) {
         strcmp(m, "format_rfc822") == 0) {
         ts = turbo_datetime_to_time(&mc->obj.data.datetime);
         if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
-            return exprtk_val_str(tstr_v_from_cstr(""));
+            return exprtk_val_str(vstr_from_cstr(""));
         return runtime_string_value(mc->arena, buf);
     }
     return unknown_method_error(mc, "datetime");
@@ -3202,7 +3206,7 @@ exprtk_value_t eval_offset_datetime_method(mc_ctx_t *mc) {
         return exprtk_val_num((double)turbo_datetime_to_time(&mc->obj.data.offset_datetime.datetime));
     if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
         if (!runtime_offset_datetime_text(mc->obj.data.offset_datetime, buf, sizeof(buf)))
-            return exprtk_val_str(tstr_v_from_cstr(""));
+            return exprtk_val_str(vstr_from_cstr(""));
         return runtime_string_value(mc->arena, buf);
     }
     return unknown_method_error(mc, "offset_datetime");
@@ -3337,7 +3341,7 @@ int exprtk_money_member_get(exprtk_value_t value, const char *member, exprtk_val
     if (!out || value.type != EXPRTK_VAL_MONEY || !member) return 0;
     if (strcmp(member, "amount") == 0) *out = exprtk_val_decimal(value.data.money.amount);
     else if (strcmp(member, "currency") == 0) {
-        tstr_v sv;
+        vstr sv;
         sv.data = value.data.money.currency;
         sv.len = 3;
         *out = exprtk_val_str(sv);
@@ -3393,7 +3397,7 @@ int exprtk_typed_array_member_get(exprtk_value_t value, const char *member,
     if (strcmp(member, "length") == 0 || strcmp(member, "size") == 0)
         *out = exprtk_val_int((int64_t)value.data.typed_array.count);
     else if (strcmp(member, "kind") == 0)
-        *out = exprtk_val_str(tstr_v_from_cstr(runtime_typed_array_kind_name(value.data.typed_array.kind)));
+        *out = exprtk_val_str(vstr_from_cstr(runtime_typed_array_kind_name(value.data.typed_array.kind)));
     else return 0;
     return 1;
 }
@@ -3427,7 +3431,7 @@ exprtk_value_t eval_date_method(mc_ctx_t *mc) {
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "date");
     if (!runtime_date_text(mc->obj.data.date, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return runtime_string_value(mc->arena, buf);
 }
 
@@ -3436,7 +3440,7 @@ exprtk_value_t eval_time_method(mc_ctx_t *mc) {
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "time");
     if (!runtime_time_text(mc->obj.data.time, buf, sizeof(buf)))
-        return exprtk_val_str(tstr_v_from_cstr(""));
+        return exprtk_val_str(vstr_from_cstr(""));
     return runtime_string_value(mc->arena, buf);
 }
 
@@ -3448,7 +3452,7 @@ exprtk_value_t eval_duration_method(mc_ctx_t *mc) {
         return exprtk_val_num((double)mc->obj.data.duration_ms / 1000.0);
     if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
         if (!runtime_duration_text(mc->obj.data.duration_ms, buf, sizeof(buf)))
-            return exprtk_val_str(tstr_v_from_cstr(""));
+            return exprtk_val_str(vstr_from_cstr(""));
         return runtime_string_value(mc->arena, buf);
     }
     return unknown_method_error(mc, "duration");
@@ -3462,7 +3466,7 @@ exprtk_value_t eval_decimal_method(mc_ctx_t *mc) {
         return exprtk_val_int(mc->obj.data.decimal.scale);
     if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
         if (!runtime_decimal_text(mc->obj.data.decimal, buf, sizeof(buf)))
-            return exprtk_val_str(tstr_v_from_cstr(""));
+            return exprtk_val_str(vstr_from_cstr(""));
         return runtime_string_value(mc->arena, buf);
     }
     return unknown_method_error(mc, "decimal");
@@ -3577,7 +3581,7 @@ exprtk_value_t eval_vector_method(mc_ctx_t *mc) {
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_values(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, exprtk_value_t *args, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -3625,7 +3629,7 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_values(
     }
 }
 
-CXX_C_API exprtk_value_t exprtk_member_call_checked_numeric(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_numeric(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     size_t argc, const double *argv, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
@@ -3638,7 +3642,7 @@ CXX_C_API exprtk_value_t exprtk_member_call_checked_numeric(
     return result;
 }
 
-CXX_C_API exprtk_value_t exprtk_member_call_checked_value_nodes(
+EXPRTK_C_API exprtk_value_t exprtk_member_call_checked_value_nodes(
     const char *object_name, const char *method_name, const exprtk_node_t *object_node,
     const exprtk_node_t *call_node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };

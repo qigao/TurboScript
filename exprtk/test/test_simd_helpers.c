@@ -16,14 +16,14 @@ spec("SIMD Helpers") {
         it("should sum float array correctly") {
             float arr[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f, 9.0f, 10.0f};
             float expected = 55.0f;
-            check_double_eq(simd_sum_f32(arr, 10), (double)expected, TEST_TOLERANCE);
+            check(fabs((double)(simd_sum_f32(arr, 10)) - (double)((double)expected)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should compute dot product correctly") {
             float a[] = {1.0f, 2.0f, 3.0f, 4.0f};
             float b[] = {0.5f, 0.5f, 0.5f, 0.5f};
             float expected = (1.0f + 2.0f + 3.0f + 4.0f) * 0.5f;
-            check_double_eq(simd_dot_f32(a, b, 4), (double)expected, TEST_TOLERANCE);
+            check(fabs((double)(simd_dot_f32(a, b, 4)) - (double)((double)expected)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should add two float arrays element-wise") {
@@ -31,7 +31,7 @@ spec("SIMD Helpers") {
             float b[] = {9, 8, 7, 6, 5, 4, 3, 2, 1};
             float dst[9];
             simd_add_f32(a, b, dst, 9);
-            for(int i=0; i<9; i++) check_double_eq(dst[i], 10.0, TEST_TOLERANCE);
+            for(int i=0; i<9; i++) check(fabs((double)(dst[i]) - (double)(10.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -41,19 +41,19 @@ spec("SIMD Helpers") {
             double b[] = {2.0, 4.0, 5.0};
             double dst[3];
             simd_div(a, b, dst, 3);
-            check_double_eq(dst[0], 5.0, DBL_TOLERANCE);
-            check_double_eq(dst[1], 5.0, DBL_TOLERANCE);
-            check_double_eq(dst[2], 6.0, DBL_TOLERANCE);
+            check(fabs((double)(dst[0]) - (double)(5.0)) <= (double)(DBL_TOLERANCE));
+            check(fabs((double)(dst[1]) - (double)(5.0)) <= (double)(DBL_TOLERANCE));
+            check(fabs((double)(dst[2]) - (double)(6.0)) <= (double)(DBL_TOLERANCE));
         }
 
         it("should square element-wise") {
             double a[] = {1.0, 2.0, 3.0, 4.0};
             double dst[4];
             simd_sqr(a, dst, 4);
-            check_double_eq(dst[0], 1.0, DBL_TOLERANCE);
-            check_double_eq(dst[1], 4.0, DBL_TOLERANCE);
-            check_double_eq(dst[2], 9.0, DBL_TOLERANCE);
-            check_double_eq(dst[3], 16.0, DBL_TOLERANCE);
+            check(fabs((double)(dst[0]) - (double)(1.0)) <= (double)(DBL_TOLERANCE));
+            check(fabs((double)(dst[1]) - (double)(4.0)) <= (double)(DBL_TOLERANCE));
+            check(fabs((double)(dst[2]) - (double)(9.0)) <= (double)(DBL_TOLERANCE));
+            check(fabs((double)(dst[3]) - (double)(16.0)) <= (double)(DBL_TOLERANCE));
         }
     }
 
@@ -69,11 +69,11 @@ spec("SIMD Helpers") {
             simd_transform_points_f32(m, pts, out, 2);
             
             // Expected Point 0: 2*1 + 0*2 + 10 = 12, 0*1 + 2*2 + 20 = 24
-            check_double_eq(out[0], 12.0, TEST_TOLERANCE);
-            check_double_eq(out[1], 24.0, TEST_TOLERANCE);
+            check(fabs((double)(out[0]) - (double)(12.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(out[1]) - (double)(24.0)) <= (double)(TEST_TOLERANCE));
             // Expected Point 1: 2*-1 + 10 = 8, 2*5 + 20 = 30
-            check_double_eq(out[2], 8.0, TEST_TOLERANCE);
-            check_double_eq(out[3], 30.0, TEST_TOLERANCE);
+            check(fabs((double)(out[2]) - (double)(8.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(out[3]) - (double)(30.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should compute AABB for points") {
@@ -85,10 +85,10 @@ spec("SIMD Helpers") {
             
             simd_aabb_points_f32(pts, 4, min_xy, max_xy);
             
-            check_double_eq(min_xy[0], -5.0, TEST_TOLERANCE);
-            check_double_eq(min_xy[1], -10.0, TEST_TOLERANCE);
-            check_double_eq(max_xy[0], 25.0, TEST_TOLERANCE);
-            check_double_eq(max_xy[1], 30.0, TEST_TOLERANCE);
+            check(fabs((double)(min_xy[0]) - (double)(-5.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(min_xy[1]) - (double)(-10.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(max_xy[0]) - (double)(25.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(max_xy[1]) - (double)(30.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should compose two transforms correctly") {
@@ -102,10 +102,10 @@ spec("SIMD Helpers") {
             
             // Expected: [ 2.0 0.0 10.0 ]
             //           [ 0.0 2.0 20.0 ]
-            check_double_eq(out[0], 2.0, TEST_TOLERANCE);
-            check_double_eq(out[2], 10.0, TEST_TOLERANCE);
-            check_double_eq(out[4], 2.0, TEST_TOLERANCE);
-            check_double_eq(out[5], 20.0, TEST_TOLERANCE);
+            check(fabs((double)(out[0]) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(out[2]) - (double)(10.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(out[4]) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(out[5]) - (double)(20.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 }

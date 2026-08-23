@@ -25,8 +25,8 @@ static exprtk_value_t eval_script(const char *code) {
     check_not_null(root);
 
     exprtk_value_t result = exprtk_eval(root, &env);
-    check_int_eq(env.flow, exprtk_FLOW_NORMAL);
-    check_int_eq(env.aborted, 0);
+    check((env.flow) == (exprtk_FLOW_NORMAL));
+    check((env.aborted) == (0));
 
     exprtk_free(root);
     exprtk_env_free(&env);
@@ -46,7 +46,7 @@ spec("OOP runtime") {
                 "c.increment();"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 11.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(11.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep instance fields isolated") {
@@ -61,7 +61,7 @@ spec("OOP runtime") {
                 "a.set(10);"
                 "a.get() + b.get()");
 
-            check_double_eq(value_to_double(result), 12.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(12.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should ignore explicit constructor return values") {
@@ -73,7 +73,7 @@ spec("OOP runtime") {
                 "c = Counter(42);"
                 "is_instance(c) * 100 + c.get()");
 
-            check_double_eq(value_to_double(result), 142.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(142.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep instance field slots stable across updates") {
@@ -90,12 +90,12 @@ spec("OOP runtime") {
 
             exprtk_eval(root, &env);
             exprtk_value_t box = exprtk_env_get(&env, "box");
-            check_int_eq(box.type, EXPRTK_VAL_INSTANCE);
+            check((box.type) == (EXPRTK_VAL_INSTANCE));
 
             exprtk_value_t *slot =
                 exprtk_instance_get_field_slot(box.data.instance_val.instance, "value");
             check_not_null(slot);
-            check_double_eq(value_to_double(*slot), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(*slot)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
 
             exprtk_instance_set_field(box.data.instance_val.instance, "other",
                                       (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 2.0 });
@@ -104,12 +104,12 @@ spec("OOP runtime") {
 
             exprtk_value_t *updated_slot =
                 exprtk_instance_get_field_slot(box.data.instance_val.instance, "value");
-            check_ptr_eq(updated_slot, slot);
-            check_double_eq(value_to_double(*updated_slot), 42.0, TEST_TOLERANCE);
+            check((updated_slot) == (slot));
+            check(fabs((double)(value_to_double(*updated_slot)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
 
             exprtk_value_t field;
             check(exprtk_instance_get_field(box.data.instance_val.instance, "value", &field));
-            check_double_eq(value_to_double(field), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(field)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
 
             exprtk_free(root);
             exprtk_env_free(&env);
@@ -132,29 +132,29 @@ spec("OOP runtime") {
 
             exprtk_eval(root, &env);
             exprtk_value_t child = exprtk_env_get(&env, "child");
-            check_int_eq(child.type, EXPRTK_VAL_INSTANCE);
+            check((child.type) == (EXPRTK_VAL_INSTANCE));
 
             exprtk_instance_t *instance = child.data.instance_val.instance;
             exprtk_class_t *klass = instance->klass;
             check(klass->instance_field_count >= 2);
             if (klass->instance_field_count >= 2) {
-                check_str_eq(klass->instance_field_names[0], "base");
-                check_str_eq(klass->instance_field_names[1], "extra");
+                check(strcmp((klass->instance_field_names[0]), ("base")) == 0);
+                check(strcmp((klass->instance_field_names[1]), ("extra")) == 0);
             }
 
             exprtk_value_t *base_slot = exprtk_instance_get_field_slot(instance, "base");
             exprtk_value_t *extra_slot = exprtk_instance_get_field_slot(instance, "extra");
             check_not_null(base_slot);
             check_not_null(extra_slot);
-            check_double_eq(value_to_double(*base_slot), 20.0, TEST_TOLERANCE);
-            check_double_eq(value_to_double(*extra_slot), 21.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(*base_slot)) - (double)(20.0)) <= (double)(TEST_TOLERANCE));
+            check(fabs((double)(value_to_double(*extra_slot)) - (double)(21.0)) <= (double)(TEST_TOLERANCE));
 
             exprtk_instance_set_field(instance, "extra",
                                       (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 2.0 });
             exprtk_instance_set_field(instance, "base",
                                       (exprtk_value_t){ .type = EXPRTK_VAL_NUMBER, .data.number = 40.0 });
-            check_ptr_eq(exprtk_instance_get_field_slot(instance, "base"), base_slot);
-            check_ptr_eq(exprtk_instance_get_field_slot(instance, "extra"), extra_slot);
+            check((exprtk_instance_get_field_slot(instance, "base")) == (base_slot));
+            check((exprtk_instance_get_field_slot(instance, "extra")) == (extra_slot));
 
             exprtk_free(root);
             exprtk_env_free(&env);
@@ -169,7 +169,7 @@ spec("OOP runtime") {
                 "p = new Point(3, 4);"
                 "p.sum()");
 
-            check_double_eq(value_to_double(result), 7.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(7.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should instantiate class values stored in variables") {
@@ -182,7 +182,7 @@ spec("OOP runtime") {
                 "c = CounterAlias(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should instantiate class values with new") {
@@ -195,7 +195,7 @@ spec("OOP runtime") {
                 "c = new CounterAlias(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let class value variables shadow class names when called") {
@@ -206,7 +206,7 @@ spec("OOP runtime") {
                 "c = Counter();"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let class value variables shadow class names with new") {
@@ -217,7 +217,7 @@ spec("OOP runtime") {
                 "c = new Counter();"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let class value variables shadow class names with instanceof") {
@@ -228,7 +228,7 @@ spec("OOP runtime") {
                 "c = OtherCounter();"
                 "c instanceof Counter");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject class calls after the class variable is overwritten") {
@@ -240,7 +240,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject new expressions after the class variable is overwritten") {
@@ -252,7 +252,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should treat overwritten class variables as non-classes for instanceof") {
@@ -262,7 +262,7 @@ spec("OOP runtime") {
                 "var Counter = 2;"
                 "c instanceof Counter");
 
-            check_double_eq(value_to_double(result), 0.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(0.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call bound methods stored in variables") {
@@ -275,7 +275,7 @@ spec("OOP runtime") {
                 "add = c.add;"
                 "add(2)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep instances returned from functions alive") {
@@ -290,7 +290,7 @@ spec("OOP runtime") {
                 "c.increment();"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 8.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(8.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep bound methods returned from functions alive") {
@@ -303,7 +303,7 @@ spec("OOP runtime") {
                 "add = make_add(40);"
                 "add(2)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep instances of local classes returned from functions alive") {
@@ -318,7 +318,7 @@ spec("OOP runtime") {
                 "c = make_counter(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep bound methods of local classes returned from functions alive") {
@@ -334,7 +334,7 @@ spec("OOP runtime") {
                 "add = make_add(40);"
                 "add(2)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded instance methods by arity") {
@@ -347,7 +347,7 @@ spec("OOP runtime") {
                 "c = Counter();"
                 "c.value() + c.value(10) + c.value(10, 20)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded instance methods by argument type") {
@@ -373,7 +373,7 @@ spec("OOP runtime") {
                 "c.value(fn) + "
                 "c.value(null)");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded instance methods by class type") {
@@ -391,7 +391,7 @@ spec("OOP runtime") {
                 "s = Square();"
                 "p.value(c) * 100 + p.value(s) * 10 + p.value(null)");
 
-            check_double_eq(value_to_double(result), 40201.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(40201.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should spread list values in instance method calls") {
@@ -402,7 +402,7 @@ spec("OOP runtime") {
                 "args = list(\"x\", map {code: 4}, 2);"
                 "Counter().value(...args)");
 
-            check_double_eq(value_to_double(result), 142.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(142.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded constructors by arity") {
@@ -414,7 +414,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter().get() * 100 + Counter(42).get()");
 
-            check_double_eq(value_to_double(result), 142.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(142.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded constructors by argument type") {
@@ -440,7 +440,7 @@ spec("OOP runtime") {
                 "Box(fn).get() + "
                 "Box(null).get()");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should spread list values in constructor calls") {
@@ -452,7 +452,7 @@ spec("OOP runtime") {
                 "args = list(\"x\", map {code: 4}, 2);"
                 "Counter(...args).get()");
 
-            check_double_eq(value_to_double(result), 142.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(142.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep class values returned from functions alive") {
@@ -468,7 +468,7 @@ spec("OOP runtime") {
                 "c = CounterClass(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let constructors capture enclosing variables") {
@@ -484,7 +484,7 @@ spec("OOP runtime") {
                 "c = make_counter(40);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let instance methods capture enclosing variables") {
@@ -500,7 +500,7 @@ spec("OOP runtime") {
                 "c = make_counter(40);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -512,7 +512,7 @@ spec("OOP runtime") {
                 "};"
                 "Math2.add(3, 5)");
 
-            check_double_eq(value_to_double(result), 8.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(8.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should inherit static methods from parent classes") {
@@ -523,7 +523,7 @@ spec("OOP runtime") {
                 "class Child extends Base {};"
                 "Child.value() + 2");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call parent static methods through super") {
@@ -536,7 +536,7 @@ spec("OOP runtime") {
                 "};"
                 "Child.value(20)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded parent static methods through super by type") {
@@ -564,7 +564,7 @@ spec("OOP runtime") {
                 "Child.value(fn) + "
                 "Child.value(null)");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call static methods stored in variables") {
@@ -575,7 +575,7 @@ spec("OOP runtime") {
                 "add = Math2.add;"
                 "add(20, 22)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should preserve super context for stored static methods") {
@@ -589,7 +589,7 @@ spec("OOP runtime") {
                 "value = Child.value;"
                 "value(20)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject this inside static methods") {
@@ -600,7 +600,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject captured this inside static methods") {
@@ -614,7 +614,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let static methods capture enclosing variables") {
@@ -627,7 +627,7 @@ spec("OOP runtime") {
                 "CounterClass = make_counter_class();"
                 "CounterClass.value(40)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep captures when static methods are stored") {
@@ -640,7 +640,7 @@ spec("OOP runtime") {
                 "value = make_value();"
                 "value(40)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded static methods by arity") {
@@ -652,7 +652,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.value() + Counter.value(10) + Counter.value(10, 20)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded static methods by primitive type") {
@@ -677,7 +677,7 @@ spec("OOP runtime") {
                 "Picker.value(fn) + "
                 "Picker.value(null)");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded static methods by class type") {
@@ -692,7 +692,7 @@ spec("OOP runtime") {
                 "};"
                 "Picker.value(Circle()) * 100 + Picker.value(Square()) * 10 + Picker.value(null)");
 
-            check_double_eq(value_to_double(result), 40201.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(40201.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -703,7 +703,7 @@ spec("OOP runtime") {
                 "Store.value = 40;"
                 "Store.value + 2");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should inherit static fields from parent classes") {
@@ -713,7 +713,7 @@ spec("OOP runtime") {
                 "class Child extends Base {};"
                 "Child.value + 2");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should read parent static fields through super") {
@@ -725,7 +725,7 @@ spec("OOP runtime") {
                 "};"
                 "Child.value()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should assign parent static fields through super") {
@@ -738,7 +738,7 @@ spec("OOP runtime") {
                 "Child.set(42);"
                 "Base.value");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let child static fields shadow parent fields") {
@@ -749,7 +749,7 @@ spec("OOP runtime") {
                 "Child.value = 41;"
                 "Child.value + Base.value");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should share static fields through class aliases") {
@@ -759,7 +759,7 @@ spec("OOP runtime") {
                 "Alias.value = 42;"
                 "Store.value");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep static fields on class values returned from functions") {
@@ -772,7 +772,7 @@ spec("OOP runtime") {
                 "StoreClass = make_store_class();"
                 "StoreClass.value");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep inherited static fields on returned class values") {
@@ -786,7 +786,7 @@ spec("OOP runtime") {
                 "ChildClass = make_child_class();"
                 "ChildClass.value + 2");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject missing parent static fields read through super") {
@@ -798,7 +798,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -812,7 +812,7 @@ spec("OOP runtime") {
                 "c = Counter(17);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 17.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(17.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow methods to call private methods through this") {
@@ -825,7 +825,7 @@ spec("OOP runtime") {
                 "c = Counter(40);"
                 "c.add2()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private field access") {
@@ -837,7 +837,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private method calls") {
@@ -849,7 +849,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow static methods to access private static fields") {
@@ -861,7 +861,7 @@ spec("OOP runtime") {
                 "Counter.init(42);"
                 "Counter.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow static methods to call private static methods") {
@@ -872,7 +872,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.value()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private static field access") {
@@ -884,7 +884,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private static field assignment") {
@@ -895,7 +895,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject non-variable member assignment receivers") {
@@ -908,7 +908,7 @@ spec("OOP runtime") {
                 "  99"
                 "} catch (e) { side }");
 
-            check_double_eq(value_to_double(result), 0.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(0.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private static method calls") {
@@ -919,7 +919,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow private methods inside the declaring class") {
@@ -930,7 +930,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter().get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch private overloaded methods by keyword type inside the declaring class") {
@@ -942,7 +942,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter().get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow declared private instance fields inside the declaring class") {
@@ -953,7 +953,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter().add(2)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external declared private instance fields") {
@@ -964,7 +964,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow protected instance fields from subclasses") {
@@ -973,7 +973,7 @@ spec("OOP runtime") {
                 "class Child extends Base { add() { this.value = this.value + 2; return this.value; } };"
                 "Child().add()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external protected instance fields") {
@@ -984,7 +984,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private methods declared with keywords") {
@@ -995,7 +995,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private overloaded methods selected by keyword type") {
@@ -1006,7 +1006,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow protected methods from subclasses") {
@@ -1015,7 +1015,7 @@ spec("OOP runtime") {
                 "class Child extends Base { get() { return super.value() + 2; } };"
                 "Child().get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch protected overloaded methods by keyword type from subclasses") {
@@ -1029,7 +1029,7 @@ spec("OOP runtime") {
                 "};"
                 "Child().get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external protected methods") {
@@ -1040,7 +1040,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should read declared fields without initializers as null") {
@@ -1051,7 +1051,7 @@ spec("OOP runtime") {
                 "b = Box();"
                 "is_null(b.value) * 40 + ((b.value == null) * 2)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should preserve declared private fields on returned class values") {
@@ -1066,7 +1066,7 @@ spec("OOP runtime") {
                 "CounterAlias = make_counter();"
                 "CounterAlias().get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow private static methods inside the declaring class") {
@@ -1077,7 +1077,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch private static overloaded methods by keyword type inside the declaring class") {
@@ -1089,7 +1089,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow declared private static fields inside the declaring class") {
@@ -1100,7 +1100,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.add()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external declared private static fields") {
@@ -1111,7 +1111,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private static methods declared with keywords") {
@@ -1122,7 +1122,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external private static overloaded methods selected by keyword type") {
@@ -1133,7 +1133,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow protected static methods from subclasses") {
@@ -1142,7 +1142,7 @@ spec("OOP runtime") {
                 "class Child extends Base { static get() { return super.value() + 2; } };"
                 "Child.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch protected static overloaded methods by keyword type from subclasses") {
@@ -1156,7 +1156,7 @@ spec("OOP runtime") {
                 "};"
                 "Child.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external protected static methods") {
@@ -1167,7 +1167,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject external protected static overloaded methods selected by keyword type") {
@@ -1178,7 +1178,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -1194,7 +1194,7 @@ spec("OOP runtime") {
                 "(typeof(c) == \"instance\") * 10 + "
                 "(typeof(c.get) == \"function\")");
 
-            check_double_eq(value_to_double(result), 111.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(111.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should expose OOP values through predicates") {
@@ -1205,7 +1205,7 @@ spec("OOP runtime") {
                 "c = Counter();"
                 "is_class(Counter) * 100 + is_instance(c) * 10 + is_function(c.get)");
 
-            check_double_eq(value_to_double(result), 111.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(111.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should expose OOP values through predicates on map members") {
@@ -1219,7 +1219,7 @@ spec("OOP runtime") {
                 "is_function(bundle.make) * 10 + "
                 "(typeof(bundle.Counter) == \"class\")");
 
-            check_double_eq(value_to_double(result), 111.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(111.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -1235,7 +1235,7 @@ spec("OOP runtime") {
                 "c = Child(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call parent constructors with super and support instanceof") {
@@ -1251,7 +1251,7 @@ spec("OOP runtime") {
                 "d = Dog(\"Rex\", 7);"
                 "d.score() + (d instanceof Dog) * 10 + (d instanceof Animal) * 100");
 
-            check_double_eq(value_to_double(result), 120.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(120.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should inherit parent constructors by default") {
@@ -1264,7 +1264,7 @@ spec("OOP runtime") {
                 "d = Dog(\"Rex\", 39);"
                 "d.score()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let super call inherited default constructors") {
@@ -1279,7 +1279,7 @@ spec("OOP runtime") {
                 "};"
                 "Child(41).get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support class value aliases with instanceof") {
@@ -1293,7 +1293,7 @@ spec("OOP runtime") {
                 "d = DogAlias(\"Rex\");"
                 "(d instanceof DogAlias) * 10 + (d instanceof AnimalAlias)");
 
-            check_double_eq(value_to_double(result), 11.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(11.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support class value aliases in extends clauses") {
@@ -1303,7 +1303,7 @@ spec("OOP runtime") {
                 "class Child extends Parent {};"
                 "Child().value()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should let class value variables shadow parent class names in extends clauses") {
@@ -1314,7 +1314,7 @@ spec("OOP runtime") {
                 "class Child extends Base {};"
                 "Child().value()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject overwritten class variables in extends clauses") {
@@ -1326,7 +1326,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow methods marked override when a parent method matches") {
@@ -1335,7 +1335,7 @@ spec("OOP runtime") {
                 "class Child extends Base { override value() { return super.value() + 2; } };"
                 "Child().value()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow typed override methods when a parent signature matches") {
@@ -1346,7 +1346,7 @@ spec("OOP runtime") {
                 "};"
                 "Child().value(map {x: 1})");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject override methods without matching parent methods") {
@@ -1358,7 +1358,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject typed override methods without matching parent signatures") {
@@ -1370,7 +1370,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject extending final classes") {
@@ -1382,7 +1382,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject overriding final methods") {
@@ -1394,7 +1394,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject overriding final typed methods with matching signatures") {
@@ -1406,7 +1406,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call overridden parent methods with super.method") {
@@ -1420,7 +1420,7 @@ spec("OOP runtime") {
                 "c = Child();"
                 "c.value(10)");
 
-            check_double_eq(value_to_double(result), 22.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(22.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded parent methods through super by arity") {
@@ -1435,7 +1435,7 @@ spec("OOP runtime") {
                 "};"
                 "Child().value(10)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded parent methods through super by type") {
@@ -1464,7 +1464,7 @@ spec("OOP runtime") {
                 "c.value(fn) + "
                 "c.value(null)");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should spread list values in super method calls") {
@@ -1477,7 +1477,7 @@ spec("OOP runtime") {
                 "};"
                 "Child().value(list(\"x\", map {code: 4}, 2))");
 
-            check_double_eq(value_to_double(result), 142.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(142.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded parent constructors through super") {
@@ -1492,7 +1492,7 @@ spec("OOP runtime") {
                 "};"
                 "Child(42).get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded parent constructors through super by type") {
@@ -1521,7 +1521,7 @@ spec("OOP runtime") {
                 "Child(fn).get() + "
                 "Child(null).get()");
 
-            check_double_eq(value_to_double(result), 127.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(127.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should read inherited instance fields through super") {
@@ -1535,7 +1535,7 @@ spec("OOP runtime") {
                 "};"
                 "Child(40).get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should assign inherited instance fields through super") {
@@ -1551,7 +1551,7 @@ spec("OOP runtime") {
                 "c.set(42);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should resolve super from the inherited method owner class") {
@@ -1566,7 +1566,7 @@ spec("OOP runtime") {
                 "c = Child();"
                 "c.value()");
 
-            check_double_eq(value_to_double(result), 2.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(2.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should chain super constructors through owner classes") {
@@ -1584,7 +1584,7 @@ spec("OOP runtime") {
                 "c = Child(1);"
                 "c.get()");
 
-            check_double_eq(value_to_double(result), 3.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(3.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject classes with unknown parent classes") {
@@ -1594,7 +1594,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject unknown classes in new expressions") {
@@ -1604,7 +1604,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject missing parent methods called through super") {
@@ -1616,7 +1616,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject super calls when the class has no parent") {
@@ -1627,7 +1627,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject super constructor calls outside constructors") {
@@ -1639,7 +1639,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -1651,7 +1651,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 
@@ -1664,7 +1664,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow concrete subclasses to implement abstract methods") {
@@ -1677,7 +1677,7 @@ spec("OOP runtime") {
                 "s = Square(6);"
                 "s.area()");
 
-            check_double_eq(value_to_double(result), 36.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(36.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should match abstract method implementations by arity") {
@@ -1690,7 +1690,7 @@ spec("OOP runtime") {
                 "s = Square(6);"
                 "s.area(2)");
 
-            check_double_eq(value_to_double(result), 72.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(72.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should accept keyword typed abstract method implementations") {
@@ -1706,7 +1706,7 @@ spec("OOP runtime") {
                 "g = Good();"
                 "g.accept(map {x: 1}) + g.make(null)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject abstract method implementations with the wrong arity") {
@@ -1718,7 +1718,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject wrong keyword typed abstract method implementations") {
@@ -1730,7 +1730,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep subclasses abstract until inherited abstract methods are implemented") {
@@ -1742,7 +1742,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow classes to implement interfaces") {
@@ -1755,7 +1755,7 @@ spec("OOP runtime") {
                 "s = Square(6);"
                 "s.area()");
 
-            check_double_eq(value_to_double(result), 36.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(36.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow classes to implement multiple interfaces") {
@@ -1770,7 +1770,7 @@ spec("OOP runtime") {
                 "s = Square(6);"
                 "s.area() + s.perimeter()");
 
-            check_double_eq(value_to_double(result), 60.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(60.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow classes to implement static interface methods") {
@@ -1781,7 +1781,7 @@ spec("OOP runtime") {
                 "};"
                 "Counter.make()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow inherited static methods to satisfy interface requirements") {
@@ -1791,7 +1791,7 @@ spec("OOP runtime") {
                 "class Child extends Base implements Factory {};"
                 "Child.make()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject instance methods for static interface requirements") {
@@ -1803,7 +1803,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject classes missing interface method implementations") {
@@ -1815,7 +1815,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow interfaces to extend interfaces") {
@@ -1832,7 +1832,7 @@ spec("OOP runtime") {
                 "s = Square(6);"
                 "s.area() + s.color() + s.label()");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject classes missing inherited interface methods") {
@@ -1845,7 +1845,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support instanceof with implemented interfaces") {
@@ -1863,7 +1863,7 @@ spec("OOP runtime") {
                 "(s instanceof Colored) * 10 + "
                 "(s instanceof ColoredShape)");
 
-            check_double_eq(value_to_double(result), 111.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(111.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should inherit interface instanceof through class inheritance") {
@@ -1876,7 +1876,7 @@ spec("OOP runtime") {
                 "(c instanceof Base) * 10 + "
                 "(c instanceof Shape)");
 
-            check_double_eq(value_to_double(result), 111.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(111.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow inherited methods to satisfy interface requirements") {
@@ -1887,7 +1887,7 @@ spec("OOP runtime") {
                 "c = Child();"
                 "c.area() + (c instanceof Shape)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow inherited typed methods to satisfy interface requirements") {
@@ -1899,7 +1899,7 @@ spec("OOP runtime") {
                 "class Child extends Base implements Handler {};"
                 "Child().handle(Square())");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should dispatch overloaded methods by interface type") {
@@ -1919,7 +1919,7 @@ spec("OOP runtime") {
                 "p = Picker();"
                 "p.value(Square()) * 100 + p.value(Triangle()) * 10 + p.value(null)");
 
-            check_double_eq(value_to_double(result), 40201.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(40201.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should require exact typed interface method implementations") {
@@ -1935,7 +1935,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should accept exact typed interface method implementations") {
@@ -1948,7 +1948,7 @@ spec("OOP runtime") {
                 "};"
                 "Good().handle(Square())");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should accept keyword typed interface method implementations") {
@@ -1975,7 +1975,7 @@ spec("OOP runtime") {
                 "g.accept_null(null) + "
                 "Good.make_map(map {x: 1})");
 
-            check_double_eq(value_to_double(result), 31.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(31.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should allow typed implementations for untyped abstract methods") {
@@ -1984,7 +1984,7 @@ spec("OOP runtime") {
                 "class Child extends Base { value(x: number) { return x + 1; } };"
                 "Child().value(41)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should preserve interface identity across returned class values") {
@@ -2000,7 +2000,7 @@ spec("OOP runtime") {
                 "square = SquareAlias();"
                 "square instanceof ShapeAlias");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support instanceof with class value member expressions") {
@@ -2016,7 +2016,7 @@ spec("OOP runtime") {
                 "(square instanceof bundle.Shape) * 10 + "
                 "(square instanceof bundle.nested.Shape)");
 
-            check_double_eq(value_to_double(result), 11.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(11.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should call callable class and function values through map members") {
@@ -2031,7 +2031,7 @@ spec("OOP runtime") {
                 "bundle = make_bundle();"
                 "bundle.Counter(41).get() + bundle.add_one(0)");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should preserve interface overload identity across returned class values") {
@@ -2050,7 +2050,7 @@ spec("OOP runtime") {
                 "PickerAlias = bundle.Picker;"
                 "PickerAlias().value(SquareAlias())");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep same-name interface overloads scoped by identity") {
@@ -2071,7 +2071,7 @@ spec("OOP runtime") {
                 "PickerAlias = bundle.Picker;"
                 "PickerAlias().value(SquareAlias()) * 100 + PickerAlias().value(Other())");
 
-            check_double_eq(value_to_double(result), 4201.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(4201.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep typed interface requirements scoped by identity") {
@@ -2096,7 +2096,7 @@ spec("OOP runtime") {
                 "  Good().handle(SquareAlias())"
                 "}");
 
-            check_double_eq(value_to_double(result), 42.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(42.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should keep duplicate typed interface requirements by identity") {
@@ -2134,7 +2134,7 @@ spec("OOP runtime") {
                 "  Good().handle(LeftClass()) + Good().handle(RightClass())"
                 "}");
 
-            check_double_eq(value_to_double(result), 60.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(60.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support interface aliases in implements clauses") {
@@ -2145,7 +2145,7 @@ spec("OOP runtime") {
                 "s = Square();"
                 "s.area() + (s instanceof Alias)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should support interface aliases in interface extends clauses") {
@@ -2160,7 +2160,7 @@ spec("OOP runtime") {
                 "s = Square();"
                 "s.area() + s.label() + (s instanceof Alias)");
 
-            check_double_eq(value_to_double(result), 43.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(43.0)) <= (double)(TEST_TOLERANCE));
         }
 
         it("should reject non-interface aliases in implements clauses") {
@@ -2172,7 +2172,7 @@ spec("OOP runtime") {
                 "  0"
                 "} catch (e) { typeof(e) == \"string\" }");
 
-            check_double_eq(value_to_double(result), 1.0, TEST_TOLERANCE);
+            check(fabs((double)(value_to_double(result)) - (double)(1.0)) <= (double)(TEST_TOLERANCE));
         }
     }
 }

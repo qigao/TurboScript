@@ -30,14 +30,14 @@ spec("net_plugin") {
       ts_plugin_handle_t *h = ts_plugin_load(NET_PLUGIN_DLL);
       check_not_null(h);
       check_not_null(h->plugin);
-      check_str_eq(h->plugin->name, "net");
+      check(strcmp((h->plugin->name), ("net")) == 0);
 
       exprtk_env_t env;
       mem_pool_t scratch;
       exprtk_env_init(&env);
       mem_init(&scratch, 4096);
 
-      check_int_eq(ts_plugin_init(h, &env, &scratch), 0);
+      check((ts_plugin_init(h, &env, &scratch)) == (0));
       check_not_null(h->instance);
       exprtk_func_t *fn_http_get = find_native(&env, "http.get");
       exprtk_func_t *fn_http_post = find_native(&env, "http.post");
@@ -59,16 +59,16 @@ spec("net_plugin") {
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "http://invalid.url.local", 24 }};
       exprtk_value_t res =
           fn_http_get->data.native.fn(1, args, &env, fn_http_get->data.native.user_data);
-      check_int_eq(res.type, EXPRTK_VAL_NUMBER);
+      check((res.type) == (EXPRTK_VAL_NUMBER));
       check(res.data.number == 0.0);
 
       /* Test http.get with invalid URL (with options) -> returns map with error */
       args[1] = exprtk_val_map();
       exprtk_map_set(&args[1], "timeout", (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 100});
       res = fn_http_get->data.native.fn(2, args, &env, fn_http_get->data.native.user_data);
-      check_int_eq(res.type, EXPRTK_VAL_MAP);
+      check((res.type) == (EXPRTK_VAL_MAP));
       exprtk_value_t err = exprtk_map_get(&res, "error");
-      check_int_eq(err.type, EXPRTK_VAL_STRING);
+      check((err.type) == (EXPRTK_VAL_STRING));
       check(err.data.string.len > 0);
       exprtk_map_free(&res);
       exprtk_map_free(&args[1]);
@@ -80,9 +80,9 @@ spec("net_plugin") {
                                       .data.string = {"invalid", 7}});
       res = fn_http_get->data.native.fn(2, args, &env,
                                         fn_http_get->data.native.user_data);
-      check_int_eq(res.type, EXPRTK_VAL_MAP);
+      check((res.type) == (EXPRTK_VAL_MAP));
       err = exprtk_map_get(&res, "error");
-      check_int_eq(err.type, EXPRTK_VAL_STRING);
+      check((err.type) == (EXPRTK_VAL_STRING));
       check(err.data.string.len > 0);
       exprtk_map_free(&res);
       exprtk_map_free(&args[1]);
@@ -91,7 +91,7 @@ spec("net_plugin") {
       args[0] = (exprtk_value_t){EXPRTK_VAL_STRING, .data.string = { "ws://invalid.url.local", 22 }};
       res = fn_ws_connect->data.native.fn(1, args, &env,
                                           fn_ws_connect->data.native.user_data);
-      check_int_eq(res.type, EXPRTK_VAL_NUMBER);
+      check((res.type) == (EXPRTK_VAL_NUMBER));
       check(res.data.number == 0);
 
       /* Test http.get with a real mock URL: https://mockhttp.org/ */
@@ -102,10 +102,10 @@ spec("net_plugin") {
                      (exprtk_value_t){EXPRTK_VAL_STRING,
                                       .data.string = {"auto", 4}});
       res = fn_http_get->data.native.fn(2, args, &env, fn_http_get->data.native.user_data);
-      check_int_eq(res.type, EXPRTK_VAL_MAP);
+      check((res.type) == (EXPRTK_VAL_MAP));
       
       exprtk_value_t status = exprtk_map_get(&res, "status");
-      check_int_eq(status.type, EXPRTK_VAL_NUMBER);
+      check((status.type) == (EXPRTK_VAL_NUMBER));
       /* mockhttp.org should return 200 OK */
       check(status.data.number == 200);
       

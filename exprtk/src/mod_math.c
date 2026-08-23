@@ -757,9 +757,9 @@ static exprtk_value_t fn_mat_info(size_t argc, exprtk_value_t *args, exprtk_env_
   exprtk_map_set(&info, "size", exprtk_val_num((double)(rows * cols)));
   exprtk_map_set(&info, "layout", exprtk_val_num((double)layout));
   exprtk_map_set(&info, "order",
-                 exprtk_val_str(tstr_v_from_cstr(layout == MATH_MATRIX_ROW_MAJOR ? "row" : "col")));
-  exprtk_map_set(&info, "dtype", exprtk_val_str(tstr_v_from_cstr("f64")));
-  exprtk_map_set(&info, "backend_dtype", exprtk_val_str(tstr_v_from_cstr("f32")));
+                 exprtk_val_str(vstr_from_cstr(layout == MATH_MATRIX_ROW_MAJOR ? "row" : "col")));
+  exprtk_map_set(&info, "dtype", exprtk_val_str(vstr_from_cstr("f64")));
+  exprtk_map_set(&info, "backend_dtype", exprtk_val_str(vstr_from_cstr("f32")));
   return info;
 }
 
