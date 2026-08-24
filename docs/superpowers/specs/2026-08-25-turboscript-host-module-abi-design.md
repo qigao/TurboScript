@@ -1,6 +1,6 @@
 # TurboScript Stable Host Module ABI Design
 
-- 状态：已获设计方向批准，待规格复核
+- 状态：已获规格批准，进入实施计划
 - 日期：2026-08-25
 - 跟踪：[qigao/TurboScript#1](https://github.com/qigao/TurboScript/issues/1)
 - 首个消费者：FlexUI controller adapter
