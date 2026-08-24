@@ -43,13 +43,29 @@ include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
 
+foreach(_turbo_script_dependency_root IN ITEMS
+        TURBOUTILS_ROOT TURBOPARSER_ROOT TURBONET_ROOT TURBOHTTP_ROOT
+        RULES_FORGE_ROOT)
+  if(NOT DEFINED ENV{${_turbo_script_dependency_root}} OR
+     "$ENV{${_turbo_script_dependency_root}}" STREQUAL "")
+    message(FATAL_ERROR
+            "Required dependency root is not defined: ${_turbo_script_dependency_root}")
+  endif()
+  if(NOT IS_DIRECTORY "$ENV{${_turbo_script_dependency_root}}")
+    message(FATAL_ERROR
+            "${_turbo_script_dependency_root} is not a directory: $ENV{${_turbo_script_dependency_root}}")
+  endif()
+endforeach()
+
 find_package(Threads REQUIRED)
-find_package(TurboUtils CONFIG REQUIRED PATHS "${TURBO_UTILS_ROOT}"
-             NO_DEFAULT_PATH)
-find_package(TurboParser CONFIG REQUIRED PATHS "${TURBOPARSER_ROOT}")
-find_package(TurboNet CONFIG REQUIRED PATHS "${TURBONET_ROOT}" NO_DEFAULT_PATH)
-find_package(TurboHttp CONFIG REQUIRED PATHS "${TURBOHTTP_ROOT}"
-             NO_DEFAULT_PATH)
+find_package(TurboUtils CONFIG REQUIRED
+             PATHS "$ENV{TURBOUTILS_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboParser CONFIG REQUIRED
+             PATHS "$ENV{TURBOPARSER_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboNet CONFIG REQUIRED
+             PATHS "$ENV{TURBONET_ROOT}" NO_DEFAULT_PATH)
+find_package(TurboHttp CONFIG REQUIRED
+             PATHS "$ENV{TURBOHTTP_ROOT}" NO_DEFAULT_PATH)
 
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)

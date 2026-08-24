@@ -90,6 +90,16 @@ target_link_libraries(
   PUBLIC TurboUtils::Core TurboUtils::STL
   PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
+if(WIN32)
+  add_custom_command(
+    TARGET ${TARGET_NAME}
+    POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboParser::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMENT "Synchronizing TurboScript runtime dependencies"
+    VERBATIM)
+endif()
+
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  
 
