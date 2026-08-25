@@ -5,6 +5,7 @@ set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
+  src/host/turbo_script_host_result.c
   src/mir_mod.c
   src/turbo_script.c
   src/turbo_script_closure_analysis.c
@@ -45,6 +46,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
   PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/host
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
 target_link_libraries(
@@ -77,6 +79,7 @@ target_include_directories(
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
   PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/host
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
 target_compile_definitions(
