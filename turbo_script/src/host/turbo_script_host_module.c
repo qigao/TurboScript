@@ -502,14 +502,23 @@ const char *ts_host_module_name(const turbo_script_module_t *module) { return mo
 turbo_script_status_t ts_host_module_execute_numeric(
     turbo_script_module_t *module, size_t export_index, int use_jit,
     const double *args, size_t arg_count, double *out_result) {
-  if (!module || (!args && arg_count) || !out_result)
+  return ts_host_module_execute_numeric_with_runtime(
+      module, module ? module->ctx : NULL, export_index, use_jit, args,
+      arg_count, out_result);
+}
+
+turbo_script_status_t ts_host_module_execute_numeric_with_runtime(
+    turbo_script_module_t *module, turbo_script_ctx_t *runtime_ctx,
+    size_t export_index, int use_jit, const double *args, size_t arg_count,
+    double *out_result) {
+  if (!module || !runtime_ctx || (!args && arg_count) || !out_result)
     return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (ts_host_check_owner_thread(module->ctx) != TURBO_SCRIPT_STATUS_OK)
     return TURBO_SCRIPT_STATUS_WRONG_THREAD;
   const ts_host_export_entry_t *entry = ts_host_module_entry(module, export_index);
   if (!entry || arg_count > 16 || arg_count != entry->arity)
     return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  return ts_mir_artifact_execute_numeric(module->artifact, module->ctx, export_index,
+  return ts_mir_artifact_execute_numeric(module->artifact, runtime_ctx, export_index,
                                          use_jit, args, arg_count, out_result) == 0
              ? TURBO_SCRIPT_STATUS_OK
              : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;

@@ -200,11 +200,13 @@ int ts_emit_direct_math_call(ts_mir_compiler_t *c, const char *name, size_t argc
 int ts_emit_direct_resolved_call(ts_mir_compiler_t *c, const char *name, size_t argc,
                                         const MIR_reg_t *arg_regs, MIR_reg_t res) {
   size_t host_slot = SIZE_MAX;
-  if (ts_host_registry_find_slot(c->ts_ctx,
+  turbo_script_ctx_t *registry_owner = c->lowering_policy.registry_owner_ctx;
+  if (c->lowering_policy.host_slots == TS_MIR_HOST_SLOTS_FROZEN &&
+      ts_host_registry_find_slot(registry_owner,
                                  (turbo_script_string_view_t){name, strlen(name)},
                                  &host_slot) == TURBO_SCRIPT_STATUS_OK) {
     const ts_host_function_entry_t *entry = NULL;
-    if (ts_host_registry_get_slot(c->ts_ctx, host_slot, &entry) !=
+    if (ts_host_registry_get_slot(registry_owner, host_slot, &entry) !=
             TURBO_SCRIPT_STATUS_OK ||
         !entry || argc < entry->min_arity || argc > entry->max_arity) {
       ts_mir_fail(c, "Host function '%s' arity mismatch", name);
@@ -213,9 +215,12 @@ int ts_emit_direct_resolved_call(ts_mir_compiler_t *c, const char *name, size_t 
     MIR_reg_t arr_reg = ts_emit_packed_args(c, argc, arg_regs);
     MIR_append_insn(c->ctx, c->func,
                     MIR_new_call_insn(
-                        c->ctx, 7, MIR_new_ref_op(c->ctx, c->ext.call_host_slot_proto),
+                        c->ctx, 8, MIR_new_ref_op(c->ctx, c->ext.call_host_slot_proto),
                         MIR_new_ref_op(c->ctx, c->ext.call_host_slot_import),
-                        MIR_new_reg_op(c->ctx, res), MIR_new_reg_op(c->ctx, c->ctx_reg),
+                        MIR_new_reg_op(c->ctx, res),
+                        MIR_new_uint_op(c->ctx,
+                                        (uint64_t)(uintptr_t)registry_owner),
+                        MIR_new_reg_op(c->ctx, c->ctx_reg),
                         MIR_new_int_op(c->ctx, (int64_t)host_slot),
                         MIR_new_int_op(c->ctx, (int64_t)argc),
                         MIR_new_reg_op(c->ctx, arr_reg)));

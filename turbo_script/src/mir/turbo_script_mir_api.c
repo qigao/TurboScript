@@ -22,6 +22,8 @@ struct ts_mir_artifact_s {
   uint32_t *export_arities;
   void **export_addresses;
   size_t export_count;
+  /* Borrowed from the module-retained context for the artifact lifetime. */
+  turbo_script_ctx_t *registry_owner_ctx;
   int gen_initialized;
 };
 
@@ -40,6 +42,7 @@ static ts_compiled_func_t *ts_mir_find_artifact_function(ts_mir_compiler_t *comp
 static int ts_mir_lower_owned_module(
     MIR_context_t mir_ctx, MIR_module_t module, turbo_script_ctx_t *compile_ctx,
     exprtk_node_t *ast, const char *prefix,
+    const ts_mir_lowering_policy_t *policy,
     const ts_host_export_table_t *exports, MIR_item_t *out_initializer,
     MIR_item_t *out_export_items, MIR_item_t *out_export_wrappers) {
   ts_mir_compiler_t compiler = {0};
@@ -47,7 +50,16 @@ static int ts_mir_lower_owned_module(
   size_t export_count = exports ? vec_size(&exports->entries) : 0;
   int success = 0;
   int module_finished = 0;
-  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !out_initializer)
+  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !policy ||
+      !out_initializer)
+    return -1;
+  if ((policy->host_slots == TS_MIR_HOST_SLOTS_FROZEN &&
+       (!policy->registry_owner_ctx ||
+        policy->registry_owner_ctx->active_host_modules == 0)) ||
+      (policy->host_slots == TS_MIR_HOST_SLOTS_DISABLED &&
+       policy->registry_owner_ctx) ||
+      (policy->host_slots != TS_MIR_HOST_SLOTS_FROZEN &&
+       policy->host_slots != TS_MIR_HOST_SLOTS_DISABLED))
     return -1;
   if (export_count && (!out_export_items || !out_export_wrappers)) return -1;
   *out_initializer = NULL;
@@ -58,6 +70,7 @@ static int ts_mir_lower_owned_module(
   compiler.ctx = mir_ctx;
   compiler.module = module;
   compiler.ts_ctx = compile_ctx;
+  compiler.lowering_policy = *policy;
   compiler.ast_root = ast;
   compiler.metadata_nodes = metadata_nodes;
   compiler.metadata_node_count = export_count;
@@ -176,6 +189,8 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
                             ts_mir_artifact_t **out_artifact) {
   ts_mir_artifact_t *artifact = NULL;
   size_t export_count;
+  const ts_mir_lowering_policy_t policy = {
+      TS_MIR_HOST_SLOTS_FROZEN, compile_ctx};
   int success = 0;
   if (!compile_ctx || !ast || !exports || !out_artifact) return -1;
   *out_artifact = NULL;
@@ -191,13 +206,14 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
         !artifact->export_addresses || !artifact->export_arities) goto done;
   }
   artifact->export_count = export_count;
+  artifact->registry_owner_ctx = compile_ctx;
   artifact->ctx = MIR_init();
   if (!artifact->ctx) goto done;
   artifact->module = MIR_new_module(artifact->ctx, "ts_host_module");
   if (!artifact->module) goto done;
   if (ts_mir_lower_owned_module(
           artifact->ctx, artifact->module, compile_ctx, ast, "ts_host",
-          exports, &artifact->initializer, artifact->export_items,
+          &policy, exports, &artifact->initializer, artifact->export_items,
           artifact->export_wrappers) != 0)
     goto done;
   for (size_t i = 0; i < export_count; ++i) {
@@ -255,21 +271,30 @@ int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
   MIR_val_t mir_args[18] = {0};
   MIR_val_t result = {0};
   if (!artifact || !runtime_ctx || export_index >= artifact->export_count ||
+      !artifact->registry_owner_ctx ||
       arg_count > 16 || arg_count != artifact->export_arities[export_index] ||
       (!args && arg_count) || !out_result) return -1;
+  runtime_ctx->env.aborted = 0;
+  runtime_ctx->env.flow = exprtk_FLOW_NORMAL;
+  runtime_ctx->env.error_msg[0] = '\0';
   mir_args[0].a = runtime_ctx;
   mir_args[1].a = &runtime_ctx->env;
   for (size_t i = 0; i < arg_count; ++i) mir_args[i + 2].d = args[i];
   if (!use_jit) {
     MIR_interp_arr(artifact->ctx, artifact->export_items[export_index], &result,
                    arg_count + 2, mir_args);
+    if (runtime_ctx->env.aborted || runtime_ctx->env.flow == exprtk_FLOW_THROW)
+      return -1;
     *out_result = result.d;
     return 0;
   }
   if (!artifact->export_addresses[export_index]) return -1;
-  *out_result = ((double (*)(void *, void *, const double *))
-                     artifact->export_addresses[export_index])(
+  result.d = ((double (*)(void *, void *, const double *))
+                  artifact->export_addresses[export_index])(
       runtime_ctx, &runtime_ctx->env, args);
+  if (runtime_ctx->env.aborted || runtime_ctx->env.flow == exprtk_FLOW_THROW)
+    return -1;
+  *out_result = result.d;
   return 0;
 }
 
@@ -393,7 +418,9 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   MIR_module_t mod = MIR_new_module(mir_ctx, mod_name);
 
   MIR_item_t shared_initializer = NULL;
-  if (ts_mir_lower_owned_module(mir_ctx, mod, ctx, ast, mod_name, NULL,
+  const ts_mir_lowering_policy_t policy = {
+      TS_MIR_HOST_SLOTS_DISABLED, NULL};
+  if (ts_mir_lower_owned_module(mir_ctx, mod, ctx, ast, mod_name, &policy, NULL,
                                 &shared_initializer, NULL, NULL) != 0) {
     if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE)
       ctx->error_code = TURBO_SCRIPT_ERROR_JIT;

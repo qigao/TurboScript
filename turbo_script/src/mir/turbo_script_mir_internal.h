@@ -40,6 +40,16 @@ typedef struct ts_mir_compile_frame_s ts_mir_compile_frame_t;
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
 typedef struct ts_host_export_table_s ts_host_export_table_t;
 
+typedef enum ts_mir_host_slot_policy_e {
+  TS_MIR_HOST_SLOTS_DISABLED = 0,
+  TS_MIR_HOST_SLOTS_FROZEN = 1
+} ts_mir_host_slot_policy_t;
+
+typedef struct ts_mir_lowering_policy_s {
+  ts_mir_host_slot_policy_t host_slots;
+  turbo_script_ctx_t *registry_owner_ctx;
+} ts_mir_lowering_policy_t;
+
 /* =========================================================================
  * Constants
  * ========================================================================= */
@@ -264,6 +274,7 @@ struct ts_mir_compiler_s {
   MIR_item_t func;
   MIR_module_t module;
   turbo_script_ctx_t *ts_ctx;
+  ts_mir_lowering_policy_t lowering_policy;
   exprtk_node_t *ast_root;
   const exprtk_node_t *const *metadata_nodes;
   size_t metadata_node_count;
@@ -561,8 +572,8 @@ double ts_mir_map_rest_assign(void *ctx_ptr, const char *target, const char *res
 void *ts_mir_map_num_ptr(void *ctx_ptr, const char *obj_name, const char *key);
 double ts_mir_load_captured_var(void *ctx_ptr, const char *var_name, void *closure_env_ptr);
 double ts_mir_call_native(void *ctx_ptr, void *fn_ptr, void *user_data, int64_t argc, double *argv);
-double ts_mir_call_host_slot(void *ctx_ptr, int64_t slot, int64_t argc,
-                             double *argv);
+double ts_mir_call_host_slot(void *registry_owner_ptr, void *runtime_ctx_ptr,
+                             int64_t slot, int64_t argc, double *argv);
 double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *argv);
 void ts_mir_oop_define_class(void *ctx_ptr, void *node);
 double ts_mir_oop_class_alias(void *ctx_ptr, const char *alias, const char *class_name);

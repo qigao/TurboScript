@@ -1,5 +1,6 @@
 #include "tinytest.h"
 
+#include "../src/turbo_script_internal.h"
 #include "turbo_script_host_api_internal.h"
 #include "exprtk.h"
 
@@ -17,6 +18,10 @@ const char *ts_host_module_name(const turbo_script_module_t *module);
 turbo_script_status_t ts_host_module_execute_numeric(
     turbo_script_module_t *module, size_t export_index, int use_jit,
     const double *args, size_t arg_count, double *out_result);
+turbo_script_status_t ts_host_module_execute_numeric_with_runtime(
+    turbo_script_module_t *module, turbo_script_ctx_t *runtime_ctx,
+    size_t export_index, int use_jit, const double *args, size_t arg_count,
+    double *out_result);
 turbo_script_status_t ts_host_module_execute_initializer(
     turbo_script_module_t *module, int use_jit);
 turbo_script_status_t ts_host_module_compile_test_parse_oom(
@@ -35,6 +40,29 @@ static turbo_script_status_t noop_host(void *user_data,
   (void)args;
   if (user_data) (*(size_t *)user_data)++;
   value.as.number = (double)arg_count;
+  return turbo_script_host_result_set_value(builder, &value);
+}
+
+static turbo_script_status_t error_host(void *user_data,
+                                        const turbo_script_value_view_t *args,
+                                        size_t arg_count,
+                                        turbo_script_host_result_builder_t *builder) {
+  static const char message[] = "runtime failure";
+  (void)args;
+  (void)arg_count;
+  if (user_data) (*(size_t *)user_data)++;
+  return turbo_script_host_result_set_error(
+      builder, 77, (turbo_script_string_view_t){message, sizeof(message) - 1});
+}
+
+static turbo_script_status_t echo_numeric_host(
+    void *user_data, const turbo_script_value_view_t *args, size_t arg_count,
+    turbo_script_host_result_builder_t *builder) {
+  turbo_script_value_view_t value = {.kind = TURBO_SCRIPT_VALUE_NUMBER};
+  if (!args || arg_count != 1 || args[0].kind != TURBO_SCRIPT_VALUE_NUMBER)
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  if (user_data) (*(size_t *)user_data)++;
+  value.as.number = args[0].as.number;
   return turbo_script_host_result_set_value(builder, &value);
 }
 
@@ -341,6 +369,86 @@ spec("TurboScript immutable Host modules") {
     check_equal(ts_host_module_execute_numeric(module, 0, 1, &arg, 1, &output),
                 TURBO_SCRIPT_STATUS_OK);
     check_equal(output, 1.0);
+    check_equal(callback_count, (size_t)2);
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("uses the parent registry slot with a distinct bare runtime") {
+    size_t callback_count = 0;
+    size_t decoy_count = 0;
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    turbo_script_host_function_descriptor_t descriptor = {
+        .struct_size = sizeof(descriptor), .min_arity = 1, .max_arity = 1,
+        .name = {"host_count", 10}};
+    double arg = 7;
+    double output = 0;
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    descriptor.name = (turbo_script_string_view_t){"host_decoy", 10};
+    check_equal(turbo_script_context_register_host_function(
+                    ctx, &descriptor, noop_host, &decoy_count, result),
+                TURBO_SCRIPT_STATUS_OK);
+    descriptor.name = (turbo_script_string_view_t){"host_count", 10};
+    check_equal(turbo_script_context_register_host_function(
+                    ctx, &descriptor, echo_numeric_host, &callback_count, result),
+                TURBO_SCRIPT_STATUS_OK);
+    turbo_script_module_options_init(&options);
+    check_equal(compile_text(ctx, result,
+                             "func f(a){return host_count(a);};export(\"f\");",
+                             &options, &module), TURBO_SCRIPT_STATUS_OK);
+    for (int jit = 0; jit <= 1; ++jit) {
+      turbo_script_ctx_t runtime = {0};
+      exprtk_env_init(&runtime.env);
+      output = 0;
+      check_equal(ts_host_module_execute_numeric_with_runtime(
+                      module, &runtime, 0, jit, &arg, 1, &output),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(output, 7.0);
+      check_equal(runtime.env.flow, exprtk_FLOW_NORMAL);
+      check_equal(ctx->env.flow, exprtk_FLOW_NORMAL);
+      exprtk_env_free(&runtime.env);
+    }
+    check_equal(callback_count, (size_t)2);
+    check_equal(decoy_count, (size_t)0);
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("publishes callback failure only in the distinct runtime environment") {
+    size_t callback_count = 0;
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    turbo_script_host_function_descriptor_t descriptor = {
+        .struct_size = sizeof(descriptor), .min_arity = 1, .max_arity = 1,
+        .name = {"host_fail", 9}};
+    double arg = 7;
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    check_equal(turbo_script_context_register_host_function(
+                    ctx, &descriptor, error_host, &callback_count, result),
+                TURBO_SCRIPT_STATUS_OK);
+    turbo_script_module_options_init(&options);
+    check_equal(compile_text(ctx, result,
+                             "func f(a){return host_fail(a);};export(\"f\");",
+                             &options, &module), TURBO_SCRIPT_STATUS_OK);
+    ctx->env.flow = exprtk_FLOW_NORMAL;
+    ctx->env.error_msg[0] = '\0';
+    for (int jit = 0; jit <= 1; ++jit) {
+      turbo_script_ctx_t runtime = {0};
+      double output = 99;
+      exprtk_env_init(&runtime.env);
+      check_equal(ts_host_module_execute_numeric_with_runtime(
+                      module, &runtime, 0, jit, &arg, 1, &output),
+                  TURBO_SCRIPT_STATUS_RUNTIME_ERROR);
+      check_equal(output, 99.0);
+      check_equal(runtime.env.flow, exprtk_FLOW_THROW);
+      check_not_null(strstr(runtime.env.error_msg, "host_fail"));
+      check_equal(ctx->env.flow, exprtk_FLOW_NORMAL);
+      check_equal(ctx->env.error_msg[0], '\0');
+      exprtk_env_free(&runtime.env);
+    }
     check_equal(callback_count, (size_t)2);
     destroy_fixture(ctx, result, module);
   }

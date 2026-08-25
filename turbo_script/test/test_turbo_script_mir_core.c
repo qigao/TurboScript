@@ -1,6 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "tinytest.h"
 #include "turbo_script.h"
+#include "../src/host/turbo_script_host_api_internal.h"
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
@@ -31,6 +32,28 @@ static int count_last_module_functions_containing(turbo_script_ctx_t *ctx, const
   }
 
   return count;
+}
+
+static exprtk_value_t legacy_native_conflict(size_t arg_count,
+                                             exprtk_value_t *args,
+                                             exprtk_env_t *env,
+                                             void *user_data) {
+  (void)arg_count;
+  (void)args;
+  (void)env;
+  if (user_data) (*(size_t *)user_data)++;
+  return exprtk_val_num(7.0);
+}
+
+static turbo_script_status_t legacy_host_conflict(
+    void *user_data, const turbo_script_value_view_t *args, size_t arg_count,
+    turbo_script_host_result_builder_t *builder) {
+  turbo_script_value_view_t value = {.kind = TURBO_SCRIPT_VALUE_NUMBER};
+  (void)args;
+  (void)arg_count;
+  if (user_data) (*(size_t *)user_data)++;
+  value.as.number = 90.0;
+  return turbo_script_host_result_set_value(builder, &value);
 }
 
 
@@ -137,6 +160,53 @@ spec("turbo_script_mir_core") {
       turbo_script_free(ctx);
     }
 
+    it("keeps legacy callable precedence independent from host slot reorder") {
+      static const char *const host_names[] = {
+          "legacy_conflict", "abs", "script_conflict", "host_filler"};
+      for (int use_interp = 0; use_interp <= 1; ++use_interp) {
+        size_t native_calls = 0;
+        size_t host_calls = 0;
+        turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+        turbo_script_result_t *result = NULL;
+        turbo_script_host_function_descriptor_t descriptor = {
+            .struct_size = sizeof(descriptor), .min_arity = 1, .max_arity = 1};
+        const char *script =
+            "script_conflict=(a)=>a+2;"
+            "native_result=legacy_conflict(5);"
+            "builtin_result=abs(-4);"
+            "script_result=script_conflict(5);";
+        check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+        ts_bind_func(ctx, "legacy_conflict", legacy_native_conflict, &native_calls);
+        for (size_t i = 0; i < sizeof(host_names) / sizeof(host_names[0]); ++i) {
+          descriptor.name = (turbo_script_string_view_t){host_names[i], strlen(host_names[i])};
+          check_equal(turbo_script_context_register_host_function(
+                          ctx, &descriptor, legacy_host_conflict, &host_calls, result),
+                      TURBO_SCRIPT_STATUS_OK);
+        }
+        check_equal(use_interp ? turbo_script_compile_mir_interp(ctx, script)
+                               : turbo_script_compile_mir(ctx, script),
+                    0);
+        check_equal(ctx->active_host_modules, (size_t)0);
+        descriptor.name = (turbo_script_string_view_t){host_names[0], strlen(host_names[0])};
+        check_equal(turbo_script_context_unregister_host_function(
+                        ctx, descriptor.name, result),
+                    TURBO_SCRIPT_STATUS_OK);
+        check_equal(turbo_script_context_register_host_function(
+                        ctx, &descriptor, legacy_host_conflict, &host_calls, result),
+                    TURBO_SCRIPT_STATUS_OK);
+        check_equal(use_interp ? turbo_script_exec_mir_interp(ctx)
+                               : turbo_script_exec_jit(ctx),
+                    0);
+        check_equal(ts_get_num(ctx, "native_result"), 7.0);
+        check_equal(ts_get_num(ctx, "builtin_result"), 4.0);
+        check_equal(ts_get_num(ctx, "script_result"), 7.0);
+        check_equal(native_calls, (size_t)1);
+        check_equal(host_calls, (size_t)0);
+        turbo_script_result_destroy(result);
+        turbo_script_free(ctx);
+      }
+    }
+
     it("should return -1 on NULL ctx") {
       check((turbo_script_compile_mir(NULL, "x = 1;")) == (-1));
     }
@@ -146,6 +216,48 @@ spec("turbo_script_mir_core") {
       check((turbo_script_compile_mir(ctx, NULL)) == (-1));
       check(((int)turbo_script_get_error_code(ctx)) == ((int)TURBO_SCRIPT_ERROR_ARGUMENT));
       turbo_script_free(ctx);
+    }
+
+    it("does not freeze or reuse host slots in legacy lowering") {
+      for (int use_interp = 0; use_interp <= 1; ++use_interp) {
+        turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+        size_t host_calls = 0;
+        turbo_script_result_t *result = NULL;
+        turbo_script_host_function_descriptor_t descriptor = {
+            .struct_size = sizeof(descriptor),
+            .name = {"legacy_host_only", sizeof("legacy_host_only") - 1u},
+            .min_arity = 1,
+            .max_arity = 1};
+
+        check_not_null(ctx);
+        check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+        check_equal(turbo_script_context_register_host_function(
+                        ctx, &descriptor, legacy_host_conflict, &host_calls, result),
+                    TURBO_SCRIPT_STATUS_OK);
+        check_equal(use_interp
+                        ? turbo_script_compile_mir_interp(
+                              ctx, "legacy_host_only_result=legacy_host_only(5);")
+                        : turbo_script_compile_mir(
+                              ctx, "legacy_host_only_result=legacy_host_only(5);"),
+                    0);
+        check_equal(ctx->active_host_modules, (size_t)0);
+
+        check_equal(turbo_script_context_unregister_host_function(
+                        ctx, descriptor.name, result),
+                    TURBO_SCRIPT_STATUS_OK);
+        descriptor.name = (turbo_script_string_view_t){
+            "legacy_replacement", sizeof("legacy_replacement") - 1u};
+        check_equal(turbo_script_context_register_host_function(
+                        ctx, &descriptor, legacy_host_conflict, &host_calls, result),
+                    TURBO_SCRIPT_STATUS_OK);
+        check_equal(use_interp ? turbo_script_exec_mir_interp(ctx)
+                               : turbo_script_exec_jit(ctx),
+                    -1);
+        check_equal(host_calls, (size_t)0);
+
+        turbo_script_result_destroy(result);
+        turbo_script_free(ctx);
+      }
     }
 
     it("should return -1 on invalid syntax") {
