@@ -65,6 +65,10 @@ turbo_script_status_t ts_host_registry_get_slot(
     const ts_host_function_entry_t **out_entry);
 turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
                                                     exprtk_env_t *runtime_ctx);
+/* Internal deterministic fault seam; production callers use bind_runtime. */
+turbo_script_status_t ts_host_registry_bind_runtime_test_fault(
+    turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
+    size_t allocation_index);
 
 /* Checked boundaries underlying the locked void APIs. They never mutate on
  * failure; the public wrappers turn WRONG_THREAD into a contract violation. */

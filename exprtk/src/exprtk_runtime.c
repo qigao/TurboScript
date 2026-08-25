@@ -5,6 +5,7 @@
 
 #include "exprtk.h"
 #include "exprtk_internal.h"
+#include "exprtk_runtime_internal.h"
 #include "exprtk_class.h"
 #include "mir-htab.h"
 #include <ctype.h>
@@ -1104,6 +1105,89 @@ void exprtk_env_import_vars(exprtk_env_t *dst, exprtk_env_t *src) {
 exprtk_value_t exprtk_env_eval_node(const exprtk_node_t *node, exprtk_env_t *env) {
     if (env && env->eval_node) return env->eval_node(node, env);
     return exprtk_eval(node, env);
+}
+
+static void exprtk_registration_chain_free(exprtk_func_t *head) {
+    while (head) {
+        exprtk_func_t *next = head->next;
+        free(head->name);
+        free(head);
+        head = next;
+    }
+}
+
+exprtk_registration_status_t exprtk_env_register_funcs_checked_with_fault(
+    exprtk_env_t *env, const exprtk_native_registration_t *registrations,
+    size_t registration_count, exprtk_registration_fault_fn should_fail,
+    void *fault_user_data) {
+    exprtk_func_t *pending_head = NULL;
+    exprtk_func_t *pending_tail = NULL;
+    size_t allocation_index = 0;
+
+    if (!env || (registration_count != 0 && !registrations))
+        return EXPRTK_REGISTRATION_INVALID_ARGUMENT;
+    for (size_t i = 0; i < registration_count; ++i) {
+        if (!registrations[i].name || !registrations[i].fn)
+            return EXPRTK_REGISTRATION_INVALID_ARGUMENT;
+        if (exprtk_env_has_func(env, registrations[i].name))
+            return EXPRTK_REGISTRATION_CONFLICT;
+        for (size_t j = 0; j < i; ++j) {
+            if (strcmp(registrations[i].name, registrations[j].name) == 0)
+                return EXPRTK_REGISTRATION_CONFLICT;
+        }
+    }
+
+    for (size_t i = 0; i < registration_count; ++i) {
+        size_t name_size = strlen(registrations[i].name);
+        exprtk_func_t *new_func;
+        char *owned_name;
+
+        if (should_fail && should_fail(allocation_index, fault_user_data))
+            new_func = NULL;
+        else
+            new_func = (exprtk_func_t *)malloc(sizeof(*new_func));
+        allocation_index++;
+        if (!new_func) {
+            exprtk_registration_chain_free(pending_head);
+            return EXPRTK_REGISTRATION_OUT_OF_MEMORY;
+        }
+        memset(new_func, 0, sizeof(*new_func));
+
+        if (name_size == SIZE_MAX ||
+            (should_fail && should_fail(allocation_index, fault_user_data)))
+            owned_name = NULL;
+        else
+            owned_name = (char *)malloc(name_size + 1);
+        allocation_index++;
+        if (!owned_name) {
+            free(new_func);
+            exprtk_registration_chain_free(pending_head);
+            return EXPRTK_REGISTRATION_OUT_OF_MEMORY;
+        }
+        memcpy(owned_name, registrations[i].name, name_size + 1);
+
+        new_func->name = owned_name;
+        new_func->is_script = 0;
+        new_func->access_level = EXPRTK_ACCESS_PUBLIC;
+        new_func->data.native.fn = registrations[i].fn;
+        new_func->data.native.user_data = registrations[i].user_data;
+        new_func->next = pending_head;
+        pending_head = new_func;
+        if (!pending_tail) pending_tail = new_func;
+    }
+
+    if (pending_tail) {
+        pending_tail->next = env->funcs;
+        env->funcs = pending_head;
+    }
+    return EXPRTK_REGISTRATION_OK;
+}
+
+exprtk_registration_status_t exprtk_env_register_funcs_checked(
+    exprtk_env_t *env, const exprtk_native_registration_t *registrations,
+    size_t registration_count) {
+    return exprtk_env_register_funcs_checked_with_fault(
+        env, registrations, registration_count, NULL, NULL);
 }
 
 void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native_fn fn, void *user_data) {

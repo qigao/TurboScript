@@ -2,6 +2,7 @@
 
 #include "../turbo_script_internal.h"
 #include "exprtk.h"
+#include "exprtk_runtime_internal.h"
 #include "turbo_vstr.h"
 #include <turbostl/vec.h>
 
@@ -92,7 +93,7 @@ static turbo_script_status_t ts_host_registry_validate_descriptor(
     const turbo_script_host_function_descriptor_t *descriptor,
     turbo_script_host_function_t callback) {
   turbo_script_status_t status;
-  if (!descriptor || descriptor->struct_size < sizeof(*descriptor) || !callback ||
+  if (!descriptor || descriptor->struct_size != sizeof(*descriptor) || !callback ||
       descriptor->min_arity > descriptor->max_arity || descriptor->reserved0 != 0)
     return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   for (size_t i = 0; i < sizeof(descriptor->reserved) / sizeof(descriptor->reserved[0]); ++i) {
@@ -150,10 +151,10 @@ turbo_script_status_t ts_host_registry_find_slot(const turbo_script_ctx_t *ctx,
                                                  turbo_script_string_view_t name,
                                                  size_t *out_slot) {
   turbo_script_status_t status;
-  if (!out_slot) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  *out_slot = SIZE_MAX;
   status = ts_host_check_owner_thread(ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  if (!out_slot) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  *out_slot = SIZE_MAX;
   status = ts_host_registry_validate_name(name);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   for (size_t i = 0; i < vec_size(&ctx->host_functions); ++i) {
@@ -171,10 +172,10 @@ turbo_script_status_t ts_host_registry_get_slot(
     const turbo_script_ctx_t *ctx, size_t slot,
     const ts_host_function_entry_t **out_entry) {
   turbo_script_status_t status;
-  if (!out_entry) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  *out_entry = NULL;
   status = ts_host_check_owner_thread(ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  if (!out_entry) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  *out_entry = NULL;
   if (slot >= vec_size(&ctx->host_functions)) return TURBO_SCRIPT_STATUS_NOT_FOUND;
   *out_entry = (const ts_host_function_entry_t *)vec_at_const(&ctx->host_functions, slot);
   return *out_entry ? TURBO_SCRIPT_STATUS_OK : TURBO_SCRIPT_STATUS_INVALID_STATE;
@@ -554,8 +555,11 @@ static exprtk_value_t ts_host_registry_callback_adapter(
   return result;
 }
 
-turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
-                                                    exprtk_env_t *runtime_ctx) {
+static turbo_script_status_t ts_host_registry_bind_runtime_impl(
+    turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
+    exprtk_registration_fault_fn should_fail, void *fault_user_data) {
+  exprtk_native_registration_t registrations[TS_HOST_REGISTRY_CAPACITY];
+  exprtk_registration_status_t registration_status;
   turbo_script_status_t status = ts_host_check_owner_thread(ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   if (!runtime_ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
@@ -569,8 +573,43 @@ turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
   for (size_t i = 0; i < vec_size(&ctx->host_functions); ++i) {
     ts_host_function_entry_t *entry =
         (ts_host_function_entry_t *)vec_at(&ctx->host_functions, i);
-    exprtk_env_register_func(runtime_ctx, entry->name,
-                             ts_host_registry_callback_adapter, entry);
+    if (!entry) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+    registrations[i].name = entry->name;
+    registrations[i].fn = ts_host_registry_callback_adapter;
+    registrations[i].user_data = entry;
   }
-  return TURBO_SCRIPT_STATUS_OK;
+  registration_status = exprtk_env_register_funcs_checked_with_fault(
+      runtime_ctx, registrations, vec_size(&ctx->host_functions), should_fail,
+      fault_user_data);
+  if (registration_status == EXPRTK_REGISTRATION_OK)
+    return TURBO_SCRIPT_STATUS_OK;
+  if (registration_status == EXPRTK_REGISTRATION_OUT_OF_MEMORY)
+    return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
+  if (registration_status == EXPRTK_REGISTRATION_CONFLICT)
+    return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+}
+
+turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
+                                                    exprtk_env_t *runtime_ctx) {
+  return ts_host_registry_bind_runtime_impl(ctx, runtime_ctx, NULL, NULL);
+}
+
+typedef struct ts_host_registration_fault_s {
+  size_t allocation_index;
+} ts_host_registration_fault_t;
+
+static int ts_host_registration_should_fail(size_t allocation_index,
+                                            void *user_data) {
+  const ts_host_registration_fault_t *fault =
+      (const ts_host_registration_fault_t *)user_data;
+  return allocation_index == fault->allocation_index;
+}
+
+turbo_script_status_t ts_host_registry_bind_runtime_test_fault(
+    turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
+    size_t allocation_index) {
+  ts_host_registration_fault_t fault = {allocation_index};
+  return ts_host_registry_bind_runtime_impl(
+      ctx, runtime_ctx, ts_host_registration_should_fail, &fault);
 }
