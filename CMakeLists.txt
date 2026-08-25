@@ -43,9 +43,13 @@ include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
 
-foreach(_turbo_script_dependency_root IN ITEMS
-        TURBOUTILS_ROOT TURBOPARSER_ROOT TURBONET_ROOT TURBOHTTP_ROOT
-        RULES_FORGE_ROOT)
+set(_turbo_script_dependency_roots
+    TURBOUTILS_ROOT TURBOPARSER_ROOT TURBONET_ROOT TURBOHTTP_ROOT)
+if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
+  list(APPEND _turbo_script_dependency_roots RULES_FORGE_ROOT)
+endif()
+
+foreach(_turbo_script_dependency_root IN LISTS _turbo_script_dependency_roots)
   if(NOT DEFINED ENV{${_turbo_script_dependency_root}} OR
      "$ENV{${_turbo_script_dependency_root}}" STREQUAL "")
     message(FATAL_ERROR
@@ -91,6 +95,11 @@ install(
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+set(_turbo_script_rules_forge_install_target)
+if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
+  set(_turbo_script_rules_forge_install_target rules_forge_tbs)
+endif()
+
 install(
   TARGETS net_tbs
           ta_tbs
@@ -104,7 +113,7 @@ install(
           crypto_tbs
           hash_tbs
           fuzzy_tbs
-          rules_forge_tbs
+          ${_turbo_script_rules_forge_install_target}
           os_tbs
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
