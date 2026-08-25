@@ -5,6 +5,33 @@
 #include "turbo_buffer.h"
 #include "turbo_str.h"
 #include "turbo_script_host_api_internal.h"
+#include <turbostl/vec.h>
+
+typedef struct ts_mir_artifact_s ts_mir_artifact_t;
+
+typedef struct ts_host_export_entry_s {
+  tstr name;
+  uint32_t arity;
+  uint32_t line;
+  uint32_t column;
+  exprtk_node_t *declaration_node;
+  exprtk_node_t *function_node;
+} ts_host_export_entry_t;
+
+typedef struct ts_host_export_table_s {
+  vec_t entries;
+} ts_host_export_table_t;
+
+struct turbo_script_module_s {
+  turbo_script_ctx_t *ctx;
+  tstr source;
+  tstr module_name;
+  exprtk_node_t *ast;
+  ts_host_export_table_t exports;
+  ts_mir_artifact_t *artifact;
+  size_t parse_count;
+  size_t lower_count;
+};
 
 typedef struct ts_host_function_entry_s {
   turbo_script_ctx_t *ctx;
@@ -103,5 +130,17 @@ turbo_script_status_t ts_host_result_set_error(turbo_script_result_t *result,
 /* Later module/instance entry points use this before touching a result. */
 turbo_script_status_t ts_host_result_check_context(const turbo_script_result_t *result,
                                                    const turbo_script_ctx_t *ctx);
+
+/* Internal test/instance seams over immutable module-owned state. */
+size_t ts_host_module_export_count(const turbo_script_module_t *module);
+const char *ts_host_module_export_name(const turbo_script_module_t *module, size_t index);
+uint32_t ts_host_module_export_arity(const turbo_script_module_t *module, size_t index);
+size_t ts_host_module_parse_count(const turbo_script_module_t *module);
+size_t ts_host_module_lower_count(const turbo_script_module_t *module);
+const char *ts_host_module_source(const turbo_script_module_t *module);
+const char *ts_host_module_name(const turbo_script_module_t *module);
+turbo_script_status_t ts_host_module_execute_numeric(
+    turbo_script_module_t *module, size_t export_index, int use_jit,
+    const double *args, size_t arg_count, double *out_result);
 
 #endif /* TURBO_SCRIPT_HOST_INTERNAL_H */

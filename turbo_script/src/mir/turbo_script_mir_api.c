@@ -1,6 +1,7 @@
 /* Public MIR compile and execution API. */
 
 #include "turbo_script_mir_internal.h"
+#include "../host/turbo_script_host_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,6 +11,179 @@
 #else
 #include <sys/time.h>
 #endif
+
+struct ts_mir_artifact_s {
+  MIR_context_t ctx;
+  MIR_module_t module;
+  MIR_item_t initializer;
+  MIR_item_t *export_items;
+  void **export_addresses;
+  size_t export_count;
+  int gen_initialized;
+};
+
+static ts_compiled_func_t *ts_mir_find_artifact_function(ts_mir_compiler_t *compiler,
+                                                         const char *name) {
+  for (int i = 0; i < compiler->compiled_func_count; ++i) {
+    if (compiler->compiled_funcs[i].name &&
+        strcmp(compiler->compiled_funcs[i].name, name) == 0)
+      return &compiler->compiled_funcs[i];
+  }
+  return NULL;
+}
+
+int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
+                            const ts_host_export_table_t *exports,
+                            ts_mir_artifact_t **out_artifact) {
+  ts_mir_artifact_t *artifact = NULL;
+  ts_mir_compiler_t compiler = {0};
+  const exprtk_node_t **metadata_nodes = NULL;
+  size_t export_count;
+  int success = 0;
+  if (!compile_ctx || !ast || !exports || !out_artifact) return -1;
+  *out_artifact = NULL;
+  export_count = vec_size(&exports->entries);
+  artifact = (ts_mir_artifact_t *)calloc(1, sizeof(*artifact));
+  if (!artifact) goto done;
+  if (export_count) {
+    artifact->export_items = (MIR_item_t *)calloc(export_count, sizeof(MIR_item_t));
+    artifact->export_addresses = (void **)calloc(export_count, sizeof(void *));
+    metadata_nodes = (const exprtk_node_t **)calloc(export_count, sizeof(*metadata_nodes));
+    if (!artifact->export_items || !artifact->export_addresses || !metadata_nodes) goto done;
+  }
+  artifact->export_count = export_count;
+  artifact->ctx = MIR_init();
+  if (!artifact->ctx) goto done;
+  artifact->module = MIR_new_module(artifact->ctx, "ts_host_module");
+  if (!artifact->module) goto done;
+  compiler.ctx = artifact->ctx;
+  compiler.module = artifact->module;
+  compiler.ts_ctx = compile_ctx;
+  compiler.ast_root = ast;
+  compiler.metadata_nodes = metadata_nodes;
+  compiler.metadata_node_count = export_count;
+  snprintf(compiler.item_prefix, sizeof(compiler.item_prefix), "ts_host");
+  for (size_t i = 0; i < export_count; ++i) {
+    const ts_host_export_entry_t *entry =
+        (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
+    if (!entry) goto done;
+    metadata_nodes[i] = entry->declaration_node;
+  }
+
+  ts_mir_init_externals(&compiler);
+  ts_prescan_class_names(&compiler, ast);
+  ts_prescan_functions(&compiler, ast);
+  ts_prescan_hof_specializations(&compiler, ast);
+
+  MIR_type_t result_type = MIR_T_D;
+  MIR_var_t args[1] = {{MIR_T_P, "ctx_ptr", 0}};
+  artifact->initializer = MIR_new_func_arr(artifact->ctx, "ts_host_initializer",
+                                           1, &result_type, 1, args);
+  compiler.func = artifact->initializer;
+  compiler.ctx_reg = MIR_reg(artifact->ctx, "ctx_ptr", artifact->initializer->u.func);
+  ts_prescan_variables(&compiler, ast);
+  ts_compile_stmt(&compiler, ast);
+  ts_emit_var_prologue(&compiler);
+  ts_emit_vec_prologue(&compiler);
+  ts_emit_map_prologue(&compiler);
+  ts_emit_var_epilogue(&compiler);
+  MIR_reg_t ret = MIR_new_func_reg(artifact->ctx, artifact->initializer->u.func,
+                                   MIR_T_D, "_host_ret");
+  MIR_append_insn(artifact->ctx, artifact->initializer,
+                  MIR_new_insn(artifact->ctx, MIR_DMOV,
+                               MIR_new_reg_op(artifact->ctx, ret),
+                               MIR_new_double_op(artifact->ctx, 0.0)));
+  MIR_append_insn(artifact->ctx, artifact->initializer,
+                  MIR_new_ret_insn(artifact->ctx, 1,
+                                   MIR_new_reg_op(artifact->ctx, ret)));
+  MIR_finish_func(artifact->ctx);
+  MIR_finish_module(artifact->ctx);
+  if (compiler.failed) goto done;
+
+  for (size_t i = 0; i < export_count; ++i) {
+    const ts_host_export_entry_t *entry =
+        (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
+    ts_compiled_func_t *compiled =
+        entry ? ts_mir_find_artifact_function(&compiler, entry->name) : NULL;
+    if (!compiled || compiled->arg_count != entry->arity) goto done;
+    artifact->export_items[i] = compiled->mir_func;
+  }
+
+  MIR_load_module(artifact->ctx, artifact->module);
+  ts_mir_load_externals(artifact->ctx);
+  MIR_link(artifact->ctx, MIR_set_interp_interface, NULL);
+  MIR_gen_init(artifact->ctx);
+  artifact->gen_initialized = 1;
+  MIR_link(artifact->ctx, MIR_set_gen_interface, NULL);
+  for (size_t i = 0; i < export_count; ++i) {
+    artifact->export_addresses[i] = MIR_gen(artifact->ctx, artifact->export_items[i]);
+    if (!artifact->export_addresses[i]) goto done;
+  }
+  success = 1;
+
+done:
+  free(metadata_nodes);
+  ts_mir_destroy_compiler_storage(&compiler);
+  if (!success) {
+    if (compile_ctx && compile_ctx->error_code == TURBO_SCRIPT_ERROR_NONE) {
+      compile_ctx->error_code = artifact ? TURBO_SCRIPT_ERROR_JIT : TURBO_SCRIPT_ERROR_OOM;
+      snprintf(compile_ctx->error_msg, sizeof(compile_ctx->error_msg),
+               "Host module MIR artifact compilation failed");
+    }
+    ts_mir_artifact_destroy(artifact);
+    return -1;
+  }
+  *out_artifact = artifact;
+  return 0;
+}
+
+void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact) {
+  if (!artifact) return;
+  if (artifact->ctx) {
+    if (artifact->gen_initialized) MIR_gen_finish(artifact->ctx);
+    MIR_finish(artifact->ctx);
+  }
+  free(artifact->export_items);
+  free(artifact->export_addresses);
+  free(artifact);
+}
+
+int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
+                                    turbo_script_ctx_t *runtime_ctx,
+                                    size_t export_index, int use_jit,
+                                    const double *args, size_t arg_count,
+                                    double *out_result) {
+  MIR_val_t mir_args[18] = {0};
+  MIR_val_t result = {0};
+  if (!artifact || !runtime_ctx || export_index >= artifact->export_count ||
+      (!args && arg_count) || !out_result) return -1;
+  mir_args[0].a = runtime_ctx;
+  mir_args[1].a = &runtime_ctx->env;
+  for (size_t i = 0; i < arg_count; ++i) mir_args[i + 2].d = args[i];
+  if (!use_jit) {
+    MIR_interp_arr(artifact->ctx, artifact->export_items[export_index], &result,
+                   arg_count + 2, mir_args);
+    *out_result = result.d;
+    return 0;
+  }
+  if (!artifact->export_addresses[export_index]) return -1;
+  switch (arg_count) {
+  case 0:
+    *out_result = ((double (*)(void *, void *))artifact->export_addresses[export_index])(
+        runtime_ctx, &runtime_ctx->env);
+    return 0;
+  case 1:
+    *out_result = ((double (*)(void *, void *, double))artifact->export_addresses[export_index])(
+        runtime_ctx, &runtime_ctx->env, args[0]);
+    return 0;
+  case 2:
+    *out_result = ((double (*)(void *, void *, double, double))artifact->export_addresses[export_index])(
+        runtime_ctx, &runtime_ctx->env, args[0], args[1]);
+    return 0;
+  default:
+    return -1;
+  }
+}
 
 /* =========================================================================
  * 计时辅助函数（跨平台）

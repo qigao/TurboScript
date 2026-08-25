@@ -1965,6 +1965,12 @@ static void ts_compile_branch_true(ts_mir_compiler_t *c, exprtk_node_t *node,
 void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   if (!c || c->failed || !node) return;
 
+  /* Host export declarations are compile-time metadata. Comparing node
+   * identity preserves the immutable AST and leaves legacy export calls alone. */
+  for (size_t i = 0; i < c->metadata_node_count; ++i) {
+    if (c->metadata_nodes[i] == node) return;
+  }
+
   switch (node->type) {
   case EXPRTK_NODE_BLOCK:
     for (size_t i = 0; i < node->data.block.count; i++) {

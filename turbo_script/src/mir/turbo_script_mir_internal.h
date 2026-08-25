@@ -37,6 +37,8 @@ typedef struct ts_mir_compiler_s ts_mir_compiler_t;
 typedef struct ts_mir_externals_s ts_mir_externals_t;
 typedef struct ts_mir_var_entry_s ts_mir_var_entry_t;
 typedef struct ts_mir_compile_frame_s ts_mir_compile_frame_t;
+typedef struct ts_mir_artifact_s ts_mir_artifact_t;
+typedef struct ts_host_export_table_s ts_host_export_table_t;
 
 /* =========================================================================
  * Constants
@@ -262,6 +264,8 @@ struct ts_mir_compiler_s {
   MIR_module_t module;
   turbo_script_ctx_t *ts_ctx;
   exprtk_node_t *ast_root;
+  const exprtk_node_t *const *metadata_nodes;
+  size_t metadata_node_count;
   char item_prefix[64];
 
   ts_mir_var_entry_t **vars;
@@ -318,6 +322,16 @@ struct ts_mir_compiler_s {
   int class_type_count;
   int class_type_capacity;
 };
+
+int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
+                            const ts_host_export_table_t *exports,
+                            ts_mir_artifact_t **out_artifact);
+void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact);
+int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
+                                    turbo_script_ctx_t *runtime_ctx,
+                                    size_t export_index, int use_jit,
+                                    const double *args, size_t arg_count,
+                                    double *out_result);
 
 /* =========================================================================
  * Module: mir_compiler.c - Compiler framework

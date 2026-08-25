@@ -5,6 +5,7 @@ set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
+  src/host/turbo_script_host_module.c
   src/host/turbo_script_host_registry.c
   src/host/turbo_script_host_result.c
   src/mir_mod.c
