@@ -173,8 +173,7 @@ typedef turbo_script_status_t (*turbo_script_host_function_t)(
 #define TURBO_SCRIPT_EXEC_JIT ((turbo_script_execution_mode_t)2)
 
 void turbo_script_module_options_init(turbo_script_module_options_t *options);
-TURBO_SCRIPT_C_API void
-turbo_script_instance_options_init(turbo_script_instance_options_t *options);
+void turbo_script_instance_options_init(turbo_script_instance_options_t *options);
 TURBO_SCRIPT_C_API void turbo_script_call_options_init(turbo_script_call_options_t *options);
 
 TURBO_SCRIPT_C_API turbo_script_status_t
@@ -193,18 +192,18 @@ turbo_script_module_compile(turbo_script_ctx_t *ctx, turbo_script_string_view_t 
 turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
                                                   turbo_script_result_t *result);
 
-TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_instance_create(
+turbo_script_status_t turbo_script_instance_create(
     turbo_script_module_t *module, const turbo_script_instance_options_t *options,
     turbo_script_result_t *result, turbo_script_instance_t **out_instance);
-TURBO_SCRIPT_C_API turbo_script_status_t
+turbo_script_status_t
 turbo_script_instance_destroy(turbo_script_instance_t *instance, turbo_script_result_t *result);
-TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_instance_resolve_export(
+turbo_script_status_t turbo_script_instance_resolve_export(
     turbo_script_instance_t *instance, turbo_script_string_view_t name,
     turbo_script_result_t *result, turbo_script_export_handle_t *out_handle);
-TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_instance_get_export_info(
+turbo_script_status_t turbo_script_instance_get_export_info(
     turbo_script_instance_t *instance, turbo_script_export_handle_t handle,
     turbo_script_result_t *result, turbo_script_export_info_t *out_info);
-TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_instance_call(
+turbo_script_status_t turbo_script_instance_call(
     turbo_script_instance_t *instance, turbo_script_export_handle_t handle,
     const turbo_script_value_view_t *args, size_t arg_count,
     const turbo_script_call_options_t *options, turbo_script_result_t *result);

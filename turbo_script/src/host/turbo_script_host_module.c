@@ -342,6 +342,10 @@ static turbo_script_status_t ts_host_module_compile_impl(
                                                (turbo_script_string_view_t){0},
                                                "module output is required", 0, 0);
   *out_module = NULL;
+  if (atomic_load_explicit(&ctx->closing, memory_order_acquire))
+    return ts_host_module_fail(result, TURBO_SCRIPT_STATUS_INVALID_STATE,
+                               (turbo_script_string_view_t){0},
+                               "context is closing", 0, 0);
   if (!ts_host_options_valid(options) || (!source.data && source.size != 0))
     return ts_host_module_fail(result, TURBO_SCRIPT_STATUS_INVALID_ARGUMENT,
                                (turbo_script_string_view_t){0},
@@ -367,6 +371,8 @@ static turbo_script_status_t ts_host_module_compile_impl(
   if (!module) return ts_host_module_fail(result, TURBO_SCRIPT_STATUS_OUT_OF_MEMORY,
                                            options->module_name, "module allocation failed", 0, 0);
   module->ctx = ctx;
+  module->ref_count = 1;
+  module->accepting_instances = 1;
   module->source = tstr_dup_len(source.data, source.size);
   module->module_name = tstr_dup_len(options->module_name.data ? options->module_name.data : "",
                                      options->module_name.size);
@@ -468,8 +474,26 @@ turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   status = ts_host_result_reset_checked(result);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  if (!module->accepting_instances) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  module->accepting_instances = 0;
+  ts_host_module_release(module);
+  return TURBO_SCRIPT_STATUS_OK;
+}
+
+void ts_host_module_retain(turbo_script_module_t *module) {
+  if (!module || module->ref_count == SIZE_MAX) abort();
+  module->ref_count++;
+}
+
+void ts_host_module_release(turbo_script_module_t *module) {
+  turbo_script_ctx_t *ctx;
+  turbo_script_status_t status;
+  if (!module || module->ref_count == 0) abort();
+  module->ref_count--;
+  if (module->ref_count != 0) return;
+  ctx = module->ctx;
   status = ts_host_registry_release_module(ctx);
-  if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  if (status != TURBO_SCRIPT_STATUS_OK) abort();
   ts_mir_artifact_destroy(module->artifact);
   exprtk_free(module->ast);
   ts_host_export_table_destroy(&module->exports);
@@ -477,7 +501,6 @@ turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
   tstr_freep(&module->module_name);
   free(module);
   ts_context_release(ctx);
-  return TURBO_SCRIPT_STATUS_OK;
 }
 
 size_t ts_host_module_export_count(const turbo_script_module_t *module) {
@@ -526,10 +549,17 @@ turbo_script_status_t ts_host_module_execute_numeric_with_runtime(
 
 turbo_script_status_t ts_host_module_execute_initializer(
     turbo_script_module_t *module, int use_jit) {
-  if (!module) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  return ts_host_module_execute_initializer_with_runtime(
+      module, module ? module->ctx : NULL, use_jit);
+}
+
+turbo_script_status_t ts_host_module_execute_initializer_with_runtime(
+    turbo_script_module_t *module, turbo_script_ctx_t *runtime_ctx,
+    int use_jit) {
+  if (!module || !runtime_ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (ts_host_check_owner_thread(module->ctx) != TURBO_SCRIPT_STATUS_OK)
     return TURBO_SCRIPT_STATUS_WRONG_THREAD;
-  return ts_mir_artifact_execute_initializer(module->artifact, module->ctx,
+  return ts_mir_artifact_execute_initializer(module->artifact, runtime_ctx,
                                              use_jit) == 0
              ? TURBO_SCRIPT_STATUS_OK
              : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;

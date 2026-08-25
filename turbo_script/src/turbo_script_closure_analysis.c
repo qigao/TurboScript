@@ -78,19 +78,16 @@ static void ts_analyze_variable(exprtk_node_t *node, ts_analysis_ctx_t *ctx, int
 
 /* 分析赋值 */
 static void ts_analyze_assignment(exprtk_node_t *node, ts_analysis_ctx_t *ctx) {
-  const char *name = node->data.assignment.name;
-  
-  // 赋值目标记为定义
-  ts_var_set_add(&ctx->defined, name);
-  
   // 赋值值记为使用
   if (node->data.assignment.value) {
     ts_analyze_node(node->data.assignment.value, ctx, 0);
   }
-  
-  // 检查是否修改已捕获的变量（用于保守分析）
-  // 注：这里简化处理，认为所有赋值都可能修改捕获变量
-  // 完整实现需要检查变量是否来自父作用域
+
+  /* Assignment is not a lexical declaration in TurboScript: exprtk_env_set()
+   * updates an existing parent binding before creating a local one.  Keeping a
+   * read/write name in the free-variable set lets MIR load an initializer-created
+   * module global from the runtime closure and write it back on return. */
+  (void)node->data.assignment.name;
 }
 
 /* 分析函数定义（嵌套闭包检测） */
