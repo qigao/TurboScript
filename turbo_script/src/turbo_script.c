@@ -4,6 +4,7 @@
 #include "ts_plugin_loader.h"
 #include "turbo_buffer.h"
 #include "turbo_fs.h"
+#include "turbo/thread.h"
 #include "turbo_script_internal.h"
 #include "turbo_script_timer.h"
 #include "turbo_script_task.h"
@@ -22,6 +23,15 @@ static void set_error(turbo_script_ctx_t *ctx, turbo_script_error_code_t code, c
 static void clear_error(turbo_script_ctx_t *ctx);
 exprtk_env_t *exprtk_env_snapshot(exprtk_env_t *env);
 static void ts_context_destroy_final(turbo_script_ctx_t *ctx);
+static TURBO_THREAD_LOCAL unsigned char ts_context_thread_owner_token;
+
+static const void *ts_context_current_thread_token(void) {
+  return &ts_context_thread_owner_token;
+}
+
+int ts_context_is_owner_thread(const turbo_script_ctx_t *ctx) {
+  return ctx && ctx->owner_thread_token == ts_context_current_thread_token();
+}
 
 const char *turbo_script_version(void) { return TURBO_SCRIPT_VERSION_STRING; }
 
@@ -1087,6 +1097,7 @@ turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
 
   atomic_init(&ctx->ref_count, 1U);
   atomic_init(&ctx->closing, 0);
+  ctx->owner_thread_token = ts_context_current_thread_token();
   ctx->plugin_authorizer = authorizer;
   ctx->plugin_authorizer_data = user_data;
   if (turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_SERVICE,

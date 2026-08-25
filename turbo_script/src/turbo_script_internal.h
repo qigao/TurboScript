@@ -58,6 +58,9 @@ _Static_assert(sizeof(ts_jit_stats_t) == sizeof(turbo_script_jit_stats_t),
 struct turbo_script_ctx_s {
   atomic_uint ref_count;
   atomic_int closing;
+  /* Immutable TLS address captured by the creating thread. Host ABI entry
+   * points compare against this single context-owner fact source. */
+  const void *owner_thread_token;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
@@ -152,6 +155,7 @@ int turbo_script_repl_run(turbo_script_ctx_t *ctx, const char *script);
 /* Context references protect accepted executor tasks during deferred shutdown. */
 void ts_context_retain(turbo_script_ctx_t *ctx);
 void ts_context_release(turbo_script_ctx_t *ctx);
+int ts_context_is_owner_thread(const turbo_script_ctx_t *ctx);
 
 /* Returns the caller environment owned by the currently running managed task,
  * or the root environment when execution is not inside one. */

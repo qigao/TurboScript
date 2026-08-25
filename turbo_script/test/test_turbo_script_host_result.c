@@ -28,18 +28,50 @@ static void check_no_published_value(turbo_script_result_t *result) {
   check_equal(turbo_script_result_get_value(result, &actual), TURBO_SCRIPT_STATUS_INVALID_STATE);
 }
 
+static void check_empty_result(turbo_script_result_t *result) {
+  turbo_script_value_view_t value = {0};
+  turbo_script_error_info_t error = {0};
+  check_equal(turbo_script_result_get_value(result, &value), TURBO_SCRIPT_STATUS_INVALID_STATE);
+  check_equal(turbo_script_result_get_error(result, &error), TURBO_SCRIPT_STATUS_INVALID_STATE);
+}
+
 typedef struct result_thread_probe_s {
   turbo_script_result_t *result;
   turbo_script_ctx_t *ctx;
   turbo_script_status_t getter_status;
   turbo_script_status_t context_status;
+  turbo_script_status_t reset_status;
+  turbo_script_status_t destroy_status;
 } result_thread_probe_t;
+
+typedef struct context_thread_probe_s {
+  turbo_script_ctx_t *ctx;
+  turbo_script_status_t create_status;
+  turbo_script_status_t conversion_status;
+  int conversion_type;
+} context_thread_probe_t;
 
 static void result_thread_probe_run(void *arg) {
   result_thread_probe_t *probe = (result_thread_probe_t *)arg;
   turbo_script_value_view_t value = {0};
   probe->getter_status = turbo_script_result_get_value(probe->result, &value);
   probe->context_status = ts_host_result_check_context(probe->result, probe->ctx);
+  probe->reset_status = ts_host_result_reset_checked(probe->result);
+  probe->destroy_status = ts_host_result_destroy_checked(probe->result);
+}
+
+static void context_thread_probe_run(void *arg) {
+  context_thread_probe_t *probe = (context_thread_probe_t *)arg;
+  turbo_script_result_t *created = NULL;
+  turbo_script_value_view_t input = {.kind = TURBO_SCRIPT_VALUE_NULL};
+  exprtk_value_t converted = exprtk_val_int(99);
+  ts_host_value_limits_t limits = test_limits();
+
+  probe->create_status = turbo_script_result_create(probe->ctx, &created);
+  if (created) turbo_script_result_destroy(created);
+  probe->conversion_status = ts_host_value_from_view(probe->ctx, &input, &limits, &converted);
+  probe->conversion_type = converted.type;
+  exprtk_value_destroy(&converted);
 }
 
 spec("turbo_script_host_result") {
@@ -219,6 +251,41 @@ spec("turbo_script_host_result") {
       check_no_published_value(result);
     }
 
+    it("rejects an embedded NUL record key without publishing a value") {
+      const char key[] = {'a', '\0', 'b'};
+      turbo_script_record_entry_view_t entry = {
+          {key, sizeof(key)},
+          {.kind = TURBO_SCRIPT_VALUE_NULL},
+      };
+      turbo_script_value_view_t input = {
+          .kind = TURBO_SCRIPT_VALUE_RECORD,
+          .as.record = {&entry, 1},
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &input, &limits),
+                  TURBO_SCRIPT_STATUS_VALIDATION_ERROR);
+      check_no_published_value(result);
+    }
+
+    it("rejects embedded NUL keys with the same C-string prefix") {
+      const char first_key[] = {'a', '\0', 'b'};
+      const char second_key[] = {'a', '\0', 'c'};
+      turbo_script_record_entry_view_t entries[2] = {
+          {{first_key, sizeof(first_key)}, {.kind = TURBO_SCRIPT_VALUE_INT64, .as.integer = 1}},
+          {{second_key, sizeof(second_key)}, {.kind = TURBO_SCRIPT_VALUE_INT64, .as.integer = 2}},
+      };
+      turbo_script_value_view_t input = {
+          .kind = TURBO_SCRIPT_VALUE_RECORD,
+          .as.record = {entries, 2},
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &input, &limits),
+                  TURBO_SCRIPT_STATUS_VALIDATION_ERROR);
+      check_no_published_value(result);
+    }
+
     it("rejects duplicate record keys without publishing a value") {
       turbo_script_record_entry_view_t entries[2] = {
           {{"id", 2}, {.kind = TURBO_SCRIPT_VALUE_INT64, .as.integer = 1}},
@@ -308,6 +375,24 @@ spec("turbo_script_host_result") {
   }
 
   describe("exprtk conversion") {
+    it("preserves embedded NUL in an ordinary string value") {
+      const char text[] = {'a', '\0', 'b'};
+      turbo_script_value_view_t input = {
+          .kind = TURBO_SCRIPT_VALUE_STRING,
+          .as.string = {text, sizeof(text)},
+      };
+      exprtk_value_t actual = {0};
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_value_from_view(ctx, &input, &limits, &actual), TURBO_SCRIPT_STATUS_OK);
+      check_equal(actual.type, EXPRTK_VAL_STRING);
+      check_equal(actual.data.string.len, sizeof(text));
+      check_equal(actual.data.string.data[0], 'a');
+      check_equal(actual.data.string.data[1], '\0');
+      check_equal(actual.data.string.data[2], 'b');
+      exprtk_value_destroy(&actual);
+    }
+
     it("converts a nested value into the target context allocator") {
       char key[] = "values";
       char text[] = "owned";
@@ -435,6 +520,69 @@ spec("turbo_script_host_result") {
       check_equal(actual.message.data, "boom");
     }
 
+    it("rejects an unknown error status and leaves the result empty") {
+      turbo_script_value_view_t prior = {.kind = TURBO_SCRIPT_VALUE_NULL};
+      turbo_script_error_info_t input = {
+          .struct_size = sizeof(input),
+          .status = TURBO_SCRIPT_STATUS_INTERRUPTED + 1,
+          .phase = TURBO_SCRIPT_ERROR_PHASE_CALL,
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &prior, &limits), TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_result_set_error(result, &input, TEST_MAX_BYTES),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_empty_result(result);
+    }
+
+    it("rejects an invalid error phase and leaves the result empty") {
+      turbo_script_value_view_t prior = {.kind = TURBO_SCRIPT_VALUE_NULL};
+      turbo_script_error_info_t input = {
+          .struct_size = sizeof(input),
+          .status = TURBO_SCRIPT_STATUS_RUNTIME_ERROR,
+          .phase = TURBO_SCRIPT_ERROR_PHASE_INTERRUPT + 1,
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &prior, &limits), TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_result_set_error(result, &input, TEST_MAX_BYTES),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_empty_result(result);
+    }
+
+    it("rejects nonzero error reserved fields and leaves the result empty") {
+      turbo_script_value_view_t prior = {.kind = TURBO_SCRIPT_VALUE_NULL};
+      turbo_script_error_info_t input = {
+          .struct_size = sizeof(input),
+          .status = TURBO_SCRIPT_STATUS_RUNTIME_ERROR,
+          .phase = TURBO_SCRIPT_ERROR_PHASE_CALL,
+          .reserved = {0, 0, 0, 1},
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &prior, &limits), TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_result_set_error(result, &input, TEST_MAX_BYTES),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_empty_result(result);
+    }
+
+    it("rejects invalid UTF-8 in error views and leaves the result empty") {
+      const char invalid[] = "\xC0\xAF";
+      turbo_script_value_view_t prior = {.kind = TURBO_SCRIPT_VALUE_NULL};
+      turbo_script_error_info_t input = {
+          .struct_size = sizeof(input),
+          .status = TURBO_SCRIPT_STATUS_RUNTIME_ERROR,
+          .phase = TURBO_SCRIPT_ERROR_PHASE_CALL,
+          .message = {invalid, sizeof(invalid) - 1},
+      };
+      ts_host_value_limits_t limits = test_limits();
+
+      check_equal(ts_host_result_store_view(result, &prior, &limits), TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_result_set_error(result, &input, TEST_MAX_BYTES),
+                  TURBO_SCRIPT_STATUS_INVALID_UTF8);
+      check_empty_result(result);
+    }
+
     it("detects wrong-context access through the internal boundary helper") {
       turbo_script_ctx_t *other = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       check_not_null(other);
@@ -460,6 +608,23 @@ spec("turbo_script_host_result") {
       turbo_thread_destroy(&thread);
       check_equal(probe.getter_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.context_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
+      check_equal(probe.reset_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
+      check_equal(probe.destroy_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
+      check_equal(turbo_script_result_get_value(result, &value), TURBO_SCRIPT_STATUS_OK);
+    }
+
+    it("rejects result creation and value conversion outside the context owner thread") {
+      turbo_thread_t thread = NULL;
+      context_thread_probe_t probe = {
+          .ctx = ctx,
+      };
+
+      check_equal(turbo_thread_create(&thread, context_thread_probe_run, &probe), 0);
+      check_equal(turbo_thread_join(&thread), 0);
+      turbo_thread_destroy(&thread);
+      check_equal(probe.create_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
+      check_equal(probe.conversion_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
+      check_equal(probe.conversion_type, EXPRTK_VAL_NULL);
     }
   }
 }

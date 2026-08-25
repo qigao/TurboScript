@@ -1,7 +1,6 @@
 #include "turbo_script_host_internal.h"
 
 #include "../turbo_script_internal.h"
-#include "turbo/thread.h"
 #include "turbo_vstr.h"
 #include <turbostl/hash_set.h>
 
@@ -19,27 +18,31 @@ typedef struct ts_host_validation_state_s {
   hash_set_t active_containers;
 } ts_host_validation_state_t;
 
-static atomic_uint_fast64_t ts_host_next_thread_token;
-static TURBO_THREAD_LOCAL uint64_t ts_host_current_thread_token;
+static turbo_script_value_view_t ts_host_null_view(void);
 
-static uint64_t ts_host_thread_token(void) {
-  uint_fast64_t next;
-  if (ts_host_current_thread_token != 0) return ts_host_current_thread_token;
-  next = atomic_load_explicit(&ts_host_next_thread_token, memory_order_relaxed);
-  while (next != UINT64_MAX) {
-    if (atomic_compare_exchange_weak_explicit(&ts_host_next_thread_token, &next, next + 1,
-                                              memory_order_relaxed, memory_order_relaxed)) {
-      ts_host_current_thread_token = (uint64_t)(next + 1);
-      return ts_host_current_thread_token;
-    }
-  }
-  return 0;
+turbo_script_status_t ts_host_context_check_thread(const turbo_script_ctx_t *ctx) {
+  if (!ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  if (!ts_context_is_owner_thread(ctx)) return TURBO_SCRIPT_STATUS_WRONG_THREAD;
+  return TURBO_SCRIPT_STATUS_OK;
 }
 
 static turbo_script_status_t ts_host_result_check_thread(const turbo_script_result_t *result) {
   if (!result) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  if (result->owner_thread_token != ts_host_thread_token()) return TURBO_SCRIPT_STATUS_WRONG_THREAD;
-  return TURBO_SCRIPT_STATUS_OK;
+  return ts_host_context_check_thread(result->ctx);
+}
+
+static void ts_host_result_clear_unchecked(turbo_script_result_t *result) {
+  mem_reset(&result->view_arena);
+  result->value = ts_host_null_view();
+  memset(&result->error, 0, sizeof(result->error));
+  result->has_value = 0;
+  result->has_error = 0;
+}
+
+static void ts_host_result_contract_violation(void) {
+  /* The locked void ABI cannot report WRONG_THREAD. Continuing would either
+   * leak retained ownership or free another thread's arena, so terminate. */
+  abort();
 }
 
 static turbo_script_value_view_t ts_host_null_view(void) {
@@ -73,10 +76,15 @@ static turbo_script_status_t ts_host_charge_bytes(ts_host_validation_state_t *st
 
 static turbo_script_status_t ts_host_validate_string(ts_host_validation_state_t *state,
                                                      turbo_script_string_view_t value,
-                                                     int require_nonempty) {
+                                                     int require_nonempty,
+                                                     int reject_embedded_nul) {
   turbo_script_status_t status;
   if (!value.data && value.size != 0) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (require_nonempty && value.size == 0) return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
+  /* exprtk map keys are C strings, so ABI record keys must have one exact
+   * representation after conversion. Ordinary string values remain length-based. */
+  if (reject_embedded_nul && memchr(value.data, '\0', value.size) != NULL)
+    return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
   if (value.size == SIZE_MAX) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
   status = ts_host_charge_bytes(state, value.size + 1, 1);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
@@ -127,7 +135,7 @@ static turbo_script_status_t ts_host_validate_node(ts_host_validation_state_t *s
   case TURBO_SCRIPT_VALUE_BOOL:
     return value->as.boolean <= 1 ? TURBO_SCRIPT_STATUS_OK : TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
   case TURBO_SCRIPT_VALUE_STRING:
-    return ts_host_validate_string(state, value->as.string, 0);
+    return ts_host_validate_string(state, value->as.string, 0, 0);
   case TURBO_SCRIPT_VALUE_ARRAY:
     if (!value->as.array.items && value->as.array.count != 0)
       return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
@@ -170,7 +178,7 @@ static turbo_script_status_t ts_host_validate_node(ts_host_validation_state_t *s
     }
     for (size_t i = 0; status == TURBO_SCRIPT_STATUS_OK && i < value->as.record.count; ++i) {
       const turbo_script_record_entry_view_t *entry = &value->as.record.entries[i];
-      status = ts_host_validate_string(state, entry->key, 1);
+      status = ts_host_validate_string(state, entry->key, 1, 1);
       if (status != TURBO_SCRIPT_STATUS_OK) break;
       if (hash_set_contains(&keys, &entry->key)) {
         status = TURBO_SCRIPT_STATUS_DUPLICATE_RECORD_KEY;
@@ -339,6 +347,8 @@ turbo_script_status_t ts_host_value_from_view(turbo_script_ctx_t *target_ctx,
   if (!out_value) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   *out_value = ts_host_exprtk_null();
   if (!target_ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  status = ts_host_context_check_thread(target_ctx);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
 
   status = ts_host_validate_value_view(value, limits);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
@@ -356,12 +366,12 @@ turbo_script_status_t ts_host_value_from_view(turbo_script_ctx_t *target_ctx,
 turbo_script_status_t turbo_script_result_create(turbo_script_ctx_t *ctx,
                                                  turbo_script_result_t **out_result) {
   turbo_script_result_t *result;
-  uint64_t owner_thread_token;
+  turbo_script_status_t status;
   if (!out_result) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   *out_result = NULL;
   if (!ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  owner_thread_token = ts_host_thread_token();
-  if (owner_thread_token == 0) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  status = ts_host_context_check_thread(ctx);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
   result = (turbo_script_result_t *)calloc(1, sizeof(*result));
   if (!result) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
   if (mem_init(&result->view_arena, 0) != 0) {
@@ -369,7 +379,6 @@ turbo_script_status_t turbo_script_result_create(turbo_script_ctx_t *ctx,
     return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
   }
   result->ctx = ctx;
-  result->owner_thread_token = owner_thread_token;
   result->value = ts_host_null_view();
   ts_context_retain(ctx);
   *out_result = result;
@@ -377,22 +386,32 @@ turbo_script_status_t turbo_script_result_create(turbo_script_ctx_t *ctx,
 }
 
 void turbo_script_result_reset(turbo_script_result_t *result) {
-  if (ts_host_result_check_thread(result) != TURBO_SCRIPT_STATUS_OK) return;
-  mem_reset(&result->view_arena);
-  result->value = ts_host_null_view();
-  memset(&result->error, 0, sizeof(result->error));
-  result->has_value = 0;
-  result->has_error = 0;
+  turbo_script_status_t status = ts_host_result_reset_checked(result);
+  if (status == TURBO_SCRIPT_STATUS_WRONG_THREAD) ts_host_result_contract_violation();
 }
 
 void turbo_script_result_destroy(turbo_script_result_t *result) {
+  turbo_script_status_t status = ts_host_result_destroy_checked(result);
+  if (status == TURBO_SCRIPT_STATUS_WRONG_THREAD) ts_host_result_contract_violation();
+}
+
+turbo_script_status_t ts_host_result_reset_checked(turbo_script_result_t *result) {
+  turbo_script_status_t status = ts_host_result_check_thread(result);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  ts_host_result_clear_unchecked(result);
+  return TURBO_SCRIPT_STATUS_OK;
+}
+
+turbo_script_status_t ts_host_result_destroy_checked(turbo_script_result_t *result) {
   turbo_script_ctx_t *ctx;
-  if (ts_host_result_check_thread(result) != TURBO_SCRIPT_STATUS_OK) return;
+  turbo_script_status_t status = ts_host_result_check_thread(result);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
   ctx = result->ctx;
   mem_destroy(&result->view_arena);
   memset(result, 0, sizeof(*result));
   free(result);
   ts_context_release(ctx);
+  return TURBO_SCRIPT_STATUS_OK;
 }
 
 turbo_script_status_t turbo_script_result_get_value(const turbo_script_result_t *result,
@@ -421,12 +440,12 @@ turbo_script_status_t ts_host_result_store_view(turbo_script_result_t *result,
   turbo_script_value_view_t copy = ts_host_null_view();
   turbo_script_status_t status = ts_host_result_check_thread(result);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
-  turbo_script_result_reset(result);
+  ts_host_result_clear_unchecked(result);
   status = ts_host_validate_value_view(value, limits);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   status = ts_host_copy_view(&result->view_arena, value, &copy);
   if (status != TURBO_SCRIPT_STATUS_OK) {
-    turbo_script_result_reset(result);
+    ts_host_result_clear_unchecked(result);
     return status;
   }
   result->value = copy;
@@ -434,29 +453,37 @@ turbo_script_status_t ts_host_result_store_view(turbo_script_result_t *result,
   return TURBO_SCRIPT_STATUS_OK;
 }
 
-static turbo_script_status_t ts_host_validate_error_view(ts_host_validation_state_t *state,
-                                                         turbo_script_string_view_t view) {
-  return ts_host_validate_string(state, view, 0);
+static turbo_script_status_t ts_host_validate_error_info(const turbo_script_error_info_t *error,
+                                                         size_t max_bytes) {
+  ts_host_value_limits_t limits = {1, 1, max_bytes};
+  ts_host_validation_state_t state = {.limits = &limits};
+  turbo_script_status_t status;
+
+  if (!error || error->struct_size < sizeof(*error) || max_bytes == 0 ||
+      error->status < TURBO_SCRIPT_STATUS_INVALID_ARGUMENT ||
+      error->status > TURBO_SCRIPT_STATUS_INTERRUPTED ||
+      error->phase > TURBO_SCRIPT_ERROR_PHASE_INTERRUPT)
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  for (size_t i = 0; i < sizeof(error->reserved) / sizeof(error->reserved[0]); ++i) {
+    if (error->reserved[i] != 0) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  }
+
+  status = ts_host_validate_string(&state, error->module_name, 0, 0);
+  if (status == TURBO_SCRIPT_STATUS_OK)
+    status = ts_host_validate_string(&state, error->function_name, 0, 0);
+  if (status == TURBO_SCRIPT_STATUS_OK)
+    status = ts_host_validate_string(&state, error->message, 0, 0);
+  return status;
 }
 
 turbo_script_status_t ts_host_result_set_error(turbo_script_result_t *result,
                                                const turbo_script_error_info_t *error,
                                                size_t max_bytes) {
-  ts_host_value_limits_t limits = {1, 1, max_bytes};
-  ts_host_validation_state_t state = {.limits = &limits};
   turbo_script_error_info_t copy;
   turbo_script_status_t status = ts_host_result_check_thread(result);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
-  turbo_script_result_reset(result);
-  if (!error || error->struct_size < sizeof(*error) || max_bytes == 0 ||
-      error->status == TURBO_SCRIPT_STATUS_OK)
-    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-
-  status = ts_host_validate_error_view(&state, error->module_name);
-  if (status == TURBO_SCRIPT_STATUS_OK)
-    status = ts_host_validate_error_view(&state, error->function_name);
-  if (status == TURBO_SCRIPT_STATUS_OK)
-    status = ts_host_validate_error_view(&state, error->message);
+  ts_host_result_clear_unchecked(result);
+  status = ts_host_validate_error_info(error, max_bytes);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
 
   copy = *error;
@@ -464,7 +491,7 @@ turbo_script_status_t ts_host_result_set_error(turbo_script_result_t *result,
   copy.function_name.data = ts_host_copy_string(&result->view_arena, error->function_name);
   copy.message.data = ts_host_copy_string(&result->view_arena, error->message);
   if (!copy.module_name.data || !copy.function_name.data || !copy.message.data) {
-    turbo_script_result_reset(result);
+    ts_host_result_clear_unchecked(result);
     return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
   }
   result->error = copy;

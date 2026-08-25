@@ -27,9 +27,13 @@ add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
 add_ts_test(test_turbo_script_coro       test_turbo_script_coro.c)
-add_ts_test(test_turbo_script_host_result test_turbo_script_host_result.c)
-target_include_directories(test_turbo_script_host_result PRIVATE
-  ${CMAKE_CURRENT_SOURCE_DIR}/../src/host)
+cmake_add_test(
+  TARGET test_turbo_script_host_result
+  SOURCES test_turbo_script_host_result.c
+  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  FOLDER turbo_script)
 
 cmake_add_test(
   SOURCES bench_turbo_script.c
