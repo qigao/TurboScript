@@ -36,6 +36,14 @@ cmake_add_test(
   FOLDER turbo_script)
 
 cmake_add_test(
+  TARGET test_turbo_script_host_registry
+  SOURCES test_turbo_script_host_registry.c
+  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  FOLDER turbo_script)
+
+cmake_add_test(
   SOURCES bench_turbo_script.c
   LIBS turbo_script_lib TurboUtils::TinyTest exprtk mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir

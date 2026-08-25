@@ -3,7 +3,32 @@
 
 #include "exprtk_module.h"
 #include "turbo_buffer.h"
+#include "turbo_str.h"
 #include "turbo_script_host_api_internal.h"
+
+typedef struct ts_host_function_entry_s {
+  turbo_script_ctx_t *ctx;
+  tstr name;
+  uint32_t min_arity;
+  uint32_t max_arity;
+  turbo_script_host_function_t callback;
+  void *user_data;
+} ts_host_function_entry_t;
+
+typedef enum ts_host_builder_state_e {
+  TS_HOST_BUILDER_EMPTY = 0,
+  TS_HOST_BUILDER_VALUE = 1,
+  TS_HOST_BUILDER_ERROR = 2,
+} ts_host_builder_state_t;
+
+struct turbo_script_host_result_builder_s {
+  turbo_script_ctx_t *ctx;
+  ts_host_builder_state_t state;
+  turbo_script_status_t terminal_status;
+  exprtk_value_t value;
+  int32_t cause_code;
+  tstr error_message;
+};
 
 typedef struct ts_host_value_limits_s {
   uint32_t max_depth;
@@ -24,6 +49,22 @@ struct turbo_script_result_s {
 
 /* Translate the context's immutable owner fact into the host ABI status. */
 turbo_script_status_t ts_host_context_check_thread(const turbo_script_ctx_t *ctx);
+
+/* Host registry control plane. The context owns every entry and its tstr name.
+ * Module acquisition freezes mutation until the matching final release. */
+turbo_script_status_t ts_host_registry_init(turbo_script_ctx_t *ctx);
+void ts_host_registry_destroy(turbo_script_ctx_t *ctx);
+turbo_script_status_t ts_host_check_owner_thread(const turbo_script_ctx_t *ctx);
+turbo_script_status_t ts_host_registry_acquire_module(turbo_script_ctx_t *ctx);
+turbo_script_status_t ts_host_registry_release_module(turbo_script_ctx_t *ctx);
+turbo_script_status_t ts_host_registry_find_slot(const turbo_script_ctx_t *ctx,
+                                                 turbo_script_string_view_t name,
+                                                 size_t *out_slot);
+turbo_script_status_t ts_host_registry_get_slot(
+    const turbo_script_ctx_t *ctx, size_t slot,
+    const ts_host_function_entry_t **out_entry);
+turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
+                                                    exprtk_env_t *runtime_ctx);
 
 /* Checked boundaries underlying the locked void APIs. They never mutate on
  * failure; the public wrappers turn WRONG_THREAD into a contract violation. */

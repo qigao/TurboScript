@@ -8,6 +8,7 @@
 #include "turbo_script_internal.h"
 #include "turbo_script_timer.h"
 #include "turbo_script_task.h"
+#include "host/turbo_script_host_internal.h"
 #include <mir-gen.h>
 #include <mir.h>
 
@@ -175,6 +176,7 @@ static void ts_context_destroy_final(turbo_script_ctx_t *ctx) {
 
   free(ctx->current_script_dir);
   mem_destroy(&ctx->scratch_arena);
+  ts_host_registry_destroy(ctx);
   free(ctx);
 }
 
@@ -1102,6 +1104,10 @@ turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
   ctx->plugin_authorizer_data = user_data;
   if (turbo_script_memory_policy_init(TURBO_SCRIPT_MEMORY_SERVICE,
                                       &ctx->memory_policy) != 0) {
+    free(ctx);
+    return NULL;
+  }
+  if (ts_host_registry_init(ctx) != TURBO_SCRIPT_STATUS_OK) {
     free(ctx);
     return NULL;
   }

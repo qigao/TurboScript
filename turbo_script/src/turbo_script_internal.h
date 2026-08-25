@@ -11,6 +11,7 @@
 #include <mir.h>
 #include "ts_plugin_loader.h"
 #include "turbo_script.h"
+#include <turbostl/vec.h>
 #include <stdatomic.h>
 
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
@@ -61,6 +62,10 @@ struct turbo_script_ctx_s {
   /* Immutable TLS address captured by the creating thread. Host ABI entry
    * points compare against this single context-owner fact source. */
   const void *owner_thread_token;
+  vec_t host_functions;
+  size_t active_host_modules;
+  size_t host_callback_depth;
+  uint64_t next_instance_generation;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
