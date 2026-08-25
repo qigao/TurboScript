@@ -1,6 +1,7 @@
 #include "tinytest.h"
 
 #include "turbo_script_host_api_internal.h"
+#include "exprtk.h"
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -16,6 +17,14 @@ const char *ts_host_module_name(const turbo_script_module_t *module);
 turbo_script_status_t ts_host_module_execute_numeric(
     turbo_script_module_t *module, size_t export_index, int use_jit,
     const double *args, size_t arg_count, double *out_result);
+turbo_script_status_t ts_host_module_execute_initializer(
+    turbo_script_module_t *module, int use_jit);
+turbo_script_status_t ts_host_module_compile_test_parse_oom(
+    turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
+    const turbo_script_module_options_t *options, turbo_script_result_t *result,
+    turbo_script_module_t **out_module);
+turbo_script_status_t ts_host_module_test_ast_usage(
+    exprtk_node_t *root, const turbo_script_module_options_t *options);
 
 static turbo_script_status_t noop_host(void *user_data,
                                        const turbo_script_value_view_t *args,
@@ -24,6 +33,7 @@ static turbo_script_status_t noop_host(void *user_data,
   turbo_script_value_view_t value = {.kind = TURBO_SCRIPT_VALUE_NUMBER};
   (void)user_data;
   (void)args;
+  if (user_data) (*(size_t *)user_data)++;
   value.as.number = (double)arg_count;
   return turbo_script_host_result_set_value(builder, &value);
 }
@@ -242,5 +252,157 @@ spec("TurboScript immutable Host modules") {
     check_equal(jit, 42.0);
     check_equal(ts_host_module_lower_count(module), (size_t)1);
     destroy_fixture(ctx, result, module);
+  }
+
+  it("rejects under and over arity before touching MIR argument storage") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    double args[3] = {1, 2, 3};
+    double output = 99;
+    turbo_script_module_options_init(&options);
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    check_equal(compile_text(ctx, result,
+                             "func add(a,b){return a+b;};export(\"add\");",
+                             &options, &module), TURBO_SCRIPT_STATUS_OK);
+    for (int jit = 0; jit <= 1; ++jit) {
+      output = 99;
+      check_equal(ts_host_module_execute_numeric(module, 0, jit, args, 1, &output),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_equal(output, 99.0);
+      check_equal(ts_host_module_execute_numeric(module, 0, jit, args, 3, &output),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_equal(output, 99.0);
+    }
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("executes arity sixteen safely through interpreter and JIT") {
+    const char *source =
+        "func sum(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p){"
+        "return a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p;};export(\"sum\");";
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    double args[17];
+    double output = 0;
+    for (size_t i = 0; i < 17; ++i) args[i] = (double)(i + 1);
+    turbo_script_module_options_init(&options);
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    check_equal(compile_text(ctx, result, source, &options, &module), TURBO_SCRIPT_STATUS_OK);
+    check_equal(ts_host_module_execute_numeric(module, 0, 0, args, 16, &output),
+                TURBO_SCRIPT_STATUS_OK);
+    check_equal(output, 136.0);
+    check_equal(ts_host_module_execute_numeric(module, 0, 1, args, 16, &output),
+                TURBO_SCRIPT_STATUS_OK);
+    check_equal(output, 136.0);
+    for (int jit = 0; jit <= 1; ++jit) {
+      output = 99;
+      check_equal(ts_host_module_execute_numeric(module, 0, jit, args, 17, &output),
+                  TURBO_SCRIPT_STATUS_INVALID_ARGUMENT);
+      check_equal(output, 99.0);
+    }
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("executes registered host callback by frozen slot in both modes") {
+    size_t callback_count = 0;
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    turbo_script_host_function_descriptor_t descriptor = {
+        .struct_size = sizeof(descriptor), .min_arity = 1, .max_arity = 1,
+        .name = {"host_count", 10}};
+    double arg = 7;
+    double output = 0;
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    check_equal(turbo_script_context_register_host_function(
+                    ctx, &descriptor, noop_host, &callback_count, result),
+                TURBO_SCRIPT_STATUS_OK);
+    turbo_script_module_options_init(&options);
+    check_equal(compile_text(ctx, result,
+                             "func f(){return host_count();};export(\"f\");",
+                             &options, &module),
+                TURBO_SCRIPT_STATUS_UNSUPPORTED_BACKEND_SEMANTIC);
+    check_null(module);
+    check_equal(compile_text(ctx, result,
+                             "func f(a){return host_count(a);};export(\"f\");",
+                             &options, &module), TURBO_SCRIPT_STATUS_OK);
+    descriptor.name = (turbo_script_string_view_t){"host_after_freeze", 17};
+    check_equal(turbo_script_context_register_host_function(
+                    ctx, &descriptor, noop_host, &callback_count, result),
+                TURBO_SCRIPT_STATUS_INVALID_STATE);
+    check_equal(ts_host_module_execute_numeric(module, 0, 0, &arg, 1, &output),
+                TURBO_SCRIPT_STATUS_OK);
+    check_equal(output, 1.0);
+    check_equal(ts_host_module_execute_numeric(module, 0, 1, &arg, 1, &output),
+                TURBO_SCRIPT_STATUS_OK);
+    check_equal(output, 1.0);
+    check_equal(callback_count, (size_t)2);
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("executes initializer in both modes without invoking export metadata") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    turbo_script_module_options_init(&options);
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    check_equal(compile_text(ctx, result,
+                             "func f(){return 1;};export(\"f\");",
+                             &options, &module), TURBO_SCRIPT_STATUS_OK);
+    check_equal(ts_host_module_execute_initializer(module, 0), TURBO_SCRIPT_STATUS_OK);
+    check_equal(ts_host_module_execute_initializer(module, 1), TURBO_SCRIPT_STATUS_OK);
+    destroy_fixture(ctx, result, module);
+  }
+
+  it("maps deterministic parser allocation failure to out of memory") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_t *module = NULL;
+    turbo_script_module_options_t options;
+    turbo_script_error_info_t error = {.struct_size = sizeof(error)};
+    turbo_script_status_t status;
+    turbo_script_module_options_init(&options);
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    status = ts_host_module_compile_test_parse_oom(
+        ctx, (turbo_script_string_view_t){"a=1;", 4}, &options, result, &module);
+    check_equal(status, TURBO_SCRIPT_STATUS_OUT_OF_MEMORY);
+    check_null(module);
+    check_equal(turbo_script_result_get_error(result, &error), TURBO_SCRIPT_STATUS_OK);
+    check_equal(error.status, TURBO_SCRIPT_STATUS_OUT_OF_MEMORY);
+    destroy_fixture(ctx, result, NULL);
+  }
+
+  it("counts class generator yield and template nodes at exact boundaries") {
+    exprtk_node_t text = {.type = EXPRTK_NODE_TEMPLATE_STRING};
+    exprtk_node_t yielded = {.type = EXPRTK_NODE_YIELD};
+    exprtk_node_t generator = {.type = EXPRTK_NODE_GENERATOR_FUNCTION};
+    exprtk_node_t method = {.type = EXPRTK_NODE_METHOD};
+    exprtk_node_t *methods[1] = {&method};
+    exprtk_node_t klass = {.type = EXPRTK_NODE_CLASS_DEF};
+    turbo_script_module_options_t options;
+    text.data.template_string.template_str = "four";
+    text.data.template_string.len = 4;
+    yielded.data.yield_expr.value = &text;
+    generator.data.generator_def.body = &yielded;
+    method.data.method.body = &generator;
+    klass.data.class_def.methods = methods;
+    klass.data.class_def.method_count = 1;
+    turbo_script_module_options_init(&options);
+    options.max_ast_nodes = 4;
+    check_equal(ts_host_module_test_ast_usage(&klass, &options),
+                TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED);
+    options.max_ast_nodes = 5;
+    options.max_string_bytes = 3;
+    check_equal(ts_host_module_test_ast_usage(&klass, &options),
+                TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED);
+    options.max_string_bytes = 4;
+    check_equal(ts_host_module_test_ast_usage(&klass, &options),
+                TURBO_SCRIPT_STATUS_OK);
   }
 }

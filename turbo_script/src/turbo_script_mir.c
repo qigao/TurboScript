@@ -5,6 +5,7 @@
 #include "turbo_script_internal.h"
 #include "turbo_script_closure_analysis.h"
 #include "mir/turbo_script_mir_internal.h"
+#include "host/turbo_script_host_internal.h"
 
 #include "exprtk_grammar.h"
 #include <math.h>
@@ -198,6 +199,28 @@ int ts_emit_direct_math_call(ts_mir_compiler_t *c, const char *name, size_t argc
 
 int ts_emit_direct_resolved_call(ts_mir_compiler_t *c, const char *name, size_t argc,
                                         const MIR_reg_t *arg_regs, MIR_reg_t res) {
+  size_t host_slot = SIZE_MAX;
+  if (ts_host_registry_find_slot(c->ts_ctx,
+                                 (turbo_script_string_view_t){name, strlen(name)},
+                                 &host_slot) == TURBO_SCRIPT_STATUS_OK) {
+    const ts_host_function_entry_t *entry = NULL;
+    if (ts_host_registry_get_slot(c->ts_ctx, host_slot, &entry) !=
+            TURBO_SCRIPT_STATUS_OK ||
+        !entry || argc < entry->min_arity || argc > entry->max_arity) {
+      ts_mir_fail(c, "Host function '%s' arity mismatch", name);
+      return 1;
+    }
+    MIR_reg_t arr_reg = ts_emit_packed_args(c, argc, arg_regs);
+    MIR_append_insn(c->ctx, c->func,
+                    MIR_new_call_insn(
+                        c->ctx, 7, MIR_new_ref_op(c->ctx, c->ext.call_host_slot_proto),
+                        MIR_new_ref_op(c->ctx, c->ext.call_host_slot_import),
+                        MIR_new_reg_op(c->ctx, res), MIR_new_reg_op(c->ctx, c->ctx_reg),
+                        MIR_new_int_op(c->ctx, (int64_t)host_slot),
+                        MIR_new_int_op(c->ctx, (int64_t)argc),
+                        MIR_new_reg_op(c->ctx, arr_reg)));
+    return 1;
+  }
   /* 1) env-registered native functions */
   exprtk_func_t *f = c->ts_ctx->env.funcs;
   while (f) {

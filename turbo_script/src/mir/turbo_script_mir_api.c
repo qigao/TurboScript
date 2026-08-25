@@ -16,7 +16,10 @@ struct ts_mir_artifact_s {
   MIR_context_t ctx;
   MIR_module_t module;
   MIR_item_t initializer;
+  void *initializer_address;
   MIR_item_t *export_items;
+  MIR_item_t *export_wrappers;
+  uint32_t *export_arities;
   void **export_addresses;
   size_t export_count;
   int gen_initialized;
@@ -32,12 +35,146 @@ static ts_compiled_func_t *ts_mir_find_artifact_function(ts_mir_compiler_t *comp
   return NULL;
 }
 
+/* Single AST-to-MIR lowering core. Callers retain ownership of the supplied
+ * MIR context/module and decide how long linked code remains alive. */
+static int ts_mir_lower_owned_module(
+    MIR_context_t mir_ctx, MIR_module_t module, turbo_script_ctx_t *compile_ctx,
+    exprtk_node_t *ast, const char *prefix,
+    const ts_host_export_table_t *exports, MIR_item_t *out_initializer,
+    MIR_item_t *out_export_items, MIR_item_t *out_export_wrappers) {
+  ts_mir_compiler_t compiler = {0};
+  const exprtk_node_t **metadata_nodes = NULL;
+  size_t export_count = exports ? vec_size(&exports->entries) : 0;
+  int success = 0;
+  int module_finished = 0;
+  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !out_initializer)
+    return -1;
+  if (export_count && (!out_export_items || !out_export_wrappers)) return -1;
+  *out_initializer = NULL;
+  if (export_count) {
+    metadata_nodes = (const exprtk_node_t **)calloc(export_count, sizeof(*metadata_nodes));
+    if (!metadata_nodes) return -1;
+  }
+  compiler.ctx = mir_ctx;
+  compiler.module = module;
+  compiler.ts_ctx = compile_ctx;
+  compiler.ast_root = ast;
+  compiler.metadata_nodes = metadata_nodes;
+  compiler.metadata_node_count = export_count;
+  snprintf(compiler.item_prefix, sizeof(compiler.item_prefix), "%s", prefix);
+  for (size_t i = 0; i < export_count; ++i) {
+    const ts_host_export_entry_t *entry =
+        (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
+    if (!entry) goto done;
+    metadata_nodes[i] = entry->declaration_node;
+  }
+  ts_mir_init_externals(&compiler);
+  ts_prescan_class_names(&compiler, ast);
+  for (exprtk_func_t *f = compile_ctx->env.funcs; f; f = f->next) {
+    if (f->is_script && f->data.script.body && f->data.script.arg_count <= 16) {
+      int all_vars = 1;
+      for (size_t i = 0; i < f->data.script.arg_count; ++i) {
+        if (f->data.script.arg_params[i]->type != EXPRTK_NODE_VARIABLE) {
+          all_vars = 0;
+          break;
+        }
+      }
+      if (all_vars)
+        ts_compile_script_func(&compiler, f->name, f->data.script.arg_params,
+                               f->data.script.arg_count, f->data.script.body);
+    }
+  }
+  ts_prescan_functions(&compiler, ast);
+  ts_prescan_hof_specializations(&compiler, ast);
+
+  MIR_type_t result_type = MIR_T_D;
+  MIR_var_t initializer_args[1] = {{MIR_T_P, "ctx_ptr", 0}};
+  char initializer_name[128];
+  snprintf(initializer_name, sizeof(initializer_name), "%s_main", prefix);
+  MIR_item_t initializer = MIR_new_func_arr(mir_ctx, initializer_name, 1,
+                                            &result_type, 1, initializer_args);
+  compiler.func = initializer;
+  compiler.ctx_reg = MIR_reg(mir_ctx, "ctx_ptr", initializer->u.func);
+  ts_prescan_variables(&compiler, ast);
+  ts_compile_stmt(&compiler, ast);
+  ts_emit_var_prologue(&compiler);
+  ts_emit_vec_prologue(&compiler);
+  ts_emit_map_prologue(&compiler);
+  ts_emit_var_epilogue(&compiler);
+  char ret_name[32];
+  snprintf(ret_name, sizeof(ret_name), "_t%d", compiler.tmp_count++);
+  MIR_reg_t ret = MIR_new_func_reg(mir_ctx, initializer->u.func, MIR_T_D,
+                                   ret_name);
+  MIR_append_insn(mir_ctx, initializer,
+                  MIR_new_insn(mir_ctx, MIR_DMOV, MIR_new_reg_op(mir_ctx, ret),
+                               MIR_new_double_op(mir_ctx, 0.0)));
+  MIR_append_insn(mir_ctx, initializer,
+                  MIR_new_ret_insn(mir_ctx, 1, MIR_new_reg_op(mir_ctx, ret)));
+  MIR_finish_func(mir_ctx);
+  if (compiler.failed) goto done;
+
+  for (size_t i = 0; i < export_count; ++i) {
+    const ts_host_export_entry_t *entry =
+        (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
+    ts_compiled_func_t *compiled =
+        entry ? ts_mir_find_artifact_function(&compiler, entry->name) : NULL;
+    if (!compiled || entry->arity > 16 || compiled->arg_count != entry->arity)
+      goto done;
+    out_export_items[i] = compiled->mir_func;
+    MIR_var_t wrapper_args[3] = {{MIR_T_P, "ctx", 0},
+                                 {MIR_T_P, "closure_env", 0},
+                                 {MIR_T_P, "argv", 0}};
+    char wrapper_name[64];
+    snprintf(wrapper_name, sizeof(wrapper_name), "%s_wrapper_%zu", prefix, i);
+    MIR_item_t wrapper = MIR_new_func_arr(mir_ctx, wrapper_name, 1,
+                                          &result_type, 3, wrapper_args);
+    MIR_reg_t wrapper_ctx = MIR_reg(mir_ctx, "ctx", wrapper->u.func);
+    MIR_reg_t wrapper_env = MIR_reg(mir_ctx, "closure_env", wrapper->u.func);
+    MIR_reg_t wrapper_argv = MIR_reg(mir_ctx, "argv", wrapper->u.func);
+    MIR_reg_t wrapper_ret = MIR_new_func_reg(mir_ctx, wrapper->u.func,
+                                             MIR_T_D, "result");
+    MIR_op_t call_ops[21];
+    call_ops[0] = MIR_new_ref_op(mir_ctx, compiled->proto);
+    call_ops[1] = MIR_new_ref_op(mir_ctx, compiled->mir_func);
+    call_ops[2] = MIR_new_reg_op(mir_ctx, wrapper_ret);
+    call_ops[3] = MIR_new_reg_op(mir_ctx, wrapper_ctx);
+    call_ops[4] = MIR_new_reg_op(mir_ctx, wrapper_env);
+    for (size_t arg = 0; arg < entry->arity; ++arg) {
+      char value_name[24];
+      snprintf(value_name, sizeof(value_name), "arg_%zu", arg);
+      MIR_reg_t value_reg = MIR_new_func_reg(mir_ctx, wrapper->u.func,
+                                             MIR_T_D, value_name);
+      MIR_append_insn(mir_ctx, wrapper,
+                      MIR_new_insn(mir_ctx, MIR_DMOV,
+                                   MIR_new_reg_op(mir_ctx, value_reg),
+                                   MIR_new_mem_op(mir_ctx, MIR_T_D,
+                                                  (MIR_disp_t)(arg * sizeof(double)),
+                                                  wrapper_argv, 0, 1)));
+      call_ops[arg + 5] = MIR_new_reg_op(mir_ctx, value_reg);
+    }
+    MIR_append_insn(mir_ctx, wrapper,
+                    MIR_new_insn_arr(mir_ctx, MIR_CALL, entry->arity + 5, call_ops));
+    MIR_append_insn(mir_ctx, wrapper,
+                    MIR_new_ret_insn(mir_ctx, 1,
+                                     MIR_new_reg_op(mir_ctx, wrapper_ret)));
+    MIR_finish_func(mir_ctx);
+    out_export_wrappers[i] = wrapper;
+  }
+  MIR_finish_module(mir_ctx);
+  module_finished = 1;
+  *out_initializer = initializer;
+  success = 1;
+done:
+  if (!module_finished) MIR_finish_module(mir_ctx);
+  free(metadata_nodes);
+  ts_mir_destroy_compiler_storage(&compiler);
+  return success ? 0 : -1;
+}
+
 int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
                             const ts_host_export_table_t *exports,
                             ts_mir_artifact_t **out_artifact) {
   ts_mir_artifact_t *artifact = NULL;
-  ts_mir_compiler_t compiler = {0};
-  const exprtk_node_t **metadata_nodes = NULL;
   size_t export_count;
   int success = 0;
   if (!compile_ctx || !ast || !exports || !out_artifact) return -1;
@@ -47,83 +184,43 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
   if (!artifact) goto done;
   if (export_count) {
     artifact->export_items = (MIR_item_t *)calloc(export_count, sizeof(MIR_item_t));
+    artifact->export_wrappers = (MIR_item_t *)calloc(export_count, sizeof(MIR_item_t));
     artifact->export_addresses = (void **)calloc(export_count, sizeof(void *));
-    metadata_nodes = (const exprtk_node_t **)calloc(export_count, sizeof(*metadata_nodes));
-    if (!artifact->export_items || !artifact->export_addresses || !metadata_nodes) goto done;
+    artifact->export_arities = (uint32_t *)calloc(export_count, sizeof(uint32_t));
+    if (!artifact->export_items || !artifact->export_wrappers ||
+        !artifact->export_addresses || !artifact->export_arities) goto done;
   }
   artifact->export_count = export_count;
   artifact->ctx = MIR_init();
   if (!artifact->ctx) goto done;
   artifact->module = MIR_new_module(artifact->ctx, "ts_host_module");
   if (!artifact->module) goto done;
-  compiler.ctx = artifact->ctx;
-  compiler.module = artifact->module;
-  compiler.ts_ctx = compile_ctx;
-  compiler.ast_root = ast;
-  compiler.metadata_nodes = metadata_nodes;
-  compiler.metadata_node_count = export_count;
-  snprintf(compiler.item_prefix, sizeof(compiler.item_prefix), "ts_host");
+  if (ts_mir_lower_owned_module(
+          artifact->ctx, artifact->module, compile_ctx, ast, "ts_host",
+          exports, &artifact->initializer, artifact->export_items,
+          artifact->export_wrappers) != 0)
+    goto done;
   for (size_t i = 0; i < export_count; ++i) {
     const ts_host_export_entry_t *entry =
         (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
     if (!entry) goto done;
-    metadata_nodes[i] = entry->declaration_node;
+    artifact->export_arities[i] = entry->arity;
   }
-
-  ts_mir_init_externals(&compiler);
-  ts_prescan_class_names(&compiler, ast);
-  ts_prescan_functions(&compiler, ast);
-  ts_prescan_hof_specializations(&compiler, ast);
-
-  MIR_type_t result_type = MIR_T_D;
-  MIR_var_t args[1] = {{MIR_T_P, "ctx_ptr", 0}};
-  artifact->initializer = MIR_new_func_arr(artifact->ctx, "ts_host_initializer",
-                                           1, &result_type, 1, args);
-  compiler.func = artifact->initializer;
-  compiler.ctx_reg = MIR_reg(artifact->ctx, "ctx_ptr", artifact->initializer->u.func);
-  ts_prescan_variables(&compiler, ast);
-  ts_compile_stmt(&compiler, ast);
-  ts_emit_var_prologue(&compiler);
-  ts_emit_vec_prologue(&compiler);
-  ts_emit_map_prologue(&compiler);
-  ts_emit_var_epilogue(&compiler);
-  MIR_reg_t ret = MIR_new_func_reg(artifact->ctx, artifact->initializer->u.func,
-                                   MIR_T_D, "_host_ret");
-  MIR_append_insn(artifact->ctx, artifact->initializer,
-                  MIR_new_insn(artifact->ctx, MIR_DMOV,
-                               MIR_new_reg_op(artifact->ctx, ret),
-                               MIR_new_double_op(artifact->ctx, 0.0)));
-  MIR_append_insn(artifact->ctx, artifact->initializer,
-                  MIR_new_ret_insn(artifact->ctx, 1,
-                                   MIR_new_reg_op(artifact->ctx, ret)));
-  MIR_finish_func(artifact->ctx);
-  MIR_finish_module(artifact->ctx);
-  if (compiler.failed) goto done;
-
-  for (size_t i = 0; i < export_count; ++i) {
-    const ts_host_export_entry_t *entry =
-        (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
-    ts_compiled_func_t *compiled =
-        entry ? ts_mir_find_artifact_function(&compiler, entry->name) : NULL;
-    if (!compiled || compiled->arg_count != entry->arity) goto done;
-    artifact->export_items[i] = compiled->mir_func;
-  }
-
   MIR_load_module(artifact->ctx, artifact->module);
   ts_mir_load_externals(artifact->ctx);
   MIR_link(artifact->ctx, MIR_set_interp_interface, NULL);
   MIR_gen_init(artifact->ctx);
   artifact->gen_initialized = 1;
   MIR_link(artifact->ctx, MIR_set_gen_interface, NULL);
+  artifact->initializer_address = MIR_gen(artifact->ctx, artifact->initializer);
+  if (!artifact->initializer_address) goto done;
   for (size_t i = 0; i < export_count; ++i) {
-    artifact->export_addresses[i] = MIR_gen(artifact->ctx, artifact->export_items[i]);
+    artifact->export_addresses[i] = MIR_gen(artifact->ctx, artifact->export_wrappers[i]);
     if (!artifact->export_addresses[i]) goto done;
   }
   success = 1;
 
 done:
-  free(metadata_nodes);
-  ts_mir_destroy_compiler_storage(&compiler);
   if (!success) {
     if (compile_ctx && compile_ctx->error_code == TURBO_SCRIPT_ERROR_NONE) {
       compile_ctx->error_code = artifact ? TURBO_SCRIPT_ERROR_JIT : TURBO_SCRIPT_ERROR_OOM;
@@ -144,7 +241,9 @@ void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact) {
     MIR_finish(artifact->ctx);
   }
   free(artifact->export_items);
+  free(artifact->export_wrappers);
   free(artifact->export_addresses);
+  free(artifact->export_arities);
   free(artifact);
 }
 
@@ -156,6 +255,7 @@ int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
   MIR_val_t mir_args[18] = {0};
   MIR_val_t result = {0};
   if (!artifact || !runtime_ctx || export_index >= artifact->export_count ||
+      arg_count > 16 || arg_count != artifact->export_arities[export_index] ||
       (!args && arg_count) || !out_result) return -1;
   mir_args[0].a = runtime_ctx;
   mir_args[1].a = &runtime_ctx->env;
@@ -167,22 +267,29 @@ int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
     return 0;
   }
   if (!artifact->export_addresses[export_index]) return -1;
-  switch (arg_count) {
-  case 0:
-    *out_result = ((double (*)(void *, void *))artifact->export_addresses[export_index])(
-        runtime_ctx, &runtime_ctx->env);
-    return 0;
-  case 1:
-    *out_result = ((double (*)(void *, void *, double))artifact->export_addresses[export_index])(
-        runtime_ctx, &runtime_ctx->env, args[0]);
-    return 0;
-  case 2:
-    *out_result = ((double (*)(void *, void *, double, double))artifact->export_addresses[export_index])(
-        runtime_ctx, &runtime_ctx->env, args[0], args[1]);
-    return 0;
-  default:
-    return -1;
+  *out_result = ((double (*)(void *, void *, const double *))
+                     artifact->export_addresses[export_index])(
+      runtime_ctx, &runtime_ctx->env, args);
+  return 0;
+}
+
+int ts_mir_artifact_execute_initializer(ts_mir_artifact_t *artifact,
+                                        turbo_script_ctx_t *runtime_ctx,
+                                        int use_jit) {
+  MIR_val_t argument = {0};
+  MIR_val_t result = {0};
+  if (!artifact || !runtime_ctx) return -1;
+  runtime_ctx->env.aborted = 0;
+  runtime_ctx->env.flow = exprtk_FLOW_NORMAL;
+  runtime_ctx->env.error_msg[0] = '\0';
+  if (use_jit) {
+    if (!artifact->initializer_address) return -1;
+    (void)((double (*)(void *))artifact->initializer_address)(runtime_ctx);
+  } else {
+    argument.a = runtime_ctx;
+    MIR_interp_arr(artifact->ctx, artifact->initializer, &result, 1, &argument);
   }
+  return runtime_ctx->env.aborted || runtime_ctx->env.flow == exprtk_FLOW_THROW ? -1 : 0;
 }
 
 /* =========================================================================
@@ -285,126 +392,34 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
 
   MIR_module_t mod = MIR_new_module(mir_ctx, mod_name);
 
-  ts_mir_compiler_t compiler = {0};
-  compiler.ctx = mir_ctx;
-  compiler.module = mod;
-  compiler.ts_ctx = ctx;
-  compiler.ast_root = ast;
-  snprintf(compiler.item_prefix, sizeof(compiler.item_prefix), "%s", mod_name);
-
-  /*  Setup external call prototypes and imports (before func) */
-  ts_mir_init_externals(&compiler);
-
-  /* Class names are needed before function pre-compilation so functions that
-   * return OOP values stay on the value-preserving runtime-call path. */
-  ts_prescan_class_names(&compiler, ast);
-
-  /*  Pre-compile script functions already registered in env */
-  for (exprtk_func_t *f = ctx->env.funcs; f; f = f->next) {
-    if (f->is_script && f->data.script.body && f->data.script.arg_count <= 16) {
-      int all_vars = 1;
-      for (size_t i = 0; i < f->data.script.arg_count; i++) {
-        if (f->data.script.arg_params[i]->type != EXPRTK_NODE_VARIABLE) {
-          all_vars = 0;
-          break;
-        }
-      }
-      if (all_vars) {
-        ts_compile_script_func(&compiler, f->name, f->data.script.arg_params,
-                               f->data.script.arg_count, f->data.script.body);
-      }
-    }
-  }
-
-  /*  Pre-scan AST for function definitions and compile them */
-  ts_prescan_functions(&compiler, ast);
-
-  /* Pre-compile monomorphic higher-order calls after ordinary functions exist. */
-  ts_prescan_hof_specializations(&compiler, ast);
-
-  /*  Function signature: double main(void *ctx_ptr) */
-  MIR_type_t res_type = MIR_T_D;
-  MIR_var_t func_args[1] = {{MIR_T_P, "ctx_ptr", 0}};
-  char main_name[128];
-  snprintf(main_name, sizeof(main_name), "%s_main", compiler.item_prefix);
-  MIR_item_t func = MIR_new_func_arr(mir_ctx, main_name, 1, &res_type, 1, func_args);
-  compiler.func = func;
-
-  /*  Get the ctx_ptr register */
-  compiler.ctx_reg = MIR_reg(mir_ctx, "ctx_ptr", func->u.func);
-
-  ts_prescan_variables(&compiler, ast);
-
-  /* Compile the AST */
-  ts_compile_stmt(&compiler, ast);
-
-  /*  Emit prologue — prepend load_var calls at function start
-   * (must be after compile so we know which variables exist) */
-  ts_emit_var_prologue(&compiler);
-
-  /*  Prepend vec_data pointer loads (after var prologue, so they run first) */
-  ts_emit_vec_prologue(&compiler);
-
-  /*  Prepend map field pointer loads */
-  ts_emit_map_prologue(&compiler);
-
-  /*  Emit epilogue — store all variables back to env */
-  ts_emit_var_epilogue(&compiler);
-
-  /* Default return 0.0 */
-  char ret_name[32];
-  snprintf(ret_name, sizeof(ret_name), "_t%d", compiler.tmp_count++);
-  MIR_reg_t ret_reg = MIR_new_func_reg(mir_ctx, func->u.func, MIR_T_D, ret_name);
-  MIR_append_insn(mir_ctx, func,
-                  MIR_new_insn(mir_ctx, MIR_DMOV, MIR_new_reg_op(mir_ctx, ret_reg),
-                               MIR_new_double_op(mir_ctx, 0.0)));
-  MIR_append_insn(mir_ctx, func,
-                  MIR_new_ret_insn(mir_ctx, 1, MIR_new_reg_op(mir_ctx, ret_reg)));
-
-  MIR_finish_func(mir_ctx);
-  MIR_finish_module(mir_ctx);
-
-  if (compiler.failed) {
-    ts_mir_destroy_compiler_storage(&compiler);
+  MIR_item_t shared_initializer = NULL;
+  if (ts_mir_lower_owned_module(mir_ctx, mod, ctx, ast, mod_name, NULL,
+                                &shared_initializer, NULL, NULL) != 0) {
     if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE)
       ctx->error_code = TURBO_SCRIPT_ERROR_JIT;
     return -1;
   }
-
-  /*  Keep AST alive -- don't free it. Node pointers are baked into JIT code.
-   * Variable name strings and monomorphic OOP class strings are also baked in as pointer
-   * immediates for helper calls. We intentionally keep them alive for the MIR context
-   * lifetime. */
   MIR_load_module(mir_ctx, mod);
-
   if (use_interp) {
     if (!ctx->mir_interp_externals_loaded) {
       ts_mir_load_externals(mir_ctx);
       ctx->mir_interp_externals_loaded = 1;
     }
     MIR_link(mir_ctx, MIR_set_interp_interface, NULL);
-    ctx->mir_interp_last_func = func;
+    ctx->mir_interp_last_func = shared_initializer;
   } else {
-    /*  Reuse gen context across compiles — init once, finish in turbo_script_free */
     if (!ctx->mir_gen_initialized) {
       MIR_gen_init(mir_ctx);
       ts_mir_load_externals(mir_ctx);
       ctx->mir_gen_initialized = 1;
     }
     MIR_link(mir_ctx, MIR_set_gen_interface, NULL);
-
-    /*  Cache the compiled function pointer for fast exec_jit */
-    ctx->mir_last_fn = func->addr;
+    ctx->mir_last_fn = shared_initializer->addr;
   }
-
-  ts_mir_destroy_compiler_storage(&compiler);
-  
-  // 记录编译统计
   if (ctx->jit_stats_enabled) {
     ctx->jit_stats.compile_count++;
     ctx->jit_stats.total_compile_time_us += ts_get_time_us() - start_time;
   }
-  
   return 0;
 }
 

@@ -7,6 +7,7 @@
 
 #include "../turbo_script_internal.h"
 #include "turbo_script_mir_internal.h"
+#include "../host/turbo_script_host_internal.h"
 #include "exprtk_class.h"
 #include <mir.h>
 #include <math.h>
@@ -267,6 +268,13 @@ double ts_mir_call_native(void *ctx_ptr, void *fn_ptr, void *user_data, int64_t 
   exprtk_value_t result = exprtk_value_clone_to_env(raw, env);
   exprtk_value_destroy(&raw);
   return ts_mir_take_numeric_value(&result);
+}
+
+double ts_mir_call_host_slot(void *ctx_ptr, int64_t slot, int64_t argc,
+                             double *argv) {
+  if (!ctx_ptr || slot < 0 || argc < 0 || argc > 16) return 0.0;
+  return ts_host_registry_invoke_numeric_slot((turbo_script_ctx_t *)ctx_ptr,
+                                              (size_t)slot, (size_t)argc, argv);
 }
 
 double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *argv) {
@@ -793,6 +801,15 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     c->ext.call_native_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_native"), 1, &res, 5, args);
     c->ext.call_native_import = MIR_new_import(ctx, "ts_mir_call_native");
   }
+  /* Frozen Host callsites carry a registry slot, never a mutable name lookup. */
+  {
+    MIR_type_t res = MIR_T_D;
+    MIR_var_t args[4] = {{MIR_T_P, "ctx", 0}, {MIR_T_I64, "slot", 0},
+                         {MIR_T_I64, "argc", 0}, {MIR_T_P, "argv", 0}};
+    c->ext.call_host_slot_proto = MIR_new_proto_arr(
+        ctx, ts_mir_prefixed_item_name(c, "p_call_host_slot"), 1, &res, 4, args);
+    c->ext.call_host_slot_import = MIR_new_import(ctx, "ts_mir_call_host_slot");
+  }
   /*  ts_mir_call_builtin(void *ctx, void *fn, i64 argc, void *argv) -> double */
   {
     MIR_type_t res = MIR_T_D;
@@ -1073,6 +1090,7 @@ void ts_mir_load_externals(MIR_context_t ctx) {
   MIR_load_external(ctx, "atan2", (void *)atan2);
   /*  direct dispatch */
   MIR_load_external(ctx, "ts_mir_call_native", (void *)ts_mir_call_native);
+  MIR_load_external(ctx, "ts_mir_call_host_slot", (void *)ts_mir_call_host_slot);
   MIR_load_external(ctx, "ts_mir_call_builtin", (void *)ts_mir_call_builtin);
   /*  OOP runtime calls */
   MIR_load_external(ctx, "ts_mir_oop_define_class", (void *)ts_mir_oop_define_class);

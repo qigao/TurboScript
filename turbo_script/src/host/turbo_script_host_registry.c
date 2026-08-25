@@ -555,6 +555,25 @@ static exprtk_value_t ts_host_registry_callback_adapter(
   return result;
 }
 
+double ts_host_registry_invoke_numeric_slot(turbo_script_ctx_t *ctx, size_t slot,
+                                            size_t arg_count,
+                                            const double *numeric_args) {
+  const ts_host_function_entry_t *entry = NULL;
+  exprtk_value_t args[16];
+  exprtk_value_t result;
+  double numeric = 0.0;
+  if (!ctx || arg_count > 16 || (!numeric_args && arg_count) ||
+      ts_host_registry_get_slot(ctx, slot, &entry) != TURBO_SCRIPT_STATUS_OK)
+    return 0.0;
+  for (size_t i = 0; i < arg_count; ++i) args[i] = exprtk_val_num(numeric_args[i]);
+  result = ts_host_registry_callback_adapter(arg_count, args, &ctx->env, (void *)entry);
+  if (result.type == EXPRTK_VAL_NUMBER) numeric = result.data.number;
+  else if (result.type == EXPRTK_VAL_INTEGER) numeric = (double)result.data.integer;
+  else if (result.type == EXPRTK_VAL_BOOL) numeric = result.data.boolean ? 1.0 : 0.0;
+  exprtk_value_destroy(&result);
+  return numeric;
+}
+
 static turbo_script_status_t ts_host_registry_bind_runtime_impl(
     turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
     exprtk_registration_fault_fn should_fail, void *fault_user_data) {

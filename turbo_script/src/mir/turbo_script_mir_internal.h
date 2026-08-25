@@ -133,6 +133,7 @@ struct ts_mir_externals_s {
   
   // Direct native/builtin function dispatch
   MIR_item_t call_native_proto, call_native_import;
+  MIR_item_t call_host_slot_proto, call_host_slot_import;
   MIR_item_t call_builtin_proto, call_builtin_import;
   
   // OOP runtime calls
@@ -332,6 +333,9 @@ int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact,
                                     size_t export_index, int use_jit,
                                     const double *args, size_t arg_count,
                                     double *out_result);
+int ts_mir_artifact_execute_initializer(ts_mir_artifact_t *artifact,
+                                        turbo_script_ctx_t *runtime_ctx,
+                                        int use_jit);
 
 /* =========================================================================
  * Module: mir_compiler.c - Compiler framework
@@ -557,6 +561,8 @@ double ts_mir_map_rest_assign(void *ctx_ptr, const char *target, const char *res
 void *ts_mir_map_num_ptr(void *ctx_ptr, const char *obj_name, const char *key);
 double ts_mir_load_captured_var(void *ctx_ptr, const char *var_name, void *closure_env_ptr);
 double ts_mir_call_native(void *ctx_ptr, void *fn_ptr, void *user_data, int64_t argc, double *argv);
+double ts_mir_call_host_slot(void *ctx_ptr, int64_t slot, int64_t argc,
+                             double *argv);
 double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *argv);
 void ts_mir_oop_define_class(void *ctx_ptr, void *node);
 double ts_mir_oop_class_alias(void *ctx_ptr, const char *alias, const char *class_name);

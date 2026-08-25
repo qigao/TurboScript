@@ -448,7 +448,9 @@ static char *ts_normalize_braced_map_args(const char *script, int *changed_out) 
   return out;
 }
 
-exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script) {
+static exprtk_node_t *ts_parse_with_error_impl(turbo_script_ctx_t *ctx,
+                                               const char *script,
+                                               int fail_arena_allocation) {
   mem_pool_t *arena = NULL;
   exprtk_node_t *root = NULL;
   char *normalized = NULL;
@@ -460,7 +462,7 @@ exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char
 
   clear_error(ctx);
 
-  arena = (mem_pool_t *)malloc(sizeof(*arena));
+  arena = fail_arena_allocation ? NULL : (mem_pool_t *)malloc(sizeof(*arena));
   if (!arena) {
     set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "Out of memory");
     return NULL;
@@ -489,6 +491,16 @@ exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char
   mem_destroy(arena);
   free(arena);
   return NULL;
+}
+
+exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx,
+                                             const char *script) {
+  return ts_parse_with_error_impl(ctx, script, 0);
+}
+
+exprtk_node_t *turbo_script_parse_with_error_test_oom(turbo_script_ctx_t *ctx,
+                                                      const char *script) {
+  return ts_parse_with_error_impl(ctx, script, 1);
 }
 
 /* ── Plugin helpers ───────────────────────────────────────────────── */

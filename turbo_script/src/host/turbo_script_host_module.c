@@ -24,6 +24,8 @@ typedef struct ts_host_ast_usage_s {
   size_t string_bytes;
 } ts_host_ast_usage_t;
 
+static int ts_host_options_valid(const turbo_script_module_options_t *options);
+
 static turbo_script_status_t ts_host_vec_status(stl_status status) {
   if (status == STL_OK) return TURBO_SCRIPT_STATUS_OK;
   if (status == STL_OUT_OF_MEMORY) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
@@ -66,12 +68,22 @@ static int ts_host_ast_usage(exprtk_node_t *node, ts_host_ast_usage_t *usage,
   if (!node) return 1;
   if (!ts_host_charge(&usage->nodes, 1, options->max_ast_nodes)) return 0;
   switch (node->type) {
+  case EXPRTK_NODE_NUMBER:
+  case EXPRTK_NODE_INTEGER:
+  case EXPRTK_NODE_VARIABLE:
+  case EXPRTK_NODE_NULL:
+  case EXPRTK_NODE_REST_PARAMETER:
+  case EXPRTK_NODE_THIS:
+    return 1;
   case EXPRTK_NODE_BLOCK:
     for (size_t i = 0; i < node->data.block.count; ++i)
       if (!ts_host_ast_usage(node->data.block.statements[i], usage, options)) return 0;
     return 1;
   case EXPRTK_NODE_STRING:
     return ts_host_charge(&usage->string_bytes, node->data.string.value.len,
+                          options->max_string_bytes);
+  case EXPRTK_NODE_TEMPLATE_STRING:
+    return ts_host_charge(&usage->string_bytes, node->data.template_string.len,
                           options->max_string_bytes);
   case EXPRTK_NODE_FUNCTION_EXPRESSION:
   case EXPRTK_NODE_FUNCTION_DEFINITION:
@@ -150,9 +162,48 @@ static int ts_host_ast_usage(exprtk_node_t *node, ts_host_ast_usage_t *usage,
            ts_host_ast_usage(node->data.try_catch.catch_body, usage, options);
   case EXPRTK_NODE_THROW:
     return ts_host_ast_usage(node->data.throw_stmt.value, usage, options);
-  default:
+  case EXPRTK_NODE_YIELD:
+    return ts_host_ast_usage(node->data.yield_expr.value, usage, options);
+  case EXPRTK_NODE_GENERATOR_FUNCTION:
+    for (size_t i = 0; i < node->data.generator_def.arg_count; ++i)
+      if (!ts_host_ast_usage(node->data.generator_def.arg_params[i], usage, options)) return 0;
+    return ts_host_ast_usage(node->data.generator_def.body, usage, options);
+  case EXPRTK_NODE_CLASS_DEF:
+    if (!ts_host_ast_usage(node->data.class_def.constructor, usage, options)) return 0;
+    for (size_t i = 0; i < node->data.class_def.method_count; ++i)
+      if (!ts_host_ast_usage(node->data.class_def.methods[i], usage, options)) return 0;
+    for (size_t i = 0; i < node->data.class_def.static_method_count; ++i)
+      if (!ts_host_ast_usage(node->data.class_def.static_methods[i], usage, options)) return 0;
     return 1;
+  case EXPRTK_NODE_METHOD:
+    for (size_t i = 0; i < node->data.method.arg_count; ++i)
+      if (!ts_host_ast_usage(node->data.method.arg_params[i], usage, options)) return 0;
+    return ts_host_ast_usage(node->data.method.body, usage, options);
+  case EXPRTK_NODE_FIELD_DECL:
+    return ts_host_ast_usage(node->data.field_decl.initializer, usage, options);
+  case EXPRTK_NODE_NEW:
+    for (size_t i = 0; i < node->data.new_expr.arg_count; ++i)
+      if (!ts_host_ast_usage(node->data.new_expr.args[i], usage, options)) return 0;
+    return 1;
+  case EXPRTK_NODE_SUPER:
+    for (size_t i = 0; i < node->data.super_expr.arg_count; ++i)
+      if (!ts_host_ast_usage(node->data.super_expr.args[i], usage, options)) return 0;
+    return 1;
+  case EXPRTK_NODE_INSTANCEOF:
+    return ts_host_ast_usage(node->data.instanceof_expr.object, usage, options) &&
+           ts_host_ast_usage(node->data.instanceof_expr.class_expr, usage, options);
   }
+  return 0;
+}
+
+turbo_script_status_t ts_host_module_test_ast_usage(
+    exprtk_node_t *root, const turbo_script_module_options_t *options) {
+  ts_host_ast_usage_t usage = {0};
+  if (!root || !ts_host_options_valid(options))
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  return ts_host_ast_usage(root, &usage, options)
+             ? TURBO_SCRIPT_STATUS_OK
+             : TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
 }
 
 static turbo_script_status_t ts_host_module_fail(
@@ -267,10 +318,10 @@ static int ts_host_options_valid(const turbo_script_module_options_t *options) {
          options->max_string_bytes <= TS_HOST_MODULE_STRING_LIMIT;
 }
 
-turbo_script_status_t turbo_script_module_compile(
+static turbo_script_status_t ts_host_module_compile_impl(
     turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
     const turbo_script_module_options_t *options, turbo_script_result_t *result,
-    turbo_script_module_t **out_module) {
+    turbo_script_module_t **out_module, int force_parse_oom) {
   turbo_script_module_t *module = NULL;
   exprtk_node_t *bad_node = NULL;
   ts_host_ast_usage_t usage = {0};
@@ -320,11 +371,17 @@ turbo_script_status_t turbo_script_module_compile(
   module->module_name = tstr_dup_len(options->module_name.data ? options->module_name.data : "",
                                      options->module_name.size);
   if (!module->source || !module->module_name) { status = TURBO_SCRIPT_STATUS_OUT_OF_MEMORY; goto fail; }
-  module->ast = turbo_script_parse_with_error(ctx, module->source);
-  module->parse_count = 1;
-  if (!module->ast) { status = TURBO_SCRIPT_STATUS_PARSE_ERROR; goto fail; }
-  if (exprtk_node_count(module->ast) > options->max_ast_nodes) {
-    status = TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED; goto fail;
+  module->parse_count++;
+  if (force_parse_oom) {
+    module->ast = turbo_script_parse_with_error_test_oom(ctx, module->source);
+  } else {
+    module->ast = turbo_script_parse_with_error(ctx, module->source);
+  }
+  if (!module->ast) {
+    status = ctx->error_code == TURBO_SCRIPT_ERROR_OOM
+                 ? TURBO_SCRIPT_STATUS_OUT_OF_MEMORY
+                 : TURBO_SCRIPT_STATUS_PARSE_ERROR;
+    goto fail;
   }
   usage.string_bytes = options->module_name.size;
   if (!ts_host_ast_usage(module->ast, &usage, options)) {
@@ -346,6 +403,7 @@ turbo_script_status_t turbo_script_module_compile(
   }
   exprtk_env_free(&validation_env);
   validation_env_ready = 0;
+  module->lower_count++;
   if (ts_mir_artifact_compile(ctx, module->ast, &module->exports,
                               &module->artifact) != 0) {
     status = ctx->error_code == TURBO_SCRIPT_ERROR_OOM
@@ -353,7 +411,6 @@ turbo_script_status_t turbo_script_module_compile(
                  : TURBO_SCRIPT_STATUS_UNSUPPORTED_BACKEND_SEMANTIC;
     goto fail;
   }
-  module->lower_count = 1;
   ts_context_retain(ctx);
   *out_module = module;
   return TURBO_SCRIPT_STATUS_OK;
@@ -383,6 +440,20 @@ fail:
                                        ? "module compile limit exceeded"
                                        : "module validation or lowering failed",
                              failure_line, failure_column);
+}
+
+turbo_script_status_t turbo_script_module_compile(
+    turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
+    const turbo_script_module_options_t *options, turbo_script_result_t *result,
+    turbo_script_module_t **out_module) {
+  return ts_host_module_compile_impl(ctx, source, options, result, out_module, 0);
+}
+
+turbo_script_status_t ts_host_module_compile_test_parse_oom(
+    turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
+    const turbo_script_module_options_t *options, turbo_script_result_t *result,
+    turbo_script_module_t **out_module) {
+  return ts_host_module_compile_impl(ctx, source, options, result, out_module, 1);
 }
 
 turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
@@ -435,8 +506,22 @@ turbo_script_status_t ts_host_module_execute_numeric(
     return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (ts_host_check_owner_thread(module->ctx) != TURBO_SCRIPT_STATUS_OK)
     return TURBO_SCRIPT_STATUS_WRONG_THREAD;
+  const ts_host_export_entry_t *entry = ts_host_module_entry(module, export_index);
+  if (!entry || arg_count > 16 || arg_count != entry->arity)
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   return ts_mir_artifact_execute_numeric(module->artifact, module->ctx, export_index,
                                          use_jit, args, arg_count, out_result) == 0
+             ? TURBO_SCRIPT_STATUS_OK
+             : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
+}
+
+turbo_script_status_t ts_host_module_execute_initializer(
+    turbo_script_module_t *module, int use_jit) {
+  if (!module) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  if (ts_host_check_owner_thread(module->ctx) != TURBO_SCRIPT_STATUS_OK)
+    return TURBO_SCRIPT_STATUS_WRONG_THREAD;
+  return ts_mir_artifact_execute_initializer(module->artifact, module->ctx,
+                                             use_jit) == 0
              ? TURBO_SCRIPT_STATUS_OK
              : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
 }

@@ -134,6 +134,9 @@ struct turbo_script_compiled_s {
 };
 
 exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script);
+/* Internal deterministic seam: fails the parser arena allocation. */
+exprtk_node_t *turbo_script_parse_with_error_test_oom(turbo_script_ctx_t *ctx,
+                                                      const char *script);
 
 /* Built-in module accessors */
 void turbo_script_register_modules(void);

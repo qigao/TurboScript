@@ -92,6 +92,9 @@ turbo_script_status_t ts_host_registry_get_slot(
     const ts_host_function_entry_t **out_entry);
 turbo_script_status_t ts_host_registry_bind_runtime(turbo_script_ctx_t *ctx,
                                                     exprtk_env_t *runtime_ctx);
+double ts_host_registry_invoke_numeric_slot(turbo_script_ctx_t *ctx, size_t slot,
+                                            size_t arg_count,
+                                            const double *numeric_args);
 /* Internal deterministic fault seam; production callers use bind_runtime. */
 turbo_script_status_t ts_host_registry_bind_runtime_test_fault(
     turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
@@ -142,5 +145,13 @@ const char *ts_host_module_name(const turbo_script_module_t *module);
 turbo_script_status_t ts_host_module_execute_numeric(
     turbo_script_module_t *module, size_t export_index, int use_jit,
     const double *args, size_t arg_count, double *out_result);
+turbo_script_status_t ts_host_module_execute_initializer(
+    turbo_script_module_t *module, int use_jit);
+turbo_script_status_t ts_host_module_compile_test_parse_oom(
+    turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
+    const turbo_script_module_options_t *options, turbo_script_result_t *result,
+    turbo_script_module_t **out_module);
+turbo_script_status_t ts_host_module_test_ast_usage(
+    exprtk_node_t *root, const turbo_script_module_options_t *options);
 
 #endif /* TURBO_SCRIPT_HOST_INTERNAL_H */

@@ -172,7 +172,7 @@ typedef turbo_script_status_t (*turbo_script_host_function_t)(
 #define TURBO_SCRIPT_EXEC_INTERPRETER ((turbo_script_execution_mode_t)1)
 #define TURBO_SCRIPT_EXEC_JIT ((turbo_script_execution_mode_t)2)
 
-TURBO_SCRIPT_C_API void turbo_script_module_options_init(turbo_script_module_options_t *options);
+void turbo_script_module_options_init(turbo_script_module_options_t *options);
 TURBO_SCRIPT_C_API void
 turbo_script_instance_options_init(turbo_script_instance_options_t *options);
 TURBO_SCRIPT_C_API void turbo_script_call_options_init(turbo_script_call_options_t *options);
@@ -186,12 +186,12 @@ TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_result_get_value(
 TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_result_get_error(
     const turbo_script_result_t *result, turbo_script_error_info_t *out_error);
 
-TURBO_SCRIPT_C_API turbo_script_status_t
+turbo_script_status_t
 turbo_script_module_compile(turbo_script_ctx_t *ctx, turbo_script_string_view_t source,
                             const turbo_script_module_options_t *options,
                             turbo_script_result_t *result, turbo_script_module_t **out_module);
-TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
-                                                                     turbo_script_result_t *result);
+turbo_script_status_t turbo_script_module_destroy(turbo_script_module_t *module,
+                                                  turbo_script_result_t *result);
 
 TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_instance_create(
     turbo_script_module_t *module, const turbo_script_instance_options_t *options,
