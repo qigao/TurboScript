@@ -36,9 +36,25 @@ struct turbo_script_module_s {
 };
 
 typedef enum ts_host_instance_state_e {
-  TS_HOST_INSTANCE_READY = 0,
-  TS_HOST_INSTANCE_CALLING = 1,
+  TS_HOST_INSTANCE_READY = 1,
+  TS_HOST_INSTANCE_CALLING = 2,
+  TS_HOST_INSTANCE_CALLING_HOST = 3,
+  TS_HOST_INSTANCE_FAULTED = 4,
+  TS_HOST_INSTANCE_DESTROYED = 5,
 } ts_host_instance_state_t;
+
+typedef struct ts_host_runtime_diagnostic_s {
+  turbo_script_status_t status;
+  int32_t error_code;
+  turbo_script_error_phase_t phase;
+  uint32_t line;
+  uint32_t column;
+  uint32_t length;
+  int32_t cause_code;
+  turbo_script_string_view_t function_name;
+  tstr message;
+  int present;
+} ts_host_runtime_diagnostic_t;
 
 struct turbo_script_instance_s {
   turbo_script_module_t *module;
@@ -47,6 +63,7 @@ struct turbo_script_instance_s {
   uint32_t generation;
   turbo_script_execution_mode_t mode;
   ts_host_instance_state_t state;
+  ts_host_runtime_diagnostic_t diagnostic;
   size_t initializer_count;
 };
 
@@ -114,6 +131,20 @@ double ts_host_registry_invoke_numeric_slot(turbo_script_ctx_t *registry_owner_c
 turbo_script_status_t ts_host_registry_bind_runtime_test_fault(turbo_script_ctx_t *ctx,
                                                                exprtk_env_t *runtime_ctx,
                                                                size_t allocation_index);
+
+/* The call boundary is the sole owner of call-state and callback-depth
+ * transitions. Registry callbacks only enter/leave through these helpers. */
+turbo_script_status_t ts_host_instance_begin_call(turbo_script_instance_t *instance);
+turbo_script_status_t ts_host_instance_enter_callback(turbo_script_ctx_t *ctx,
+                                                      turbo_script_instance_t **out_instance);
+void ts_host_instance_leave_callback(turbo_script_ctx_t *ctx, turbo_script_instance_t *instance);
+turbo_script_status_t ts_host_instance_finish_call(turbo_script_instance_t *instance,
+                                                   turbo_script_status_t status);
+void ts_host_instance_record_callback_error(turbo_script_instance_t *instance,
+                                            turbo_script_status_t status, int32_t cause_code,
+                                            turbo_script_string_view_t function_name,
+                                            turbo_script_string_view_t message, uint32_t line,
+                                            uint32_t column);
 
 /* Checked boundaries underlying the locked void APIs. They never mutate on
  * failure; the public wrappers turn WRONG_THREAD into a contract violation. */

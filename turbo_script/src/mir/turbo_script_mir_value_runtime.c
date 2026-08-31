@@ -62,6 +62,9 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
   ctx->env.curr_recursion++;
   if (ctx->env.curr_recursion > ctx->env.max_recursion) {
     ctx->env.aborted = 1;
+    ctx->env.error_line = function->data.script.body->line;
+    ctx->env.error_column = function->data.script.body->column;
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "maximum recursion depth exceeded");
     ctx->env.curr_recursion--;
     return -1;
   }
@@ -96,9 +99,18 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
   ctx->env.curr_loop_iterations = local_env.curr_loop_iterations;
   ctx->env.curr_recursion--;
   if (local_env.aborted || local_env.flow == exprtk_FLOW_THROW) {
+    exprtk_value_t copied_error = {.type = EXPRTK_VAL_NULL};
     ctx->env.aborted = local_env.aborted;
     ctx->env.flow = local_env.flow;
     snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", local_env.error_msg);
+    ctx->env.error_line = local_env.error_line;
+    ctx->env.error_column = local_env.error_column;
+    ctx->env.last_line = local_env.last_line;
+    ctx->env.last_column = local_env.last_column;
+    if (exprtk_value_copy_to_env(local_env.error_value, &ctx->env, &copied_error) == 0) {
+      exprtk_value_destroy(&ctx->env.error_value);
+      ctx->env.error_value = copied_error;
+    }
     exprtk_value_destroy(out_value);
     exprtk_env_free(&local_env);
     return -1;
@@ -1389,6 +1401,10 @@ static int ts_mir_runtime_member_set_value(exprtk_node_t *node, exprtk_env_t *en
 
 static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env, exprtk_value_t *out) {
   if (!node || !env || !out) return 0;
+  if (node->line > 0) {
+    env->last_line = node->line;
+    env->last_column = node->column;
+  }
 
   switch (node->type) {
   case EXPRTK_NODE_NUMBER:

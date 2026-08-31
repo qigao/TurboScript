@@ -150,42 +150,51 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
         (const ts_host_export_entry_t *)vec_at_const(&exports->entries, i);
     ts_compiled_func_t *compiled =
         entry ? ts_mir_find_artifact_function(&compiler, entry->name) : NULL;
-    if (!compiled || entry->arity > 16 || compiled->arg_count != entry->arity) goto done;
-    out_export_items[i] = compiled->mir_func;
-    MIR_var_t numeric_wrapper_args[3] = {
-        {MIR_T_P, "ctx", 0}, {MIR_T_P, "closure_env", 0}, {MIR_T_P, "argv", 0}};
-    char numeric_wrapper_name[64];
-    snprintf(numeric_wrapper_name, sizeof(numeric_wrapper_name), "%s_numeric_wrapper_%zu", prefix,
-             i);
-    MIR_item_t numeric_wrapper =
-        MIR_new_func_arr(mir_ctx, numeric_wrapper_name, 1, &result_type, 3, numeric_wrapper_args);
-    MIR_reg_t numeric_ctx = MIR_reg(mir_ctx, "ctx", numeric_wrapper->u.func);
-    MIR_reg_t numeric_env = MIR_reg(mir_ctx, "closure_env", numeric_wrapper->u.func);
-    MIR_reg_t numeric_argv = MIR_reg(mir_ctx, "argv", numeric_wrapper->u.func);
-    MIR_reg_t numeric_ret = MIR_new_func_reg(mir_ctx, numeric_wrapper->u.func, MIR_T_D, "result");
-    MIR_op_t numeric_call_ops[21];
-    numeric_call_ops[0] = MIR_new_ref_op(mir_ctx, compiled->proto);
-    numeric_call_ops[1] = MIR_new_ref_op(mir_ctx, compiled->mir_func);
-    numeric_call_ops[2] = MIR_new_reg_op(mir_ctx, numeric_ret);
-    numeric_call_ops[3] = MIR_new_reg_op(mir_ctx, numeric_ctx);
-    numeric_call_ops[4] = MIR_new_reg_op(mir_ctx, numeric_env);
-    for (size_t arg = 0; arg < entry->arity; ++arg) {
-      char value_name[24];
-      snprintf(value_name, sizeof(value_name), "arg_%zu", arg);
-      MIR_reg_t value_reg = MIR_new_func_reg(mir_ctx, numeric_wrapper->u.func, MIR_T_D, value_name);
-      MIR_append_insn(
-          mir_ctx, numeric_wrapper,
-          MIR_new_insn(mir_ctx, MIR_DMOV, MIR_new_reg_op(mir_ctx, value_reg),
-                       MIR_new_mem_op(mir_ctx, MIR_T_D, (MIR_disp_t)(arg * sizeof(double)),
-                                      numeric_argv, 0, 1)));
-      numeric_call_ops[arg + 5] = MIR_new_reg_op(mir_ctx, value_reg);
+    if (!entry || entry->arity > 16) goto done;
+    if (compiled) {
+      MIR_var_t numeric_wrapper_args[3] = {
+          {MIR_T_P, "ctx", 0}, {MIR_T_P, "closure_env", 0}, {MIR_T_P, "argv", 0}};
+      char numeric_wrapper_name[64];
+      MIR_item_t numeric_wrapper;
+      MIR_reg_t numeric_ctx;
+      MIR_reg_t numeric_env;
+      MIR_reg_t numeric_argv;
+      MIR_reg_t numeric_ret;
+      MIR_op_t numeric_call_ops[21];
+      if (compiled->arg_count != entry->arity) goto done;
+      out_export_items[i] = compiled->mir_func;
+      snprintf(numeric_wrapper_name, sizeof(numeric_wrapper_name), "%s_numeric_wrapper_%zu", prefix,
+               i);
+      numeric_wrapper =
+          MIR_new_func_arr(mir_ctx, numeric_wrapper_name, 1, &result_type, 3, numeric_wrapper_args);
+      numeric_ctx = MIR_reg(mir_ctx, "ctx", numeric_wrapper->u.func);
+      numeric_env = MIR_reg(mir_ctx, "closure_env", numeric_wrapper->u.func);
+      numeric_argv = MIR_reg(mir_ctx, "argv", numeric_wrapper->u.func);
+      numeric_ret = MIR_new_func_reg(mir_ctx, numeric_wrapper->u.func, MIR_T_D, "result");
+      numeric_call_ops[0] = MIR_new_ref_op(mir_ctx, compiled->proto);
+      numeric_call_ops[1] = MIR_new_ref_op(mir_ctx, compiled->mir_func);
+      numeric_call_ops[2] = MIR_new_reg_op(mir_ctx, numeric_ret);
+      numeric_call_ops[3] = MIR_new_reg_op(mir_ctx, numeric_ctx);
+      numeric_call_ops[4] = MIR_new_reg_op(mir_ctx, numeric_env);
+      for (size_t arg = 0; arg < entry->arity; ++arg) {
+        char value_name[24];
+        MIR_reg_t value_reg;
+        snprintf(value_name, sizeof(value_name), "arg_%zu", arg);
+        value_reg = MIR_new_func_reg(mir_ctx, numeric_wrapper->u.func, MIR_T_D, value_name);
+        MIR_append_insn(
+            mir_ctx, numeric_wrapper,
+            MIR_new_insn(mir_ctx, MIR_DMOV, MIR_new_reg_op(mir_ctx, value_reg),
+                         MIR_new_mem_op(mir_ctx, MIR_T_D, (MIR_disp_t)(arg * sizeof(double)),
+                                        numeric_argv, 0, 1)));
+        numeric_call_ops[arg + 5] = MIR_new_reg_op(mir_ctx, value_reg);
+      }
+      MIR_append_insn(mir_ctx, numeric_wrapper,
+                      MIR_new_insn_arr(mir_ctx, MIR_CALL, entry->arity + 5, numeric_call_ops));
+      MIR_append_insn(mir_ctx, numeric_wrapper,
+                      MIR_new_ret_insn(mir_ctx, 1, MIR_new_reg_op(mir_ctx, numeric_ret)));
+      MIR_finish_func(mir_ctx);
+      out_numeric_export_wrappers[i] = numeric_wrapper;
     }
-    MIR_append_insn(mir_ctx, numeric_wrapper,
-                    MIR_new_insn_arr(mir_ctx, MIR_CALL, entry->arity + 5, numeric_call_ops));
-    MIR_append_insn(mir_ctx, numeric_wrapper,
-                    MIR_new_ret_insn(mir_ctx, 1, MIR_new_reg_op(mir_ctx, numeric_ret)));
-    MIR_finish_func(mir_ctx);
-    out_numeric_export_wrappers[i] = numeric_wrapper;
 
     MIR_var_t host_wrapper_args[4] = {{MIR_T_P, "ctx", 0},
                                       {MIR_T_P, "args", 0},
@@ -267,7 +276,8 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
     if (!entry) goto done;
     artifact->export_arities[i] = entry->arity;
     artifact->native_numeric_exports[i] =
-        (uint8_t)ts_mir_function_is_native_numeric_export(entry->function_node);
+        (uint8_t)(artifact->numeric_export_wrappers[i] != NULL &&
+                  ts_mir_function_is_native_numeric_export(entry->function_node));
   }
   MIR_load_module(artifact->ctx, artifact->module);
   ts_mir_load_externals(artifact->ctx);
@@ -279,10 +289,13 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
   artifact->initializer_address = MIR_gen(artifact->ctx, artifact->initializer);
   if (!artifact->initializer_address) goto done;
   for (size_t i = 0; i < export_count; ++i) {
-    artifact->numeric_export_addresses[i] =
-        MIR_gen(artifact->ctx, artifact->numeric_export_wrappers[i]);
+    if (artifact->numeric_export_wrappers[i])
+      artifact->numeric_export_addresses[i] =
+          MIR_gen(artifact->ctx, artifact->numeric_export_wrappers[i]);
     artifact->host_export_addresses[i] = MIR_gen(artifact->ctx, artifact->host_export_wrappers[i]);
-    if (!artifact->numeric_export_addresses[i] || !artifact->host_export_addresses[i]) goto done;
+    if ((artifact->numeric_export_wrappers[i] && !artifact->numeric_export_addresses[i]) ||
+        !artifact->host_export_addresses[i])
+      goto done;
   }
   success = 1;
 
@@ -323,7 +336,8 @@ int ts_mir_artifact_execute_numeric(ts_mir_artifact_t *artifact, turbo_script_ct
   MIR_val_t result = {0};
   if (!artifact || !runtime_ctx || export_index >= artifact->export_count ||
       !artifact->registry_owner_ctx || arg_count > 16 ||
-      arg_count != artifact->export_arities[export_index] || (!args && arg_count) || !out_result)
+      arg_count != artifact->export_arities[export_index] || (!args && arg_count) || !out_result ||
+      !artifact->export_items[export_index] || !artifact->numeric_export_wrappers[export_index])
     return -1;
   runtime_ctx->env.aborted = 0;
   runtime_ctx->env.flow = exprtk_FLOW_NORMAL;
@@ -364,7 +378,15 @@ static int ts_mir_artifact_call_begin(ts_mir_artifact_t *artifact, turbo_script_
   runtime_ctx->env.curr_recursion = 0;
   runtime_ctx->env.curr_nodes = 0;
   runtime_ctx->env.curr_loop_iterations = 0;
+  runtime_ctx->env.last_line = 0;
+  runtime_ctx->env.last_column = 0;
+  runtime_ctx->env.error_line = 0;
+  runtime_ctx->env.error_column = 0;
   runtime_ctx->env.error_msg[0] = '\0';
+  exprtk_value_destroy(&runtime_ctx->env.error_value);
+  runtime_ctx->env.error_value.type = EXPRTK_VAL_NULL;
+  runtime_ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
+  runtime_ctx->error_msg[0] = '\0';
   return 0;
 }
 

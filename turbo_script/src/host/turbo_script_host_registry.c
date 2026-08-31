@@ -37,14 +37,12 @@ static turbo_script_status_t ts_host_registry_vec_status(stl_status status) {
   return TURBO_SCRIPT_STATUS_INVALID_STATE;
 }
 
-static turbo_script_status_t ts_host_registry_charge(ts_host_arg_view_state_t *state,
-                                                     size_t count, size_t element_size) {
+static turbo_script_status_t ts_host_registry_charge(ts_host_arg_view_state_t *state, size_t count,
+                                                     size_t element_size) {
   size_t amount;
-  if (count != 0 && element_size > SIZE_MAX / count)
-    return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  if (count != 0 && element_size > SIZE_MAX / count) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
   amount = count * element_size;
-  if (state->bytes > TS_HOST_MAX_STRING_BYTES ||
-      amount > TS_HOST_MAX_STRING_BYTES - state->bytes)
+  if (state->bytes > TS_HOST_MAX_STRING_BYTES || amount > TS_HOST_MAX_STRING_BYTES - state->bytes)
     return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
   state->bytes += amount;
   return TURBO_SCRIPT_STATUS_OK;
@@ -54,8 +52,7 @@ static turbo_script_status_t ts_host_registry_validate_name(turbo_script_string_
   if (!name.data && name.size != 0) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (name.size == 0) return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
   if (name.size > TS_HOST_MAX_STRING_BYTES) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
-  if (memchr(name.data, '\0', name.size) != NULL)
-    return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
+  if (memchr(name.data, '\0', name.size) != NULL) return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
   if (!vstr_utf8_valid(vstr_from_buf(name.data, name.size)))
     return TURBO_SCRIPT_STATUS_INVALID_UTF8;
   return TURBO_SCRIPT_STATUS_OK;
@@ -89,9 +86,9 @@ static turbo_script_status_t ts_host_registry_fail(turbo_script_result_t *result
   return status;
 }
 
-static turbo_script_status_t ts_host_registry_validate_descriptor(
-    const turbo_script_host_function_descriptor_t *descriptor,
-    turbo_script_host_function_t callback) {
+static turbo_script_status_t
+ts_host_registry_validate_descriptor(const turbo_script_host_function_descriptor_t *descriptor,
+                                     turbo_script_host_function_t callback) {
   turbo_script_status_t status;
   if (!descriptor || descriptor->struct_size != sizeof(*descriptor) || !callback ||
       descriptor->min_arity > descriptor->max_arity || descriptor->reserved0 != 0)
@@ -111,6 +108,7 @@ turbo_script_status_t ts_host_registry_init(turbo_script_ctx_t *ctx) {
   if (status != STL_OK) return ts_host_registry_vec_status(status);
   ctx->active_host_modules = 0;
   ctx->host_callback_depth = 0;
+  ctx->active_host_instance = NULL;
   ctx->next_instance_generation = 1;
   return TURBO_SCRIPT_STATUS_OK;
 }
@@ -118,13 +116,13 @@ turbo_script_status_t ts_host_registry_init(turbo_script_ctx_t *ctx) {
 void ts_host_registry_destroy(turbo_script_ctx_t *ctx) {
   if (!ctx || !ctx->host_functions.initialized) return;
   for (size_t i = 0; i < vec_size(&ctx->host_functions); ++i) {
-    ts_host_function_entry_t *entry =
-        (ts_host_function_entry_t *)vec_at(&ctx->host_functions, i);
+    ts_host_function_entry_t *entry = (ts_host_function_entry_t *)vec_at(&ctx->host_functions, i);
     if (entry) tstr_freep(&entry->name);
   }
   vec_destroy(&ctx->host_functions);
   ctx->active_host_modules = 0;
   ctx->host_callback_depth = 0;
+  ctx->active_host_instance = NULL;
 }
 
 turbo_script_status_t ts_host_check_owner_thread(const turbo_script_ctx_t *ctx) {
@@ -168,9 +166,8 @@ turbo_script_status_t ts_host_registry_find_slot(const turbo_script_ctx_t *ctx,
   return TURBO_SCRIPT_STATUS_NOT_FOUND;
 }
 
-turbo_script_status_t ts_host_registry_get_slot(
-    const turbo_script_ctx_t *ctx, size_t slot,
-    const ts_host_function_entry_t **out_entry) {
+turbo_script_status_t ts_host_registry_get_slot(const turbo_script_ctx_t *ctx, size_t slot,
+                                                const ts_host_function_entry_t **out_entry) {
   turbo_script_status_t status;
   status = ts_host_check_owner_thread(ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
@@ -220,9 +217,9 @@ turbo_script_status_t turbo_script_context_register_host_function(
   return TURBO_SCRIPT_STATUS_OK;
 }
 
-turbo_script_status_t turbo_script_context_unregister_host_function(
-    turbo_script_ctx_t *ctx, turbo_script_string_view_t name,
-    turbo_script_result_t *result) {
+turbo_script_status_t turbo_script_context_unregister_host_function(turbo_script_ctx_t *ctx,
+                                                                    turbo_script_string_view_t name,
+                                                                    turbo_script_result_t *result) {
   ts_host_function_entry_t removed = {0};
   size_t slot;
   turbo_script_status_t status = ts_host_registry_begin_api(ctx, result);
@@ -243,9 +240,10 @@ turbo_script_status_t turbo_script_context_unregister_host_function(
   return TURBO_SCRIPT_STATUS_OK;
 }
 
-static turbo_script_status_t ts_host_arg_view_from_exprtk(
-    ts_host_arg_view_state_t *state, const exprtk_value_t *source,
-    turbo_script_value_view_t *target, size_t depth) {
+static turbo_script_status_t ts_host_arg_view_from_exprtk(ts_host_arg_view_state_t *state,
+                                                          const exprtk_value_t *source,
+                                                          turbo_script_value_view_t *target,
+                                                          size_t depth) {
   turbo_script_status_t status = TURBO_SCRIPT_STATUS_OK;
   if (!source || !target) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   if (depth > TS_HOST_MAX_VALUE_DEPTH || state->nodes == TS_HOST_MAX_VALUE_NODES)
@@ -290,8 +288,8 @@ static turbo_script_status_t ts_host_arg_view_from_exprtk(
     status = ts_host_registry_charge(state, source->data.vector.size, sizeof(*items));
     if (status != TURBO_SCRIPT_STATUS_OK) return status;
     if (source->data.vector.size != 0) {
-      items = (turbo_script_value_view_t *)mem_alloc_array(
-          state->arena, sizeof(*items), source->data.vector.size);
+      items = (turbo_script_value_view_t *)mem_alloc_array(state->arena, sizeof(*items),
+                                                           source->data.vector.size);
       if (!items) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
       for (size_t i = 0; i < source->data.vector.size; ++i) {
         memset(&items[i], 0, sizeof(items[i]));
@@ -314,12 +312,12 @@ static turbo_script_status_t ts_host_arg_view_from_exprtk(
     status = ts_host_registry_charge(state, source->data.list.count, sizeof(*items));
     if (status != TURBO_SCRIPT_STATUS_OK) return status;
     if (source->data.list.count != 0) {
-      items = (turbo_script_value_view_t *)mem_alloc_array(
-          state->arena, sizeof(*items), source->data.list.count);
+      items = (turbo_script_value_view_t *)mem_alloc_array(state->arena, sizeof(*items),
+                                                           source->data.list.count);
       if (!items) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
       for (size_t i = 0; i < source->data.list.count; ++i) {
-        status = ts_host_arg_view_from_exprtk(state, &source->data.list.items[i], &items[i],
-                                              depth + 1);
+        status =
+            ts_host_arg_view_from_exprtk(state, &source->data.list.items[i], &items[i], depth + 1);
         if (status != TURBO_SCRIPT_STATUS_OK) return status;
       }
     }
@@ -336,13 +334,12 @@ static turbo_script_status_t ts_host_arg_view_from_exprtk(
     const char *key = NULL;
     exprtk_value_t child;
     size_t index = 0;
-    if (count > TS_HOST_MAX_VALUE_NODES - state->nodes)
-      return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+    if (count > TS_HOST_MAX_VALUE_NODES - state->nodes) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
     status = ts_host_registry_charge(state, count, sizeof(*entries));
     if (status != TURBO_SCRIPT_STATUS_OK) return status;
     if (count != 0) {
-      entries = (turbo_script_record_entry_view_t *)mem_alloc_array(
-          state->arena, sizeof(*entries), count);
+      entries = (turbo_script_record_entry_view_t *)mem_alloc_array(state->arena, sizeof(*entries),
+                                                                    count);
       if (!entries) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
     }
     iterator = exprtk_map_iter_begin(source);
@@ -353,8 +350,7 @@ static turbo_script_status_t ts_host_arg_view_from_exprtk(
       if (key_size == 0) return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
       status = ts_host_registry_charge(state, key_size, 1);
       if (status != TURBO_SCRIPT_STATUS_OK) return status;
-      if (!vstr_utf8_valid(vstr_from_buf(key, key_size)))
-        return TURBO_SCRIPT_STATUS_INVALID_UTF8;
+      if (!vstr_utf8_valid(vstr_from_buf(key, key_size))) return TURBO_SCRIPT_STATUS_INVALID_UTF8;
       entries[index].key.data = key;
       entries[index].key.size = key_size;
       status = ts_host_arg_view_from_exprtk(state, &child, &entries[index].value, depth + 1);
@@ -393,52 +389,68 @@ static const char *ts_host_status_name(turbo_script_status_t status) {
   }
 }
 
-static void ts_host_runtime_throw(exprtk_env_t *runtime_ctx, turbo_script_status_t status,
-                                  int32_t cause_code, const char *message,
-                                  const char *function_name) {
+static void ts_host_runtime_throw_view(turbo_script_ctx_t *owner_ctx, exprtk_env_t *runtime_ctx,
+                                       turbo_script_status_t status, int32_t cause_code,
+                                       turbo_script_string_view_t message,
+                                       const char *function_name) {
   exprtk_value_t error_value = ts_host_registry_null_value();
   const char *status_name = ts_host_status_name(status);
-  if (!message) message = "host callback failed";
+  int printable_size;
+  if (!message.data) message = (turbo_script_string_view_t){"host callback failed", 20};
   if (!function_name) function_name = "<host>";
+  printable_size = (int)(message.size < 128 ? message.size : 128);
   if (cause_code != 0) {
     (void)snprintf(runtime_ctx->error_msg, sizeof(runtime_ctx->error_msg),
-                   "%s: %s (function=%s, cause=%d)", status_name, message,
+                   "%s: %.*s (function=%s, cause=%d)", status_name, printable_size, message.data,
                    function_name, cause_code);
   } else {
-    (void)snprintf(runtime_ctx->error_msg, sizeof(runtime_ctx->error_msg),
-                   "%s: %s (function=%s)", status_name, message, function_name);
+    (void)snprintf(runtime_ctx->error_msg, sizeof(runtime_ctx->error_msg), "%s: %.*s (function=%s)",
+                   status_name, printable_size, message.data, function_name);
   }
   exprtk_value_destroy(&runtime_ctx->error_value);
-  if (exprtk_value_copy_to_env(
-          exprtk_val_str(vstr_from_cstr(runtime_ctx->error_msg)), runtime_ctx,
-          &error_value) == 0)
+  if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_cstr(runtime_ctx->error_msg)), runtime_ctx,
+                               &error_value) == 0)
     runtime_ctx->error_value = error_value;
+  runtime_ctx->error_line = runtime_ctx->last_line;
+  runtime_ctx->error_column = runtime_ctx->last_column;
   runtime_ctx->flow = exprtk_FLOW_THROW;
+  if (owner_ctx && owner_ctx->active_host_instance) {
+    ts_host_instance_record_callback_error(
+        owner_ctx->active_host_instance, status, cause_code,
+        (turbo_script_string_view_t){function_name, strlen(function_name)}, message,
+        runtime_ctx->error_line > 0 ? (uint32_t)runtime_ctx->error_line : 0,
+        runtime_ctx->error_column > 0 ? (uint32_t)runtime_ctx->error_column : 0);
+  }
 }
 
-turbo_script_status_t turbo_script_host_result_set_value(
-    turbo_script_host_result_builder_t *builder,
-    const turbo_script_value_view_t *value) {
+static void ts_host_runtime_throw(turbo_script_ctx_t *owner_ctx, exprtk_env_t *runtime_ctx,
+                                  turbo_script_status_t status, int32_t cause_code,
+                                  const char *message, const char *function_name) {
+  if (!message) message = "host callback failed";
+  ts_host_runtime_throw_view(owner_ctx, runtime_ctx, status, cause_code,
+                             (turbo_script_string_view_t){message, strlen(message)}, function_name);
+}
+
+turbo_script_status_t
+turbo_script_host_result_set_value(turbo_script_host_result_builder_t *builder,
+                                   const turbo_script_value_view_t *value) {
   ts_host_value_limits_t limits = {
       TS_HOST_MAX_VALUE_DEPTH,
       TS_HOST_MAX_VALUE_NODES,
       TS_HOST_MAX_STRING_BYTES,
   };
   if (!builder) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  if (builder->state != TS_HOST_BUILDER_EMPTY)
-    return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  if (builder->state != TS_HOST_BUILDER_EMPTY) return TURBO_SCRIPT_STATUS_INVALID_STATE;
   builder->state = TS_HOST_BUILDER_VALUE;
-  builder->terminal_status = ts_host_value_from_view(builder->ctx, value, &limits,
-                                                     &builder->value);
+  builder->terminal_status = ts_host_value_from_view(builder->ctx, value, &limits, &builder->value);
   return builder->terminal_status;
 }
 
-turbo_script_status_t turbo_script_host_result_set_error(
-    turbo_script_host_result_builder_t *builder, int32_t cause_code,
-    turbo_script_string_view_t message) {
+turbo_script_status_t
+turbo_script_host_result_set_error(turbo_script_host_result_builder_t *builder, int32_t cause_code,
+                                   turbo_script_string_view_t message) {
   if (!builder) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
-  if (builder->state != TS_HOST_BUILDER_EMPTY)
-    return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  if (builder->state != TS_HOST_BUILDER_EMPTY) return TURBO_SCRIPT_STATUS_INVALID_STATE;
   builder->state = TS_HOST_BUILDER_ERROR;
   builder->cause_code = cause_code;
   if (!message.data && message.size != 0) {
@@ -462,36 +474,37 @@ turbo_script_status_t turbo_script_host_result_set_error(
   return TURBO_SCRIPT_STATUS_OK;
 }
 
-static exprtk_value_t ts_host_registry_callback_adapter(
-    size_t arg_count, exprtk_value_t *args, exprtk_env_t *runtime_ctx,
-    void *user_data) {
+static exprtk_value_t ts_host_registry_callback_adapter(size_t arg_count, exprtk_value_t *args,
+                                                        exprtk_env_t *runtime_ctx,
+                                                        void *user_data) {
   const ts_host_function_entry_t *entry = (const ts_host_function_entry_t *)user_data;
   turbo_script_host_result_builder_t builder = {0};
   ts_host_arg_view_state_t view_state = {0};
   turbo_script_value_view_t *views = NULL;
   mem_pool_t view_arena;
   turbo_script_status_t status;
+  turbo_script_instance_t *active_instance = NULL;
   exprtk_value_t result = ts_host_registry_null_value();
 
   if (!entry || !entry->ctx || !runtime_ctx) return result;
   status = ts_host_check_owner_thread(entry->ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) {
-    ts_host_runtime_throw(runtime_ctx, status, 0, "host callback ran outside its owner thread",
-                          entry->name);
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, status, 0,
+                          "host callback ran outside its owner thread", entry->name);
     return result;
   }
   if (arg_count < (size_t)entry->min_arity || arg_count > (size_t)entry->max_arity) {
-    ts_host_runtime_throw(runtime_ctx, TURBO_SCRIPT_STATUS_HOST_ERROR, 0,
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, TURBO_SCRIPT_STATUS_HOST_ERROR, 0,
                           "host function arity mismatch", entry->name);
     return result;
   }
   if (arg_count != 0 && !args) {
-    ts_host_runtime_throw(runtime_ctx, TURBO_SCRIPT_STATUS_INVALID_ARGUMENT, 0,
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, TURBO_SCRIPT_STATUS_INVALID_ARGUMENT, 0,
                           "host arguments have no backing storage", entry->name);
     return result;
   }
   if (mem_init(&view_arena, 0) != 0) {
-    ts_host_runtime_throw(runtime_ctx, TURBO_SCRIPT_STATUS_OUT_OF_MEMORY, 0,
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, TURBO_SCRIPT_STATUS_OUT_OF_MEMORY, 0,
                           "failed to initialize host argument arena", entry->name);
     return result;
   }
@@ -499,14 +512,13 @@ static exprtk_value_t ts_host_registry_callback_adapter(
   if (arg_count != 0) {
     status = ts_host_registry_charge(&view_state, arg_count, sizeof(*views));
     if (status == TURBO_SCRIPT_STATUS_OK) {
-      views = (turbo_script_value_view_t *)mem_alloc_array(&view_arena, sizeof(*views),
-                                                           arg_count);
+      views = (turbo_script_value_view_t *)mem_alloc_array(&view_arena, sizeof(*views), arg_count);
       if (!views) status = TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
     }
     for (size_t i = 0; status == TURBO_SCRIPT_STATUS_OK && i < arg_count; ++i)
       status = ts_host_arg_view_from_exprtk(&view_state, &args[i], &views[i], 1);
     if (status != TURBO_SCRIPT_STATUS_OK) {
-      ts_host_runtime_throw(runtime_ctx, status, 0, "failed to adapt host arguments",
+      ts_host_runtime_throw(entry->ctx, runtime_ctx, status, 0, "failed to adapt host arguments",
                             entry->name);
       mem_destroy(&view_arena);
       return result;
@@ -517,33 +529,39 @@ static exprtk_value_t ts_host_registry_callback_adapter(
   builder.state = TS_HOST_BUILDER_EMPTY;
   builder.terminal_status = TURBO_SCRIPT_STATUS_OK;
   builder.value = ts_host_registry_null_value();
-  if (entry->ctx->host_callback_depth == SIZE_MAX) {
-    ts_host_runtime_throw(runtime_ctx, TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED, 0,
-                          "host callback depth overflow", entry->name);
+  status = ts_host_instance_enter_callback(entry->ctx, &active_instance);
+  if (status != TURBO_SCRIPT_STATUS_OK) {
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, status, 0,
+                          "host callback state transition failed", entry->name);
     mem_destroy(&view_arena);
     return result;
   }
-  entry->ctx->host_callback_depth++;
   status = entry->callback(entry->user_data, views, arg_count, &builder);
-  entry->ctx->host_callback_depth--;
+  ts_host_instance_leave_callback(entry->ctx, active_instance);
 
   if (status == TURBO_SCRIPT_STATUS_OK && builder.state == TS_HOST_BUILDER_EMPTY) {
     status = TURBO_SCRIPT_STATUS_HOST_ERROR;
-    ts_host_runtime_throw(runtime_ctx, status, 0,
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, status, 0,
                           "callback returned success without a result", entry->name);
   } else if (builder.terminal_status != TURBO_SCRIPT_STATUS_OK) {
     status = builder.terminal_status;
-    ts_host_runtime_throw(runtime_ctx, status, builder.cause_code,
+    ts_host_runtime_throw(entry->ctx, runtime_ctx, status, builder.cause_code,
                           "host result builder rejected its terminal write", entry->name);
   } else if (status != TURBO_SCRIPT_STATUS_OK) {
-    ts_host_runtime_throw(runtime_ctx, status, builder.cause_code,
-                          builder.error_message ? builder.error_message : "host callback failed",
-                          entry->name);
+    turbo_script_string_view_t message =
+        builder.error_message
+            ? (turbo_script_string_view_t){builder.error_message, tstr_len(builder.error_message)}
+            : (turbo_script_string_view_t){"host callback failed", 20};
+    ts_host_runtime_throw_view(entry->ctx, runtime_ctx, status, builder.cause_code, message,
+                               entry->name);
   } else if (builder.state == TS_HOST_BUILDER_ERROR) {
     status = TURBO_SCRIPT_STATUS_HOST_ERROR;
-    ts_host_runtime_throw(runtime_ctx, status, builder.cause_code,
-                          builder.error_message ? builder.error_message : "host callback failed",
-                          entry->name);
+    turbo_script_string_view_t message =
+        builder.error_message
+            ? (turbo_script_string_view_t){builder.error_message, tstr_len(builder.error_message)}
+            : (turbo_script_string_view_t){"host callback failed", 20};
+    ts_host_runtime_throw_view(entry->ctx, runtime_ctx, status, builder.cause_code, message,
+                               entry->name);
   } else {
     result = builder.value;
     builder.value = ts_host_registry_null_value();
@@ -555,21 +573,19 @@ static exprtk_value_t ts_host_registry_callback_adapter(
   return result;
 }
 
-double ts_host_registry_invoke_numeric_slot(
-    turbo_script_ctx_t *registry_owner_ctx, turbo_script_ctx_t *runtime_ctx,
-    size_t slot, size_t arg_count, const double *numeric_args) {
+double ts_host_registry_invoke_numeric_slot(turbo_script_ctx_t *registry_owner_ctx,
+                                            turbo_script_ctx_t *runtime_ctx, size_t slot,
+                                            size_t arg_count, const double *numeric_args) {
   const ts_host_function_entry_t *entry = NULL;
   exprtk_value_t args[16];
   exprtk_value_t result;
   double numeric = 0.0;
-  if (!registry_owner_ctx || !runtime_ctx || arg_count > 16 ||
-      (!numeric_args && arg_count) ||
-      ts_host_registry_get_slot(registry_owner_ctx, slot, &entry) !=
-          TURBO_SCRIPT_STATUS_OK)
+  if (!registry_owner_ctx || !runtime_ctx || arg_count > 16 || (!numeric_args && arg_count) ||
+      ts_host_registry_get_slot(registry_owner_ctx, slot, &entry) != TURBO_SCRIPT_STATUS_OK)
     return 0.0;
-  for (size_t i = 0; i < arg_count; ++i) args[i] = exprtk_val_num(numeric_args[i]);
-  result = ts_host_registry_callback_adapter(arg_count, args, &runtime_ctx->env,
-                                              (void *)entry);
+  for (size_t i = 0; i < arg_count; ++i)
+    args[i] = exprtk_val_num(numeric_args[i]);
+  result = ts_host_registry_callback_adapter(arg_count, args, &runtime_ctx->env, (void *)entry);
   if (result.type == EXPRTK_VAL_NUMBER) numeric = result.data.number;
   else if (result.type == EXPRTK_VAL_INTEGER) numeric = (double)result.data.integer;
   else if (result.type == EXPRTK_VAL_BOOL) numeric = result.data.boolean ? 1.0 : 0.0;
@@ -577,9 +593,10 @@ double ts_host_registry_invoke_numeric_slot(
   return numeric;
 }
 
-static turbo_script_status_t ts_host_registry_bind_runtime_impl(
-    turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
-    exprtk_registration_fault_fn should_fail, void *fault_user_data) {
+static turbo_script_status_t
+ts_host_registry_bind_runtime_impl(turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
+                                   exprtk_registration_fault_fn should_fail,
+                                   void *fault_user_data) {
   exprtk_native_registration_t registrations[TS_HOST_REGISTRY_CAPACITY];
   exprtk_registration_status_t registration_status;
   turbo_script_status_t status = ts_host_check_owner_thread(ctx);
@@ -593,22 +610,18 @@ static turbo_script_status_t ts_host_registry_bind_runtime_impl(
       return TURBO_SCRIPT_STATUS_INVALID_STATE;
   }
   for (size_t i = 0; i < vec_size(&ctx->host_functions); ++i) {
-    ts_host_function_entry_t *entry =
-        (ts_host_function_entry_t *)vec_at(&ctx->host_functions, i);
+    ts_host_function_entry_t *entry = (ts_host_function_entry_t *)vec_at(&ctx->host_functions, i);
     if (!entry) return TURBO_SCRIPT_STATUS_INVALID_STATE;
     registrations[i].name = entry->name;
     registrations[i].fn = ts_host_registry_callback_adapter;
     registrations[i].user_data = entry;
   }
   registration_status = exprtk_env_register_funcs_checked_with_fault(
-      runtime_ctx, registrations, vec_size(&ctx->host_functions), should_fail,
-      fault_user_data);
-  if (registration_status == EXPRTK_REGISTRATION_OK)
-    return TURBO_SCRIPT_STATUS_OK;
+      runtime_ctx, registrations, vec_size(&ctx->host_functions), should_fail, fault_user_data);
+  if (registration_status == EXPRTK_REGISTRATION_OK) return TURBO_SCRIPT_STATUS_OK;
   if (registration_status == EXPRTK_REGISTRATION_OUT_OF_MEMORY)
     return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
-  if (registration_status == EXPRTK_REGISTRATION_CONFLICT)
-    return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  if (registration_status == EXPRTK_REGISTRATION_CONFLICT) return TURBO_SCRIPT_STATUS_INVALID_STATE;
   return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
 }
 
@@ -621,17 +634,15 @@ typedef struct ts_host_registration_fault_s {
   size_t allocation_index;
 } ts_host_registration_fault_t;
 
-static int ts_host_registration_should_fail(size_t allocation_index,
-                                            void *user_data) {
-  const ts_host_registration_fault_t *fault =
-      (const ts_host_registration_fault_t *)user_data;
+static int ts_host_registration_should_fail(size_t allocation_index, void *user_data) {
+  const ts_host_registration_fault_t *fault = (const ts_host_registration_fault_t *)user_data;
   return allocation_index == fault->allocation_index;
 }
 
-turbo_script_status_t ts_host_registry_bind_runtime_test_fault(
-    turbo_script_ctx_t *ctx, exprtk_env_t *runtime_ctx,
-    size_t allocation_index) {
+turbo_script_status_t ts_host_registry_bind_runtime_test_fault(turbo_script_ctx_t *ctx,
+                                                               exprtk_env_t *runtime_ctx,
+                                                               size_t allocation_index) {
   ts_host_registration_fault_t fault = {allocation_index};
-  return ts_host_registry_bind_runtime_impl(
-      ctx, runtime_ctx, ts_host_registration_should_fail, &fault);
+  return ts_host_registry_bind_runtime_impl(ctx, runtime_ctx, ts_host_registration_should_fail,
+                                            &fault);
 }

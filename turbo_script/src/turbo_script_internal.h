@@ -64,6 +64,9 @@ struct turbo_script_ctx_s {
   vec_t host_functions;
   size_t active_host_modules;
   size_t host_callback_depth;
+  /* Borrowed only for the synchronous owner-thread call. It is the context-wide
+   * reentrancy fact source used by Host callback adapters. */
+  struct turbo_script_instance_s *active_host_instance;
   uint64_t next_instance_generation;
   /* Instance initialization resolves immutable export slots once. Steady
    * calls index this table and never repeat a function-name lookup. */

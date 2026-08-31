@@ -30,9 +30,25 @@ static turbo_script_status_t ts_host_instance_fail(turbo_script_result_t *result
                                                    turbo_script_string_view_t module_name,
                                                    turbo_script_string_view_t function_name,
                                                    const char *message, size_t max_bytes) {
+  int32_t error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+  if (status == TURBO_SCRIPT_STATUS_INVALID_ARGUMENT ||
+      status == TURBO_SCRIPT_STATUS_VALIDATION_ERROR ||
+      status == TURBO_SCRIPT_STATUS_INVALID_UTF8 ||
+      status == TURBO_SCRIPT_STATUS_DUPLICATE_RECORD_KEY ||
+      status == TURBO_SCRIPT_STATUS_INVALID_EXPORT_HANDLE ||
+      status == TURBO_SCRIPT_STATUS_NOT_FOUND)
+    error_code = TURBO_SCRIPT_ERROR_ARGUMENT;
+  else if (status == TURBO_SCRIPT_STATUS_OUT_OF_MEMORY) error_code = TURBO_SCRIPT_ERROR_OOM;
+  else if (status == TURBO_SCRIPT_STATUS_INVALID_STATE ||
+           status == TURBO_SCRIPT_STATUS_REENTRANT_CALL ||
+           status == TURBO_SCRIPT_STATUS_CONTEXT_MISMATCH ||
+           status == TURBO_SCRIPT_STATUS_WRONG_THREAD)
+    error_code = TURBO_SCRIPT_ERROR_STATE;
+  else if (status == TURBO_SCRIPT_STATUS_INTERRUPTED) error_code = TURBO_SCRIPT_ERROR_CANCELLED;
   turbo_script_error_info_t error = {
       .struct_size = sizeof(error),
       .status = status,
+      .error_code = error_code,
       .phase = phase,
       .module_name = module_name,
       .function_name = function_name,
@@ -40,6 +56,101 @@ static turbo_script_status_t ts_host_instance_fail(turbo_script_result_t *result
   };
   (void)ts_host_result_set_error(result, &error, max_bytes);
   return status;
+}
+
+static void ts_host_instance_clear_diagnostic(turbo_script_instance_t *instance) {
+  if (!instance) return;
+  tstr_freep(&instance->diagnostic.message);
+  memset(&instance->diagnostic, 0, sizeof(instance->diagnostic));
+}
+
+turbo_script_status_t ts_host_instance_begin_call(turbo_script_instance_t *instance) {
+  turbo_script_ctx_t *ctx;
+  if (!instance || !instance->module || !instance->module->ctx)
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  ctx = instance->module->ctx;
+  if (instance->state == TS_HOST_INSTANCE_FAULTED) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  if (instance->state != TS_HOST_INSTANCE_READY || ctx->host_callback_depth != 0 ||
+      ctx->active_host_instance != NULL)
+    return TURBO_SCRIPT_STATUS_REENTRANT_CALL;
+  ts_host_instance_clear_diagnostic(instance);
+  instance->runtime_ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
+  instance->runtime_ctx->error_msg[0] = '\0';
+  instance->runtime_ctx->env.error_msg[0] = '\0';
+  instance->runtime_ctx->env.error_line = 0;
+  instance->runtime_ctx->env.error_column = 0;
+  instance->runtime_ctx->env.last_line = 0;
+  instance->runtime_ctx->env.last_column = 0;
+  exprtk_value_destroy(&instance->runtime_ctx->env.error_value);
+  instance->runtime_ctx->env.error_value.type = EXPRTK_VAL_NULL;
+  ctx->active_host_instance = instance;
+  instance->state = TS_HOST_INSTANCE_CALLING;
+  return TURBO_SCRIPT_STATUS_OK;
+}
+
+turbo_script_status_t ts_host_instance_enter_callback(turbo_script_ctx_t *ctx,
+                                                      turbo_script_instance_t **out_instance) {
+  turbo_script_instance_t *instance;
+  if (!ctx || !out_instance) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  *out_instance = NULL;
+  if (ctx->host_callback_depth == SIZE_MAX) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  instance = ctx->active_host_instance;
+  if (instance && instance->state != TS_HOST_INSTANCE_CALLING)
+    return TURBO_SCRIPT_STATUS_REENTRANT_CALL;
+  ctx->host_callback_depth++;
+  if (instance) instance->state = TS_HOST_INSTANCE_CALLING_HOST;
+  *out_instance = instance;
+  return TURBO_SCRIPT_STATUS_OK;
+}
+
+void ts_host_instance_leave_callback(turbo_script_ctx_t *ctx, turbo_script_instance_t *instance) {
+  if (!ctx || ctx->host_callback_depth == 0) return;
+  if (instance && ctx->active_host_instance == instance &&
+      instance->state == TS_HOST_INSTANCE_CALLING_HOST)
+    instance->state = TS_HOST_INSTANCE_CALLING;
+  ctx->host_callback_depth--;
+}
+
+turbo_script_status_t ts_host_instance_finish_call(turbo_script_instance_t *instance,
+                                                   turbo_script_status_t status) {
+  turbo_script_ctx_t *ctx;
+  if (!instance || !instance->module || !instance->module->ctx)
+    return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  ctx = instance->module->ctx;
+  if (ctx->active_host_instance != instance || instance->state != TS_HOST_INSTANCE_CALLING ||
+      ctx->host_callback_depth != 0) {
+    if (ctx->active_host_instance == instance) ctx->active_host_instance = NULL;
+    instance->state = TS_HOST_INSTANCE_FAULTED;
+    return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  }
+  ctx->active_host_instance = NULL;
+  instance->state =
+      status == TURBO_SCRIPT_STATUS_OK ? TS_HOST_INSTANCE_READY : TS_HOST_INSTANCE_FAULTED;
+  return status;
+}
+
+void ts_host_instance_record_callback_error(turbo_script_instance_t *instance,
+                                            turbo_script_status_t status, int32_t cause_code,
+                                            turbo_script_string_view_t function_name,
+                                            turbo_script_string_view_t message, uint32_t line,
+                                            uint32_t column) {
+  ts_host_runtime_diagnostic_t *diagnostic;
+  if (!instance) return;
+  diagnostic = &instance->diagnostic;
+  ts_host_instance_clear_diagnostic(instance);
+  diagnostic->status = TURBO_SCRIPT_STATUS_HOST_ERROR;
+  diagnostic->error_code = status == TURBO_SCRIPT_STATUS_OUT_OF_MEMORY ? TURBO_SCRIPT_ERROR_OOM
+                           : status == TURBO_SCRIPT_STATUS_INTERRUPTED
+                               ? TURBO_SCRIPT_ERROR_CANCELLED
+                               : TURBO_SCRIPT_ERROR_RUNTIME;
+  diagnostic->phase = TURBO_SCRIPT_ERROR_PHASE_HOST_CALLBACK;
+  diagnostic->line = line;
+  diagnostic->column = column;
+  diagnostic->length = line != 0 ? 1U : 0U;
+  diagnostic->cause_code = cause_code;
+  diagnostic->function_name = function_name;
+  diagnostic->message = tstr_dup_len(message.data ? message.data : "", message.size);
+  diagnostic->present = 1;
 }
 
 static turbo_script_string_view_t
@@ -50,6 +161,85 @@ ts_host_instance_module_name(const turbo_script_module_t *module) {
     view.size = tstr_len(module->module_name);
   }
   return view;
+}
+
+static void ts_host_instance_export_span(const turbo_script_module_t *module, size_t slot,
+                                         uint32_t *out_line, uint32_t *out_column) {
+  const ts_host_export_entry_t *entry;
+  const exprtk_node_t *node;
+  if (!out_line || !out_column) return;
+  *out_line = 0;
+  *out_column = 0;
+  if (!module) return;
+  entry = (const ts_host_export_entry_t *)vec_at_const(&module->exports.entries, slot);
+  if (!entry) return;
+  node = entry->function_node ? entry->function_node : entry->declaration_node;
+  if (!node) return;
+  if (node->line > 0) *out_line = (uint32_t)node->line;
+  if (node->column > 0) *out_column = (uint32_t)node->column;
+}
+
+static turbo_script_status_t ts_host_instance_publish_execution_error(
+    turbo_script_instance_t *instance, turbo_script_result_t *result, turbo_script_status_t status,
+    turbo_script_error_phase_t phase, turbo_script_string_view_t function_name, size_t slot,
+    const char *default_message) {
+  ts_host_runtime_diagnostic_t *diagnostic = &instance->diagnostic;
+  exprtk_env_t *runtime_env = &instance->runtime_ctx->env;
+  turbo_script_error_info_t error = {
+      .struct_size = sizeof(error),
+      .status = status,
+      .error_code = status == TURBO_SCRIPT_STATUS_INTERRUPTED ? TURBO_SCRIPT_ERROR_CANCELLED
+                                                              : TURBO_SCRIPT_ERROR_RUNTIME,
+      .phase = phase,
+      .module_name = ts_host_instance_module_name(instance->module),
+      .function_name = function_name,
+  };
+  turbo_script_string_view_t message = {0};
+  turbo_script_status_t store_status;
+
+  if (diagnostic->present) {
+    error.status = diagnostic->status;
+    error.error_code = diagnostic->error_code;
+    error.phase = diagnostic->phase;
+    error.line = diagnostic->line;
+    error.column = diagnostic->column;
+    error.length = diagnostic->length;
+    error.cause_code = diagnostic->cause_code;
+    error.function_name = diagnostic->function_name;
+    if (diagnostic->message) {
+      message.data = diagnostic->message;
+      message.size = tstr_len(diagnostic->message);
+    }
+  } else {
+    if (runtime_env->error_line > 0) error.line = (uint32_t)runtime_env->error_line;
+    else if (runtime_env->last_line > 0) error.line = (uint32_t)runtime_env->last_line;
+    if (runtime_env->error_column > 0) error.column = (uint32_t)runtime_env->error_column;
+    else if (runtime_env->last_column > 0) error.column = (uint32_t)runtime_env->last_column;
+    if (runtime_env->error_msg[0] != '\0') {
+      message.data = runtime_env->error_msg;
+      message.size = strlen(runtime_env->error_msg);
+    } else if (runtime_env->error_value.type == EXPRTK_VAL_STRING &&
+               runtime_env->error_value.data.string.data) {
+      message.data = runtime_env->error_value.data.string.data;
+      message.size = runtime_env->error_value.data.string.len;
+    }
+  }
+  if (error.line == 0 || error.column == 0) {
+    uint32_t fallback_line;
+    uint32_t fallback_column;
+    ts_host_instance_export_span(instance->module, slot, &fallback_line, &fallback_column);
+    if (error.line == 0) error.line = fallback_line;
+    if (error.column == 0) error.column = fallback_column;
+  }
+  error.length = error.line != 0 ? 1U : 0U;
+  if (!message.data) {
+    message.data = default_message;
+    message.size = strlen(default_message);
+  }
+  error.message = message;
+  store_status = ts_host_result_set_error(result, &error, instance->limits.max_result_bytes);
+  ts_host_instance_clear_diagnostic(instance);
+  return store_status == TURBO_SCRIPT_STATUS_OK ? error.status : store_status;
 }
 
 static int ts_host_instance_options_valid(const turbo_script_instance_options_t *options) {
@@ -316,12 +506,14 @@ turbo_script_status_t turbo_script_instance_destroy(turbo_script_instance_t *ins
       ts_host_instance_begin(instance, result, TURBO_SCRIPT_ERROR_PHASE_NONE);
   turbo_script_module_t *module;
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
-  if (instance->state != TS_HOST_INSTANCE_READY)
+  if (instance->state != TS_HOST_INSTANCE_READY && instance->state != TS_HOST_INSTANCE_FAULTED)
     return ts_host_instance_fail(
         result, TURBO_SCRIPT_STATUS_INVALID_STATE, TURBO_SCRIPT_ERROR_PHASE_NONE,
         ts_host_instance_module_name(instance->module), (turbo_script_string_view_t){0},
         "instance cannot be destroyed while executing", instance->limits.max_result_bytes);
   module = instance->module;
+  ts_host_instance_clear_diagnostic(instance);
+  instance->state = TS_HOST_INSTANCE_DESTROYED;
   ts_host_instance_runtime_destroy(instance->runtime_ctx);
   free(instance);
   ts_host_module_release(module);
@@ -426,14 +618,18 @@ turbo_script_status_t ts_host_instance_execute_numeric(turbo_script_instance_t *
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   if (atomic_load_explicit(&instance->module->ctx->closing, memory_order_acquire))
     return TURBO_SCRIPT_STATUS_INVALID_STATE;
-  if (instance->state != TS_HOST_INSTANCE_READY) return TURBO_SCRIPT_STATUS_REENTRANT_CALL;
+  if (instance->state == TS_HOST_INSTANCE_FAULTED) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+  if (instance->state != TS_HOST_INSTANCE_READY || instance->module->ctx->host_callback_depth != 0)
+    return TURBO_SCRIPT_STATUS_REENTRANT_CALL;
   status = ts_host_instance_decode_handle(instance, handle, &slot);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
-  instance->state = TS_HOST_INSTANCE_CALLING;
+  status = ts_host_instance_begin_call(instance);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
   status = ts_host_module_execute_numeric_with_runtime(
       instance->module, instance->runtime_ctx, slot, instance->mode == TURBO_SCRIPT_EXEC_JIT, args,
       arg_count, out_result);
-  instance->state = TS_HOST_INSTANCE_READY;
+  status = ts_host_instance_finish_call(instance, status);
+  ts_host_instance_clear_diagnostic(instance);
   return status;
 }
 
@@ -449,18 +645,30 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   ts_host_value_limits_t input_limits;
   ts_host_value_limits_t output_limits;
   turbo_script_status_t status;
+  turbo_script_status_t finish_status;
+  turbo_script_error_phase_t failure_phase = TURBO_SCRIPT_ERROR_PHASE_CALL;
   turbo_script_string_view_t function_name = {0};
+  const char *failure_message = "call value conversion failed";
   size_t slot = 0;
   size_t converted = 0;
-  uint32_t saved_max_recursion;
-  uint32_t saved_max_nodes;
-  uint32_t saved_max_loop_iterations;
+  uint32_t saved_max_recursion = 0;
+  uint32_t saved_max_nodes = 0;
+  uint32_t saved_max_loop_iterations = 0;
   int call_env_initialized = 0;
+  int call_started = 0;
+  int limits_applied = 0;
   int backend_status;
 
   status = ts_host_instance_begin(instance, result, TURBO_SCRIPT_ERROR_PHASE_CALL);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
-  if (instance->state != TS_HOST_INSTANCE_READY)
+  if (instance->state == TS_HOST_INSTANCE_FAULTED)
+    return ts_host_instance_fail(
+        result, TURBO_SCRIPT_STATUS_INVALID_STATE, TURBO_SCRIPT_ERROR_PHASE_CALL,
+        ts_host_instance_module_name(instance->module), function_name,
+        "faulted instance rejects future calls", instance->limits.max_result_bytes);
+  if (instance->state != TS_HOST_INSTANCE_READY ||
+      instance->module->ctx->host_callback_depth != 0 ||
+      instance->module->ctx->active_host_instance != NULL)
     return ts_host_instance_fail(
         result, TURBO_SCRIPT_STATUS_REENTRANT_CALL, TURBO_SCRIPT_ERROR_PHASE_CALL,
         ts_host_instance_module_name(instance->module), function_name,
@@ -474,26 +682,26 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
     return ts_host_instance_fail(result, TURBO_SCRIPT_STATUS_INVALID_ARGUMENT,
                                  TURBO_SCRIPT_ERROR_PHASE_CALL,
                                  ts_host_instance_module_name(instance->module), function_name,
-                                 "invalid call arguments", options->max_result_bytes);
+                                 "invalid call arguments", instance->limits.max_result_bytes);
   status = ts_host_instance_decode_handle(instance, handle, &slot);
   if (status != TURBO_SCRIPT_STATUS_OK)
     return ts_host_instance_fail(result, status, TURBO_SCRIPT_ERROR_PHASE_CALL,
                                  ts_host_instance_module_name(instance->module), function_name,
-                                 "invalid export handle", options->max_result_bytes);
+                                 "invalid export handle", instance->limits.max_result_bytes);
   {
     const char *name = ts_host_module_export_name(instance->module, slot);
     if (!name)
-      return ts_host_instance_fail(result, TURBO_SCRIPT_STATUS_INVALID_STATE,
-                                   TURBO_SCRIPT_ERROR_PHASE_CALL,
-                                   ts_host_instance_module_name(instance->module), function_name,
-                                   "export metadata is unavailable", options->max_result_bytes);
+      return ts_host_instance_fail(
+          result, TURBO_SCRIPT_STATUS_INVALID_STATE, TURBO_SCRIPT_ERROR_PHASE_CALL,
+          ts_host_instance_module_name(instance->module), function_name,
+          "export metadata is unavailable", instance->limits.max_result_bytes);
     function_name = (turbo_script_string_view_t){name, strlen(name)};
   }
   if (arg_count != ts_host_module_export_arity(instance->module, slot))
     return ts_host_instance_fail(result, TURBO_SCRIPT_STATUS_INVALID_ARGUMENT,
                                  TURBO_SCRIPT_ERROR_PHASE_CALL,
                                  ts_host_instance_module_name(instance->module), function_name,
-                                 "export arity mismatch", options->max_result_bytes);
+                                 "export arity mismatch", instance->limits.max_result_bytes);
 
   input_limits.max_depth = instance->limits.max_value_depth;
   input_limits.max_nodes = instance->limits.max_value_nodes;
@@ -507,13 +715,8 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   if (status != TURBO_SCRIPT_STATUS_OK)
     return ts_host_instance_fail(result, status, TURBO_SCRIPT_ERROR_PHASE_CALL,
                                  ts_host_instance_module_name(instance->module), function_name,
-                                 "call argument validation failed", output_limits.max_bytes);
-  if (options->interrupt && options->interrupt(options->interrupt_user_data))
-    return ts_host_instance_fail(result, TURBO_SCRIPT_STATUS_INTERRUPTED,
-                                 TURBO_SCRIPT_ERROR_PHASE_INTERRUPT,
-                                 ts_host_instance_module_name(instance->module), function_name,
-                                 "call interrupted before execution", output_limits.max_bytes);
-
+                                 "call argument validation failed",
+                                 instance->limits.max_result_bytes);
   exprtk_env_init(&call_env);
   call_env_initialized = 1;
   call_env.max_external_value_bytes = instance->limits.max_retained_bytes;
@@ -521,7 +724,7 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
     call_args[converted] = (exprtk_value_t){.type = EXPRTK_VAL_NULL};
     status = ts_host_value_from_view_in_env(&call_env, &args[converted], &input_limits,
                                             &call_args[converted]);
-    if (status != TURBO_SCRIPT_STATUS_OK) goto fail;
+    if (status != TURBO_SCRIPT_STATUS_OK) goto preflight_fail;
   }
 
   saved_max_recursion = instance->runtime_ctx->env.max_recursion;
@@ -532,40 +735,73 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
                                                  : instance->limits.max_recursion;
   instance->runtime_ctx->env.max_nodes = options->max_steps;
   instance->runtime_ctx->env.max_loop_iterations = options->max_loop_iterations;
-  instance->state = TS_HOST_INSTANCE_CALLING;
+  limits_applied = 1;
+  status = ts_host_instance_begin_call(instance);
+  if (status != TURBO_SCRIPT_STATUS_OK) goto preflight_fail;
+  call_started = 1;
+  if (options->interrupt && options->interrupt(options->interrupt_user_data)) {
+    status = TURBO_SCRIPT_STATUS_INTERRUPTED;
+    failure_phase = TURBO_SCRIPT_ERROR_PHASE_INTERRUPT;
+    failure_message = "call interrupted before execution";
+    goto finish;
+  }
   backend_status =
       instance->mode == TURBO_SCRIPT_EXEC_JIT
           ? ts_mir_artifact_call_jit(instance->module->artifact, instance->runtime_ctx, slot,
                                      call_args, arg_count, &output)
           : ts_mir_artifact_call_interp(instance->module->artifact, instance->runtime_ctx, slot,
                                         call_args, arg_count, &output);
-  instance->state = TS_HOST_INSTANCE_READY;
-  instance->runtime_ctx->env.max_recursion = saved_max_recursion;
-  instance->runtime_ctx->env.max_nodes = saved_max_nodes;
-  instance->runtime_ctx->env.max_loop_iterations = saved_max_loop_iterations;
   if (backend_status != 0) {
-    status = TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
-    goto fail;
+    status = instance->diagnostic.present ? instance->diagnostic.status
+                                          : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
+    failure_phase =
+        instance->diagnostic.present ? instance->diagnostic.phase : TURBO_SCRIPT_ERROR_PHASE_CALL;
+    failure_message = "export execution failed: recursion or runtime error";
+    goto finish;
   }
   status = ts_host_result_store_exprtk(result, &output, &output_limits);
-  if (status != TURBO_SCRIPT_STATUS_OK) goto fail;
+  if (status != TURBO_SCRIPT_STATUS_OK) {
+    failure_message = status == TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED
+                          ? "call result quota exceeded"
+                          : "call result conversion failed";
+    goto finish;
+  }
+
+finish:
+  if (limits_applied) {
+    instance->runtime_ctx->env.max_recursion = saved_max_recursion;
+    instance->runtime_ctx->env.max_nodes = saved_max_nodes;
+    instance->runtime_ctx->env.max_loop_iterations = saved_max_loop_iterations;
+    limits_applied = 0;
+  }
+  finish_status = ts_host_instance_finish_call(instance, status);
+  call_started = 0;
+  if (finish_status != status) status = finish_status;
 
   exprtk_value_destroy(&output);
   for (size_t i = 0; i < converted; ++i)
     exprtk_value_destroy(&call_args[i]);
   exprtk_env_free(&call_env);
-  return TURBO_SCRIPT_STATUS_OK;
+  call_env_initialized = 0;
+  if (status == TURBO_SCRIPT_STATUS_OK) {
+    ts_host_instance_clear_diagnostic(instance);
+    return TURBO_SCRIPT_STATUS_OK;
+  }
+  return ts_host_instance_publish_execution_error(instance, result, status, failure_phase,
+                                                  function_name, slot, failure_message);
 
-fail:
-  if (instance->state == TS_HOST_INSTANCE_CALLING) instance->state = TS_HOST_INSTANCE_READY;
+preflight_fail:
+  if (call_started) (void)ts_host_instance_finish_call(instance, status);
+  if (limits_applied) {
+    instance->runtime_ctx->env.max_recursion = saved_max_recursion;
+    instance->runtime_ctx->env.max_nodes = saved_max_nodes;
+    instance->runtime_ctx->env.max_loop_iterations = saved_max_loop_iterations;
+  }
   exprtk_value_destroy(&output);
   for (size_t i = 0; i < converted; ++i)
     exprtk_value_destroy(&call_args[i]);
   if (call_env_initialized) exprtk_env_free(&call_env);
   return ts_host_instance_fail(result, status, TURBO_SCRIPT_ERROR_PHASE_CALL,
                                ts_host_instance_module_name(instance->module), function_name,
-                               status == TURBO_SCRIPT_STATUS_RUNTIME_ERROR
-                                   ? "export execution failed"
-                                   : "call value conversion failed",
-                               output_limits.max_bytes);
+                               failure_message, instance->limits.max_result_bytes);
 }
