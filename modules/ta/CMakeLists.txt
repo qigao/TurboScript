@@ -26,7 +26,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/ta
-  OUTPUT_NAME tbs_ta
+  OUTPUT_NAME ta
   PLUGIN) # Plugins are runtime-loaded, not exported for linking
 
 target_link_libraries(

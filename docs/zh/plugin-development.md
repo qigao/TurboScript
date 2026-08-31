@@ -70,10 +70,10 @@ TS_PLUGIN_MODULE(my_math, exprtk_module_my_math)
 
 ```bash
 # Windows (MSVC)
-cl /LD my_math_plugin.c /I"path/to/tScript/include" /Fe:tbs_my_math.dll
+cl /LD my_math_plugin.c /I"path/to/tScript/include" /Fe:my_math.dll
 
 # Linux (GCC)
-gcc -shared -fPIC my_math_plugin.c -I"path/to/tScript/include" -o tbs_my_math.so
+gcc -shared -fPIC my_math_plugin.c -I"path/to/tScript/include" -o my_math.so
 ```
 
 **步骤 3：在 TurboScript 中使用**：
@@ -104,11 +104,11 @@ TurboScript 使用双模块系统：
 │  │   内置模块           │      │   插件模块           │   │
 │  │  (编译时)            │      │  (运行时加载)        │   │
 │  ├──────────────────────┤      ├──────────────────────┤   │
-│  │ • math               │      │ • tbs_ta.dll         │   │
-│  │ • string             │      │ • tbs_fin.dll        │   │
-│  │ • stats              │      │ • tbs_net.dll        │   │
-│  │ • io                 │      │ • tbs_sqlite.dll     │   │
-│  │ • core               │      │ • tbs_custom.dll     │   │
+│  │ • math               │      │ • ta.dll             │   │
+│  │ • string             │      │ • fin.dll            │   │
+│  │ • stats              │      │ • net.dll            │   │
+│  │ • io                 │      │ • sqlite.dll         │   │
+│  │ • core               │      │ • custom.dll         │   │
 │  └──────────────────────┘      └──────────────────────┘   │
 │           ↓                              ↓                  │
 │  全局注册表                        每上下文环境              │
@@ -290,7 +290,7 @@ sqlite.close();
 cl /LD my_plugin.c ^
    /I"C:\turbonet\tScript\ts_loader\include" ^
    /I"C:\turbonet\tScript\exprtk\include" ^
-   /Fe:tbs_my_plugin.dll
+   /Fe:my_plugin.dll
 ```
 
 ### Linux (GCC)
@@ -299,7 +299,7 @@ cl /LD my_plugin.c ^
 gcc -shared -fPIC my_plugin.c \
     -I/path/to/tScript/ts_loader/include \
     -I/path/to/tScript/exprtk/include \
-    -o tbs_my_plugin.so
+    -o my_plugin.so
 ```
 
 ### macOS (Clang)
@@ -308,7 +308,7 @@ gcc -shared -fPIC my_plugin.c \
 clang -shared -fPIC my_plugin.c \
       -I/path/to/tScript/ts_loader/include \
       -I/path/to/tScript/exprtk/include \
-      -o tbs_my_plugin.dylib
+      -o my_plugin.dylib
 ```
 
 ### CMake
@@ -324,9 +324,9 @@ target_include_directories(my_plugin PRIVATE
 set_target_properties(my_plugin PROPERTIES
     WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
-# 输出名称：tbs_my_plugin.dll/so
+# 输出名称：my_plugin.dll/so/dylib
 set_target_properties(my_plugin PROPERTIES
-    OUTPUT_NAME "tbs_my_plugin")
+    OUTPUT_NAME "my_plugin")
 ```
 
 ---
@@ -337,21 +337,33 @@ set_target_properties(my_plugin PROPERTIES
 
 TurboScript 按以下顺序搜索插件：
 
-1. **当前目录**：`./tbs_my_plugin.dll`
-2. **插件子目录**：`./plugins/tbs_my_plugin.dll`
-3. **系统插件目录**：`<install_dir>/plugins/tbs_my_plugin.dll`
+1. **可执行文件插件目录**：`<exe_dir>/plugins/my_plugin.dll`
+2. **可执行文件目录兼容路径**：`<exe_dir>/my_plugin.dll`
+
+加载器不会搜索当前工作目录或操作系统 `PATH`，因此无论从哪个目录启动
+TurboScript，插件选择都保持一致，并避免加载同名的非预期动态库。
+若两个无前缀路径都无法打开，TurboScript 才会在相同两个目录中尝试旧版
+`tbs_my_plugin.dll` 文件名。
 
 ### 插件命名约定
 
 ```
-Windows: tbs_<name>.dll
-Linux:   tbs_<name>.so
-<name>_plugin.dylib  (macOS)
+Windows: <name>.dll
+Linux:   <name>.so
+macOS:   <name>.dylib
 ```
 
 **示例：**
-- `import("ta")` → 搜索 `tbs_ta.dll`
-- `import("my_math")` → 搜索 `tbs_my_math.dll`
+- `import("ta")` → 搜索 `ta.dll`
+- `import("my_math")` → 搜索 `my_math.dll`
+
+以下两个内置插件的依赖库已经占用了逻辑名对应的动态库文件名，因此使用
+避碰文件名：
+
+- `import("crypto")` → `crypto_plugin.dll`（Linux 为 `crypto_plugin.so`）
+- `import("rules_forge")` → `rules_forge_plugin.dll`（Linux 为 `rules_forge_plugin.so`）
+
+它们的脚本逻辑名和插件描述符名称仍分别为 `crypto` 与 `rules_forge`。
 
 ---
 
@@ -424,19 +436,19 @@ static exprtk_value_t divide(size_t argc, exprtk_value_t *args,
 ```
 
 **解决方案：**
-1. 检查插件文件是否存在：`tbs_my_plugin.dll`
-2. 验证插件在搜索路径中
-3. 使用绝对路径：`turbo_script_register_plugin(ctx, "C:/full/path/my_plugin.dll")`
+1. 检查插件是否位于 `<exe_dir>/plugins/my_plugin.dll`
+2. 检查插件依赖是否位于插件目录或应用程序目录
+3. 检查错误中的加载阶段：`open`、`symbol`、`ABI` 或 `initialize`
 
 ### 找不到符号
 
 ```
-错误：在 tbs_my_plugin.dll 中找不到 ts_api_create
+错误：在 my_plugin.dll 中找不到 ts_api_create
 ```
 
 **解决方案：**
 1. 确保使用了 `TS_PLUGIN_MODULE` 或 `TS_PLUGIN_STATEFUL` 宏
-2. 检查 DLL 导出：`dumpbin /EXPORTS tbs_my_plugin.dll`（Windows）
+2. 检查 DLL 导出：`dumpbin /EXPORTS my_plugin.dll`（Windows）
 3. 验证 `TS_EXPORT` 定义正确
 
 ### 插件崩溃

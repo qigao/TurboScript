@@ -4,6 +4,7 @@
  */
 
 #include "exprtk_module.h"
+#include <turbostl/hash_map.h>
 #include <stdlib.h>
 #include <string.h>
 

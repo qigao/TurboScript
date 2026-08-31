@@ -9,9 +9,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-  #define NET_PLUGIN_DLL "tbs_net.dll"
+  #define NET_PLUGIN_DLL "net.dll"
 #else
-  #define NET_PLUGIN_DLL "tbs_net.so"
+  #define NET_PLUGIN_DLL "net.so"
 #endif
 
 static exprtk_func_t *find_native(exprtk_env_t *env, const char *name) {

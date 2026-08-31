@@ -20,7 +20,7 @@ target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core TurboParser:
 add_library(${TARGET_NAME_PLUGIN} SHARED ${MAPPER_PLUGIN_SOURCES})
 cmake_config_target(${TARGET_NAME_PLUGIN}
   FOLDER modules/mapper
-  OUTPUT_NAME tbs_mapper
+  OUTPUT_NAME mapper
   PLUGIN)
 target_include_directories(${TARGET_NAME_PLUGIN}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)

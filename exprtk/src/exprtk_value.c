@@ -4,6 +4,7 @@
  */
 
 #include "exprtk_module.h"
+#include <turbostl/vec.h>
 
 #include <stdint.h>
 #include <stdio.h>

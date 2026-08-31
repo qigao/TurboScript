@@ -92,6 +92,50 @@ spec("turbo_script_basics") {
       check(((int)probe.call_count) == (1));
       turbo_script_free(ctx);
     }
+
+    it("should prefer the prefixless native plugin filename") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "loader_fixture"), 0);
+      turbo_script_free(ctx);
+    }
+
+    it("should load crypto through its collision-safe plugin filename") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "crypto"), 0);
+      turbo_script_free(ctx);
+    }
+
+    it("should load rules_forge through its collision-safe plugin filename") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "rules_forge"), 0);
+      turbo_script_free(ctx);
+    }
+
+    it("should report the loader stage when a native plugin cannot be opened") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "definitely_missing_loader_fixture"), -1);
+      check_equal(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_PLUGIN);
+      check_not_null(strstr(turbo_script_get_error(ctx), "open"));
+      turbo_script_free(ctx);
+    }
+
+    it("should reject path traversal in a logical native plugin name") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "../loader_fixture"), -1);
+      check_equal(turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_ARGUMENT);
+      check_not_null(strstr(turbo_script_get_error(ctx), "invalid plugin name"));
+      turbo_script_free(ctx);
+    }
   }
 
   describe("Memory policy") {

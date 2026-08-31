@@ -13,9 +13,9 @@
 #include <string.h>
 
 #ifdef _WIN32
-  #define WASM_PLUGIN_DLL "tbs_wasm.dll"
+  #define WASM_PLUGIN_DLL "wasm.dll"
 #else
-  #define WASM_PLUGIN_DLL "tbs_wasm.so"
+  #define WASM_PLUGIN_DLL "wasm.so"
 #endif
 
 typedef struct {

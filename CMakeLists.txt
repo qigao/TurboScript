@@ -115,9 +115,9 @@ install(
           fuzzy_tbs
           ${_turbo_script_rules_forge_install_target}
           os_tbs
-  LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+  LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
 
 install(
   EXPORT TurboScriptTargets

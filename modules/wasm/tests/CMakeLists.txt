@@ -1,4 +1,4 @@
-# DLL-based integration test — loads tbs_wasm at runtime
+# DLL-based integration test — loads wasm at runtime
 cmake_add_test(
   TARGET test_wasm_module
   SOURCES test_wasm.c

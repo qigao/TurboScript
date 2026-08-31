@@ -17,7 +17,7 @@ target_include_directories(
 # Shared plugin DLL
 add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 
-cmake_config_target(${TARGET_NAME} FOLDER modules/net OUTPUT_NAME tbs_net
+cmake_config_target(${TARGET_NAME} FOLDER modules/net OUTPUT_NAME net
                     PLUGIN)
 
 target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboHttp::TurboHttp

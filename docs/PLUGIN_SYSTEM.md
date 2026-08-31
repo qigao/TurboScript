@@ -26,11 +26,11 @@ TurboScript uses a **two-tier module system**:
 │  │   Built-in Modules   │      │   Plugin Modules     │   │
 │  │  (Compile-time)      │      │  (Runtime-loaded)    │   │
 │  ├──────────────────────┤      ├──────────────────────┤   │
-│  │ • math               │      │ • tbs_ta.dll         │   │
-│  │ • string             │      │ • tbs_fin.dll        │   │
-│  │ • stats              │      │ • tbs_net.dll        │   │
-│  │ • io                 │      │ • tbs_sqlite.dll     │   │
-│  │ • core               │      │ • tbs_custom.dll     │   │
+│  │ • math               │      │ • ta.dll             │   │
+│  │ • string             │      │ • fin.dll            │   │
+│  │ • stats              │      │ • net.dll            │   │
+│  │ • io                 │      │ • sqlite.dll         │   │
+│  │ • core               │      │ • custom.dll         │   │
 │  └──────────────────────┘      └──────────────────────┘   │
 │           ↓                              ↓                  │
 │  Global Registry                  Per-Context Env          │
@@ -85,9 +85,9 @@ User Script: import("ta")
     ↓
 turbo_script_load_plugin("ta")
     ↓
-Search for "tbs_ta.dll" in plugin paths
+Search for "ta.dll" in plugin paths
     ↓
-ts_plugin_load("tbs_ta.dll")
+ts_plugin_load("ta.dll")
     ↓
 dlopen/LoadLibrary (OS-level DLL load)
     ↓
@@ -302,7 +302,7 @@ TS_PLUGIN_STATEFUL(sqlite, sqlite_create, sqlite_register, sqlite_destroy)
 cl /LD my_math_plugin.c ^
    /I"C:\turbonet\tScript\ts_loader\include" ^
    /I"C:\turbonet\tScript\exprtk\include" ^
-   /Fe:tbs_my_math.dll
+   /Fe:my_math.dll
 ```
 
 ### Linux (GCC)
@@ -311,7 +311,7 @@ cl /LD my_math_plugin.c ^
 gcc -shared -fPIC my_math_plugin.c \
     -I/path/to/tScript/ts_loader/include \
     -I/path/to/tScript/exprtk/include \
-    -o tbs_my_math.so
+    -o my_math.so
 ```
 
 ### CMake
@@ -336,21 +336,35 @@ set_target_properties(my_math_plugin PROPERTIES
 
 TurboScript searches for plugins in these locations (in order):
 
-1. **Current directory**: `./tbs_my_plugin.dll`
-2. **Plugins subdirectory**: `./plugins/tbs_my_plugin.dll`
-3. **System plugin directory**: `<install_dir>/plugins/tbs_my_plugin.dll`
+1. **Executable plugins directory**: `<exe_dir>/plugins/my_plugin.dll`
+2. **Executable directory compatibility fallback**: `<exe_dir>/my_plugin.dll`
+
+The current working directory and the operating-system `PATH` are not searched.
+This keeps plugin selection independent of the directory from which TurboScript
+was launched and avoids loading an unintended same-named library.
+If neither prefixless path can be opened, TurboScript retries the legacy
+`tbs_my_plugin.dll` filename in the same two directories.
 
 ### Plugin Naming Convention
 
 ```
-Windows: tbs_<name>.dll
-Linux:   tbs_<name>.so
-<name>_plugin.dylib  (macOS)
+Windows: <name>.dll
+Linux:   <name>.so
+macOS:   <name>.dylib
 ```
 
 **Examples:**
-- `import("ta")` → searches for `tbs_ta.dll`
-- `import("my_math")` → searches for `tbs_my_math.dll`
+- `import("ta")` → searches for `ta.dll`
+- `import("my_math")` → searches for `my_math.dll`
+
+Two built-in plugins use collision-safe file stems because their dependencies
+already own the logical-name library filenames:
+
+- `import("crypto")` → `crypto_plugin.dll` (`crypto_plugin.so` on Linux)
+- `import("rules_forge")` → `rules_forge_plugin.dll` (`rules_forge_plugin.so` on Linux)
+
+Their logical names and plugin descriptor names remain `crypto` and
+`rules_forge`.
 
 ---
 
@@ -394,7 +408,7 @@ turbo_script_register_plugin(ctx, "C:/custom/my_plugin.dll");
 │                                                          │
 │  1. import("plugin_name")                               │
 │     ↓                                                    │
-│  2. Search for tbs_plugin_name.dll                      │
+│  2. Search for plugin_name.dll                          │
 │     ↓                                                    │
 │  3. dlopen/LoadLibrary                                  │
 │     ↓                                                    │
@@ -463,7 +477,7 @@ let macd = ta.macd(CLOSE, 12, 26, 9);
 
 const exprtk_module_t *exprtk_module_strategy(void);
 
-TS_PLUGIN_MODULE(strategy, exprtk_module_strategy)
+TS_PLUGIN_MODULE(fin, exprtk_module_strategy)
 ```
 
 **Usage:**
@@ -581,21 +595,21 @@ Error: Failed to load plugin 'my_plugin'
 ```
 
 **Solutions:**
-1. Check plugin file exists: `tbs_my_plugin.dll`
-2. Verify plugin is in search path
-3. Use absolute path: `turbo_script_register_plugin(ctx, "C:/full/path/my_plugin.dll")`
+1. Check the plugin exists as `<exe_dir>/plugins/my_plugin.dll`
+2. Check that its dependent libraries are beside the plugin or in the application directory
+3. Inspect the reported loader stage (`open`, `symbol`, `ABI`, or `initialize`)
 
 ---
 
 ### Symbol Not Found
 
 ```
-Error: ts_api_create not found in tbs_my_plugin.dll
+Error: ts_api_create not found in my_plugin.dll
 ```
 
 **Solutions:**
 1. Ensure `TS_PLUGIN_MODULE` or `TS_PLUGIN_STATEFUL` macro is used
-2. Check DLL exports: `dumpbin /EXPORTS tbs_my_plugin.dll` (Windows)
+2. Check DLL exports: `dumpbin /EXPORTS my_plugin.dll` (Windows)
 3. Verify `TS_EXPORT` is defined correctly
 
 ---

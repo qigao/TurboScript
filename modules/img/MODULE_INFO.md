@@ -36,7 +36,7 @@ modules/img/
 - **别名**: `TurboScript::IMG`
 
 ### 动态插件 (运行时加载)
-- **名称**: `tbs_img.dll` / `tbs_img.so`
+- **名称**: `img.dll` / `img.so`
 - **用途**: TurboScript 运行时通过 `import("img")` 加载
 
 ## 依赖关系

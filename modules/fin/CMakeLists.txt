@@ -22,7 +22,7 @@ endif()
 add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 
 cmake_config_target(${TARGET_NAME_PLUGIN} FOLDER modules/fin OUTPUT_NAME
-                    tbs_fin PLUGIN)
+                    fin PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME})
 
