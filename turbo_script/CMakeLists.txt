@@ -55,8 +55,8 @@ target_include_directories(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core TurboUtils::STL TurboParser::Parser
+  PRIVATE exprtk mir_static TurboUtils::STL
+  PUBLIC TurboUtils::Core TurboParser::Parser
   PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 # Enable strict warnings for modularized code
@@ -94,8 +94,8 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk mir_static
-  PUBLIC TurboUtils::Core TurboUtils::STL
+  PRIVATE exprtk mir_static TurboUtils::STL
+  PUBLIC TurboUtils::Core
   PRIVATE TurboParser::Cron TurboNet::CoroNet)
 
 if(WIN32)

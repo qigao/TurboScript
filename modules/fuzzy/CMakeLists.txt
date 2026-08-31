@@ -26,7 +26,7 @@ target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core
 add_library(${TARGET_NAME_PLUGIN} SHARED ${FUZZY_PLUGIN_SOURCES})
 
 cmake_config_target(${TARGET_NAME_PLUGIN} FOLDER modules/fuzzy OUTPUT_NAME
-                    tbs_fuzzy PLUGIN)
+                    fuzzy PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME})
 

@@ -47,7 +47,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${PARSER_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/parser
-  OUTPUT_NAME tbs_parser
+  OUTPUT_NAME parser
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN}

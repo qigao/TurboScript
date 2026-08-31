@@ -1,4 +1,4 @@
-# tbs_ts plugin output — import("ts")
+# ts plugin output — import("ts")
 set(TARGET_NAME ts)
 set(TARGET_NAME_PLUGIN ts_tbs)
 
@@ -29,7 +29,7 @@ endif()
 add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 
 cmake_config_target(
-  ${TARGET_NAME_PLUGIN} FOLDER modules/ts OUTPUT_NAME tbs_ts PLUGIN
+  ${TARGET_NAME_PLUGIN} FOLDER modules/ts OUTPUT_NAME ts PLUGIN
 )# Plugins are runtime-loaded, not exported for linking
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PUBLIC ${TARGET_NAME})

@@ -511,6 +511,25 @@ typedef enum {
   TS_PLUGIN_LOAD_DENIED = -2,
 } ts_plugin_load_result_t;
 
+enum { TS_MAX_PLUGIN_NAME_LENGTH = 128 };
+
+static int ts_is_valid_plugin_name(const char *name) {
+  size_t length = 0;
+  unsigned char ch;
+  if (!name || !*name) return 0;
+  ch = (unsigned char)name[0];
+  if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_'))
+    return 0;
+  while (name[length]) {
+    ch = (unsigned char)name[length];
+    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
+          (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'))
+      return 0;
+    if (++length > TS_MAX_PLUGIN_NAME_LENGTH) return 0;
+  }
+  return 1;
+}
+
 static int ts_is_builtin_module(const char *name) {
   if (!name) return 0;
   return strcmp(name, "math") == 0 || strcmp(name, "string") == 0 ||
@@ -544,8 +563,17 @@ static const char *ts_plugin_file_name(mem_pool_t *a, const char *name, const ch
   return buf;
 }
 
+static const char *ts_plugin_file_stem(const char *name) {
+  /* Keep dependency DLL names distinct from plugin DLL names while preserving
+   * the public logical names used by import() and descriptor validation. */
+  if (name && strcmp(name, "crypto") == 0) return "crypto_plugin";
+  if (name && strcmp(name, "rules_forge") == 0) return "rules_forge_plugin";
+  return name;
+}
+
 /* Load a plugin by logical name ("io", "fin", ...) */
-static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
+static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name,
+                          ts_plugin_error_t *plugin_error) {
   char *loaded_name = NULL;
   static const char *const suffixes[] = {
 #ifdef _WIN32
@@ -556,9 +584,20 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
       ".so",
 #endif
       NULL};
+  int load_error;
   ts_plugin_handle_t *h = NULL;
 
+  if (plugin_error) memset(plugin_error, 0, sizeof(*plugin_error));
   if (!ctx || !name || !*name) return TS_PLUGIN_LOAD_FAILED;
+  if (!ts_is_valid_plugin_name(name)) {
+    if (plugin_error) {
+      plugin_error->code = TS_PLUGIN_ERROR_INVALID_ARGUMENT;
+      plugin_error->stage = TS_PLUGIN_STAGE_ARGUMENT;
+      snprintf(plugin_error->message, sizeof(plugin_error->message),
+               "invalid plugin name");
+    }
+    return TS_PLUGIN_LOAD_FAILED;
+  }
   if (ts_is_builtin_module(name)) return TS_PLUGIN_LOAD_OK;
 
   if (ts_plugin_already_loaded(ctx, name)) return TS_PLUGIN_LOAD_OK;
@@ -568,19 +607,21 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
     return TS_PLUGIN_LOAD_DENIED;
 
   for (size_t i = 0; suffixes[i] != NULL; ++i) {
-    const char *dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 1);
+    const char *dll = ts_plugin_file_name(&ctx->scratch_arena,
+                                          ts_plugin_file_stem(name), suffixes[i], 0);
     if (!dll) continue;
-    h = ts_plugin_load(dll);
-    if (h) break;
+    load_error = ts_plugin_load_ex(dll, name, &h, plugin_error);
+    if (load_error == TS_PLUGIN_ERROR_NONE) break;
+    if (load_error != TS_PLUGIN_ERROR_OPEN) return TS_PLUGIN_LOAD_FAILED;
 
-    dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 0);
+    dll = ts_plugin_file_name(&ctx->scratch_arena, name, suffixes[i], 1);
     if (!dll) continue;
-    h = ts_plugin_load(dll);
-    if (h) break;
+    if (ts_plugin_load_ex(dll, name, &h, plugin_error) == TS_PLUGIN_ERROR_NONE) break;
   }
   if (!h) return TS_PLUGIN_LOAD_FAILED;
 
-  if (ts_plugin_init(h, &ctx->env, &ctx->scratch_arena) != 0) {
+  if (ts_plugin_init_ex(h, &ctx->env, &ctx->scratch_arena, plugin_error) !=
+      TS_PLUGIN_ERROR_NONE) {
     ts_plugin_unload(h);
     return TS_PLUGIN_LOAD_FAILED;
   }
@@ -598,15 +639,35 @@ static int ts_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
   return TS_PLUGIN_LOAD_OK;
 }
 
+static const char *ts_plugin_stage_name(ts_plugin_error_stage_t stage) {
+  switch (stage) {
+    case TS_PLUGIN_STAGE_ARGUMENT: return "argument";
+    case TS_PLUGIN_STAGE_OPEN: return "open";
+    case TS_PLUGIN_STAGE_SYMBOL: return "symbol";
+    case TS_PLUGIN_STAGE_ABI: return "ABI";
+    case TS_PLUGIN_STAGE_INITIALIZE: return "initialize";
+    case TS_PLUGIN_STAGE_NONE: return "unknown";
+  }
+  return "unknown";
+}
+
 static void ts_set_plugin_load_error(turbo_script_ctx_t *ctx, const char *operation,
-                                     const char *name, int load_result) {
+                                     const char *name, int load_result,
+                                     const ts_plugin_error_t *plugin_error) {
   const char *reason = load_result == TS_PLUGIN_LOAD_DENIED
                            ? "denied by host policy"
                            : "failed to load native plugin";
   if (!ctx) return;
   ctx->error_code = TURBO_SCRIPT_ERROR_PLUGIN;
-  snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s '%s': %s", operation,
-           name ? name : "", reason);
+  if (load_result != TS_PLUGIN_LOAD_DENIED && plugin_error &&
+      plugin_error->code != TS_PLUGIN_ERROR_NONE) {
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s '%s': %s stage failed: %s",
+             operation, name ? name : "", ts_plugin_stage_name(plugin_error->stage),
+             plugin_error->message[0] ? plugin_error->message : reason);
+  } else {
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg), "%s '%s': %s", operation,
+             name ? name : "", reason);
+  }
 }
 
 static int ts_is_script_import(const char *name) {
@@ -931,12 +992,13 @@ static exprtk_value_t ts_import(size_t argc, exprtk_value_t *args, exprtk_env_t 
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
-  load_result = ts_load_plugin(ctx, name);
+  ts_plugin_error_t plugin_error = {0};
+  load_result = ts_load_plugin(ctx, name, &plugin_error);
   if (load_result == TS_PLUGIN_LOAD_OK) {
     return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 1.0};
   }
 
-  ts_set_plugin_load_error(ctx, "import", name, load_result);
+  ts_set_plugin_load_error(ctx, "import", name, load_result, &plugin_error);
   ctx->env.aborted = 1;
   return TS_ZERO;
 }
@@ -1144,7 +1206,7 @@ turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
 
   if (flags == TURBO_SCRIPT_INIT_DEFAULT) {
     exprtk_env_register_func(&ctx->env, "print", ts_print, ctx);
-    (void)ts_load_plugin(ctx, "parser");
+    (void)ts_load_plugin(ctx, "parser", NULL);
   }
 
   turbo_script_register_modules();
@@ -1165,15 +1227,20 @@ turbo_script_ctx_t *turbo_script_init(turbo_script_init_flags_t flags) {
 
 int turbo_script_load_plugin(turbo_script_ctx_t *ctx, const char *name) {
   int load_result;
+  ts_plugin_error_t plugin_error = {0};
   if (!ctx) return -1;
   if (!name || !*name) {
     set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "plugin name is empty");
     return -1;
   }
+  if (!ts_is_valid_plugin_name(name)) {
+    set_error(ctx, TURBO_SCRIPT_ERROR_ARGUMENT, "invalid plugin name");
+    return -1;
+  }
   clear_error(ctx);
-  load_result = ts_load_plugin(ctx, name);
+  load_result = ts_load_plugin(ctx, name, &plugin_error);
   if (load_result != TS_PLUGIN_LOAD_OK) {
-    ts_set_plugin_load_error(ctx, "load plugin", name, load_result);
+    ts_set_plugin_load_error(ctx, "load plugin", name, load_result, &plugin_error);
     return -1;
   }
   return 0;

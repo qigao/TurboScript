@@ -8,6 +8,7 @@
 #include "exprtk_grammar.h"
 #include "exprtk_module.h"
 #include "turbo_str.h"
+#include <turbostl/vec.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>

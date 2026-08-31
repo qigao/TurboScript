@@ -16,9 +16,9 @@
 /* ── Platform-specific DLL names ──────────────────────────────────── */
 
 #ifdef _WIN32
-  #define SQLITE_PLUGIN_DLL "tbs_sqlite.dll"
+  #define SQLITE_PLUGIN_DLL "sqlite.dll"
 #else
-  #define SQLITE_PLUGIN_DLL "tbs_sqlite.so"
+  #define SQLITE_PLUGIN_DLL "sqlite.so"
 #endif
 
 /* ── Helper: create a minimal environment via DLL ──────────────────── */

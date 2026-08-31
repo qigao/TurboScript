@@ -28,6 +28,8 @@ typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;
 EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
 
+#define TS_PLUGIN_ABI_VERSION 1U
+
 typedef struct ts_plugin_s {
   const char *name; /* "ta", "csv", "vec", ... */
   uint32_t version; /* ABI version (1) */
@@ -79,7 +81,7 @@ typedef const ts_plugin_t *(*ts_api_create_fn)(void);
   static void ts__##plugin_name##_unload(void *inst) { (void)inst; }                               \
   static const ts_plugin_t g_##plugin_name = {                                                     \
       .name = #plugin_name,                                                                        \
-      .version = 1,                                                                                \
+      .version = TS_PLUGIN_ABI_VERSION,                                                            \
       .load = ts__##plugin_name##_load,                                                            \
       .unload = ts__##plugin_name##_unload,                                                        \
   };                                                                                               \
@@ -100,7 +102,7 @@ typedef const ts_plugin_t *(*ts_api_create_fn)(void);
   }                                                                                                \
   static const ts_plugin_t g_##plugin_name = {                                                     \
       .name = #plugin_name,                                                                        \
-      .version = 1,                                                                                \
+      .version = TS_PLUGIN_ABI_VERSION,                                                            \
       .load = ts__##plugin_name##_load,                                                            \
       .unload = ts__##plugin_name##_unload,                                                        \
   };                                                                                               \

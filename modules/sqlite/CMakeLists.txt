@@ -1,4 +1,4 @@
-# tbs_sqlite plugin output — import("sqlite")
+# sqlite plugin output — import("sqlite")
 set(TARGET_NAME sqlite_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
@@ -16,7 +16,7 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk   unofficial::sqlite3::sqlite3
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 TurboUtils::STL
   PUBLIC TurboNet::CoroNet)
 target_include_directories(
   ${TARGET_NAME_LIB}
@@ -29,12 +29,12 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME}
   FOLDER modules/sqlite
-  OUTPUT_NAME tbs_sqlite
+  OUTPUT_NAME sqlite
   PLUGIN)
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE   exprtk unofficial::sqlite3::sqlite3
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 TurboUtils::STL
   PUBLIC TurboNet::CoroNet)
 set_target_properties(
   ${TARGET_NAME}

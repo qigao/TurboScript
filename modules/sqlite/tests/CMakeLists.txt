@@ -1,4 +1,4 @@
-# DLL-based integration test — loads tbs_sqlite at runtime
+# DLL-based integration test — loads sqlite at runtime
 cmake_add_test(
   TARGET test_sqlite_module
   SOURCES test_sqlite.c

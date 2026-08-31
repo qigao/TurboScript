@@ -23,7 +23,7 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME}
   FOLDER modules/rules_forge
-  OUTPUT_NAME tbs_rules_forge
+  OUTPUT_NAME rules_forge_plugin
   PLUGIN)
 
 target_include_directories(${TARGET_NAME}

@@ -33,6 +33,30 @@ function(cmake_config_target target_name)
         target_link_options(${target_name} PRIVATE "LINKER:--no-as-needed")
     endif()
 
+    if(ARG_PLUGIN)
+        if(WIN32)
+            set_target_properties(${target_name} PROPERTIES
+                ARCHIVE_OUTPUT_NAME "${target_name}")
+        endif()
+        if(CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+            set_target_properties(${target_name} PROPERTIES
+                RUNTIME_OUTPUT_DIRECTORY "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/plugins")
+        endif()
+        if(CMAKE_LIBRARY_OUTPUT_DIRECTORY)
+            set_target_properties(${target_name} PROPERTIES
+                LIBRARY_OUTPUT_DIRECTORY "${CMAKE_LIBRARY_OUTPUT_DIRECTORY}/plugins")
+        endif()
+        if(APPLE)
+            set_target_properties(${target_name} PROPERTIES
+                BUILD_RPATH "@loader_path;@loader_path/.."
+                INSTALL_RPATH "@loader_path;@loader_path/../../${CMAKE_INSTALL_LIBDIR}")
+        elseif(UNIX)
+            set_target_properties(${target_name} PROPERTIES
+                BUILD_RPATH "\$ORIGIN;\$ORIGIN/.."
+                INSTALL_RPATH "\$ORIGIN;\$ORIGIN/../../${CMAKE_INSTALL_LIBDIR}")
+        endif()
+    endif()
+
     if(target_type STREQUAL "SHARED_LIBRARY" OR target_type STREQUAL "STATIC_LIBRARY")
         if(NOT ARG_VERSION AND PROJECT_VERSION)
             set(ARG_VERSION ${PROJECT_VERSION})

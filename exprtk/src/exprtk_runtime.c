@@ -8,6 +8,7 @@
 #include "exprtk_runtime_internal.h"
 #include "exprtk_class.h"
 #include "mir-htab.h"
+#include <turbostl/vec.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdarg.h>

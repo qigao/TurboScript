@@ -27,7 +27,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${OS_PLUGIN_SOURCES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/os
-  OUTPUT_NAME tbs_os
+  OUTPUT_NAME os
   PLUGIN)
 
 target_link_libraries(${TARGET_NAME_PLUGIN} PRIVATE ${TARGET_NAME} exprtk TurboUtils::Core TurboParser::Cron)

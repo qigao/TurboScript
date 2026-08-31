@@ -1,4 +1,4 @@
-# tbs_wasm plugin output — import("wasm")
+# wasm plugin output — import("wasm")
 set(TARGET_NAME wasm_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
@@ -18,7 +18,7 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME}
   FOLDER modules/wasm
-  OUTPUT_NAME tbs_wasm
+  OUTPUT_NAME wasm
   PLUGIN)
 target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboScript::Wasm
                                             TurboNet::CoroNet)

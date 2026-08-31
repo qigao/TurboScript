@@ -31,7 +31,7 @@ add_library(${TARGET_NAME_PLUGIN} SHARED ${SOURCE_FILES})
 cmake_config_target(
   ${TARGET_NAME_PLUGIN}
   FOLDER modules/img
-  OUTPUT_NAME tbs_img
+  OUTPUT_NAME img
   PLUGIN) # Plugins are runtime-loaded, not exported for linking
 
 target_link_libraries(

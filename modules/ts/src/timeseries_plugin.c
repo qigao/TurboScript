@@ -2,5 +2,5 @@
 
 const exprtk_module_t *exprtk_module_timeseries(void);
 
-TS_PLUGIN_MODULE(timeseries, exprtk_module_timeseries)
+TS_PLUGIN_MODULE(ts, exprtk_module_timeseries)
 
