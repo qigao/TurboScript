@@ -402,7 +402,9 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
   if (!ts_mir_reserve_compiled_func(c)) return;
 
   /* 闭包分析：检查是否捕获外部变量 */
-  ts_closure_analysis_t *analysis = ts_analyze_closure(body, arg_params, arg_count, &c->ts_ctx->env);
+  ts_closure_analysis_t *analysis =
+      ts_analyze_closure(body, arg_params, arg_count, &c->ts_ctx->env,
+                         c->ast_root);
 
   /* 如果不能 JIT（嵌套闭包、太多变量等），跳过编译 */
   if (analysis && !analysis->can_jit) {
@@ -639,8 +641,9 @@ static int ts_function_expr_can_compile_for_hof(ts_mir_compiler_t *c, exprtk_nod
     if (!param || param->type != EXPRTK_NODE_VARIABLE || !param->data.variable.name) return 0;
   }
 
-  analysis = ts_analyze_closure(node->data.func_def.body, node->data.func_def.arg_params,
-                                node->data.func_def.arg_count, &c->ts_ctx->env);
+  analysis = ts_analyze_closure(
+      node->data.func_def.body, node->data.func_def.arg_params,
+      node->data.func_def.arg_count, &c->ts_ctx->env, c->ast_root);
   ok = !analysis || analysis->can_jit;
   ts_closure_analysis_free(analysis);
   return ok;

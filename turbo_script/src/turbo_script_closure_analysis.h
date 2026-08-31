@@ -25,6 +25,7 @@ typedef struct {
  * @param arg_params 函数参数节点数组
  * @param arg_count 参数数量
  * @param closure_env 闭包环境（父作用域）
+ * @param outer_scope 当前函数之外的模块/词法作用域 AST
  * @return 闭包分析结果，需要调用 ts_closure_analysis_free 释放
  * 
  * 分析规则：
@@ -36,7 +37,8 @@ typedef struct {
 ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
                                           exprtk_node_t **arg_params,
                                           size_t arg_count,
-                                          exprtk_env_t *closure_env);
+                                          exprtk_env_t *closure_env,
+                                          exprtk_node_t *outer_scope);
 
 /**
  * @brief 释放闭包分析结果

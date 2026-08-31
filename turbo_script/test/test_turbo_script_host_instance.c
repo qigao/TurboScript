@@ -72,6 +72,28 @@ static turbo_script_status_t destroy_during_call_host(
   return turbo_script_host_result_set_value(builder, &value);
 }
 
+typedef struct destroy_module_during_init_probe_s {
+  turbo_script_module_t *module;
+  turbo_script_result_t *result;
+  turbo_script_status_t destroy_status;
+  size_t calls;
+} destroy_module_during_init_probe_t;
+
+static turbo_script_status_t destroy_module_during_init_host(
+    void *user_data, const turbo_script_value_view_t *args, size_t arg_count,
+    turbo_script_host_result_builder_t *builder) {
+  destroy_module_during_init_probe_t *probe =
+      (destroy_module_during_init_probe_t *)user_data;
+  turbo_script_value_view_t value = {.kind = TURBO_SCRIPT_VALUE_NUMBER};
+  (void)args;
+  (void)arg_count;
+  probe->calls++;
+  probe->destroy_status =
+      turbo_script_module_destroy(probe->module, probe->result);
+  value.as.number = 1.0;
+  return turbo_script_host_result_set_value(builder, &value);
+}
+
 spec("TurboScript mode-fixed Host instances") {
   it("creates interpreter and JIT instances from one lowered module") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
@@ -237,6 +259,54 @@ spec("TurboScript mode-fixed Host instances") {
     destroy_instance(instance, result);
     turbo_script_result_destroy(result);
     turbo_script_free(ctx);
+  }
+
+  it("pins the module before an initializer callback can destroy it") {
+    for (int use_jit = 0; use_jit <= 1; ++use_jit) {
+      destroy_module_during_init_probe_t probe = {0};
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_result_t *result = NULL;
+      turbo_script_module_t *module = NULL;
+      turbo_script_instance_t *instance = NULL;
+      turbo_script_export_handle_t handle = 0;
+      turbo_script_host_function_descriptor_t descriptor = {
+          .struct_size = sizeof(descriptor),
+          .min_arity = 0,
+          .max_arity = 0,
+          .name = {"destroy_module_on_init", 22},
+      };
+      double output = 0;
+      check_equal(turbo_script_result_create(ctx, &result),
+                  TURBO_SCRIPT_STATUS_OK);
+      probe.result = result;
+      check_equal(turbo_script_context_register_host_function(
+                      ctx, &descriptor, destroy_module_during_init_host, &probe,
+                      result),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(compile_text(
+                      ctx, result,
+                      "destroy_module_on_init();"
+                      "func value(){return 42;};export(\"value\");",
+                      &module),
+                  TURBO_SCRIPT_STATUS_OK);
+      probe.module = module;
+      check_equal(create_instance(module,
+                                  use_jit ? TURBO_SCRIPT_EXEC_JIT
+                                          : TURBO_SCRIPT_EXEC_INTERPRETER,
+                                  result, &instance),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(probe.calls, (size_t)1);
+      check_equal(probe.destroy_status, TURBO_SCRIPT_STATUS_OK);
+      check_equal(resolve_export(instance, "value", 5, result, &handle),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_instance_execute_numeric(instance, handle, NULL, 0,
+                                                   &output),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(output, 42.0);
+      destroy_instance(instance, result);
+      turbo_script_result_destroy(result);
+      turbo_script_free(ctx);
+    }
   }
 
   it("rejects destroy while the instance is executing") {

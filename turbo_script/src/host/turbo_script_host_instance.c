@@ -234,6 +234,10 @@ turbo_script_status_t turbo_script_instance_create(
         TURBO_SCRIPT_ERROR_PHASE_INSTANTIATE,
         ts_host_instance_module_name(module), (turbo_script_string_view_t){0},
         "instance allocation failed", options->max_result_bytes);
+  /* Initializer callbacks may close the public module handle.  Pin the code,
+   * AST and parent context before constructing any callback-capable runtime
+   * state; this reference becomes the instance's ownership on success. */
+  ts_host_module_retain(module);
   instance->module = module;
   instance->limits = *options;
   instance->mode = options->mode;
@@ -253,20 +257,21 @@ turbo_script_status_t turbo_script_instance_create(
   }
   instance->generation = (uint32_t)ctx->next_instance_generation;
   ctx->next_instance_generation++;
-  ts_host_module_retain(module);
   *out_instance = instance;
   return TURBO_SCRIPT_STATUS_OK;
 
 fail:
   ts_host_instance_runtime_destroy(instance->runtime_ctx);
   free(instance);
-  return ts_host_instance_fail(
+  status = ts_host_instance_fail(
       result, status, TURBO_SCRIPT_ERROR_PHASE_INSTANTIATE,
       ts_host_instance_module_name(module), (turbo_script_string_view_t){0},
       status == TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED
           ? "instance retained memory limit exceeded"
           : "instance initialization failed",
       options->max_result_bytes);
+  ts_host_module_release(module);
+  return status;
 }
 
 turbo_script_status_t turbo_script_instance_destroy(
