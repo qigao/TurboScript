@@ -105,6 +105,8 @@ if(WIN32)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboParser::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboParser::Mustache> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMENT "Synchronizing TurboScript runtime dependencies"
     VERBATIM)
 endif()

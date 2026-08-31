@@ -109,6 +109,7 @@ spec("turbo_script_basics") {
       turbo_script_free(ctx);
     }
 
+#if defined(TURBO_SCRIPT_ENABLE_RULES_FORGE)
     it("should load rules_forge through its collision-safe plugin filename") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 
@@ -116,6 +117,7 @@ spec("turbo_script_basics") {
       check_equal(turbo_script_load_plugin(ctx, "rules_forge"), 0);
       turbo_script_free(ctx);
     }
+#endif
 
     it("should report the loader stage when a native plugin cannot be opened") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);

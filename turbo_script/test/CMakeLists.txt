@@ -23,7 +23,12 @@ endmacro()
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
   test_plugin_loader_fixture test_plugin_loader_prefixed_conflict
-  crypto_tbs rules_forge_tbs)
+  crypto_tbs)
+if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
+  add_dependencies(test_turbo_script_basics rules_forge_tbs)
+  target_compile_definitions(
+    test_turbo_script_basics PRIVATE TURBO_SCRIPT_ENABLE_RULES_FORGE=1)
+endif()
 add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
