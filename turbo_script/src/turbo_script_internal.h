@@ -7,16 +7,20 @@
 #define TURBO_SCRIPT_INTERNAL_H
 
 #include "exprtk_module.h"
-#include "turbo_buffer.h"
-#include <mir.h>
 #include "ts_plugin_loader.h"
+#include "turbo_buffer.h"
 #include "turbo_script.h"
-#include <turbostl/vec.h>
+#include <mir.h>
 #include <stdatomic.h>
+#include <turbostl/vec.h>
 
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
 typedef struct ts_task_scheduler_s ts_task_scheduler_t;
 typedef struct coro_cancel_token_s coro_cancel_token_t;
+#ifndef TS_HOST_CALL_BUDGET_T_DEFINED
+#define TS_HOST_CALL_BUDGET_T_DEFINED
+typedef struct ts_host_call_budget_s ts_host_call_budget_t;
+#endif
 
 typedef struct imported_module_s {
   char *name;
@@ -28,7 +32,7 @@ typedef struct imported_module_s {
 } imported_module_t;
 
 #define TS_MAX_PLUGINS 16
-#define TS_JIT_CACHE_SIZE 128  // 从 64 扩展到 128，提升缓存命中率
+#define TS_JIT_CACHE_SIZE 128 // 从 64 扩展到 128，提升缓存命中率
 
 /**
  * @brief JIT 统计数据结构
@@ -55,7 +59,6 @@ _Static_assert(sizeof(ts_jit_stats_t) == sizeof(turbo_script_jit_stats_t),
                "ts_jit_stats_t and turbo_script_jit_stats_t must have the same size");
 #endif
 
-
 struct turbo_script_ctx_s {
   atomic_uint ref_count;
   atomic_int closing;
@@ -65,7 +68,16 @@ struct turbo_script_ctx_s {
   vec_t host_functions;
   size_t active_host_modules;
   size_t host_callback_depth;
+  /* Borrowed only for the synchronous owner-thread call. It is the context-wide
+   * reentrancy fact source used by Host callback adapters. */
+  struct turbo_script_instance_s *active_host_instance;
   uint64_t next_instance_generation;
+  /* Instance initialization resolves immutable export slots once. Steady
+   * calls index this table and never repeat a function-name lookup. */
+  exprtk_func_t **host_export_functions;
+  size_t host_export_function_count;
+  /* Borrowed only while one synchronous Host export call is executing. */
+  ts_host_call_budget_t *active_host_budget;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
@@ -107,26 +119,27 @@ struct turbo_script_ctx_s {
 
   /* MIR JIT compiler context */
   MIR_context_t mir_ctx;
-  void *mir_last_fn;      /* Phase 15: cached JIT function pointer */
+  void *mir_last_fn;       /* Phase 15: cached JIT function pointer */
   int mir_gen_initialized; /* Phase 15: gen_init called once */
   MIR_context_t mir_interp_ctx;
   MIR_item_t mir_interp_last_func;
   int mir_interp_externals_loaded;
 
-  /* Isolated context for script-level mir.load/mir.call to prevent interface clash and duplicate linking */
+  /* Isolated context for script-level mir.load/mir.call to prevent interface clash and duplicate
+   * linking */
   MIR_context_t script_mir_ctx;
   int script_mir_linked;
 
   struct {
     uint64_t hash;
     void *fn_ptr;
-    uint32_t access_count;  // LRU 访问计数
-    char *script;           // Copy of script string to prevent hash collisions
+    uint32_t access_count; // LRU 访问计数
+    char *script;          // Copy of script string to prevent hash collisions
   } jit_cache[TS_JIT_CACHE_SIZE];
 
   /* JIT 统计信息 */
   ts_jit_stats_t jit_stats;
-  int jit_stats_enabled;  // 是否启用统计
+  int jit_stats_enabled; // 是否启用统计
 };
 
 struct turbo_script_compiled_s {
@@ -135,8 +148,7 @@ struct turbo_script_compiled_s {
 
 exprtk_node_t *turbo_script_parse_with_error(turbo_script_ctx_t *ctx, const char *script);
 /* Internal deterministic seam: fails the parser arena allocation. */
-exprtk_node_t *turbo_script_parse_with_error_test_oom(turbo_script_ctx_t *ctx,
-                                                      const char *script);
+exprtk_node_t *turbo_script_parse_with_error_test_oom(turbo_script_ctx_t *ctx, const char *script);
 
 /* Built-in module accessors */
 void turbo_script_register_modules(void);
@@ -148,13 +160,14 @@ int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_e
 /* Internal JIT API - for testing and advanced use */
 TURBO_SCRIPT_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);
 TURBO_SCRIPT_C_API int turbo_script_compile_mir_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
-                                           const char *script);
+                                                    const char *script);
 TURBO_SCRIPT_C_API int turbo_script_exec_jit(turbo_script_ctx_t *ctx);
 TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp(turbo_script_ctx_t *ctx, const char *script);
-TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx, exprtk_node_t *ast,
-                                                  const char *script);
+TURBO_SCRIPT_C_API int turbo_script_compile_mir_interp_ast(turbo_script_ctx_t *ctx,
+                                                           exprtk_node_t *ast, const char *script);
 TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp(turbo_script_ctx_t *ctx);
-TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx, double *result_out);
+TURBO_SCRIPT_C_API int turbo_script_exec_mir_interp_result(turbo_script_ctx_t *ctx,
+                                                           double *result_out);
 TURBO_SCRIPT_C_API int turbo_script_run_mir_interp(turbo_script_ctx_t *ctx, const char *script);
 
 /* Internal REPL helper */

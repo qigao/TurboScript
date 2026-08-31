@@ -160,6 +160,31 @@ spec("turbo_script_mir_core") {
       turbo_script_free(ctx);
     }
 
+    it("matches interpreter assignment capture only when an outer binding exists") {
+      static const char *const local_script =
+          "func next(){x=x+1;return x;};first=next();second=next();";
+      static const char *const outer_script =
+          "x=0;func next(){x=x+1;return x;};first=next();second=next();";
+      for (int with_outer = 0; with_outer <= 1; ++with_outer) {
+        const char *script = with_outer ? outer_script : local_script;
+        turbo_script_ctx_t *tree = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+        turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+        turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+        check_equal(turbo_script_run(tree, script), 0);
+        check_equal(turbo_script_run_mir_interp(interp, script), 0);
+        check_equal(turbo_script_run_jit(jit, script), 0);
+        check_equal(ts_get_num(interp, "first"), ts_get_num(tree, "first"));
+        check_equal(ts_get_num(interp, "second"), ts_get_num(tree, "second"));
+        check_equal(ts_get_num(jit, "first"), ts_get_num(tree, "first"));
+        check_equal(ts_get_num(jit, "second"), ts_get_num(tree, "second"));
+        check_equal(ts_get_num(tree, "first"), 1.0);
+        check_equal(ts_get_num(tree, "second"), with_outer ? 2.0 : 1.0);
+        turbo_script_free(jit);
+        turbo_script_free(interp);
+        turbo_script_free(tree);
+      }
+    }
+
     it("keeps legacy callable precedence independent from host slot reorder") {
       static const char *const host_names[] = {
           "legacy_conflict", "abs", "script_conflict", "host_filler"};
