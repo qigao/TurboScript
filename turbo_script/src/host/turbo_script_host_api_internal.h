@@ -174,7 +174,7 @@ typedef turbo_script_status_t (*turbo_script_host_function_t)(
 
 void turbo_script_module_options_init(turbo_script_module_options_t *options);
 void turbo_script_instance_options_init(turbo_script_instance_options_t *options);
-TURBO_SCRIPT_C_API void turbo_script_call_options_init(turbo_script_call_options_t *options);
+void turbo_script_call_options_init(turbo_script_call_options_t *options);
 
 TURBO_SCRIPT_C_API turbo_script_status_t
 turbo_script_result_create(turbo_script_ctx_t *ctx, turbo_script_result_t **out_result);
