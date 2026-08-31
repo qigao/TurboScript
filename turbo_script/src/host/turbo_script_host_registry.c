@@ -529,6 +529,13 @@ static exprtk_value_t ts_host_registry_callback_adapter(size_t arg_count, exprtk
   builder.state = TS_HOST_BUILDER_EMPTY;
   builder.terminal_status = TURBO_SCRIPT_STATUS_OK;
   builder.value = ts_host_registry_null_value();
+  if (runtime_ctx->safe_point &&
+      runtime_ctx->safe_point(runtime_ctx->safe_point_user_data, EXPRTK_SAFE_POINT_CALLBACK_BEFORE,
+                              1) != 0) {
+    runtime_ctx->aborted = 1;
+    mem_destroy(&view_arena);
+    return result;
+  }
   status = ts_host_instance_enter_callback(entry->ctx, &active_instance);
   if (status != TURBO_SCRIPT_STATUS_OK) {
     ts_host_runtime_throw(entry->ctx, runtime_ctx, status, 0,
@@ -538,6 +545,17 @@ static exprtk_value_t ts_host_registry_callback_adapter(size_t arg_count, exprtk
   }
   status = entry->callback(entry->user_data, views, arg_count, &builder);
   ts_host_instance_leave_callback(entry->ctx, active_instance);
+
+  if (status == TURBO_SCRIPT_STATUS_OK && builder.terminal_status == TURBO_SCRIPT_STATUS_OK &&
+      builder.state == TS_HOST_BUILDER_VALUE && runtime_ctx->safe_point &&
+      runtime_ctx->safe_point(runtime_ctx->safe_point_user_data, EXPRTK_SAFE_POINT_CALLBACK_AFTER,
+                              0) != 0) {
+    runtime_ctx->aborted = 1;
+    exprtk_value_destroy(&builder.value);
+    tstr_free(builder.error_message);
+    mem_destroy(&view_arena);
+    return result;
+  }
 
   if (status == TURBO_SCRIPT_STATUS_OK && builder.state == TS_HOST_BUILDER_EMPTY) {
     status = TURBO_SCRIPT_STATUS_HOST_ERROR;

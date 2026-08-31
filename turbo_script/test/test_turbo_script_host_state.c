@@ -219,8 +219,8 @@ static void run_preflight_and_handled_matrix(turbo_script_execution_mode_t mode)
 
 static void run_runtime_failure(turbo_script_execution_mode_t mode) {
   static const host_failure_case_t failure = {
-      "uncaught runtime",
-      TURBO_SCRIPT_STATUS_RUNTIME_ERROR,
+      "uncaught recursion limit",
+      TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED,
       TURBO_SCRIPT_ERROR_PHASE_CALL,
       (ts_host_instance_state_t)TEST_INSTANCE_FAULTED,
   };
@@ -362,10 +362,12 @@ spec("TurboScript Host call state and diagnostics") {
   it("keeps preflight and handled failures Ready in the JIT") {
     run_preflight_and_handled_matrix(TURBO_SCRIPT_EXEC_JIT);
   }
-  it("faults on uncaught interpreter runtime errors") {
+  it("faults on uncaught interpreter recursion-limit failures") {
     run_runtime_failure(TURBO_SCRIPT_EXEC_INTERPRETER);
   }
-  it("faults on uncaught JIT runtime errors") { run_runtime_failure(TURBO_SCRIPT_EXEC_JIT); }
+  it("faults on uncaught JIT recursion-limit failures") {
+    run_runtime_failure(TURBO_SCRIPT_EXEC_JIT);
+  }
   it("preserves interpreter host callback causes") {
     run_host_failure(TURBO_SCRIPT_EXEC_INTERPRETER);
   }

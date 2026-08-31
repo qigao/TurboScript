@@ -49,6 +49,8 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
   exprtk_env_t *definition_env;
   exprtk_env_t local_env;
   exprtk_value_t value = {.type = EXPRTK_VAL_NULL};
+  size_t frame_bytes;
+  int frame_entered = 0;
   if (out_value) *out_value = value;
   if (!ctx || (!args && arg_count != 0) || !out_value || arg_count > 16 ||
       export_index >= ctx->host_export_function_count || !ctx->host_export_functions)
@@ -59,6 +61,19 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
       !function->data.script.body)
     return -1;
 
+  frame_bytes = sizeof(local_env) + arg_count * sizeof(*args);
+  if (function->data.script.body->line > 0) {
+    ctx->env.last_line = function->data.script.body->line;
+    ctx->env.last_column = function->data.script.body->column;
+  }
+  if (ctx->env.safe_point &&
+      ctx->env.safe_point(ctx->env.safe_point_user_data, EXPRTK_SAFE_POINT_FUNCTION_ENTER,
+                          frame_bytes) != 0) {
+    ctx->env.aborted = 1;
+    return -1;
+  }
+  frame_entered = ctx->env.safe_point != NULL;
+
   ctx->env.curr_recursion++;
   if (ctx->env.curr_recursion > ctx->env.max_recursion) {
     ctx->env.aborted = 1;
@@ -66,11 +81,16 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
     ctx->env.error_column = function->data.script.body->column;
     snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "maximum recursion depth exceeded");
     ctx->env.curr_recursion--;
+    if (frame_entered)
+      (void)ctx->env.safe_point(ctx->env.safe_point_user_data, EXPRTK_SAFE_POINT_FUNCTION_LEAVE,
+                                frame_bytes);
     return -1;
   }
   exprtk_env_init_child(&local_env, definition_env);
   local_env.eval_node = turbo_script_mir_eval_node;
   local_env.exec_script_body = turbo_script_mir_exec_script_body;
+  local_env.safe_point = ctx->env.safe_point;
+  local_env.safe_point_user_data = ctx->env.safe_point_user_data;
   local_env.max_recursion = ctx->env.max_recursion;
   local_env.curr_recursion = ctx->env.curr_recursion;
   local_env.max_loop_iterations = ctx->env.max_loop_iterations;
@@ -98,6 +118,9 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
   ctx->env.curr_nodes = local_env.curr_nodes;
   ctx->env.curr_loop_iterations = local_env.curr_loop_iterations;
   ctx->env.curr_recursion--;
+  if (frame_entered && ctx->env.safe_point(ctx->env.safe_point_user_data,
+                                           EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes) != 0)
+    local_env.aborted = 1;
   if (local_env.aborted || local_env.flow == exprtk_FLOW_THROW) {
     exprtk_value_t copied_error = {.type = EXPRTK_VAL_NULL};
     ctx->env.aborted = local_env.aborted;
@@ -243,7 +266,7 @@ static int ts_mir_value_array_grow(exprtk_value_t **vals, size_t *cap, size_t ne
 
 static void ts_mir_value_arg_error(exprtk_env_t *env, exprtk_node_t *node) {
   if (!env) return;
-  if (env->error_msg[0] != '\0') return;
+  if (env->aborted || env->error_msg[0] != '\0') return;
   env->aborted = 1;
   if (node && node->type == EXPRTK_NODE_MEMBER_CALL) {
     snprintf(env->error_msg, sizeof(env->error_msg),
@@ -847,6 +870,11 @@ static int ts_mir_value_truthy(exprtk_value_t value) {
 
 static int ts_mir_runtime_loop_tick(exprtk_env_t *env) {
   if (!env) return 1;
+  if (env->safe_point) {
+    if (env->safe_point(env->safe_point_user_data, EXPRTK_SAFE_POINT_LOOP, 1) == 0) return 1;
+    env->aborted = 1;
+    return 0;
+  }
   env->curr_loop_iterations++;
   if (env->curr_loop_iterations > env->max_loop_iterations) {
     env->aborted = 1;
@@ -1404,6 +1432,17 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env, expr
   if (node->line > 0) {
     env->last_line = node->line;
     env->last_column = node->column;
+  }
+  if (env->safe_point &&
+      env->safe_point(env->safe_point_user_data, EXPRTK_SAFE_POINT_STEP, 1) != 0) {
+    env->aborted = 1;
+    return 0;
+  } else if (!env->safe_point) {
+    env->curr_nodes++;
+    if (env->curr_nodes > env->max_nodes) {
+      env->aborted = 1;
+      return 0;
+    }
   }
 
   switch (node->type) {

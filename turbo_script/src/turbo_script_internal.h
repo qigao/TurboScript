@@ -17,6 +17,10 @@
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
 typedef struct ts_task_scheduler_s ts_task_scheduler_t;
 typedef struct coro_cancel_token_s coro_cancel_token_t;
+#ifndef TS_HOST_CALL_BUDGET_T_DEFINED
+#define TS_HOST_CALL_BUDGET_T_DEFINED
+typedef struct ts_host_call_budget_s ts_host_call_budget_t;
+#endif
 
 typedef struct imported_module_s {
   char *name;
@@ -72,6 +76,8 @@ struct turbo_script_ctx_s {
    * calls index this table and never repeat a function-name lookup. */
   exprtk_func_t **host_export_functions;
   size_t host_export_function_count;
+  /* Borrowed only while one synchronous Host export call is executing. */
+  ts_host_call_budget_t *active_host_budget;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;

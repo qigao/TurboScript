@@ -8,6 +8,10 @@
 #include <turbostl/vec.h>
 
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
+#ifndef TS_HOST_CALL_BUDGET_T_DEFINED
+#define TS_HOST_CALL_BUDGET_T_DEFINED
+typedef struct ts_host_call_budget_s ts_host_call_budget_t;
+#endif
 
 typedef struct ts_host_export_entry_s {
   tstr name;
@@ -55,6 +59,24 @@ typedef struct ts_host_runtime_diagnostic_s {
   tstr message;
   int present;
 } ts_host_runtime_diagnostic_t;
+
+struct ts_host_call_budget_s {
+  uint32_t steps_left;
+  uint32_t loops_left;
+  uint32_t callbacks_left;
+  uint32_t recursion_left;
+  uint32_t recursion_limit;
+  uint32_t interrupt_step_accumulator;
+  size_t stack_bytes_left;
+  size_t stack_bytes_limit;
+  size_t result_bytes_left;
+  size_t retained_bytes_limit;
+  turbo_script_interrupt_fn interrupt;
+  void *interrupt_user_data;
+  turbo_script_status_t failure_status;
+  turbo_script_error_phase_t failure_phase;
+  const char *failure_message;
+};
 
 struct turbo_script_instance_s {
   turbo_script_module_t *module;
@@ -145,6 +167,16 @@ void ts_host_instance_record_callback_error(turbo_script_instance_t *instance,
                                             turbo_script_string_view_t function_name,
                                             turbo_script_string_view_t message, uint32_t line,
                                             uint32_t column);
+turbo_script_status_t ts_host_call_budget_init(ts_host_call_budget_t *budget,
+                                               const turbo_script_instance_t *instance,
+                                               const turbo_script_call_options_t *options);
+turbo_script_status_t ts_host_call_budget_attach(turbo_script_ctx_t *runtime_ctx,
+                                                 ts_host_call_budget_t *budget);
+void ts_host_call_budget_detach(turbo_script_ctx_t *runtime_ctx, ts_host_call_budget_t *budget);
+int ts_host_safe_point(turbo_script_ctx_t *runtime_ctx, exprtk_safe_point_kind_t kind, size_t cost);
+turbo_script_status_t ts_host_call_budget_status(const ts_host_call_budget_t *budget);
+turbo_script_error_phase_t ts_host_call_budget_phase(const ts_host_call_budget_t *budget);
+const char *ts_host_call_budget_message(const ts_host_call_budget_t *budget);
 
 /* Checked boundaries underlying the locked void APIs. They never mutate on
  * failure; the public wrappers turn WRONG_THREAD into a contract violation. */

@@ -474,6 +474,19 @@ typedef int (*exprtk_exec_script_body_fn)(struct exprtk_func_s *func,
                                           struct exprtk_env_s *caller_env,
                                           exprtk_value_t *out);
 
+typedef enum exprtk_safe_point_kind_e {
+  EXPRTK_SAFE_POINT_STEP = 1,
+  EXPRTK_SAFE_POINT_LOOP = 2,
+  EXPRTK_SAFE_POINT_CALLBACK_BEFORE = 3,
+  EXPRTK_SAFE_POINT_CALLBACK_AFTER = 4,
+  EXPRTK_SAFE_POINT_FUNCTION_ENTER = 5,
+  EXPRTK_SAFE_POINT_FUNCTION_LEAVE = 6,
+  EXPRTK_SAFE_POINT_RETAINED_BYTES = 7,
+} exprtk_safe_point_kind_t;
+
+typedef int (*exprtk_safe_point_fn)(void *user_data, exprtk_safe_point_kind_t kind,
+                                    size_t cost);
+
 typedef struct exprtk_env_s {
   void *vars; // Hash table for variables (opaque pointer to HTAB(exprtk_var_entry_t)*)
   exprtk_func_t *funcs;
@@ -521,6 +534,9 @@ typedef struct exprtk_env_s {
   char error_msg[256]; // Last error message
   int error_line;      // Line where error occurred
   int error_column;    // Column where error occurred
+  /* Appended to preserve the offsets of the established environment ABI. */
+  exprtk_safe_point_fn safe_point;
+  void *safe_point_user_data;
 } exprtk_env_t;
 
 // Simple context for parser

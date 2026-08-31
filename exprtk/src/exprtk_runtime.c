@@ -664,6 +664,8 @@ void exprtk_env_init_child(exprtk_env_t *env, exprtk_env_t *parent) {
     env->parent = parent;
     env->eval_node = parent->eval_node;
     env->exec_script_body = parent->exec_script_body;
+    env->safe_point = parent->safe_point;
+    env->safe_point_user_data = parent->safe_point_user_data;
     env->max_recursion = parent->max_recursion;
     env->max_loop_iterations = parent->max_loop_iterations;
     env->max_nodes = parent->max_nodes;
@@ -1466,12 +1468,35 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
                                            exprtk_value_t *args, exprtk_env_t *parent_env,
                                            exprtk_env_t *caller_env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
+    size_t frame_bytes;
+    int frame_entered = 0;
     if (!func || !func->is_script || !parent_env || !caller_env) return zero;
+
+    if (argc > (SIZE_MAX - sizeof(exprtk_env_t)) / sizeof(exprtk_value_t)) {
+        caller_env->aborted = 1;
+        return zero;
+    }
+    frame_bytes = sizeof(exprtk_env_t) + argc * sizeof(exprtk_value_t);
+    if (caller_env->safe_point) {
+        if (func->data.script.body && func->data.script.body->line > 0) {
+            caller_env->last_line = func->data.script.body->line;
+            caller_env->last_column = func->data.script.body->column;
+        }
+        if (caller_env->safe_point(caller_env->safe_point_user_data,
+                                   EXPRTK_SAFE_POINT_FUNCTION_ENTER, frame_bytes) != 0) {
+            caller_env->aborted = 1;
+            return zero;
+        }
+        frame_entered = 1;
+    }
 
     caller_env->curr_recursion++;
     if (caller_env->curr_recursion > caller_env->max_recursion) {
         caller_env->aborted = 1;
         caller_env->curr_recursion--;
+        if (frame_entered)
+            (void)caller_env->safe_point(caller_env->safe_point_user_data,
+                                         EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes);
         return zero;
     }
 
@@ -1479,6 +1504,9 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
     if (!local_env) {
         caller_env->aborted = 1;
         caller_env->curr_recursion--;
+        if (frame_entered)
+            (void)caller_env->safe_point(caller_env->safe_point_user_data,
+                                         EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes);
         return zero;
     }
 
@@ -1486,6 +1514,8 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
     local_env->eval_node = caller_env->eval_node ? caller_env->eval_node : parent_env->eval_node;
     local_env->exec_script_body =
         caller_env->exec_script_body ? caller_env->exec_script_body : parent_env->exec_script_body;
+    local_env->safe_point = caller_env->safe_point;
+    local_env->safe_point_user_data = caller_env->safe_point_user_data;
     exprtk_env_import_vars(local_env, func->closure_env);
     local_env->current_class = func->owner_class ? func->owner_class : parent_env->current_class;
     local_env->current_method_is_static =
@@ -1569,6 +1599,10 @@ exprtk_value_t eval_script_function(exprtk_func_t *func, size_t argc,
 
     exprtk_env_free(local_env);
     free(local_env);
+    if (frame_entered &&
+        caller_env->safe_point(caller_env->safe_point_user_data,
+                               EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes) != 0)
+        caller_env->aborted = 1;
     return result;
 }
 

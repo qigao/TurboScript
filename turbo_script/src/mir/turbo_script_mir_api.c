@@ -1,6 +1,7 @@
 /* Public MIR compile and execution API. */
 
 #include "../host/turbo_script_host_internal.h"
+#include "exprtk_grammar.h"
 #include "turbo_script_mir_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -22,6 +23,7 @@ struct ts_mir_artifact_s {
   MIR_item_t *host_export_wrappers;
   uint32_t *export_arities;
   uint8_t *native_numeric_exports;
+  size_t *native_step_costs;
   void **numeric_export_addresses;
   void **host_export_addresses;
   size_t export_count;
@@ -30,6 +32,8 @@ struct ts_mir_artifact_s {
   int gen_initialized;
 };
 
+enum { TS_MIR_NATIVE_CALL_OVERHEAD_STEPS = 2 };
+
 static ts_compiled_func_t *ts_mir_find_artifact_function(ts_mir_compiler_t *compiler,
                                                          const char *name) {
   for (int i = 0; i < compiler->compiled_func_count; ++i) {
@@ -37,6 +41,20 @@ static ts_compiled_func_t *ts_mir_find_artifact_function(ts_mir_compiler_t *comp
       return &compiler->compiled_funcs[i];
   }
   return NULL;
+}
+
+static exprtk_node_t *ts_mir_native_numeric_expression(exprtk_node_t *function_node) {
+  exprtk_node_t *statement;
+  if (!function_node || function_node->type != EXPRTK_NODE_FUNCTION_DEFINITION) return NULL;
+  statement = function_node->data.func_def.body;
+  if (statement && statement->type == EXPRTK_NODE_BLOCK) {
+    if (!statement->data.block.statements || statement->data.block.count != 1) return NULL;
+    statement = statement->data.block.statements[0];
+  }
+  if (!statement || statement->type != EXPRTK_NODE_FLOW ||
+      statement->data.flow.type != exprtk_TOKEN_RETURN)
+    return NULL;
+  return statement->data.flow.value;
 }
 
 /* Single AST-to-MIR lowering core. Callers retain ownership of the supplied
@@ -253,10 +271,11 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
     artifact->host_export_addresses = (void **)calloc(export_count, sizeof(void *));
     artifact->export_arities = (uint32_t *)calloc(export_count, sizeof(uint32_t));
     artifact->native_numeric_exports = (uint8_t *)calloc(export_count, sizeof(uint8_t));
+    artifact->native_step_costs = (size_t *)calloc(export_count, sizeof(size_t));
     if (!artifact->export_items || !artifact->numeric_export_wrappers ||
         !artifact->host_export_wrappers || !artifact->numeric_export_addresses ||
         !artifact->host_export_addresses || !artifact->export_arities ||
-        !artifact->native_numeric_exports)
+        !artifact->native_numeric_exports || !artifact->native_step_costs)
       goto done;
   }
   artifact->export_count = export_count;
@@ -278,6 +297,16 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
     artifact->native_numeric_exports[i] =
         (uint8_t)(artifact->numeric_export_wrappers[i] != NULL &&
                   ts_mir_function_is_native_numeric_export(entry->function_node));
+    if (artifact->native_numeric_exports[i]) {
+      exprtk_node_t *expression = ts_mir_native_numeric_expression(entry->function_node);
+      size_t expression_steps;
+      if (!expression) goto done;
+      expression_steps = exprtk_node_count(expression);
+      if (expression_steps > SIZE_MAX - TS_MIR_NATIVE_CALL_OVERHEAD_STEPS) goto done;
+      /* Include the generated wrapper's dispatch and return units so native
+       * exports consume the same per-call budget in interpreter and JIT mode. */
+      artifact->native_step_costs[i] = expression_steps + TS_MIR_NATIVE_CALL_OVERHEAD_STEPS;
+    }
   }
   MIR_load_module(artifact->ctx, artifact->module);
   ts_mir_load_externals(artifact->ctx);
@@ -326,6 +355,7 @@ void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact) {
   free(artifact->host_export_addresses);
   free(artifact->export_arities);
   free(artifact->native_numeric_exports);
+  free(artifact->native_step_costs);
   free(artifact);
 }
 
@@ -402,15 +432,43 @@ static int ts_mir_artifact_try_native_numeric(ts_mir_artifact_t *artifact,
                                               size_t arg_count, exprtk_value_t *out_value) {
   double numeric_args[16];
   double result;
+  size_t frame_bytes;
+  int frame_entered = 0;
   if (!ts_mir_artifact_export_is_native_numeric(artifact, export_index)) return 0;
   for (size_t i = 0; i < arg_count; ++i) {
     if (args[i].type != EXPRTK_VAL_NUMBER) return 0;
     numeric_args[i] = args[i].data.number;
   }
+  frame_bytes = sizeof(exprtk_env_t) + arg_count * sizeof(exprtk_value_t);
+  if (runtime_ctx->env.safe_point) {
+    if (runtime_ctx->env.safe_point(runtime_ctx->env.safe_point_user_data,
+                                    EXPRTK_SAFE_POINT_FUNCTION_ENTER, frame_bytes) != 0) {
+      runtime_ctx->env.aborted = 1;
+      return -1;
+    }
+    frame_entered = 1;
+    if (runtime_ctx->env.safe_point(runtime_ctx->env.safe_point_user_data, EXPRTK_SAFE_POINT_STEP,
+                                    artifact->native_step_costs[export_index]) != 0) {
+      runtime_ctx->env.aborted = 1;
+      (void)runtime_ctx->env.safe_point(runtime_ctx->env.safe_point_user_data,
+                                        EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes);
+      return -1;
+    }
+  }
   if (ts_mir_artifact_execute_numeric(artifact, runtime_ctx, export_index, use_jit,
                                       arg_count != 0 ? numeric_args : NULL, arg_count,
-                                      &result) != 0)
+                                      &result) != 0) {
+    if (frame_entered)
+      (void)runtime_ctx->env.safe_point(runtime_ctx->env.safe_point_user_data,
+                                        EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes);
     return -1;
+  }
+  if (frame_entered &&
+      runtime_ctx->env.safe_point(runtime_ctx->env.safe_point_user_data,
+                                  EXPRTK_SAFE_POINT_FUNCTION_LEAVE, frame_bytes) != 0) {
+    runtime_ctx->env.aborted = 1;
+    return -1;
+  }
   *out_value = exprtk_val_num(result);
   return 1;
 }

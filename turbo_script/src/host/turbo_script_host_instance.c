@@ -642,6 +642,7 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   exprtk_env_t call_env;
   exprtk_value_t call_args[16];
   exprtk_value_t output = {.type = EXPRTK_VAL_NULL};
+  ts_host_call_budget_t budget;
   ts_host_value_limits_t input_limits;
   ts_host_value_limits_t output_limits;
   turbo_script_status_t status;
@@ -656,6 +657,7 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   uint32_t saved_max_loop_iterations = 0;
   int call_env_initialized = 0;
   int call_started = 0;
+  int budget_attached = 0;
   int limits_applied = 0;
   int backend_status;
 
@@ -706,11 +708,14 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   input_limits.max_depth = instance->limits.max_value_depth;
   input_limits.max_nodes = instance->limits.max_value_nodes;
   input_limits.max_bytes = instance->limits.max_retained_bytes;
+  status = ts_host_call_budget_init(&budget, instance, options);
+  if (status != TURBO_SCRIPT_STATUS_OK)
+    return ts_host_instance_fail(result, status, TURBO_SCRIPT_ERROR_PHASE_CALL,
+                                 ts_host_instance_module_name(instance->module), function_name,
+                                 "invalid call budget", instance->limits.max_result_bytes);
   output_limits.max_depth = instance->limits.max_value_depth;
   output_limits.max_nodes = instance->limits.max_value_nodes;
-  output_limits.max_bytes = options->max_result_bytes < instance->limits.max_result_bytes
-                                ? options->max_result_bytes
-                                : instance->limits.max_result_bytes;
+  output_limits.max_bytes = budget.result_bytes_left;
   status = ts_host_validate_value_views(args, arg_count, &input_limits);
   if (status != TURBO_SCRIPT_STATUS_OK)
     return ts_host_instance_fail(result, status, TURBO_SCRIPT_ERROR_PHASE_CALL,
@@ -730,21 +735,19 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
   saved_max_recursion = instance->runtime_ctx->env.max_recursion;
   saved_max_nodes = instance->runtime_ctx->env.max_nodes;
   saved_max_loop_iterations = instance->runtime_ctx->env.max_loop_iterations;
-  instance->runtime_ctx->env.max_recursion = options->max_recursion < instance->limits.max_recursion
-                                                 ? options->max_recursion
-                                                 : instance->limits.max_recursion;
-  instance->runtime_ctx->env.max_nodes = options->max_steps;
-  instance->runtime_ctx->env.max_loop_iterations = options->max_loop_iterations;
+  instance->runtime_ctx->env.max_recursion = budget.recursion_left;
+  instance->runtime_ctx->env.max_nodes = budget.steps_left;
+  instance->runtime_ctx->env.max_loop_iterations = budget.loops_left;
   limits_applied = 1;
   status = ts_host_instance_begin_call(instance);
   if (status != TURBO_SCRIPT_STATUS_OK) goto preflight_fail;
   call_started = 1;
-  if (options->interrupt && options->interrupt(options->interrupt_user_data)) {
-    status = TURBO_SCRIPT_STATUS_INTERRUPTED;
-    failure_phase = TURBO_SCRIPT_ERROR_PHASE_INTERRUPT;
-    failure_message = "call interrupted before execution";
+  status = ts_host_call_budget_attach(instance->runtime_ctx, &budget);
+  if (status != TURBO_SCRIPT_STATUS_OK) {
+    failure_message = "call budget attachment failed";
     goto finish;
   }
+  budget_attached = 1;
   backend_status =
       instance->mode == TURBO_SCRIPT_EXEC_JIT
           ? ts_mir_artifact_call_jit(instance->module->artifact, instance->runtime_ctx, slot,
@@ -752,11 +755,17 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
           : ts_mir_artifact_call_interp(instance->module->artifact, instance->runtime_ctx, slot,
                                         call_args, arg_count, &output);
   if (backend_status != 0) {
-    status = instance->diagnostic.present ? instance->diagnostic.status
-                                          : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
-    failure_phase =
-        instance->diagnostic.present ? instance->diagnostic.phase : TURBO_SCRIPT_ERROR_PHASE_CALL;
-    failure_message = "export execution failed: recursion or runtime error";
+    if (ts_host_call_budget_status(&budget) != TURBO_SCRIPT_STATUS_OK) {
+      status = ts_host_call_budget_status(&budget);
+      failure_phase = ts_host_call_budget_phase(&budget);
+      failure_message = ts_host_call_budget_message(&budget);
+    } else {
+      status = instance->diagnostic.present ? instance->diagnostic.status
+                                            : TURBO_SCRIPT_STATUS_RUNTIME_ERROR;
+      failure_phase =
+          instance->diagnostic.present ? instance->diagnostic.phase : TURBO_SCRIPT_ERROR_PHASE_CALL;
+      failure_message = "export execution failed: recursion or runtime error";
+    }
     goto finish;
   }
   status = ts_host_result_store_exprtk(result, &output, &output_limits);
@@ -766,8 +775,22 @@ turbo_script_status_t turbo_script_instance_call(turbo_script_instance_t *instan
                           : "call result conversion failed";
     goto finish;
   }
+  {
+    size_t retained_bytes = ts_host_instance_retained_bytes(instance->runtime_ctx);
+    if (ts_host_safe_point(instance->runtime_ctx, EXPRTK_SAFE_POINT_RETAINED_BYTES,
+                           retained_bytes) != 0) {
+      status = ts_host_call_budget_status(&budget);
+      failure_phase = ts_host_call_budget_phase(&budget);
+      failure_message = ts_host_call_budget_message(&budget);
+      goto finish;
+    }
+  }
 
 finish:
+  if (budget_attached) {
+    ts_host_call_budget_detach(instance->runtime_ctx, &budget);
+    budget_attached = 0;
+  }
   if (limits_applied) {
     instance->runtime_ctx->env.max_recursion = saved_max_recursion;
     instance->runtime_ctx->env.max_nodes = saved_max_nodes;
@@ -791,6 +814,7 @@ finish:
                                                   function_name, slot, failure_message);
 
 preflight_fail:
+  if (budget_attached) ts_host_call_budget_detach(instance->runtime_ctx, &budget);
   if (call_started) (void)ts_host_instance_finish_call(instance, status);
   if (limits_applied) {
     instance->runtime_ctx->env.max_recursion = saved_max_recursion;
