@@ -264,6 +264,25 @@ static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
     return 1;
 }
 
+static int eval_safe_point(exprtk_env_t *env, exprtk_safe_point_kind_t kind,
+                           size_t cost) {
+    if (!env || !env->safe_point) return 1;
+    if (env->safe_point(env->safe_point_user_data, kind, cost) == 0) return 1;
+    env->aborted = 1;
+    return 0;
+}
+
+static int eval_loop_tick(exprtk_env_t *env) {
+    if (!env) return 1;
+    if (env->safe_point) return eval_safe_point(env, EXPRTK_SAFE_POINT_LOOP, 1);
+    env->curr_loop_iterations++;
+    if (env->curr_loop_iterations > env->max_loop_iterations) {
+        env->aborted = 1;
+        return 0;
+    }
+    return 1;
+}
+
 exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
     if (!node || (env && env->aborted)) return zero;
@@ -275,11 +294,15 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
             env->last_column = node->column;
         }
 
-        // Node Count Limit
-        env->curr_nodes++;
-        if (env->curr_nodes > env->max_nodes) {
-            env->aborted = 1;
-            return zero;
+        if (env->safe_point) {
+            if (!eval_safe_point(env, EXPRTK_SAFE_POINT_STEP, 1)) return zero;
+        } else {
+            // Node Count Limit
+            env->curr_nodes++;
+            if (env->curr_nodes > env->max_nodes) {
+                env->aborted = 1;
+                return zero;
+            }
         }
     }
 
@@ -435,13 +458,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
                 if (!eval_value_truthy(cond_val)) break;
 
-                if (env) {
-                    env->curr_loop_iterations++;
-                    if (env->curr_loop_iterations > env->max_loop_iterations) {
-                        env->aborted = 1;
-                        break;
-                    }
-                }
+                if (env && !eval_loop_tick(env)) break;
 
                 last_val = exprtk_eval(node->data.while_loop.body, env);
                 if (env && env->flow == exprtk_FLOW_BREAK) {
@@ -464,13 +481,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                     if (!eval_value_truthy(cond_val)) break;
                 }
 
-                if (env) {
-                    env->curr_loop_iterations++;
-                    if (env->curr_loop_iterations > env->max_loop_iterations) {
-                        env->aborted = 1;
-                        break;
-                    }
-                }
+                if (env && !eval_loop_tick(env)) break;
 
                 last_val = exprtk_eval(node->data.for_loop.body, env);
                 if (env && env->flow == exprtk_FLOW_BREAK) {
@@ -935,13 +946,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
                 if (!eval_value_truthy(cond_val)) break;
 
-                if (env) {
-                    env->curr_loop_iterations++;
-                    if (env->curr_loop_iterations > env->max_loop_iterations) {
-                        env->aborted = 1;
-                        break;
-                    }
-                }
+                if (env && !eval_loop_tick(env)) break;
             }
             return last_val;
         }
@@ -1404,10 +1409,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
 
             if (collection.type == EXPRTK_VAL_VECTOR) {
                 for (size_t i = 0; i < collection.data.vector.size; ++i) {
-                    if (env) {
-                        env->curr_loop_iterations++;
-                        if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
-                    }
+                    if (env && !eval_loop_tick(env)) break;
                     exprtk_env_set(env, node->data.for_in.var_name, exprtk_val_num(collection.data.vector.data[i]));
                     last_val = exprtk_eval(node->data.for_in.body, env);
                     if (env && env->flow == exprtk_FLOW_BREAK) { env->flow = exprtk_FLOW_NORMAL; break; }
@@ -1418,10 +1420,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 exprtk_map_iter_t it = exprtk_map_iter_begin(&collection);
                 const char *key;
                 while (exprtk_map_iter_next(&it, &key, NULL)) {
-                    if (env) {
-                        env->curr_loop_iterations++;
-                        if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
-                    }
+                    if (env && !eval_loop_tick(env)) break;
                     vstr sv;
                     sv.data = (char*)key;
                     sv.len = strlen(key);
@@ -1433,10 +1432,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 }
             } else if (collection.type == EXPRTK_VAL_LIST || collection.type == EXPRTK_VAL_SET) {
                 for (size_t i = 0; i < collection.data.list.count; ++i) {
-                    if (env) {
-                        env->curr_loop_iterations++;
-                        if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
-                    }
+                    if (env && !eval_loop_tick(env)) break;
                     exprtk_env_set(env, node->data.for_in.var_name, collection.data.list.items[i]);
                     last_val = exprtk_eval(node->data.for_in.body, env);
                     if (env && env->flow == exprtk_FLOW_BREAK) { env->flow = exprtk_FLOW_NORMAL; break; }
@@ -1445,10 +1441,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                 }
             } else if (collection.type == EXPRTK_VAL_TYPED_ARRAY) {
                 for (size_t i = 0; i < collection.data.typed_array.count; ++i) {
-                    if (env) {
-                        env->curr_loop_iterations++;
-                        if (env->curr_loop_iterations > env->max_loop_iterations) { env->aborted = 1; break; }
-                    }
+                    if (env && !eval_loop_tick(env)) break;
                     exprtk_env_set(env, node->data.for_in.var_name,
                                    exprtk_typed_array_get_value(collection, i));
                     last_val = exprtk_eval(node->data.for_in.body, env);

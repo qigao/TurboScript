@@ -23,7 +23,12 @@ endmacro()
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
   test_plugin_loader_fixture test_plugin_loader_prefixed_conflict
-  crypto_tbs rules_forge_tbs)
+  crypto_tbs)
+if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
+  add_dependencies(test_turbo_script_basics rules_forge_tbs)
+  target_compile_definitions(
+    test_turbo_script_basics PRIVATE TURBO_SCRIPT_ENABLE_RULES_FORGE=1)
+endif()
 add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
@@ -59,6 +64,33 @@ cmake_add_test(
   TARGET test_turbo_script_host_instance
   SOURCES test_turbo_script_host_instance.c
   LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk ta mir_static
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+
+cmake_add_test(
+  TARGET test_turbo_script_host_call
+  SOURCES test_turbo_script_host_call.c
+  LIBS turbo_script_lib Rocida::TinyTest exprtk ta mir_static
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+
+cmake_add_test(
+  TARGET test_turbo_script_host_state
+  SOURCES test_turbo_script_host_state.c
+  LIBS turbo_script_lib Rocida::TinyTest exprtk ta mir_static
+  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+
+cmake_add_test(
+  TARGET test_turbo_script_host_limits
+  SOURCES test_turbo_script_host_limits.c
+  LIBS turbo_script_lib Rocida::TinyTest exprtk ta mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir

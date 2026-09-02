@@ -6,6 +6,7 @@ set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
   src/host/turbo_script_host_instance.c
+  src/host/turbo_script_host_limits.c
   src/host/turbo_script_host_module.c
   src/host/turbo_script_host_registry.c
   src/host/turbo_script_host_result.c
@@ -104,6 +105,8 @@ if(WIN32)
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboParser::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            $<TARGET_FILE:TurboParser::Mustache> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMENT "Synchronizing TurboScript runtime dependencies"
     VERBATIM)
 endif()

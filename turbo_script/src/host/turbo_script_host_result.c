@@ -202,10 +202,17 @@ static turbo_script_status_t ts_host_validate_node(ts_host_validation_state_t *s
 
 turbo_script_status_t ts_host_validate_value_view(const turbo_script_value_view_t *value,
                                                   const ts_host_value_limits_t *limits) {
+  if (!value) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  return ts_host_validate_value_views(value, 1, limits);
+}
+
+turbo_script_status_t ts_host_validate_value_views(const turbo_script_value_view_t *values,
+                                                   size_t count,
+                                                   const ts_host_value_limits_t *limits) {
   ts_host_validation_state_t state = {0};
   stl_status init_status;
-  turbo_script_status_t status;
-  if (!value || !limits || limits->max_depth == 0 || limits->max_nodes == 0 ||
+  turbo_script_status_t status = TURBO_SCRIPT_STATUS_OK;
+  if ((!values && count != 0) || !limits || limits->max_depth == 0 || limits->max_nodes == 0 ||
       limits->max_bytes == 0)
     return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
 
@@ -215,7 +222,10 @@ turbo_script_status_t ts_host_validate_value_view(const turbo_script_value_view_
                           alignof(const turbo_script_value_view_t *), limits->max_nodes, hash_bytes,
                           hash_key_equal, NULL);
   if (init_status != STL_OK) return ts_host_stl_status(init_status);
-  status = ts_host_validate_node(&state, value, 1);
+  for (size_t i = 0; i < count; ++i) {
+    status = ts_host_validate_node(&state, &values[i], 1);
+    if (status != TURBO_SCRIPT_STATUS_OK) break;
+  }
   hash_set_destroy(&state.active_containers);
   return status;
 }
@@ -341,26 +351,180 @@ turbo_script_status_t ts_host_value_from_view(turbo_script_ctx_t *target_ctx,
                                               const turbo_script_value_view_t *value,
                                               const ts_host_value_limits_t *limits,
                                               exprtk_value_t *out_value) {
-  exprtk_value_t temporary = ts_host_exprtk_null();
-  mem_pool_t key_arena;
   turbo_script_status_t status;
   if (!out_value) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   *out_value = ts_host_exprtk_null();
   if (!target_ctx) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   status = ts_host_context_check_thread(target_ctx);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  return ts_host_value_from_view_in_env(&target_ctx->env, value, limits, out_value);
+}
+
+turbo_script_status_t ts_host_value_from_view_in_env(exprtk_env_t *target_env,
+                                                     const turbo_script_value_view_t *value,
+                                                     const ts_host_value_limits_t *limits,
+                                                     exprtk_value_t *out_value) {
+  exprtk_value_t temporary = ts_host_exprtk_null();
+  mem_pool_t key_arena;
+  turbo_script_status_t status;
+  if (!out_value) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  *out_value = ts_host_exprtk_null();
+  if (!target_env) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
 
   status = ts_host_validate_value_view(value, limits);
   if (status != TURBO_SCRIPT_STATUS_OK) return status;
   if (mem_init(&key_arena, 0) != 0) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
   status = ts_host_build_exprtk_value(&key_arena, value, &temporary);
   if (status == TURBO_SCRIPT_STATUS_OK &&
-      exprtk_value_copy_to_env(temporary, &target_ctx->env, out_value) != 0)
+      exprtk_value_copy_to_env(temporary, target_env, out_value) != 0)
     status = TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
   if (status != TURBO_SCRIPT_STATUS_OK) *out_value = ts_host_exprtk_null();
   exprtk_value_destroy(&temporary);
   mem_destroy(&key_arena);
   return status;
+}
+
+typedef struct ts_host_exprtk_view_state_s {
+  mem_pool_t *arena;
+  const ts_host_value_limits_t *limits;
+  size_t nodes;
+  size_t bytes;
+} ts_host_exprtk_view_state_t;
+
+static turbo_script_status_t ts_host_exprtk_view_charge(ts_host_exprtk_view_state_t *state,
+                                                        size_t count, size_t element_size) {
+  size_t amount;
+  if (count != 0 && element_size > SIZE_MAX / count) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  amount = count * element_size;
+  if (state->bytes > state->limits->max_bytes || amount > state->limits->max_bytes - state->bytes)
+    return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  state->bytes += amount;
+  return TURBO_SCRIPT_STATUS_OK;
+}
+
+static turbo_script_status_t ts_host_exprtk_to_view(ts_host_exprtk_view_state_t *state,
+                                                    const exprtk_value_t *source,
+                                                    turbo_script_value_view_t *target,
+                                                    size_t depth) {
+  turbo_script_status_t status;
+  if (!state || !source || !target) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  if (depth > state->limits->max_depth || state->nodes == state->limits->max_nodes)
+    return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+  state->nodes++;
+  memset(target, 0, sizeof(*target));
+
+  switch (source->type) {
+  case EXPRTK_VAL_NULL:
+    target->kind = TURBO_SCRIPT_VALUE_NULL;
+    return TURBO_SCRIPT_STATUS_OK;
+  case EXPRTK_VAL_BOOL:
+    if (source->data.boolean != 0 && source->data.boolean != 1)
+      return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
+    target->kind = TURBO_SCRIPT_VALUE_BOOL;
+    target->as.boolean = (uint8_t)source->data.boolean;
+    return TURBO_SCRIPT_STATUS_OK;
+  case EXPRTK_VAL_INTEGER:
+    target->kind = TURBO_SCRIPT_VALUE_INT64;
+    target->as.integer = source->data.integer;
+    return TURBO_SCRIPT_STATUS_OK;
+  case EXPRTK_VAL_NUMBER:
+    target->kind = TURBO_SCRIPT_VALUE_NUMBER;
+    target->as.number = source->data.number;
+    return TURBO_SCRIPT_STATUS_OK;
+  case EXPRTK_VAL_STRING:
+    if (!source->data.string.data && source->data.string.len != 0)
+      return TURBO_SCRIPT_STATUS_INVALID_STATE;
+    if (source->data.string.len == SIZE_MAX) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+    status = ts_host_exprtk_view_charge(state, source->data.string.len + 1U, 1U);
+    if (status != TURBO_SCRIPT_STATUS_OK) return status;
+    if (!vstr_utf8_valid(source->data.string)) return TURBO_SCRIPT_STATUS_INVALID_UTF8;
+    target->kind = TURBO_SCRIPT_VALUE_STRING;
+    target->as.string =
+        (turbo_script_string_view_t){source->data.string.data, source->data.string.len};
+    return TURBO_SCRIPT_STATUS_OK;
+  case EXPRTK_VAL_VECTOR: {
+    turbo_script_value_view_t *items = NULL;
+    if (!source->data.vector.data && source->data.vector.size != 0)
+      return TURBO_SCRIPT_STATUS_INVALID_STATE;
+    if (source->data.vector.size > state->limits->max_nodes - state->nodes)
+      return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+    status = ts_host_exprtk_view_charge(state, source->data.vector.size, sizeof(*items));
+    if (status != TURBO_SCRIPT_STATUS_OK) return status;
+    if (source->data.vector.size != 0) {
+      items = (turbo_script_value_view_t *)mem_alloc_array(state->arena, sizeof(*items),
+                                                           source->data.vector.size);
+      if (!items) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
+      for (size_t i = 0; i < source->data.vector.size; ++i) {
+        memset(&items[i], 0, sizeof(items[i]));
+        items[i].kind = TURBO_SCRIPT_VALUE_NUMBER;
+        items[i].as.number = source->data.vector.data[i];
+        state->nodes++;
+      }
+    }
+    target->kind = TURBO_SCRIPT_VALUE_ARRAY;
+    target->as.array = (turbo_script_array_view_t){items, source->data.vector.size};
+    return TURBO_SCRIPT_STATUS_OK;
+  }
+  case EXPRTK_VAL_LIST: {
+    turbo_script_value_view_t *items = NULL;
+    if (!source->data.list.items && source->data.list.count != 0)
+      return TURBO_SCRIPT_STATUS_INVALID_STATE;
+    if (source->data.list.count > state->limits->max_nodes - state->nodes)
+      return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+    status = ts_host_exprtk_view_charge(state, source->data.list.count, sizeof(*items));
+    if (status != TURBO_SCRIPT_STATUS_OK) return status;
+    if (source->data.list.count != 0) {
+      items = (turbo_script_value_view_t *)mem_alloc_array(state->arena, sizeof(*items),
+                                                           source->data.list.count);
+      if (!items) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
+      for (size_t i = 0; i < source->data.list.count; ++i) {
+        status = ts_host_exprtk_to_view(state, &source->data.list.items[i], &items[i], depth + 1U);
+        if (status != TURBO_SCRIPT_STATUS_OK) return status;
+      }
+    }
+    target->kind = TURBO_SCRIPT_VALUE_ARRAY;
+    target->as.array = (turbo_script_array_view_t){items, source->data.list.count};
+    return TURBO_SCRIPT_STATUS_OK;
+  }
+  case EXPRTK_VAL_MAP:
+  case EXPRTK_VAL_OBJECT: {
+    size_t count = exprtk_map_count(source);
+    turbo_script_record_entry_view_t *entries = NULL;
+    exprtk_map_iter_t iterator;
+    const char *key = NULL;
+    exprtk_value_t child;
+    size_t index = 0;
+    if (count > state->limits->max_nodes - state->nodes) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+    status = ts_host_exprtk_view_charge(state, count, sizeof(*entries));
+    if (status != TURBO_SCRIPT_STATUS_OK) return status;
+    if (count != 0) {
+      entries = (turbo_script_record_entry_view_t *)mem_alloc_array(state->arena, sizeof(*entries),
+                                                                    count);
+      if (!entries) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
+    }
+    iterator = exprtk_map_iter_begin(source);
+    while (index < count && exprtk_map_iter_next(&iterator, &key, &child)) {
+      size_t key_size;
+      if (!key) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+      key_size = strlen(key);
+      if (key_size == 0) return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
+      if (key_size == SIZE_MAX) return TURBO_SCRIPT_STATUS_LIMIT_EXCEEDED;
+      status = ts_host_exprtk_view_charge(state, key_size + 1U, 1U);
+      if (status != TURBO_SCRIPT_STATUS_OK) return status;
+      if (!vstr_utf8_valid(vstr_from_buf(key, key_size))) return TURBO_SCRIPT_STATUS_INVALID_UTF8;
+      entries[index].key = (turbo_script_string_view_t){key, key_size};
+      status = ts_host_exprtk_to_view(state, &child, &entries[index].value, depth + 1U);
+      if (status != TURBO_SCRIPT_STATUS_OK) return status;
+      index++;
+    }
+    if (index != count) return TURBO_SCRIPT_STATUS_INVALID_STATE;
+    target->kind = TURBO_SCRIPT_VALUE_RECORD;
+    target->as.record = (turbo_script_record_view_t){entries, count};
+    return TURBO_SCRIPT_STATUS_OK;
+  }
+  default:
+    return TURBO_SCRIPT_STATUS_VALIDATION_ERROR;
+  }
 }
 
 turbo_script_status_t turbo_script_result_create(turbo_script_ctx_t *ctx,
@@ -451,6 +615,28 @@ turbo_script_status_t ts_host_result_store_view(turbo_script_result_t *result,
   result->value = copy;
   result->has_value = 1;
   return TURBO_SCRIPT_STATUS_OK;
+}
+
+turbo_script_status_t ts_host_result_store_exprtk(turbo_script_result_t *result,
+                                                  const exprtk_value_t *value,
+                                                  const ts_host_value_limits_t *limits) {
+  mem_pool_t temporary_arena;
+  ts_host_exprtk_view_state_t state;
+  turbo_script_value_view_t view = ts_host_null_view();
+  turbo_script_status_t status;
+  if (!result || !value || !limits) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
+  status = ts_host_result_check_thread(result);
+  if (status != TURBO_SCRIPT_STATUS_OK) return status;
+  ts_host_result_clear_unchecked(result);
+  if (mem_init(&temporary_arena, 0) != 0) return TURBO_SCRIPT_STATUS_OUT_OF_MEMORY;
+  memset(&state, 0, sizeof(state));
+  state.arena = &temporary_arena;
+  state.limits = limits;
+  status = ts_host_exprtk_to_view(&state, value, &view, 1U);
+  if (status == TURBO_SCRIPT_STATUS_OK) status = ts_host_result_store_view(result, &view, limits);
+  mem_destroy(&temporary_arena);
+  if (status != TURBO_SCRIPT_STATUS_OK) ts_host_result_clear_unchecked(result);
+  return status;
 }
 
 static turbo_script_status_t ts_host_validate_error_info(const turbo_script_error_info_t *error,

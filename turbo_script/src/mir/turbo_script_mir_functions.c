@@ -1,5 +1,6 @@
 /* Function compilation and HOF MIR helpers. */
 
+#include "exprtk_grammar.h"
 #include "turbo_script_mir_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -10,8 +11,8 @@ static ts_compiled_func_t *ts_find_hof_specialized_call(ts_mir_compiler_t *c,
                                                         int numeric_arg_indices[16],
                                                         size_t *numeric_arg_count);
 
-MIR_reg_t ts_emit_compiled_func_call(ts_mir_compiler_t *c, ts_compiled_func_t *cf,
-                                            size_t argc, const MIR_reg_t *arg_regs) {
+MIR_reg_t ts_emit_compiled_func_call(ts_mir_compiler_t *c, ts_compiled_func_t *cf, size_t argc,
+                                     const MIR_reg_t *arg_regs) {
   MIR_reg_t res = 0;
   size_t nops = 0;
   MIR_op_t ops[21];
@@ -43,8 +44,7 @@ MIR_reg_t ts_emit_compiled_func_call(ts_mir_compiler_t *c, ts_compiled_func_t *c
   return res;
 }
 
-MIR_reg_t ts_try_emit_hof_specialized_call(ts_mir_compiler_t *c,
-                                                  exprtk_node_t *call_node) {
+MIR_reg_t ts_try_emit_hof_specialized_call(ts_mir_compiler_t *c, exprtk_node_t *call_node) {
   int numeric_arg_indices[16];
   size_t numeric_arg_count = 0;
   ts_compiled_func_t *cf =
@@ -73,14 +73,14 @@ static void ts_emit_closure_prologue(ts_mir_compiler_t *c) {
     MIR_reg_t var_reg = ts_mir_get_or_create_reg(c, var_name);
 
     /* 生成调用：var_reg = load_captured_var(ctx, var_name, closure_env) */
-    MIR_append_insn(c->ctx, c->func,
-      MIR_new_call_insn(c->ctx, 6,
-        MIR_new_ref_op(c->ctx, c->ext.load_captured_proto),
-        MIR_new_ref_op(c->ctx, c->ext.load_captured_import),
-        MIR_new_reg_op(c->ctx, var_reg),                          // 返回值
-        MIR_new_reg_op(c->ctx, c->ctx_reg),                       // ctx
-        MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)var_name),  // 变量名
-        MIR_new_reg_op(c->ctx, c->closure_env_reg)));            // closure_env
+    MIR_append_insn(
+        c->ctx, c->func,
+        MIR_new_call_insn(c->ctx, 6, MIR_new_ref_op(c->ctx, c->ext.load_captured_proto),
+                          MIR_new_ref_op(c->ctx, c->ext.load_captured_import),
+                          MIR_new_reg_op(c->ctx, var_reg),                        // 返回值
+                          MIR_new_reg_op(c->ctx, c->ctx_reg),                     // ctx
+                          MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)var_name), // 变量名
+                          MIR_new_reg_op(c->ctx, c->closure_env_reg)));           // closure_env
   }
 }
 
@@ -107,6 +107,78 @@ static int ts_name_matches_variable_param(const char *name, exprtk_node_t **para
     }
   }
   return 0;
+}
+
+enum {
+  TS_MIR_EXPORT_NUMBER_SCAN_DEPTH = 256,
+};
+
+typedef enum ts_mir_export_number_kind_e {
+  TS_MIR_EXPORT_NUMBER_UNSAFE = 0,
+  TS_MIR_EXPORT_NUMBER_INTEGER = 1,
+  TS_MIR_EXPORT_NUMBER_DOUBLE = 2,
+} ts_mir_export_number_kind_t;
+
+static ts_mir_export_number_kind_t ts_mir_export_number_expr_kind(exprtk_node_t *node,
+                                                                  exprtk_node_t **params,
+                                                                  size_t param_count,
+                                                                  size_t depth) {
+  ts_mir_export_number_kind_t left;
+  ts_mir_export_number_kind_t right;
+  if (!node || depth > TS_MIR_EXPORT_NUMBER_SCAN_DEPTH) return TS_MIR_EXPORT_NUMBER_UNSAFE;
+  switch (node->type) {
+  case EXPRTK_NODE_NUMBER:
+    return TS_MIR_EXPORT_NUMBER_DOUBLE;
+  case EXPRTK_NODE_INTEGER:
+    return TS_MIR_EXPORT_NUMBER_INTEGER;
+  case EXPRTK_NODE_VARIABLE:
+    return ts_name_matches_variable_param(node->data.variable.name, params, param_count)
+               ? TS_MIR_EXPORT_NUMBER_DOUBLE
+               : TS_MIR_EXPORT_NUMBER_UNSAFE;
+  case EXPRTK_NODE_BINARY_OP:
+    switch (node->data.binary.op) {
+    case exprtk_TOKEN_PLUS:
+    case exprtk_TOKEN_MINUS:
+    case exprtk_TOKEN_MULTIPLY:
+    case exprtk_TOKEN_DIVIDE:
+    case exprtk_TOKEN_MOD:
+    case exprtk_TOKEN_POWER:
+      break;
+    default:
+      return TS_MIR_EXPORT_NUMBER_UNSAFE;
+    }
+    left = ts_mir_export_number_expr_kind(node->data.binary.left, params, param_count, depth + 1U);
+    right =
+        ts_mir_export_number_expr_kind(node->data.binary.right, params, param_count, depth + 1U);
+    if (left == TS_MIR_EXPORT_NUMBER_UNSAFE || right == TS_MIR_EXPORT_NUMBER_UNSAFE)
+      return TS_MIR_EXPORT_NUMBER_UNSAFE;
+    if (node->data.binary.op == exprtk_TOKEN_POWER || left == TS_MIR_EXPORT_NUMBER_DOUBLE ||
+        right == TS_MIR_EXPORT_NUMBER_DOUBLE)
+      return TS_MIR_EXPORT_NUMBER_DOUBLE;
+    return TS_MIR_EXPORT_NUMBER_INTEGER;
+  default:
+    return TS_MIR_EXPORT_NUMBER_UNSAFE;
+  }
+}
+
+int ts_mir_function_is_native_numeric_export(exprtk_node_t *function_node) {
+  exprtk_node_t *body;
+  exprtk_node_t *statement;
+  if (!function_node || function_node->type != EXPRTK_NODE_FUNCTION_DEFINITION) return 0;
+  body = function_node->data.func_def.body;
+  if (!body) return 0;
+  if (body->type == EXPRTK_NODE_BLOCK) {
+    if (body->data.block.count != 1 || !body->data.block.statements) return 0;
+    statement = body->data.block.statements[0];
+  } else {
+    statement = body;
+  }
+  if (!statement || statement->type != EXPRTK_NODE_FLOW ||
+      statement->data.flow.type != exprtk_TOKEN_RETURN)
+    return 0;
+  return ts_mir_export_number_expr_kind(
+             statement->data.flow.value, function_node->data.func_def.arg_params,
+             function_node->data.func_def.arg_count, 1U) == TS_MIR_EXPORT_NUMBER_DOUBLE;
 }
 
 static int ts_node_calls_param_function(exprtk_node_t *node, exprtk_node_t **params,
@@ -149,13 +221,11 @@ static int ts_node_calls_param_function(exprtk_node_t *node, exprtk_node_t **par
   case EXPRTK_NODE_FUNCTION_CALL:
     if (ts_name_matches_variable_param(node->data.function.name, params, param_count)) return 1;
     for (size_t i = 0; i < node->data.function.arg_count; ++i) {
-      if (ts_node_calls_param_function(node->data.function.args[i], params, param_count))
-        return 1;
+      if (ts_node_calls_param_function(node->data.function.args[i], params, param_count)) return 1;
     }
     return 0;
   case EXPRTK_NODE_MEMBER_CALL:
-    if (ts_node_calls_param_function(node->data.member_call.object, params, param_count))
-      return 1;
+    if (ts_node_calls_param_function(node->data.member_call.object, params, param_count)) return 1;
     for (size_t i = 0; i < node->data.member_call.arg_count; ++i) {
       if (ts_node_calls_param_function(node->data.member_call.args[i], params, param_count))
         return 1;
@@ -367,8 +437,7 @@ static int ts_func_alias_index(ts_mir_func_alias_t *aliases, size_t alias_count,
                                const char *param_name) {
   if (!aliases || !param_name) return -1;
   for (size_t i = 0; i < alias_count; ++i) {
-    if (aliases[i].param_name && strcmp(aliases[i].param_name, param_name) == 0)
-      return (int)i;
+    if (aliases[i].param_name && strcmp(aliases[i].param_name, param_name) == 0) return (int)i;
   }
   return -1;
 }
@@ -389,8 +458,7 @@ static int ts_aliases_need_closure_env(ts_mir_compiler_t *c, ts_mir_func_alias_t
  * MUST be called when no other MIR function is open. */
 static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char *name,
                                                 exprtk_node_t **arg_params, size_t arg_count,
-                                                exprtk_node_t *body,
-                                                ts_mir_func_alias_t *aliases,
+                                                exprtk_node_t *body, ts_mir_func_alias_t *aliases,
                                                 size_t alias_count) {
   if (ts_find_compiled_func(c, name)) return;
   if (arg_count > 16) return; /* sanity limit */
@@ -402,7 +470,8 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
   if (!ts_mir_reserve_compiled_func(c)) return;
 
   /* 闭包分析：检查是否捕获外部变量 */
-  ts_closure_analysis_t *analysis = ts_analyze_closure(body, arg_params, arg_count, &c->ts_ctx->env);
+  ts_closure_analysis_t *analysis =
+      ts_analyze_closure(body, arg_params, arg_count, &c->ts_ctx->env, c->ast_root);
 
   /* 如果不能 JIT（嵌套闭包、太多变量等），跳过编译 */
   if (analysis && !analysis->can_jit) {
@@ -427,7 +496,7 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
 
   /* Build MIR function signature */
   MIR_type_t res_type = MIR_T_D;
-  MIR_var_t mir_args[18];  // 最多 1 ctx + 1 closure_env + 16 参数
+  MIR_var_t mir_args[18]; // 最多 1 ctx + 1 closure_env + 16 参数
   size_t numeric_arg_count = 0;
   for (size_t i = 0; i < arg_count; i++) {
     const char *pname = arg_params[i]->data.variable.name;
@@ -467,16 +536,14 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
     }
   }
 
-  MIR_item_t new_func =
-      MIR_new_func_arr(c->ctx, func_name, 1, &res_type, total_args, mir_args);
+  MIR_item_t new_func = MIR_new_func_arr(c->ctx, func_name, 1, &res_type, total_args, mir_args);
   c->func = new_func;
 
   /* Create and register the call proto before compiling the body so recursive
    * calls can resolve to a complete MIR call target. */
   char proto_name[128];
   snprintf(proto_name, sizeof(proto_name), "%s_p_ts_%s", c->item_prefix, name);
-  MIR_item_t proto =
-      MIR_new_proto_arr(c->ctx, proto_name, 1, &res_type, total_args, mir_args);
+  MIR_item_t proto = MIR_new_proto_arr(c->ctx, proto_name, 1, &res_type, total_args, mir_args);
 
   int idx = c->compiled_func_count++;
   c->compiled_funcs[idx].name = strdup(name);
@@ -529,9 +596,8 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
   ts_mir_restore_frame(c, &frame);
 }
 
-void ts_compile_script_func(ts_mir_compiler_t *c, const char *name,
-                                   exprtk_node_t **arg_params, size_t arg_count,
-                                   exprtk_node_t *body) {
+void ts_compile_script_func(ts_mir_compiler_t *c, const char *name, exprtk_node_t **arg_params,
+                            size_t arg_count, exprtk_node_t *body) {
   ts_compile_script_func_with_aliases(c, name, arg_params, arg_count, body, NULL, 0);
 }
 
@@ -591,8 +657,8 @@ static exprtk_func_t *ts_find_script_func_in_env(ts_mir_compiler_t *c, const cha
 
 static exprtk_node_t *ts_find_function_def_node(exprtk_node_t *node, const char *name) {
   if (!node || !name) return NULL;
-  if (node->type == EXPRTK_NODE_FUNCTION_DEFINITION &&
-      node->data.func_def.name && strcmp(node->data.func_def.name, name) == 0) {
+  if (node->type == EXPRTK_NODE_FUNCTION_DEFINITION && node->data.func_def.name &&
+      strcmp(node->data.func_def.name, name) == 0) {
     return node;
   }
   if (node->type == EXPRTK_NODE_BLOCK) {
@@ -614,8 +680,8 @@ static void ts_sanitize_name_part(const char *src, char *dst, size_t dst_size) {
   if (!src) src = "anon";
   for (size_t i = 0; src[i] && out + 1 < dst_size; ++i) {
     char ch = src[i];
-    int ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') ||
-             (ch >= '0' && ch <= '9') || ch == '_';
+    int ok = (ch >= 'a' && ch <= 'z') || (ch >= 'A' && ch <= 'Z') || (ch >= '0' && ch <= '9') ||
+             ch == '_';
     dst[out++] = ok ? ch : '_';
   }
   dst[out] = '\0';
@@ -640,7 +706,7 @@ static int ts_function_expr_can_compile_for_hof(ts_mir_compiler_t *c, exprtk_nod
   }
 
   analysis = ts_analyze_closure(node->data.func_def.body, node->data.func_def.arg_params,
-                                node->data.func_def.arg_count, &c->ts_ctx->env);
+                                node->data.func_def.arg_count, &c->ts_ctx->env, c->ast_root);
   ok = !analysis || analysis->can_jit;
   ts_closure_analysis_free(analysis);
   return ok;
@@ -659,8 +725,7 @@ static int ts_hof_resolve_function_arg(ts_mir_compiler_t *c, exprtk_node_t *arg,
 
   if (arg->type == EXPRTK_NODE_FUNCTION_EXPRESSION &&
       ts_function_expr_can_compile_for_hof(c, arg) &&
-      ts_build_hof_lambda_name(arg, lambda_name, 64) &&
-      ts_find_compiled_func(c, lambda_name)) {
+      ts_build_hof_lambda_name(arg, lambda_name, 64) && ts_find_compiled_func(c, lambda_name)) {
     *target_name = lambda_name;
     return 1;
   }
@@ -668,11 +733,8 @@ static int ts_hof_resolve_function_arg(ts_mir_compiler_t *c, exprtk_node_t *arg,
   return 0;
 }
 
-static int ts_build_hof_specialization_key(const char *base_name,
-                                           ts_mir_func_alias_t *aliases,
-                                           size_t alias_count,
-                                           char *out,
-                                           size_t out_size) {
+static int ts_build_hof_specialization_key(const char *base_name, ts_mir_func_alias_t *aliases,
+                                           size_t alias_count, char *out, size_t out_size) {
   char part[64];
   size_t used = 0;
   if (!base_name || !out || out_size == 0 || alias_count == 0) return 0;
@@ -717,8 +779,7 @@ static ts_compiled_func_t *ts_find_hof_specialized_call(ts_mir_compiler_t *c,
   exprtk_node_t *callee_body =
       callee_node ? callee_node->data.func_def.body : callee->data.script.body;
 
-  if (!callee_body ||
-      callee_arg_count != call_node->data.function.arg_count ||
+  if (!callee_body || callee_arg_count != call_node->data.function.arg_count ||
       callee_arg_count > 16) {
     return NULL;
   }
@@ -726,8 +787,7 @@ static ts_compiled_func_t *ts_find_hof_specialized_call(ts_mir_compiler_t *c,
   for (size_t i = 0; i < callee_arg_count; ++i) {
     exprtk_node_t *param = callee_arg_params[i];
     exprtk_node_t *arg = call_node->data.function.args[i];
-    if (!param || param->type != EXPRTK_NODE_VARIABLE || !param->data.variable.name ||
-        !arg) {
+    if (!param || param->type != EXPRTK_NODE_VARIABLE || !param->data.variable.name || !arg) {
       return NULL;
     }
 
@@ -746,8 +806,8 @@ static ts_compiled_func_t *ts_find_hof_specialized_call(ts_mir_compiler_t *c,
   }
 
   if (alias_count == 0) return NULL;
-  if (!ts_build_hof_specialization_key(call_node->data.function.name, aliases, alias_count,
-                                       key, sizeof(key))) {
+  if (!ts_build_hof_specialization_key(call_node->data.function.name, aliases, alias_count, key,
+                                       sizeof(key))) {
     return NULL;
   }
 
@@ -793,10 +853,8 @@ void ts_prescan_hof_specializations(ts_mir_compiler_t *c, exprtk_node_t *node) {
               ts_build_hof_lambda_name(arg, lambda_names[alias_count],
                                        sizeof(lambda_names[alias_count])) &&
               !ts_find_compiled_func(c, lambda_names[alias_count])) {
-            ts_compile_script_func(c, lambda_names[alias_count],
-                                   arg->data.func_def.arg_params,
-                                   arg->data.func_def.arg_count,
-                                   arg->data.func_def.body);
+            ts_compile_script_func(c, lambda_names[alias_count], arg->data.func_def.arg_params,
+                                   arg->data.func_def.arg_count, arg->data.func_def.body);
           }
           if (!ts_hof_resolve_function_arg(c, arg, lambda_names[alias_count], &target_name) ||
               ts_node_uses_name_as_value(callee_body, param->data.variable.name)) {
@@ -810,12 +868,11 @@ void ts_prescan_hof_specializations(ts_mir_compiler_t *c, exprtk_node_t *node) {
       }
 
       if (all_vars && alias_count > 0 &&
-          ts_build_hof_specialization_key(node->data.function.name, aliases, alias_count,
-                                          key, sizeof(key)) &&
+          ts_build_hof_specialization_key(node->data.function.name, aliases, alias_count, key,
+                                          sizeof(key)) &&
           !ts_find_compiled_func(c, key)) {
         ts_compile_script_func_with_aliases(c, key, callee_arg_params, callee_arg_count,
-                                            callee_body,
-                                            aliases, alias_count);
+                                            callee_body, aliases, alias_count);
       }
     }
   }

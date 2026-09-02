@@ -14,6 +14,7 @@ typedef struct {
 typedef struct {
   ts_var_set_t used;       // 使用的变量
   ts_var_set_t defined;    // 定义的变量（包括参数和局部）
+  ts_var_set_t assigned;   // 赋值目标；需经外层绑定解析后才能捕获
   int has_nested_closure;  // 是否有嵌套闭包
   int has_modification;    // 是否修改捕获变量
 } ts_analysis_ctx_t;
@@ -83,11 +84,31 @@ static void ts_analyze_assignment(exprtk_node_t *node, ts_analysis_ctx_t *ctx) {
     ts_analyze_node(node->data.assignment.value, ctx, 0);
   }
 
-  /* Assignment is not a lexical declaration in TurboScript: exprtk_env_set()
-   * updates an existing parent binding before creating a local one.  Keeping a
-   * read/write name in the free-variable set lets MIR load an initializer-created
-   * module global from the runtime closure and write it back on return. */
-  (void)node->data.assignment.name;
+  if (node->data.assignment.name)
+    ts_var_set_add(&ctx->assigned, node->data.assignment.name);
+}
+
+/* Only direct module-scope bindings are definite before an exported function
+ * executes.  Do not descend into function/control-flow bodies: assignments in
+ * those scopes do not prove that exprtk_env_set() will find an outer binding. */
+static int ts_outer_scope_defines_name(const exprtk_node_t *outer_scope,
+                                       const char *name) {
+  if (!outer_scope || !name) return 0;
+  if (outer_scope->type == EXPRTK_NODE_ASSIGNMENT ||
+      outer_scope->type == EXPRTK_NODE_CONSTANT_DECL)
+    return outer_scope->data.assignment.name &&
+           strcmp(outer_scope->data.assignment.name, name) == 0;
+  if (outer_scope->type != EXPRTK_NODE_BLOCK) return 0;
+  for (size_t i = 0; i < outer_scope->data.block.count; ++i) {
+    const exprtk_node_t *statement = outer_scope->data.block.statements[i];
+    if (statement &&
+        (statement->type == EXPRTK_NODE_ASSIGNMENT ||
+         statement->type == EXPRTK_NODE_CONSTANT_DECL) &&
+        statement->data.assignment.name &&
+        strcmp(statement->data.assignment.name, name) == 0)
+      return 1;
+  }
+  return 0;
 }
 
 /* 分析函数定义（嵌套闭包检测） */
@@ -208,11 +229,13 @@ static void ts_analyze_node(exprtk_node_t *node, ts_analysis_ctx_t *ctx, int in_
 ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
                                           exprtk_node_t **arg_params,
                                           size_t arg_count,
-                                          exprtk_env_t *closure_env) {
+                                          exprtk_env_t *closure_env,
+                                          exprtk_node_t *outer_scope) {
   // 初始化分析上下文
   ts_analysis_ctx_t ctx;
   ts_var_set_init(&ctx.used);
   ts_var_set_init(&ctx.defined);
+  ts_var_set_init(&ctx.assigned);
   ctx.has_nested_closure = 0;
   ctx.has_modification = 0;
   
@@ -236,6 +259,10 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   for (size_t i = 0; i < ctx.used.count; i++) {
     const char *name = ctx.used.names[i];
     if (!ts_var_set_contains(&ctx.defined, name)) {
+      if (ts_var_set_contains(&ctx.assigned, name) &&
+          !exprtk_env_has(closure_env, name) &&
+          !ts_outer_scope_defines_name(outer_scope, name))
+        continue;
       ts_var_set_add(&free_vars, name);
     }
   }
@@ -245,6 +272,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   if (!result) {
     ts_var_set_free(&ctx.used);
     ts_var_set_free(&ctx.defined);
+    ts_var_set_free(&ctx.assigned);
     ts_var_set_free(&free_vars);
     return NULL;
   }
@@ -270,6 +298,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   // 清理中间数据
   ts_var_set_free(&ctx.used);
   ts_var_set_free(&ctx.defined);
+  ts_var_set_free(&ctx.assigned);
   // free_vars.names 已转移给 result，不释放
   
   return result;
