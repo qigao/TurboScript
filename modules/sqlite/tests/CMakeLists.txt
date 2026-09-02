@@ -2,7 +2,7 @@
 cmake_add_test(
   TARGET test_sqlite_module
   SOURCES test_sqlite.c
-  LIBS exprtk TurboUtils::TinyTest
+  LIBS exprtk Rocida::TinyTest
   DEPENDS sqlite_tbs
   FOLDER modules/sqlite)
 

@@ -1,6 +1,5 @@
 #include "tinytest.h"
 #include "exprtk.h"
-#include "turbo_coro.h"
 #include "turbo_coro_context.h"
 #include "turbo_script.h"
 #include "turbo_thread.h"
@@ -19,7 +18,7 @@ typedef struct {
   atomic_int active;
   atomic_int calls;
   atomic_int max_active;
-  atomic_int inside_coro;
+  atomic_int inside_task;
 } timer_coro_probe_t;
 
 static exprtk_value_t timer_coro_probe(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
@@ -36,8 +35,8 @@ static exprtk_value_t timer_coro_probe(size_t argc, exprtk_value_t *args, exprtk
                                                 memory_order_acq_rel, memory_order_acquire)) {
   }
 
-  if (coro_running()) {
-    atomic_fetch_add_explicit(&probe->inside_coro, 1, memory_order_acq_rel);
+  if (turbo_script_current_task_cancel_token()) {
+    atomic_fetch_add_explicit(&probe->inside_task, 1, memory_order_acq_rel);
     coro_sleep(probe->coro_ctx, 20);
   }
 
@@ -122,7 +121,7 @@ spec("turbo_script_timer") {
       atomic_init(&probe.active, 0);
       atomic_init(&probe.calls, 0);
       atomic_init(&probe.max_active, 0);
-      atomic_init(&probe.inside_coro, 0);
+      atomic_init(&probe.inside_task, 0);
       ts_bind_func(ctx, "timer_probe", timer_coro_probe, &probe);
 
       check((timer_test_run(ctx, "import(\"timer\");"
@@ -130,7 +129,7 @@ spec("turbo_script_timer") {
                                        "second = timer.after(1, () => { timer_probe(); });")) == (0));
       check((coro_context_run(coro_ctx, TURBO_RUN_DEFAULT)) == (0));
       check((atomic_load_explicit(&probe.calls, memory_order_acquire)) == (2));
-      check((atomic_load_explicit(&probe.inside_coro, memory_order_acquire)) == (2));
+      check((atomic_load_explicit(&probe.inside_task, memory_order_acquire)) == (2));
       check((atomic_load_explicit(&probe.max_active, memory_order_acquire)) == (1));
       check((turbo_script_timer_active_count(ctx)) == (0));
       check((turbo_script_timer_failed_count(ctx)) == (0));

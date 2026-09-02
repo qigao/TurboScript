@@ -33,7 +33,7 @@ target_include_directories(${TARGET_NAME}
 )
 
 target_link_libraries(${TARGET_NAME} 
-    PUBLIC exprtk TurboUtils::Core
+    PUBLIC exprtk Rocida::Core
 )
 
 # Set C standard
@@ -53,7 +53,7 @@ cmake_config_target(
 
 target_link_libraries(${TARGET_NAME_PLUGIN}
     PRIVATE ${TARGET_NAME}
-    PUBLIC exprtk TurboUtils::Core
+    PUBLIC exprtk Rocida::Core
 )
 
 target_include_directories(${TARGET_NAME_PLUGIN}

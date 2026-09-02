@@ -96,7 +96,7 @@ TurboUtils `turbo_timer_t` 的回调运行在 OS 线程池或专用线程，而 
 ### 权衡、迁移与回滚
 
 - 性能：每次触发增加一次跨线程 post 和一次 managed-task 调度；内置适配器复用 CoroNet context，不建立 per-job 线程。换取统一取消传播、单线程脚本状态与确定的非重叠语义。
-- 依赖：`turbo_script` 新增 `TurboUtils::Cron` 与 `TurboNet::CoroNet` 私有链接依赖。
+- 依赖：`turbo_script` 新增 `Rocida::Cron` 与 `TurboNet::CoroNet` 私有链接依赖。
 - 兼容性：既有同步脚本行为不变；只有使用 timer 的宿主必须提供 executor。原来只有声明而无实现的 `turbo_script_set_coro_context()` 现在成为兼容适配入口。
 - 关闭顺序：先标记 context closing，再停止/销毁原生 timers；已接受的 executor task 持有 context 引用，执行或跳过后才允许最终释放 ExprTk/MIR 状态。
 - 回滚：移除 timer 函数注册与 CLI loop 驱动即可恢复旧行为；调度代码独立在 `turbo_script_timer.c`，不需要迁移脚本数据格式。

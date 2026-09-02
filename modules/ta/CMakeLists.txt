@@ -16,7 +16,7 @@ target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                          $<INSTALL_INTERFACE:include>)
 target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk Rocida::Core)
 if(UNIX)
   target_link_libraries(${TARGET_NAME} PRIVATE m)
 endif()
@@ -32,7 +32,7 @@ cmake_config_target(
 target_link_libraries(
   ${TARGET_NAME_PLUGIN}
   PRIVATE ${TARGET_NAME}
-  PUBLIC exprtk TurboUtils::Core)
+  PUBLIC exprtk Rocida::Core)
 
 target_include_directories(${TARGET_NAME_PLUGIN}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include

@@ -544,6 +544,22 @@ int ts_expr_contains_value_call(ts_mir_compiler_t *c, exprtk_node_t *node) {
   }
 }
 
+static int ts_binary_eq_needs_value_eval(ts_mir_compiler_t *c,
+                                         exprtk_node_t *node) {
+  if (!node || node->type != EXPRTK_NODE_BINARY_OP ||
+      !node->data.binary.left ||
+      (node->data.binary.op != exprtk_TOKEN_EQ &&
+       node->data.binary.op != exprtk_TOKEN_NE)) {
+    return 0;
+  }
+
+  return ts_binary_is_null_eq_compare(node) ||
+         ts_is_non_numeric_node(node->data.binary.left) ||
+         ts_is_non_numeric_node(node->data.binary.right) ||
+         ts_expr_contains_value_call(c, node->data.binary.left) ||
+         ts_expr_contains_value_call(c, node->data.binary.right);
+}
+
 int ts_expr_list_contains_value_call(ts_mir_compiler_t *c, size_t count,
                                             exprtk_node_t **nodes) {
   if (!nodes) return 0;
@@ -1458,7 +1474,7 @@ MIR_reg_t ts_compile_expr(ts_mir_compiler_t *c, exprtk_node_t *node) {
       return operand;
     }
 
-    if (ts_binary_is_null_eq_compare(node)) {
+    if (ts_binary_eq_needs_value_eval(c, node)) {
       return ts_emit_runtime_value_node(c, node);
     }
 
@@ -1856,7 +1872,7 @@ static void ts_compile_branch_false(ts_mir_compiler_t *c, exprtk_node_t *node,
       return;
     }
 
-    if (ts_binary_is_null_eq_compare(node)) {
+    if (ts_binary_eq_needs_value_eval(c, node)) {
       MIR_reg_t cond = ts_emit_runtime_value_node(c, node);
       MIR_append_insn(c->ctx, c->func,
                       MIR_new_insn(c->ctx, MIR_DBEQ, MIR_new_label_op(c->ctx, false_label),
@@ -1937,7 +1953,7 @@ static void ts_compile_branch_true(ts_mir_compiler_t *c, exprtk_node_t *node,
   if (!c || c->failed || !node) return;
 
   if (node->type == EXPRTK_NODE_BINARY_OP && node->data.binary.left != NULL) {
-    if (ts_binary_is_null_eq_compare(node)) {
+    if (ts_binary_eq_needs_value_eval(c, node)) {
       MIR_reg_t cond = ts_emit_runtime_value_node(c, node);
       MIR_append_insn(c->ctx, c->func,
                       MIR_new_insn(c->ctx, MIR_DBNE, MIR_new_label_op(c->ctx, true_label),

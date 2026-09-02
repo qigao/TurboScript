@@ -1,7 +1,7 @@
 cmake_add_test(
   TARGET test_net_ctx
   SOURCES test_net_ctx.c
-  LIBS TurboUtils::TinyTest exprtk ${TARGET_NAME_LIB} TurboUtils::Core
+  LIBS Rocida::TinyTest exprtk ${TARGET_NAME_LIB} Rocida::Core
   FOLDER modules/net)
 
 add_custom_command(
@@ -13,7 +13,7 @@ add_custom_command(
 cmake_add_test(
   TARGET test_net_module
   SOURCES test_net_plugin.c
-  LIBS exprtk TurboUtils::TinyTest
+  LIBS exprtk Rocida::TinyTest
   DEPENDS net_tbs
   FOLDER modules/net)
 
@@ -34,7 +34,7 @@ endif()
 cmake_add_test(
   TARGET test_net_task_ws
   SOURCES test_net_task_ws.c
-  LIBS turbo_script TurboNet::CoroNet TurboUtils::TinyTest
+  LIBS turbo_script TurboNet::CoroNet Rocida::TinyTest
   DEPENDS net_tbs
   FOLDER modules/net)
 
@@ -47,7 +47,7 @@ add_custom_command(
 cmake_add_test(
   TARGET test_net_task_http
   SOURCES test_net_task_http.c
-  LIBS turbo_script TurboHttp::Iris TurboNet::CoroNet TurboUtils::TinyTest
+  LIBS turbo_script TurboHttp::Iris TurboNet::CoroNet Rocida::TinyTest
   DEPENDS net_tbs
   FOLDER modules/net)
 

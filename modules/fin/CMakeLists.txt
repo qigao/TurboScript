@@ -14,7 +14,7 @@ target_include_directories(
                         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/fin>)
 target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboUtils::Core)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk Rocida::Core)
 if(UNIX)
   target_link_libraries(${TARGET_NAME} PRIVATE m)
 endif()

@@ -3,7 +3,7 @@
  * @brief SQLite module for TurboScript — sqlite.* functions + handle management.
  */
 #include "sqlite_ctx.h"
-#include <turbostl/vec.h>
+#include <rocida/stl.h>
 #include <math.h>
 #include <stdint.h>
 

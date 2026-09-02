@@ -39,7 +39,7 @@ if(WIN32)
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboParser::Parser> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboUtils::Core> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
+            $<TARGET_FILE:Rocida::Core> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
             $<TARGET_FILE:TurboParser::DataBind> ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}
     COMMENT "Synchronizing RulesForge runtime dependencies"

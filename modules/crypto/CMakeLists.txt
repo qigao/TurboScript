@@ -23,7 +23,7 @@ target_compile_definitions(${TARGET_NAME} PRIVATE AES128=1 AES192=0 AES256=0 CBC
 
 target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboNet::Crypto
                                             unofficial::tiny-aes-c::tiny-aes-c
-                                            TurboUtils::Core)
+                                            Rocida::Core)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${CRYPTO_PLUGIN_SOURCES})
 

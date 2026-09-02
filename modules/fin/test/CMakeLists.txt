@@ -9,8 +9,8 @@ cmake_add_test(
   test_universe.c
   LIBS
   fin
-  TurboUtils::TinyTest
-  TurboUtils::Core
+  Rocida::TinyTest
+  Rocida::Core
   INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/../include
   FOLDER

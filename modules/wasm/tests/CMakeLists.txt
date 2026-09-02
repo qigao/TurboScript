@@ -2,7 +2,7 @@
 cmake_add_test(
   TARGET test_wasm_module
   SOURCES test_wasm.c
-  LIBS exprtk TurboUtils::TinyTest
+  LIBS exprtk Rocida::TinyTest
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/wasm3/source/extra
   DEPENDS wasm_tbs
   FOLDER modules/wasm)

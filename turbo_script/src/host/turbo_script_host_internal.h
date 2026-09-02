@@ -5,7 +5,7 @@
 #include "turbo_buffer.h"
 #include "turbo_str.h"
 #include "turbo_script_host_api_internal.h"
-#include <turbostl/vec.h>
+#include <rocida/stl.h>
 
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
 

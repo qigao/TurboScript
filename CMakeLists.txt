@@ -43,8 +43,6 @@ include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
 
-set(_turbo_script_dependency_roots
-    TURBOUTILS_ROOT TURBOPARSER_ROOT TURBONET_ROOT TURBOHTTP_ROOT)
 if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
   list(APPEND _turbo_script_dependency_roots RULES_FORGE_ROOT)
 endif()
@@ -61,9 +59,9 @@ foreach(_turbo_script_dependency_root IN LISTS _turbo_script_dependency_roots)
   endif()
 endforeach()
 
-find_package(Threads REQUIRED)
-find_package(TurboUtils CONFIG REQUIRED
-             PATHS "$ENV{TURBOUTILS_ROOT}" NO_DEFAULT_PATH)
+find_package(Threads REQUIRED) 
+find_package(Rocida   CONFIG REQUIRED
+             PATHS "$ENV{ROCIDA_ROOT}" NO_DEFAULT_PATH) 
 find_package(TurboParser CONFIG REQUIRED
              PATHS "$ENV{TURBOPARSER_ROOT}" NO_DEFAULT_PATH)
 find_package(TurboNet CONFIG REQUIRED

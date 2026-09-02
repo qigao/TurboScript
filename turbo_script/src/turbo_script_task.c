@@ -41,6 +41,7 @@ typedef struct ts_task_job_s {
   int active_counted;
   size_t waiters;
   coro_t *co;
+  struct ts_task_job_s *thread_next;
   struct ts_task_job_s *waiter_head;
   struct ts_task_job_s *waiter_next;
   struct ts_task_job_s *waiting_on;
@@ -71,6 +72,29 @@ struct ts_task_scheduler_s {
 static void ts_task_entry(coro_t *co, void *arg);
 static int ts_task_reset_job(ts_task_job_t *job);
 static void ts_task_release_job_callback(ts_task_job_t *job);
+
+/* CoroNet may own a different statically linked coroutine runtime, so its
+ * runtime-local coro_running() TLS cannot identify tasks here. Task entries
+ * execute on one owner thread; retain their jobs in this module's TLS and use
+ * the shared coroutine object's state to identify the one currently running. */
+static TURBO_THREAD_LOCAL ts_task_job_t *ts_task_thread_jobs;
+
+static void ts_task_thread_register(ts_task_job_t *job) {
+  job->thread_next = ts_task_thread_jobs;
+  ts_task_thread_jobs = job;
+}
+
+static void ts_task_thread_unregister(ts_task_job_t *job) {
+  ts_task_job_t **link = &ts_task_thread_jobs;
+  while (*link) {
+    if (*link == job) {
+      *link = job->thread_next;
+      job->thread_next = NULL;
+      return;
+    }
+    link = &(*link)->thread_next;
+  }
+}
 
 static void ts_task_copy_error(char *dst, size_t dst_size, const char *message) {
   if (!dst || dst_size == 0) return;
@@ -106,21 +130,30 @@ static const char *ts_task_state_name(ts_task_state_t state) {
 }
 
 static ts_task_job_t *ts_task_current(turbo_script_ctx_t *ctx) {
-  coro_t *co;
   ts_task_job_t *job;
   if (!ctx || !ctx->task_scheduler) return NULL;
-  co = coro_running();
-  if (!co) return NULL;
-  job = (ts_task_job_t *)coro_get_data(co);
-  if (!job || job->magic != TS_TASK_MAGIC || job->scheduler != ctx->task_scheduler) return NULL;
-  return job;
+  for (job = ts_task_thread_jobs; job; job = job->thread_next) {
+    if (job->magic == TS_TASK_MAGIC && job->scheduler == ctx->task_scheduler && job->co &&
+        coro_state(job->co) == coro_RUNNING)
+      return job;
+  }
+  return NULL;
+}
+
+static int ts_task_yield_to_scheduler(turbo_script_ctx_t *ctx) {
+  if (!ctx || !ctx->coro_ctx || coro_context_current() != ctx->coro_ctx) return -1;
+  coro_sleep(ctx->coro_ctx, 0);
+  return 0;
 }
 
 const coro_cancel_token_t *turbo_script_current_task_cancel_token(void) {
-  coro_t *co = coro_running();
-  ts_task_job_t *job = co ? (ts_task_job_t *)coro_get_data(co) : NULL;
-  if (!job || job->magic != TS_TASK_MAGIC || !job->cancel_source) return NULL;
-  return coro_cancel_source_token(job->cancel_source);
+  ts_task_job_t *job;
+  for (job = ts_task_thread_jobs; job; job = job->thread_next) {
+    if (job->magic == TS_TASK_MAGIC && job->co && job->cancel_source &&
+        coro_state(job->co) == coro_RUNNING)
+      return coro_cancel_source_token(job->cancel_source);
+  }
+  return NULL;
 }
 
 exprtk_env_t *ts_task_execution_env(turbo_script_ctx_t *ctx) {
@@ -130,7 +163,7 @@ exprtk_env_t *ts_task_execution_env(turbo_script_ctx_t *ctx) {
 
 const coro_cancel_token_t *ts_task_cancel_token(turbo_script_ctx_t *ctx) {
   ts_task_job_t *job = ts_task_current(ctx);
-  return job ? turbo_script_current_task_cancel_token() : NULL;
+  return job && job->cancel_source ? coro_cancel_source_token(job->cancel_source) : NULL;
 }
 
 static void ts_task_set_context_error(turbo_script_ctx_t *ctx, turbo_script_error_code_t code,
@@ -505,6 +538,7 @@ static void ts_task_entry(coro_t *co, void *arg) {
   ctx = scheduler->ctx;
   job->co = co;
   coro_set_data(co, job);
+  ts_task_thread_register(job);
 
   turbo_mutex_lock(&scheduler->mutex);
   if (scheduler->closing || atomic_load_explicit(&ctx->closing, memory_order_acquire) ||
@@ -518,6 +552,7 @@ static void ts_task_entry(coro_t *co, void *arg) {
     completion_arg = job->completion_arg;
     auto_release = job->auto_release;
     ts_task_copy_error(completion_error, sizeof(completion_error), job->error);
+    ts_task_thread_unregister(job);
     job->co = NULL;
     coro_set_data(co, NULL);
     if (!ts_task_is_cancelled(job)) ts_task_release_cancel_lifetime(job);
@@ -565,6 +600,7 @@ static void ts_task_entry(coro_t *co, void *arg) {
   completion_arg = job->completion_arg;
   auto_release = job->auto_release;
   ts_task_copy_error(completion_error, sizeof(completion_error), job->error);
+  ts_task_thread_unregister(job);
   job->co = NULL;
   coro_set_data(co, NULL);
   if (!cancelled) ts_task_release_cancel_lifetime(job);
@@ -635,7 +671,7 @@ static exprtk_value_t ts_task_yield_fn(size_t argc, exprtk_value_t *args, exprtk
                         "task.yield: may only be called from task.spawn callback");
   if (ts_task_is_cancelled(job)) return ts_task_cancel_failure(ctx, job);
   ts_task_set_current_state(job, TS_TASK_SCHEDULED);
-  if (coro_yield() != 0)
+  if (ts_task_yield_to_scheduler(ctx) != 0)
     return ts_task_fail(ctx, TURBO_SCRIPT_ERROR_STATE, "task.yield: scheduler yield failed");
   if (ts_task_is_cancelled(job)) return ts_task_cancel_failure(ctx, job);
   ts_task_set_current_state(job, TS_TASK_RUNNING);
@@ -767,7 +803,7 @@ static exprtk_value_t ts_task_result_value(turbo_script_ctx_t *ctx, int64_t id, 
                                                   : TURBO_SCRIPT_ERROR_STATE,
                           "task.join: failed to register cancellation");
     }
-    rc = coro_yield();
+    rc = ts_task_yield_to_scheduler(ctx);
     (void)coro_cancel_unregister(cancel_registration);
     if (rc != 0) {
       turbo_mutex_lock(&scheduler->mutex);

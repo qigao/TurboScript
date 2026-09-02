@@ -1,7 +1,7 @@
 cmake_add_test(
   TARGET test_rules_forge_plugin
   SOURCES test_rules_forge_plugin.c
-  LIBS exprtk TurboUtils::TinyTest
+  LIBS exprtk Rocida::TinyTest
   DEPENDS rules_forge_tbs
   FOLDER modules/rules_forge)
 if(WIN32)

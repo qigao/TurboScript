@@ -4,7 +4,7 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
     TARGET ${TARGET_NAME}
     SOURCES ${SOURCE_FILE}
-    LIBS turbo_script TurboUtils::TinyTest TurboNet::CoroNet exprtk ta mir_static
+    LIBS turbo_script Rocida::TinyTest Rocida::STL TurboNet::CoroNet exprtk ta mir_static
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
     DEPENDS mapper_tbs fin_tbs ta_tbs ts_tbs parser_tbs net_tbs coro_tbs
     FOLDER turbo_script)
@@ -33,7 +33,7 @@ add_ts_test(test_turbo_script_coro       test_turbo_script_coro.c)
 cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c
-  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk ta mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
   FOLDER turbo_script)
@@ -41,7 +41,7 @@ cmake_add_test(
 cmake_add_test(
   TARGET test_turbo_script_host_registry
   SOURCES test_turbo_script_host_registry.c
-  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk ta mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
   FOLDER turbo_script)
@@ -49,7 +49,7 @@ cmake_add_test(
 cmake_add_test(
   TARGET test_turbo_script_host_module
   SOURCES test_turbo_script_host_module.c
-  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk ta mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
@@ -58,7 +58,7 @@ cmake_add_test(
 cmake_add_test(
   TARGET test_turbo_script_host_instance
   SOURCES test_turbo_script_host_instance.c
-  LIBS turbo_script_lib TurboUtils::TinyTest exprtk ta mir_static
+  LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk ta mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
@@ -66,7 +66,7 @@ cmake_add_test(
 
 cmake_add_test(
   SOURCES bench_turbo_script.c
-  LIBS turbo_script_lib TurboUtils::TinyTest exprtk mir_static
+  LIBS turbo_script_lib Rocida::TinyTest Rocida::STL exprtk mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
   FOLDER turbo_script)
 
@@ -75,7 +75,7 @@ macro(add_mir_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
     TARGET ${TARGET_NAME}
     SOURCES ${SOURCE_FILE}
-    LIBS turbo_script TurboUtils::TinyTest exprtk mir_static
+    LIBS turbo_script Rocida::TinyTest Rocida::STL exprtk mir_static
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
     DEPENDS mapper_tbs
     FOLDER turbo_script)

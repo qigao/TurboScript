@@ -386,7 +386,7 @@ typedef struct exprtk_value_s {
     exprtk_typed_array_t typed_array;
     exprtk_vector_t vector;
     struct {
-      void *htab; // exprtk map storage backed by TurboUtils::Core hash map
+      void *htab; // exprtk map storage backed by Rocida::Core hash map
     } map;
     struct {
       struct exprtk_value_s *items;

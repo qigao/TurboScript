@@ -21,7 +21,7 @@ extern "C" {
 typedef coro_t mco_coro;
 
 /**
- * @brief Coroutine context backed by TurboUtils::Core.
+ * @brief Coroutine context backed by Rocida::Core.
  */
 typedef struct coro_ctx_s {
     mco_coro *coro;              /* TurboUtils coroutine object */

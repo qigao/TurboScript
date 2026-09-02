@@ -155,7 +155,7 @@ exprtk_value_t fn_coro_yield(size_t argc, exprtk_value_t *args, exprtk_env_t *en
     coro_mod_t *mod = (coro_mod_t *)user_data;
     coro_ctx_t *ctx = NULL;
     
-    /* Get current coroutine using TurboUtils::Core. */
+    /* Get current coroutine using Rocida::Core. */
     coro_t *running_coro = coro_running();
     if (!running_coro) {
         return exprtk_val_num(0); /* Not in coroutine context */

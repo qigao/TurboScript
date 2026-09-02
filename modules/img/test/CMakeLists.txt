@@ -1,7 +1,7 @@
 cmake_add_test(
   TARGET test_img
   SOURCES test_img.c
-  LIBS img exprtk TurboUtils::Core TurboUtils::TinyTest
+  LIBS img exprtk Rocida::Core Rocida::TinyTest
   INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../include
   FOLDER modules/img/test)
 

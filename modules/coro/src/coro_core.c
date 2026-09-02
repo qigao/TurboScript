@@ -1,6 +1,6 @@
 /**
  * @file coro_core.c
- * @brief TurboScript coroutine contexts backed by TurboUtils::Core.
+ * @brief TurboScript coroutine contexts backed by Rocida::Core.
  */
 #include "coro_ctx.h"
 #include "turbo_str.h"

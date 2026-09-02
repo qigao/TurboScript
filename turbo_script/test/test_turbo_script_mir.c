@@ -33,6 +33,14 @@ static int count_last_module_functions_containing(turbo_script_ctx_t *ctx, const
   return count;
 }
 
+static exprtk_value_t native_string_value(size_t arg_count, exprtk_value_t *args,
+                                          exprtk_env_t *env, void *user_data) {
+  (void)arg_count;
+  (void)args;
+  (void)env;
+  return exprtk_val_str(vstr_from_cstr((const char *)user_data));
+}
+
 spec("turbo_script_mir") {
 
   describe("compile_mir") {
@@ -213,6 +221,23 @@ spec("turbo_script_mir") {
     it("should run if-else") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check((turbo_script_run_jit(ctx, "x = 10; if (x > 5) { y = 1; } else { y = 0; }")) == (0));
+      turbo_script_free(ctx);
+    }
+
+    it("should compare native strings by content in conditional branches") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      ts_bind_func(ctx, "native_non_empty", native_string_value, "all");
+      ts_bind_func(ctx, "native_empty", native_string_value, "");
+
+      check_equal(turbo_script_run_jit(
+                      ctx,
+                      "if (native_non_empty() == \"\") { non_empty = 0; } else { non_empty = 1; }"
+                      "if (native_empty() != \"\") { empty = 0; } else { empty = 1; }"
+                      "if (native_empty() != \"\" || native_non_empty() == \"all\") { either = 1; }"),
+                  0);
+      check_equal(ts_get_num(ctx, "non_empty"), 1.0);
+      check_equal(ts_get_num(ctx, "empty"), 1.0);
+      check_equal(ts_get_num(ctx, "either"), 1.0);
       turbo_script_free(ctx);
     }
 

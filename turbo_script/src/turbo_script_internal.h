@@ -11,7 +11,7 @@
 #include <mir.h>
 #include "ts_plugin_loader.h"
 #include "turbo_script.h"
-#include <turbostl/vec.h>
+#include <rocida/stl.h>
 #include <stdatomic.h>
 
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;

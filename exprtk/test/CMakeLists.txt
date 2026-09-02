@@ -1,4 +1,4 @@
-set(EXPRTK_TEST_LIBS exprtk TurboUtils::TinyTest)
+set(EXPRTK_TEST_LIBS exprtk Rocida::TinyTest)
 set(EXPRTK_TEST_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 add_library(test_plugin_loader_fixture SHARED plugin_loader_fixture.c)
@@ -9,7 +9,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_fixture PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-target_link_libraries(test_plugin_loader_fixture PRIVATE TurboUtils::Core)
+target_link_libraries(test_plugin_loader_fixture PRIVATE Rocida::Core)
 set_target_properties(
   test_plugin_loader_fixture
   PROPERTIES PREFIX ""
@@ -24,7 +24,7 @@ function(add_plugin_loader_fixture target output_name)
     OUTPUT_NAME ${output_name}
     PLUGIN)
   target_include_directories(${target} PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-  target_link_libraries(${target} PRIVATE TurboUtils::Core)
+  target_link_libraries(${target} PRIVATE Rocida::Core)
   set_target_properties(
     ${target}
     PROPERTIES PREFIX ""
@@ -74,7 +74,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_missing_entry PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/../include)
-target_link_libraries(test_plugin_loader_missing_entry PRIVATE TurboUtils::Core)
+target_link_libraries(test_plugin_loader_missing_entry PRIVATE Rocida::Core)
 set_target_properties(
   test_plugin_loader_missing_entry
   PROPERTIES PREFIX ""

@@ -16,7 +16,7 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk unofficial::sqlite3::sqlite3 TurboUtils::STL
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 Rocida::STL
   PUBLIC TurboNet::CoroNet)
 target_include_directories(
   ${TARGET_NAME_LIB}
@@ -34,7 +34,7 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk unofficial::sqlite3::sqlite3 TurboUtils::STL
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 Rocida::STL
   PUBLIC TurboNet::CoroNet)
 set_target_properties(
   ${TARGET_NAME}

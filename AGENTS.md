@@ -209,7 +209,7 @@
 
 #### 库优先级顺序（从高到低）
 
-1. **TurboUtils**（仓库 `utils/` 模块；构建时优先通过 CMake target `TurboUtils::Core` 使用）— 最优先
+1. **TurboUtils**（仓库 `utils/` 模块；构建时优先通过 CMake target `Rocida::Core` 使用）— 最优先
 2. **项目内模块**（`exprtk/`、`plugins/` 等）
 3. **vendor/ 库**（sds、croar、mir、monocypher、sha2、uuid、miniblas）
 4. **vcpkg 依赖**（xxhash、sqlite3、zstd、openssl、c-ares、aklomp-base64、simde）
@@ -226,10 +226,10 @@
 
 #### 避免重复造轮子（强制规则）
 
-- ❌ **禁止手写**：动态数组 → 用 TurboUtils::STL 的 `vec_t` / `TURBO_VEC_DEFINE`，临时数组可用 `mem_pool_t`
+- ❌ **禁止手写**：动态数组 → 用 Rocida::STL 的 `vec_t` / `TURBO_VEC_DEFINE`，临时数组可用 `mem_pool_t`
 - ❌ **禁止手写**：字符串拼接 → 用 `tstr`（TurboUtils）或 `sds`（vendor）
-- ❌ **禁止手写**：哈希表/集合 → 用 TurboUtils::STL 的 `hash_map_t` / `TURBO_HASH_MAP_DEFINE` 或 `set_t` / `TURBO_SET_DEFINE`
-- ❌ **禁止手写**：双端队列 → 用 TurboUtils::STL 的 `deque_t` / `TURBO_DEQUE_DEFINE`
+- ❌ **禁止手写**：哈希表/集合 → 用 Rocida::STL 的 `hash_map_t` / `TURBO_HASH_MAP_DEFINE` 或 `set_t` / `TURBO_SET_DEFINE`
+- ❌ **禁止手写**：双端队列 → 用 Rocida::STL 的 `deque_t` / `TURBO_DEQUE_DEFINE`
 - ❌ **禁止手写**：文件读写 → 用 `turbo_fs`（TurboUtils）
 - ❌ **禁止手写**：日志系统 → 用 `tlog`（TurboUtils）
 - ❌ **禁止手写**：线程池 → 用 `turbo_threadpool`（TurboUtils）

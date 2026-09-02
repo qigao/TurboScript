@@ -4,7 +4,7 @@
  */
 
 #include "exprtk_module.h"
-#include <turbostl/hash_map.h>
+#include <rocida/stl.h>
 #include <stdlib.h>
 #include <string.h>
 
