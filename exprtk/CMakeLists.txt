@@ -36,16 +36,39 @@ add_custom_command(
 # Static frontend/runtime embedded by TurboScript and plugin binaries
 # =============================================================================
 cmake_add_source(SOURCE_FILES RECURSE PATTERNS "*.c*" "*.h*")
+set(EXPRTK_SYNTAX_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/src/grammar/exprtk_parser.c)
+list(REMOVE_ITEM SOURCE_FILES ${EXPRTK_SYNTAX_SOURCE})
 
 add_library(
-  ${TARGET_NAME} STATIC
-  ${SOURCE_FILES}
-  ${CMAKE_CURRENT_SOURCE_DIR}/src/exprtk_runtime.c
+  exprtk_syntax STATIC
+  ${EXPRTK_SYNTAX_SOURCE}
   ${exprtk_LEXER_GEN}
   ${exprtk_GRAMMAR_GEN}
   ${exprtk_LEXER_RE}
   ${exprtk_GRAMMAR_Y}
   ${exprtk_GRAMMAR_H})
+
+cmake_config_target(
+  exprtk_syntax
+  ALIAS
+  TurboScript::ExprTkSyntax
+  FOLDER
+  "exprtk"
+  EXPORT_NAME
+  ExprTkSyntax)
+
+target_include_directories(
+  exprtk_syntax
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+         $<INSTALL_INTERFACE:include>
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
+          ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::DataBind)
+
+add_library(
+  ${TARGET_NAME} STATIC
+  ${SOURCE_FILES})
 
 cmake_config_target(
   ${TARGET_NAME}
@@ -63,14 +86,14 @@ target_include_directories(
          $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/parser>
          $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
-          ${CMAKE_CURRENT_SOURCE_DIR}/src ${CMAKE_SOURCE_DIR}/vendor/mir)
+          ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC Rocida::Core TurboParser::Parser
-  PRIVATE Rocida::STL TurboParser::Mustache mir_static miniblas_linalg)
+  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind
+  PRIVATE Salts::CSTL Salts::Mustache miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
 if(MSVC)

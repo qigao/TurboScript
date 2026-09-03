@@ -15,7 +15,7 @@ cmake_config_target(${TARGET_NAME}
 target_include_directories(${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk Rocida::Core TurboParser::Parser)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk Salts::Core Salts::DataBind)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${MAPPER_PLUGIN_SOURCES})
 cmake_config_target(${TARGET_NAME_PLUGIN}
@@ -26,7 +26,7 @@ target_include_directories(${TARGET_NAME_PLUGIN}
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(${TARGET_NAME_PLUGIN}
   PRIVATE ${TARGET_NAME}
-  PUBLIC exprtk Rocida::Core TurboParser::Parser)
+  PUBLIC exprtk Salts::Core Salts::DataBind)
 set_target_properties(${TARGET_NAME_PLUGIN}
   PROPERTIES PREFIX "" VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
 

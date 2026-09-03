@@ -4,7 +4,7 @@
  */
 #include "img.h"
 #include "exprtk_module.h"
-#include "turbo_thread.h"
+#include "salts_thread.h"
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -36,12 +36,12 @@ typedef struct {
     size_t active_calls;
 } img_handle_slot_t;
 
-static turbo_once_t img_handles_once = TURBO_ONCE_INIT;
-static turbo_mutex_t img_handles_mutex;
+static salts_once_t img_handles_once = SALTS_ONCE_INIT;
+static salts_mutex_t img_handles_mutex;
 static img_handle_slot_t img_handle_slots[IMG_HANDLE_CAPACITY];
 
 static void img_handles_init(void) {
-    turbo_mutex_init(&img_handles_mutex);
+    salts_mutex_init(&img_handles_mutex);
 }
 
 static exprtk_env_t *img_root_env(exprtk_env_t *env) {
@@ -75,8 +75,8 @@ static int img_value_to_int(exprtk_value_t value, int *out) {
 static int64_t img_register_handle(img_t *image, exprtk_env_t *env) {
     exprtk_env_t *owner = img_root_env(env);
     if (!image || !owner) return 0;
-    turbo_once(&img_handles_once, img_handles_init);
-    turbo_mutex_lock(&img_handles_mutex);
+    salts_once(&img_handles_once, img_handles_init);
+    salts_mutex_lock(&img_handles_mutex);
     for (size_t i = 0; i < IMG_HANDLE_CAPACITY; ++i) {
         img_handle_slot_t *slot = &img_handle_slots[i];
         if (slot->image || slot->active_calls != 0) continue;
@@ -86,10 +86,10 @@ static int64_t img_register_handle(img_t *image, exprtk_env_t *env) {
         slot->image = image;
         slot->owner = owner;
         int64_t handle = (int64_t)((slot->generation << IMG_HANDLE_INDEX_BITS) | i);
-        turbo_mutex_unlock(&img_handles_mutex);
+        salts_mutex_unlock(&img_handles_mutex);
         return handle;
     }
-    turbo_mutex_unlock(&img_handles_mutex);
+    salts_mutex_unlock(&img_handles_mutex);
     return 0;
 }
 
@@ -107,23 +107,23 @@ static img_t *img_acquire_handle(exprtk_value_t value, exprtk_env_t *env, int64_
     generation = encoded >> IMG_HANDLE_INDEX_BITS;
     if (generation == 0 || generation > IMG_HANDLE_MAX_GENERATION) return NULL;
 
-    turbo_once(&img_handles_once, img_handles_init);
-    turbo_mutex_lock(&img_handles_mutex);
+    salts_once(&img_handles_once, img_handles_init);
+    salts_mutex_lock(&img_handles_mutex);
     if (img_handle_slots[index].image && img_handle_slots[index].owner == owner &&
         img_handle_slots[index].generation == generation) {
         img_handle_slots[index].active_calls++;
         image = img_handle_slots[index].image;
         if (handle_out) *handle_out = handle;
     }
-    turbo_mutex_unlock(&img_handles_mutex);
+    salts_mutex_unlock(&img_handles_mutex);
     return image;
 }
 
 static void img_release_handle(int64_t handle) {
     size_t index = (size_t)((uint64_t)handle & IMG_HANDLE_INDEX_MASK);
-    turbo_mutex_lock(&img_handles_mutex);
+    salts_mutex_lock(&img_handles_mutex);
     if (img_handle_slots[index].active_calls > 0) img_handle_slots[index].active_calls--;
-    turbo_mutex_unlock(&img_handles_mutex);
+    salts_mutex_unlock(&img_handles_mutex);
 }
 
 static int img_destroy_handle(exprtk_value_t value, exprtk_env_t *env) {
@@ -138,17 +138,17 @@ static int img_destroy_handle(exprtk_value_t value, exprtk_env_t *env) {
     encoded = (uint64_t)handle;
     index = (size_t)(encoded & IMG_HANDLE_INDEX_MASK);
     generation = encoded >> IMG_HANDLE_INDEX_BITS;
-    turbo_once(&img_handles_once, img_handles_init);
-    turbo_mutex_lock(&img_handles_mutex);
+    salts_once(&img_handles_once, img_handles_init);
+    salts_mutex_lock(&img_handles_mutex);
     if (!img_handle_slots[index].image || img_handle_slots[index].owner != owner ||
         img_handle_slots[index].generation != generation || img_handle_slots[index].active_calls != 0) {
-        turbo_mutex_unlock(&img_handles_mutex);
+        salts_mutex_unlock(&img_handles_mutex);
         return 0;
     }
     image = img_handle_slots[index].image;
     img_handle_slots[index].image = NULL;
     img_handle_slots[index].owner = NULL;
-    turbo_mutex_unlock(&img_handles_mutex);
+    salts_mutex_unlock(&img_handles_mutex);
     img_free(image);
     return 1;
 }
@@ -165,10 +165,10 @@ void exprtk_img_release_handles(exprtk_env_t *env) {
     size_t next_slot = 0;
 
     if (!owner) return;
-    turbo_once(&img_handles_once, img_handles_init);
+    salts_once(&img_handles_once, img_handles_init);
     while (next_slot < IMG_HANDLE_CAPACITY) {
         size_t image_count = 0;
-        turbo_mutex_lock(&img_handles_mutex);
+        salts_mutex_lock(&img_handles_mutex);
         while (next_slot < IMG_HANDLE_CAPACITY && image_count < IMG_HANDLE_CLEANUP_BATCH_SIZE) {
             img_handle_slot_t *slot = &img_handle_slots[next_slot++];
             if (!slot->image || slot->owner != owner || slot->active_calls != 0) continue;
@@ -176,7 +176,7 @@ void exprtk_img_release_handles(exprtk_env_t *env) {
             slot->image = NULL;
             slot->owner = NULL;
         }
-        turbo_mutex_unlock(&img_handles_mutex);
+        salts_mutex_unlock(&img_handles_mutex);
 
         for (size_t i = 0; i < image_count; ++i) img_free(images[i]);
     }

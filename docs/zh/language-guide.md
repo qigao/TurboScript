@@ -883,8 +883,8 @@ format_date(timestamp), format_date_utc(timestamp)
 os_name(), pid(), uptime_ms(), monotonic_ms()
 ```
 
-文件与路径内建函数基于 TurboNet `turbo_fs`。日期格式化、本地时间与 UTC
-转换基于 TurboNet platform datetime helpers。原生 temporal 值由
+文件与路径内建函数基于 Salts `turbo_fs`。日期格式化、本地时间与 UTC
+转换基于 Salts platform datetime helpers。原生 temporal 值由
 `datetime.parse()`、`date.parse()`、`time.parse()`、`duration.parse()` 提供。
 
 ### 导入脚本

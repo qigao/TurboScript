@@ -8,7 +8,7 @@
 #include "exprtk_types.h"
 #include "simd_helpers.h"
 #include "tinytest.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>

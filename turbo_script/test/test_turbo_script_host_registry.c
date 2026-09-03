@@ -1,7 +1,7 @@
 #include "tinytest.h"
 
 #include "exprtk.h"
-#include "turbo/thread.h"
+#include "salts_thread.h"
 #include "turbo_script_host_internal.h"
 
 #include <stdint.h>
@@ -421,8 +421,8 @@ spec("turbo_script_host_registry") {
       }
     }
 
-    it("rejects registry operations from a non-owner TurboUtils thread") {
-      turbo_thread_t thread = NULL;
+    it("rejects registry operations from a non-owner Salts thread") {
+      salts_thread_t thread = NULL;
       registry_thread_probe_t probe = {
           .ctx = ctx,
           .result = result,
@@ -431,9 +431,9 @@ spec("turbo_script_host_registry") {
           .entry_output = (const ts_host_function_entry_t *)(uintptr_t)1,
       };
 
-      check_equal(turbo_thread_create(&thread, registry_thread_probe_run, &probe), 0);
-      check_equal(turbo_thread_join(&thread), 0);
-      turbo_thread_destroy(&thread);
+      check_equal(salts_thread_create(&thread, registry_thread_probe_run, &probe), 0);
+      check_equal(salts_thread_join(&thread), 0);
+      salts_thread_destroy(&thread);
       check_equal(probe.owner_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.register_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.unregister_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);

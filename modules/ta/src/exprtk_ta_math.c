@@ -8,7 +8,7 @@
 #include <math.h> 
 #include <stdlib.h>
 #include <string.h>
-#include <turbo_buffer.h>
+#include <salts_buffer.h>
 
 void ta_sma_calc(const double *src, size_t len, size_t period, double *dst) {
   if (period == 0 || period > len)

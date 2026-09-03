@@ -11,6 +11,4 @@ option(ENABLE_TESTS "Enable the tests" ON)
 
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
-option(TURBO_SCRIPT_ENABLE_RULES_FORGE "Build the RulesForge TurboScript module" ON)
-
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)

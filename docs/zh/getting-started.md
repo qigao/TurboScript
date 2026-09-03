@@ -241,7 +241,6 @@ print("最新 SMA: " + average[len(average) - 1]);
 ### 常用模块
 
 ```javascript
-import("parser");       // INI、dotenv、TOML 和命令行解析
 import("mapper");       // 基于 class 的 JSON/YAML/XML 映射
 import("ta");           // 技术分析，调用命名空间为 ta.*
 import("fin");          // 金融与策略函数，调用命名空间为 strategy.*

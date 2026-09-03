@@ -357,14 +357,12 @@ macOS:   <name>.dylib
 - `import("ta")` → searches for `ta.dll`
 - `import("my_math")` → searches for `my_math.dll`
 
-Two built-in plugins use collision-safe file stems because their dependencies
-already own the logical-name library filenames:
+The crypto plugin uses a collision-safe file stem because its dependency
+already owns the logical-name library filename:
 
 - `import("crypto")` → `crypto_plugin.dll` (`crypto_plugin.so` on Linux)
-- `import("rules_forge")` → `rules_forge_plugin.dll` (`rules_forge_plugin.so` on Linux)
 
-Their logical names and plugin descriptor names remain `crypto` and
-`rules_forge`.
+Its logical name and plugin descriptor name remain `crypto`.
 
 ---
 

@@ -14,31 +14,8 @@ extern "C" {
 
 typedef struct turbo_script_ctx_s turbo_script_ctx_t;
 typedef struct turbo_script_compiled_s turbo_script_compiled_t;
-typedef struct coro_context_s coro_context_t;
-typedef struct coro_cancel_token_s coro_cancel_token_t;
 typedef struct exprtk_value_s exprtk_value_t;
 typedef struct exprtk_env_s exprtk_env_t;
-
-/** Callback executed by a TurboScript timer executor on the context owner thread. */
-typedef void (*turbo_script_executor_task_fn)(void *arg1, void *arg2);
-
-/**
- * @brief Post one timer callback to a serialized TurboScript execution context.
- *
- * A successful post must execute @p task exactly once. The executor must not
- * run two tasks for the same TurboScript context concurrently.
- *
- * @return 0 when accepted, or a negative value on failure.
- */
-typedef int (*turbo_script_executor_post_fn)(void *executor_data,
-                                             turbo_script_executor_task_fn task,
-                                             void *arg1, void *arg2);
-
-/** Borrowed timer-executor descriptor copied by turbo_script_set_executor(). */
-typedef struct {
-  turbo_script_executor_post_fn post;
-  void *data;
-} turbo_script_executor_t;
 
 /**
  * @brief Borrowed iterator over a TurboScript map value.
@@ -164,36 +141,6 @@ TURBO_SCRIPT_C_API int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
 TURBO_SCRIPT_C_API const char *turbo_script_version(void);
 
 /**
- * @brief Set the serialized executor used by timer callbacks.
- *
- * The executor and its data are borrowed and must remain valid until all
- * accepted callbacks have run. Replacing an executor while timer jobs or
- * managed tasks are active fails. Passing NULL clears the executor and the
- * CoroNet task context when both subsystems are idle. A custom timer executor
- * does not provide the scheduler required by task.spawn().
- *
- * @return 0 on success, or -1 on invalid state or arguments.
- */
-TURBO_SCRIPT_C_API int turbo_script_set_executor(turbo_script_ctx_t *ctx,
-                                        const turbo_script_executor_t *executor);
-
-/**
- * @brief Use a CoroNet context for timer callbacks and managed script tasks.
- *
- * Timer callbacks run sequentially in one managed coroutine. Each task.spawn
- * callback runs in its own managed coroutine and may cooperatively join, yield,
- * sleep, or perform coroutine-aware I/O.
- * The CoroNet context is borrowed and must outlive the TurboScript context,
- * all accepted callbacks, and all managed tasks. This compatibility API records errors on @p ctx;
- * use turbo_script_set_executor() when the caller needs a return code.
- * Script callbacks with deep class or collection call graphs may need a larger
- * coroutine stack. Context owners can configure this through
- * coro_context_create_ex(). The TurboScript CLI passes stack_size == 0 by
- * default so TurboUtils owns the default; --coro-stack-kib sets an override.
- */
-TURBO_SCRIPT_C_API void turbo_script_set_coro_context(turbo_script_ctx_t *ctx, coro_context_t *coro_ctx);
-
-/**
  * @brief Configure the bounded timer job registry.
  *
  * This may only be changed while no timer jobs are active. Terminal job status
@@ -225,15 +172,6 @@ TURBO_SCRIPT_C_API size_t turbo_script_task_active_count(turbo_script_ctx_t *ctx
 
 /** @brief Return the number of retained managed tasks in the failed state. */
 TURBO_SCRIPT_C_API size_t turbo_script_task_failed_count(turbo_script_ctx_t *ctx);
-
-/**
- * @brief Return the borrowed cancellation token for the running managed task.
- *
- * Native modules may pass this token to coroutine-aware operations. The token
- * is NULL outside task.spawn() and must not be retained after the native call
- * returns.
- */
-TURBO_SCRIPT_C_API const coro_cancel_token_t *turbo_script_current_task_cancel_token(void);
 
 /**
  * @brief Free a Turbo Script context.

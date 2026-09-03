@@ -10,7 +10,7 @@ TurboScript 的 timer、managed task 与网络模块都运行在同一个 CoroNe
 
 - TurboScript task 的状态、结果、join 与关闭；
 - CoroNet 等待操作的协作式中断；
-- TurboHTTP 请求的取消传播；
+- Salts 请求的取消传播；
 - timer callback 与交互式 REPL 的事件循环驱动。
 
 ## 候选方案
@@ -23,12 +23,12 @@ TurboScript 的 timer、managed task 与网络模块都运行在同一个 CoroNe
 ### TurboScript 私有取消标志
 
 拒绝作为完整方案。私有标志可覆盖 `task.yield()`，但无法唤醒 CoroNet 内部的
-DNS、connect、send、recv 或 TLS 等等待，也会迫使 TurboHTTP 依赖 TurboScript。
+DNS、connect、send、recv 或 TLS 等等待，也会迫使 Salts 依赖 TurboScript。
 
 ### CoroNet cancellation source/token
 
 采用。取消能力由实际拥有 event loop 和 I/O wait 的 CoroNet 提供，TurboScript
-拥有 source，TurboHTTP 只借用 token。现有无 token API 保持原行为。
+拥有 source，Salts 只借用 token。现有无 token API 保持原行为。
 
 ## 状态与事实源
 
@@ -57,10 +57,10 @@ waiter、活动 cancellation registration 的 slot。
 |---|---|---|---|
 | task slot | TurboScript task registry | status/join/result 调用 | 成功 `task.release()` |
 | cancel source | task slot | 无 | slot reset；此前必须无 registration |
-| cancel token | cancel source | sleep/join/TurboHTTP request | source 销毁 |
+| cancel token | cancel source | sleep/join/Salts request | source 销毁 |
 | cancellation registration | 当前等待操作 | cancel source 的 owner-loop 列表 | unregister 完成 |
 | HTTP request control | HTTP 调用栈 | `http_request_ex()` | 请求返回 |
-| transport | TurboHTTP request/connection pool | cancellation callback | unregister 后 release/discard |
+| transport | Salts request/connection pool | cancellation callback | unregister 后 release/discard |
 
 Token 是 borrowed handle，不延长 task slot 生命周期。注册成功后，等待操作必须在每条
 返回路径恰好 unregister 一次。取消 callback 只负责中断等待，不释放业务对象。
@@ -79,8 +79,8 @@ Token 是 borrowed handle，不延长 task slot 生命周期。注册成功后�
 
 ## 错误语义
 
-- CoroNet 等待返回 `TURBO_ECANCELED`；
-- TurboHTTP 映射为追加的 `HTTP_ERROR_CANCELLED`，不得进入 retry；
+- CoroNet 等待返回 `SALTS_ECANCELED`；
+- Salts 映射为追加的 `HTTP_ERROR_CANCELLED`，不得进入 retry；
 - TurboScript 映射为追加的 `TURBO_SCRIPT_ERROR_CANCELLED`；
 - `task.join()` 目标取消时传播取消错误；
 - 重复 cancel 返回 already-terminal/already-requested 结果，不重复唤醒；
@@ -104,7 +104,7 @@ Timer 仍拥有触发计划；callback execution 交给 managed task。周期 ti
 - 新 task API 是增加项；原有脚本继续运行；
 - timer 的 fixed-delay、串行 callback 与错误查询行为保持不变。
 
-迁移顺序：先统一 MIR/解释器调用语义，再实现 CoroNet token，随后接入 TurboHTTP、
+迁移顺序：先统一 MIR/解释器调用语义，再实现 CoroNet token，随后接入 Salts、
 TurboScript task/timer，最后启用 REPL runtime driver。每一阶段都可独立回滚到上一层的
 无 token 调用，不能保留只在部分 I/O 阶段生效的公开取消 API。
 

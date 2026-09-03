@@ -22,7 +22,7 @@ function(verify_cli_failure mode)
   if(result EQUAL 0)
     message(FATAL_ERROR "${mode} accepted an invalid script")
   endif()
-  if(NOT error MATCHES "Error: .+")
+  if(NOT error MATCHES "TurboScript: .+")
     message(FATAL_ERROR
       "${mode} did not report a diagnostic on stderr\nstdout: ${output}\nstderr: ${error}")
   endif()

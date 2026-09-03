@@ -1,12 +1,17 @@
 #ifndef exprtk_TYPES_H
 #define exprtk_TYPES_H
 
-#include "turbo_buffer.h"
-#include "turbo_parser.h"
-#include "turbo_vstr.h"
-#include "turbo_uuid.h"
+#include "salts_buffer.h"
+#include "turbo_parser_datetime.h"
+#include "salts_vstr.h"
+#include "salts_uuid.h"
 #include <stddef.h>
 #include <stdint.h>
+
+/* ExprTk is embedded as a static library; no DLL import/export decoration is needed. */
+#ifndef EXPRTK_C_API
+#define EXPRTK_C_API
+#endif
 
 #ifdef __cplusplus
 extern "C" {
@@ -373,7 +378,7 @@ typedef struct exprtk_value_s {
     int64_t integer;
     int boolean;
     vstr bytes;
-    turbo_uuid_t uuid;
+    salts_uuid_t uuid;
     turbo_datetime_t datetime;
     exprtk_date_t date;
     exprtk_time_t time;
@@ -386,7 +391,7 @@ typedef struct exprtk_value_s {
     exprtk_typed_array_t typed_array;
     exprtk_vector_t vector;
     struct {
-      void *htab; // exprtk map storage backed by Rocida::Core hash map
+      void *htab; // exprtk map storage backed by Salts::Core hash map
     } map;
     struct {
       struct exprtk_value_s *items;

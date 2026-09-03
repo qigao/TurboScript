@@ -993,8 +993,8 @@ format_date(timestamp), format_date_utc(timestamp)
 os_name(), pid(), uptime_ms(), monotonic_ms()
 ```
 
-File and path built-ins use TurboNet `turbo_fs`. Date formatting and local/UTC
-time conversion use TurboNet platform datetime helpers. Native temporal values
+File and path built-ins use Salts `turbo_fs`. Date formatting and local/UTC
+time conversion use Salts platform datetime helpers. Native temporal values
 are available through `datetime.parse()`, `date.parse()`, `time.parse()`, and
 `duration.parse()`.
 

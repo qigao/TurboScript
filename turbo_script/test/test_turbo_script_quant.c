@@ -1,7 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
-#include "turbo_fs.h"
+#include "salts_fs.h"
 #include "turbo_script.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -336,36 +336,36 @@ spec("turbo_script_quant") {
       const char *util_src = "func helper(x) { return x + 1; };";
       const char *child_src = "import(\"./utils.tbs\");";
       const char *main_src = "import(\"sub/child.tbs\"); res = helper(7);";
-      char root_dir[TURBO_FS_MAX_PATH];
-      char sub_dir[TURBO_FS_MAX_PATH];
-      char main_path[TURBO_FS_MAX_PATH];
-      char child_path[TURBO_FS_MAX_PATH];
-      char util_path[TURBO_FS_MAX_PATH];
-      turbo_fs_buf_t buf;
+      char root_dir[SALTS_FS_MAX_PATH];
+      char sub_dir[SALTS_FS_MAX_PATH];
+      char main_path[SALTS_FS_MAX_PATH];
+      char child_path[SALTS_FS_MAX_PATH];
+      char util_path[SALTS_FS_MAX_PATH];
+      salts_fs_buf_t buf;
 
       ts_test_make_name(root_dir, sizeof(root_dir), "_ts_import_rel", "");
-      check((turbo_fs_mkdir(root_dir, 0755)) == (0));
-      check((turbo_fs_path_join(sub_dir, sizeof(sub_dir), root_dir, "sub")) == (0));
-      check((turbo_fs_mkdir(sub_dir, 0755)) == (0));
-      check((turbo_fs_path_join(main_path, sizeof(main_path), root_dir, "main.tbs")) == (0));
-      check((turbo_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.tbs")) == (0));
-      check((turbo_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.tbs")) == (0));
+      check((salts_fs_mkdir(root_dir, 0755)) == (0));
+      check((salts_fs_path_join(sub_dir, sizeof(sub_dir), root_dir, "sub")) == (0));
+      check((salts_fs_mkdir(sub_dir, 0755)) == (0));
+      check((salts_fs_path_join(main_path, sizeof(main_path), root_dir, "main.tbs")) == (0));
+      check((salts_fs_path_join(child_path, sizeof(child_path), sub_dir, "child.tbs")) == (0));
+      check((salts_fs_path_join(util_path, sizeof(util_path), sub_dir, "utils.tbs")) == (0));
 
-      buf = turbo_fs_buf_init((char *)util_src, strlen(util_src));
-      check((turbo_fs_write_file(util_path, &buf)) == (0));
-      buf = turbo_fs_buf_init((char *)child_src, strlen(child_src));
-      check((turbo_fs_write_file(child_path, &buf)) == (0));
-      buf = turbo_fs_buf_init((char *)main_src, strlen(main_src));
-      check((turbo_fs_write_file(main_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)util_src, strlen(util_src));
+      check((salts_fs_write_file(util_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)child_src, strlen(child_src));
+      check((salts_fs_write_file(child_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)main_src, strlen(main_src));
+      check((salts_fs_write_file(main_path, &buf)) == (0));
 
       check((turbo_script_run_file(ctx, main_path)) == (0));
       check(fabs((double)(ts_get_num(ctx, "res")) - (double)(8.0)) <= (double)(0.001));
 
-      check((turbo_fs_unlink(main_path)) == (0));
-      check((turbo_fs_unlink(child_path)) == (0));
-      check((turbo_fs_unlink(util_path)) == (0));
-      check((turbo_fs_rmdir(sub_dir)) == (0));
-      check((turbo_fs_rmdir(root_dir)) == (0));
+      check((salts_fs_unlink(main_path)) == (0));
+      check((salts_fs_unlink(child_path)) == (0));
+      check((salts_fs_unlink(util_path)) == (0));
+      check((salts_fs_rmdir(sub_dir)) == (0));
+      check((salts_fs_rmdir(root_dir)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -388,13 +388,13 @@ spec("turbo_script_quant") {
                                "export(\"add1\"); "
                                "export(\"answer\", 41); "
                                "export(\"load_count\");";
-      char module_path[TURBO_FS_MAX_PATH];
+      char module_path[SALTS_FS_MAX_PATH];
       char script[512];
-      turbo_fs_buf_t buf;
+      salts_fs_buf_t buf;
 
       ts_test_make_name(module_path, sizeof(module_path), "_ts_export_mod", ".tbs");
-      buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
-      check((turbo_fs_write_file(module_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)module_src, strlen(module_src));
+      check((salts_fs_write_file(module_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
                "var m1 = import(\"%s\"); "
@@ -408,7 +408,7 @@ spec("turbo_script_quant") {
       check(fabs((double)(ts_get_num(ctx, "res")) - (double)(46.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "loads")) - (double)(1.0)) <= (double)(0.001));
 
-      check((turbo_fs_unlink(module_path)) == (0));
+      check((salts_fs_unlink(module_path)) == (0));
       turbo_script_free(ctx);
     }
 
@@ -419,13 +419,13 @@ spec("turbo_script_quant") {
                                "func add_secret(x) { return x + secret; }; "
                                "export(\"add_secret\"); "
                                "export(\"shared\");";
-      char module_path[TURBO_FS_MAX_PATH];
+      char module_path[SALTS_FS_MAX_PATH];
       char script[640];
-      turbo_fs_buf_t buf;
+      salts_fs_buf_t buf;
 
       ts_test_make_name(module_path, sizeof(module_path), "_ts_isolated_mod", ".tbs");
-      buf = turbo_fs_buf_init((char *)module_src, strlen(module_src));
-      check((turbo_fs_write_file(module_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)module_src, strlen(module_src));
+      check((salts_fs_write_file(module_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
                "shared = 7; "
@@ -443,7 +443,7 @@ spec("turbo_script_quant") {
       check(fabs((double)(ts_get_num(ctx, "global_shared")) - (double)(7.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "leaked_secret")) - (double)(0.0)) <= (double)(0.001));
 
-      check((turbo_fs_unlink(module_path)) == (0));
+      check((salts_fs_unlink(module_path)) == (0));
       turbo_script_free(ctx);
     }
   }

@@ -21,9 +21,9 @@ target_include_directories(
 
 target_compile_definitions(${TARGET_NAME} PRIVATE AES128=1 AES192=0 AES256=0 CBC=0 ECB=0 CTR=1)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk TurboNet::Crypto
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk Salts::CNet turbo_crypto
                                             unofficial::tiny-aes-c::tiny-aes-c
-                                            Rocida::Core)
+                                            Salts::Core)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${CRYPTO_PLUGIN_SOURCES})
 

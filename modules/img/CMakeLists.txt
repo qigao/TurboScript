@@ -16,7 +16,7 @@ target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
                          $<INSTALL_INTERFACE:include>)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk Rocida::Core)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk Salts::Core)
 
 find_path(STB_INCLUDE_DIRS "stb_image.h")
 target_include_directories(${TARGET_NAME} PRIVATE ${STB_INCLUDE_DIRS})
@@ -37,7 +37,7 @@ cmake_config_target(
 target_link_libraries(
   ${TARGET_NAME_PLUGIN}
   PRIVATE ${TARGET_NAME}
-  PUBLIC exprtk Rocida::Core)
+  PUBLIC exprtk Salts::Core)
 
 target_include_directories(${TARGET_NAME_PLUGIN}
                            PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include

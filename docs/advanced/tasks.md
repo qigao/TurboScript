@@ -50,7 +50,7 @@ var report = task.spawn(() => {
 
 仓库内版本见 [task_parallel_http.tbs](../../examples/task_parallel_http.tbs)。`http.get()` 对当前脚本 task 仍是同步调用：函数返回后下一行才执行；底层连接、发送和接收等待会挂起当前 coroutine，因此其他 task 可以继续运行。这是协作式并发，不是多线程并行，CPU 密集代码必须显式 `task.yield()` 才会让出执行权。
 
-`http.get()` 与 `http.post()` 通过 `TurboHttp::TurboHttp` facade 发起请求。options 中的 `transport` 可取 `"auto"`、`"h1"` 或 `"h2"`；默认 `"auto"` 会先尝试 HTTP/2，只在连接阶段、尚未发送请求数据时回退到 HTTP/1。显式 `"h2"` 不执行 H1 fallback。`ws.*` 继续使用 CoroNet 的 `ws://` / `wss://` 客户端，因为当前 TurboHTTP facade 未公开 WebSocket 客户端句柄；现有 task 连接隔离和取消语义不变。
+`http.get()` 与 `http.post()` 通过 `Salts::CHTTP` facade 发起请求。options 中的 `transport` 可取 `"auto"`、`"h1"` 或 `"h2"`；默认 `"auto"` 会先尝试 HTTP/2，只在连接阶段、尚未发送请求数据时回退到 HTTP/1。显式 `"h2"` 不执行 H1 fallback。`ws.*` 继续使用 CoroNet 的 `ws://` / `wss://` 客户端，因为当前 Salts facade 未公开 WebSocket 客户端句柄；现有 task 连接隔离和取消语义不变。
 
 每个 task 拥有一个 CoroNet cancellation source。`task.cancel()` 会唤醒 `task.sleep()`、`task.join()` 以及通过 `turbo_http_request_ex()` 执行的 HTTP 等待；被取消的 HTTP transport 会从连接池丢弃且不进入 retry。取消是协作式的：纯 CPU callback 只能在下一次 `task.yield()`、task API、可取消 I/O 或 callback 返回时观察请求，runtime 不会强制销毁正在运行的栈。
 
@@ -93,18 +93,17 @@ coro_context_destroy(coro);
 
 ### 背景
 
-原 `modules/coro` 表达的是手动 generator：调用方显式 `resume`，`coro.yield(value)` 只把值交回该调用方。它不拥有 event loop，也不会把 yield 后的 coroutine 自动重新排队，因此不能承担 HTTP、timer 与多个后台任务之间的统一调度。
+`task.*` 是 TurboScript 唯一的脚本级并发模型；它负责调度、任务可见状态与结果归属。
 
 ### 候选方案
 
-1. 在 `modules/coro` 内再写一个 scheduler：会复制 TurboUtils/CoroNet 的 ready queue、I/O waiting 和 object-pool 生命周期，排除。
-2. 用线程池运行脚本 callback：ExprTK/MIR、插件实例及根环境是单 owner lane 的可变状态，需要为大量模块重新定义线程安全，排除。
-3. 让 timer 的串行 executor 同时执行 task：可保证安全，但一个 task 等待 HTTP 时会阻止其他 task 开始，不能提供调度型并发，排除。
-4. 新建 `task.*` 适配层并复用 CoroNet scheduler：每个 task 独立 caller env，scheduler 管理 ready/I/O 状态，registry 管理脚本可见状态与结果，采用。
+1. 用线程池运行脚本 callback：ExprTK/MIR、插件实例及根环境是单 owner lane 的可变状态，需要为大量模块重新定义线程安全，排除。
+2. 让 timer 的串行 executor 同时执行 task：可保证安全，但一个 task 等待 HTTP 时会阻止其他 task 开始，不能提供调度型并发，排除。
+3. 采用 `task.*` 适配层：每个 task 独立 caller env，调度器管理 ready/I/O 状态，registry 管理脚本可见状态与结果。
 
 ### 影响、迁移与回滚
 
-- 现有同步脚本和 `modules/coro` generator API 不变；`task.*` 是新增接口。
+- 删除未使用的 `coro.*` generator 插件；`task.*` 是唯一的脚本并发接口。
 - `turbo_script_set_coro_context()` 从 timer-only 适配入口扩展为 timer + task 的共同 CoroNet 入口；自定义 timer executor 不能替代 task 所需的 CoroNet scheduler。
 - timer 保持串行、不重叠语义；需要并发 I/O 的 timer callback 可快速 `task.spawn()` 后返回。
 - `ws.*` 在 managed task 内按 task 隔离连接；多个 task 可并行调用同名的

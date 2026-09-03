@@ -1,7 +1,7 @@
 #include "tinytest.h"
 
 #include "exprtk_module.h"
-#include "turbo/thread.h"
+#include "salts_thread.h"
 #include "turbo_script_host_internal.h"
 
 #include <stdint.h>
@@ -596,16 +596,16 @@ spec("turbo_script_host_result") {
     it("rejects result access from a non-owner thread") {
       turbo_script_value_view_t value = {.kind = TURBO_SCRIPT_VALUE_NULL};
       ts_host_value_limits_t limits = test_limits();
-      turbo_thread_t thread = NULL;
+      salts_thread_t thread = NULL;
       result_thread_probe_t probe = {
           .result = result,
           .ctx = ctx,
       };
 
       check_equal(ts_host_result_store_view(result, &value, &limits), TURBO_SCRIPT_STATUS_OK);
-      check_equal(turbo_thread_create(&thread, result_thread_probe_run, &probe), 0);
-      check_equal(turbo_thread_join(&thread), 0);
-      turbo_thread_destroy(&thread);
+      check_equal(salts_thread_create(&thread, result_thread_probe_run, &probe), 0);
+      check_equal(salts_thread_join(&thread), 0);
+      salts_thread_destroy(&thread);
       check_equal(probe.getter_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.context_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.reset_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
@@ -614,14 +614,14 @@ spec("turbo_script_host_result") {
     }
 
     it("rejects result creation and value conversion outside the context owner thread") {
-      turbo_thread_t thread = NULL;
+      salts_thread_t thread = NULL;
       context_thread_probe_t probe = {
           .ctx = ctx,
       };
 
-      check_equal(turbo_thread_create(&thread, context_thread_probe_run, &probe), 0);
-      check_equal(turbo_thread_join(&thread), 0);
-      turbo_thread_destroy(&thread);
+      check_equal(salts_thread_create(&thread, context_thread_probe_run, &probe), 0);
+      check_equal(salts_thread_join(&thread), 0);
+      salts_thread_destroy(&thread);
       check_equal(probe.create_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.conversion_status, TURBO_SCRIPT_STATUS_WRONG_THREAD);
       check_equal(probe.conversion_type, EXPRTK_VAL_NULL);

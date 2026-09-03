@@ -16,8 +16,8 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk unofficial::sqlite3::sqlite3 Rocida::STL
-  PUBLIC TurboNet::CoroNet)
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 Salts::CSTL
+  PUBLIC Salts::Coroutine)
 target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -34,8 +34,8 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk unofficial::sqlite3::sqlite3 Rocida::STL
-  PUBLIC TurboNet::CoroNet)
+  PRIVATE exprtk unofficial::sqlite3::sqlite3 Salts::CSTL
+  PUBLIC Salts::Coroutine)
 set_target_properties(
   ${TARGET_NAME}
   PROPERTIES PREFIX ""
@@ -45,7 +45,3 @@ target_include_directories(
   ${TARGET_NAME} PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>)
 
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/ DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sqlite)
-
-if(BUILD_TESTS AND ENABLE_TESTS)
-  add_subdirectory(tests)
-endif()

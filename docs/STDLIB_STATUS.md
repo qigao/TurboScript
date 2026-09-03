@@ -6,15 +6,14 @@
 ## 核心能力
 
 - `core`：表达式、字符串、集合、函数和运行时类型。
-- `parser`：INI、dotenv、TOML、命令行等配置文本解析。
 - `mapper`：基于 TurboScript class 的 JSON/YAML/XML 映射。
 - `os`：进程、服务、日志、电源和 Cron 能力。
 - `io`、`net`、`sqlite`、`ta`、`fin`、`strategy`、`vec`：按各模块文档提供能力。
 
 ## Mapper
 
-`mapper` 使用 class 字段声明作为唯一类型来源，并调用 TurboUtils
-`turbo_parser.h` 解析和生成文档：
+`mapper` 使用 class 字段声明作为唯一类型来源，并调用 Salts
+Salts DataBind parser APIs 解析和生成文档：
 
 - `mapper.read_json(Class, text)` / `mapper.write_json(instance)`
 - `mapper.read_yaml(Class, text)` / `mapper.write_yaml(instance)`
@@ -24,9 +23,7 @@
 和嵌套 class。JSON/YAML 未声明字段、类型不匹配值会快速失败，缺失字段
 保留 class 默认值。
 
-TurboScript 不再提供独立 schema、codec、TBE 或 DataBind 公共接口。RulesForge
-使用的 `rules_forge.data_bind_*` 名称属于外部 RulesForge fact-ingestion ABI，
-不属于 TurboScript 的 `data_bind` 插件。
+TurboScript 不提供独立 schema、codec、TBE 或 DataBind 公共接口。
 
 ## 验证状态
 

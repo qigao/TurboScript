@@ -7,8 +7,8 @@
 #include "exprtk_grammar.h"
 #include "exprtk_module.h"
 #include "turbo_script_mir_internal.h"
-#include "turbo_str.h"
-#include <rocida/stl.h>
+#include "salts_str.h"
+#include <cstl.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -318,7 +318,7 @@ static int ts_mir_runtime_value_text(exprtk_value_t value, char *buf, size_t buf
     return 1;
   }
   if (value.type == EXPRTK_VAL_UUID) {
-    if (turbo_uuid_format(&value.data.uuid, buf, buf_size) != TURBO_OK) return 0;
+    if (salts_uuid_format(&value.data.uuid, buf, buf_size) != SALTS_OK) return 0;
     *out_data = buf;
     *out_len = strlen(buf);
     return 1;
@@ -694,7 +694,7 @@ static int ts_mir_template_append_value(tstr *buf, exprtk_value_t value) {
     n = snprintf(num_buf, sizeof(num_buf), "bytes(%zu)", value.data.bytes.len);
     return n >= 0 && ts_mir_template_append(buf, num_buf, (size_t)n);
   case EXPRTK_VAL_UUID:
-    if (turbo_uuid_format(&value.data.uuid, num_buf, sizeof(num_buf)) != TURBO_OK) return 0;
+    if (salts_uuid_format(&value.data.uuid, num_buf, sizeof(num_buf)) != SALTS_OK) return 0;
     return ts_mir_template_append(buf, num_buf, strlen(num_buf));
   case EXPRTK_VAL_DATETIME: {
     time_t ts = turbo_datetime_to_time(&value.data.datetime);

@@ -2,9 +2,9 @@ add_executable(turbo_script_repl main.c)
 cmake_config_target(turbo_script_repl FOLDER turbo_script)
 
 target_link_libraries(turbo_script_repl
-  PRIVATE turbo_script TurboParser::Parser TurboNet::CoroNet)
+  PRIVATE turbo_script Salts::DataBind)
 
-add_dependencies(turbo_script_repl fin_tbs ta_tbs ts_tbs parser_tbs coro_tbs)
+add_dependencies(turbo_script_repl fin_tbs ta_tbs ts_tbs)
 
 if(BUILD_TESTING)
   set(TURBO_SCRIPT_GOF_EXAMPLES
@@ -44,24 +44,6 @@ if(BUILD_TESTING)
             --eval "import(\"fin\"); import(\"ts\"); module_names_ok = 1;")
   set_tests_properties(turbo_script_cli_uses_actual_module_names
     PROPERTIES LABELS "turbo_script;cli;plugins")
-
-  foreach(CORO_STACK_KIB IN ITEMS 0 512 1024)
-    add_test(
-      NAME turbo_script_cli_coro_stack_${CORO_STACK_KIB}
-      COMMAND $<TARGET_FILE:turbo_script_repl>
-              --coro-stack-kib ${CORO_STACK_KIB}
-              --eval "stack_override = 1;")
-    set_tests_properties(turbo_script_cli_coro_stack_${CORO_STACK_KIB}
-      PROPERTIES LABELS "turbo_script;cli;coro")
-  endforeach()
-
-  add_test(
-    NAME turbo_script_cli_coro_stack_rejects_small_value
-    COMMAND $<TARGET_FILE:turbo_script_repl>
-            --coro-stack-kib 1
-            --eval "stack_override = 1;")
-  set_tests_properties(turbo_script_cli_coro_stack_rejects_small_value
-    PROPERTIES LABELS "turbo_script;cli;coro" WILL_FAIL TRUE)
 
   add_test(
     NAME turbo_script_cli_reports_batch_errors

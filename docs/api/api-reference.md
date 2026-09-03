@@ -319,8 +319,8 @@ Offsets `start`/`end` are byte offsets; `utf8_start`/`utf8_end` are UTF-8
 codepoint offsets.
 
 Automaton helpers return a list of match maps. `fuzzy.levenshtein` and
-`fuzzy.agrep` use TurboUtils Levenshtein automata. `fuzzy.ac` uses
-TurboUtils Aho-Corasick multi-pattern matching. Their optional `mode` is
+`fuzzy.agrep` use Salts Levenshtein automata. `fuzzy.ac` uses
+Salts Aho-Corasick multi-pattern matching. Their optional `mode` is
 `"utf8"` by default or `"byte"` for raw byte matching.
 
 Flags are a string: `i` case-insensitive, `n` newline mode, `l` literal mode,
@@ -716,7 +716,7 @@ file_remove("temp.txt");
 | `rmdir_recursive(path)` | Remove a directory tree | 0 on success |
 | `tmpdir()` | Get temp directory path | String |
 
-File, path, and directory primitives are backed by TurboNet `turbo_fs`.
+File, path, and directory primitives are backed by Salts `turbo_fs`.
 `listdir()` and `glob()` return script lists; mutation APIs keep the IO
 status convention of `0` on success and a negative value on failure.
 
@@ -751,11 +751,11 @@ var file = path_basename(full);                   // "data.csv"
 Timezone policy:
 
 - `now()` returns a Unix timestamp and has no timezone.
-- `date(str)` uses TurboNet's datetime parser and returns a Unix timestamp.
+- `date(str)` uses Salts's datetime parser and returns a Unix timestamp.
 - `format_date(ts)` without a custom format returns the legacy RFC 822 string.
 - `format_date(ts, fmt)` keeps legacy host-local formatting for compatibility.
 - Use `date_utc(str)` and `format_date_utc(ts, fmt)` when the script needs deterministic UTC behavior.
-- Custom local/UTC formatting is backed by TurboNet platform datetime helpers.
+- Custom local/UTC formatting is backed by Salts platform datetime helpers.
 - For native datetime values, use `datetime(text)` or `datetime.parse(text)`.
 
 **Example:**
@@ -843,11 +843,11 @@ Parser APIs return plain objects for dynamic JSON objects and XML query nodes.
 | `decimal.to_string(d)` / `d.to_string()` | Format decimal as normalized text | `decimal.to_string(price)` |
 
 `datetime.parse`, `datetime.to_time`, and `datetime.format_rfc822` are exported
-by the script parser module and use TurboNet's datetime parser/format helpers.
+by the script parser module and use Salts's datetime parser/format helpers.
 `datetime.parse`, `date.parse`, `time.parse`, `duration.parse`, and
 `decimal.parse` produce native runtime values. Structured document mapping is
-provided by `mapper`, whose class-first API is backed by TurboUtils
-`turbo_parser.h`:
+provided by `mapper`, whose class-first API is backed by Salts
+Salts DataBind parser APIs:
 
 | Function | Description |
 |----------|-------------|
@@ -912,14 +912,13 @@ var slope = derivative("f", 2);          // f'(2) = 4
 
 For functions provided by optional modules:
 
-- **Parser / CSV / JSON**: See [parser README](../../modules/parser/README.md)
+- **Structured documents**: Use the `mapper` JSON/YAML/XML APIs.
 - **CSV filter expressions**: See [csv_filter_expression.md](csv_filter_expression.md)
 - **Technical Analysis**: See [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md)
 - **Vector Operations**: See [vec_cheatsheet.md](vec_cheatsheet.md)
 - **Finance / Strategy**: See [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) and [modules/FIN_MODULE.md](../modules/FIN_MODULE.md)
 - **Network**: See [modules/net.md](modules/net.md)
 - **SQLite**: See [modules/sqlite.md](modules/sqlite.md)
-- **WebAssembly**: See [../../modules/wasm/README.md](../../modules/wasm/README.md)
 
 ---
 

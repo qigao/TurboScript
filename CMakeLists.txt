@@ -43,9 +43,7 @@ include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
 
-if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
-  list(APPEND _turbo_script_dependency_roots RULES_FORGE_ROOT)
-endif()
+set(_turbo_script_dependency_roots SALTS_ROOT SALTS_UTILS_ROOT)
 
 foreach(_turbo_script_dependency_root IN LISTS _turbo_script_dependency_roots)
   if(NOT DEFINED ENV{${_turbo_script_dependency_root}} OR
@@ -60,14 +58,18 @@ foreach(_turbo_script_dependency_root IN LISTS _turbo_script_dependency_roots)
 endforeach()
 
 find_package(Threads REQUIRED) 
-find_package(Rocida   CONFIG REQUIRED
-             PATHS "$ENV{ROCIDA_ROOT}" NO_DEFAULT_PATH) 
-find_package(TurboParser CONFIG REQUIRED
-             PATHS "$ENV{TURBOPARSER_ROOT}" NO_DEFAULT_PATH)
-find_package(TurboNet CONFIG REQUIRED
-             PATHS "$ENV{TURBONET_ROOT}" NO_DEFAULT_PATH)
-find_package(TurboHttp CONFIG REQUIRED
-             PATHS "$ENV{TURBOHTTP_ROOT}" NO_DEFAULT_PATH)
+find_package(Salts CONFIG REQUIRED
+             PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
+find_package(SaltsUtils CONFIG REQUIRED
+             PATHS "$ENV{SALTS_UTILS_ROOT}" NO_DEFAULT_PATH)
+foreach(_turbo_script_required_target IN ITEMS
+        Salts::CNet Salts::CHTTP Salts::Coroutine Salts::Cron Salts::Mustache
+        Salts::DataBind)
+  if(NOT TARGET ${_turbo_script_required_target})
+    message(FATAL_ERROR
+            "Required Salts target is unavailable: ${_turbo_script_required_target}")
+  endif()
+endforeach()
 
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -88,15 +90,13 @@ include(CMakePackageConfigHelpers)
 # Project-owned installation policy
 install(
   TARGETS turbo_script
+          exprtk
+          exprtk_syntax
+          miniblas_linalg
   EXPORT TurboScriptTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-
-set(_turbo_script_rules_forge_install_target)
-if(TURBO_SCRIPT_ENABLE_RULES_FORGE)
-  set(_turbo_script_rules_forge_install_target rules_forge_tbs)
-endif()
 
 install(
   TARGETS net_tbs
@@ -106,12 +106,9 @@ install(
           sqlite_tbs
           mapper_tbs
           img_tbs
-          coro_tbs
-          parser_tbs
           crypto_tbs
           hash_tbs
           fuzzy_tbs
-          ${_turbo_script_rules_forge_install_target}
           os_tbs
   LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

@@ -9,10 +9,10 @@
 #include <simde/x86/fma.h>
 #include <stdlib.h>
 #include <string.h>
-#include <turbo_buffer.h>
+#include <salts_buffer.h>
 #include "simd_helpers.h"
 
-/* Standard memory management via MEM_ALLOC_ARRAY from turbo_buffer.h is used. */
+/* Standard memory management via MEM_ALLOC_ARRAY from salts_buffer.h is used. */
 
 // zn_normalize is a wrapper around simd_zscore
 static void zn_normalize(const double *in, size_t n, double *out) {

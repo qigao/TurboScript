@@ -16,7 +16,7 @@ var yaml = mapper.write_yaml(user);
 var xml = mapper.write_xml(user);
 ```
 
-The mapper uses TurboUtils `turbo_parser.h` DOM APIs. It rejects unknown input
+The mapper uses Salts DataBind parser DOM APIs. It rejects unknown input
 fields and values that do not match a declared field type. Missing fields retain
 their class defaults. There is no external schema, codec, or binary format.
 

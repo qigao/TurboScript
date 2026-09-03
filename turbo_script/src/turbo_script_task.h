@@ -16,5 +16,6 @@ int ts_task_spawn_managed(turbo_script_ctx_t *ctx, exprtk_value_t callback,
                           ts_task_completion_fn completion, void *completion_arg,
                           int64_t *id_out);
 int ts_task_cancel_managed(turbo_script_ctx_t *ctx, int64_t id);
+size_t ts_task_scheduler_capacity(turbo_script_ctx_t *ctx);
 
 #endif /* TURBO_SCRIPT_TASK_H */

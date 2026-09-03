@@ -428,7 +428,7 @@ All IO functions are registered globally via `exprtk_module_io()`. No `import` o
 | Script function | Behaviour |
 |---|---|
 | `now()` | Current Unix timestamp (seconds) |
-| `date(str)` | Parse date string with TurboNet datetime parser → Unix timestamp |
+| `date(str)` | Parse date string with Salts datetime parser → Unix timestamp |
 | `date_utc(str)` | Parse fixed UTC date/time text → Unix timestamp |
 | `format_date(ts [, fmt])` | Format timestamp → string (default RFC 822; custom format uses host local time) |
 | `format_date_utc(ts [, fmt])` | Format timestamp in UTC → string |

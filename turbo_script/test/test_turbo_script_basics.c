@@ -1,7 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
-#include "turbo_fs.h"
+#include "salts_fs.h"
 #include "turbo_script.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -109,16 +109,6 @@ spec("turbo_script_basics") {
       turbo_script_free(ctx);
     }
 
-#if defined(TURBO_SCRIPT_ENABLE_RULES_FORGE)
-    it("should load rules_forge through its collision-safe plugin filename") {
-      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-
-      check_not_null(ctx);
-      check_equal(turbo_script_load_plugin(ctx, "rules_forge"), 0);
-      turbo_script_free(ctx);
-    }
-#endif
-
     it("should report the loader stage when a native plugin cannot be opened") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 
@@ -179,6 +169,23 @@ spec("turbo_script_basics") {
   }
 
   describe("Basics") {
+    it("should produce the same result through the interpreter and JIT") {
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+
+      check_not_null(interp);
+      check_not_null(jit);
+      if (interp && jit) {
+        check_equal(turbo_script_run(interp, "answer = 6 * 7;"), 0);
+        check_equal(turbo_script_run_jit(jit, "answer = 6 * 7;"), 0);
+        check_equal(ts_get_num(interp, "answer"), 42.0);
+        check_equal(ts_get_num(jit, "answer"), 42.0);
+      }
+
+      turbo_script_free(interp);
+      turbo_script_free(jit);
+    }
+
     it("should execute math scripts") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       check_not_null(ctx);

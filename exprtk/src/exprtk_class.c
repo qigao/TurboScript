@@ -5,7 +5,7 @@
 
 #include "exprtk_class.h"
 #include "exprtk.h"
-#include "mir-htab.h"
+#include <cstl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,8 +20,6 @@ typedef struct {
     exprtk_func_t *func;
 } method_entry_t;
 
-DEF_HTAB(method_entry_t)
-
 // Hash table entry for field storage (name -> value)
 typedef struct {
     char *name;
@@ -31,61 +29,143 @@ typedef struct {
     const char *declared_type;
 } field_entry_t;
 
-DEF_HTAB(field_entry_t)
-
 /* ========================================================================
  * Internal Helpers
  * ======================================================================== */
 
-// MIR allocator wrapper for standard malloc/free
-static void* mir_std_malloc(size_t size, void *user_data) {
-    (void)user_data;
-    return malloc(size);
-}
-
-static void* mir_std_calloc(size_t num, size_t size, void *user_data) {
-    (void)user_data;
-    return calloc(num, size);
-}
-
-static void* mir_std_realloc(void *ptr, size_t old_size, size_t new_size, void *user_data) {
-    (void)user_data;
-    (void)old_size;
-    return realloc(ptr, new_size);
-}
-
-static void mir_std_free(void *ptr, void *user_data) {
-    (void)user_data;
-    free(ptr);
-}
-
-static const struct MIR_alloc mir_std_alloc_struct = {
-    mir_std_malloc,
-    mir_std_calloc,
-    mir_std_realloc,
-    mir_std_free,
-    NULL
-};
-
-static MIR_alloc_t mir_std_alloc = (MIR_alloc_t)&mir_std_alloc_struct;
-
 static uint64_t next_class_type_id = 1;
 
-/**
- * @brief Hash function for method/field name lookup
+/*
+ * The class runtime keeps its public storage opaque, but owns the raw CSTL
+ * maps below.  Keys are borrowed `char *` values whose lifetime is owned by
+ * the class/instance arena; values are byte-copied by HashMap.  No pointer
+ * returned by a map is kept across a put/remove operation.
  */
-static htab_hash_t method_hash(method_entry_t entry, void *arg) {
-    (void)arg;
-    const char *s = entry.name;
-    htab_hash_t h = 0;
-    while (*s) h = h * 31 + (unsigned char)*s++;
-    return h;
+typedef size_t htab_size_t;
+typedef size_t htab_hash_t;
+typedef struct {
+    void *data;
+    size_t length;
+} exprtk_table_snapshot_t;
+
+typedef struct { htab_hash_t hash; method_entry_t el; } method_entry_t_htab_el_t;
+typedef struct {
+    hash_map_t map;
+    exprtk_table_snapshot_t els;
+    htab_size_t els_bound;
+    htab_size_t els_num;
+    void *arg;
+} method_entry_t_htab_t;
+
+typedef struct { htab_hash_t hash; field_entry_t el; } field_entry_t_htab_el_t;
+typedef struct {
+    hash_map_t map;
+    exprtk_table_snapshot_t els;
+    htab_size_t els_bound;
+    htab_size_t els_num;
+    void *arg;
+} field_entry_t_htab_t;
+
+#define HTAB(T) T##_htab_t
+#define HTAB_EL(T) T##_htab_el_t
+#define VARR_ADDR(T, array) ((T *)((array).data))
+#define VARR_LENGTH(T, array) ((array).length)
+#define HTAB_DELETED_HASH SIZE_MAX
+#define HTAB_FIND 0
+#define HTAB_INSERT 1
+#define HTAB_REPLACE 2
+#define HTAB_DELETE 3
+#define HTAB_OP(T, operation) T##_htab_##operation
+
+static size_t exprtk_name_hash(const void *key, size_t key_size, void *context) {
+    const char *const *name = (const char *const *)key;
+    size_t hash = 5381u;
+    (void)key_size;
+    (void)context;
+    if (!name || !*name) return 0u;
+    for (const unsigned char *p = (const unsigned char *)*name; *p; ++p)
+        hash = ((hash << 5u) + hash) ^ *p;
+    return hash;
 }
 
-static int method_eq(method_entry_t e1, method_entry_t e2, void *arg) {
-    (void)arg;
-    return strcmp(e1.name, e2.name) == 0;
+static bool exprtk_name_equal(const void *left, const void *right,
+                              size_t key_size, void *context) {
+    const char *const *lhs = (const char *const *)left;
+    const char *const *rhs = (const char *const *)right;
+    (void)key_size;
+    (void)context;
+    return lhs && rhs && *lhs && *rhs && strcmp(*lhs, *rhs) == 0;
 }
+
+#define EXPRTK_DEFINE_TABLE_ADAPTER(T) \
+static int T##_htab_sync(HTAB(T) *table) { \
+    size_t count; \
+    T##_htab_el_t *elements; \
+    if (!table) return 0; \
+    free(table->els.data); \
+    table->els.data = NULL; \
+    table->els.length = 0; \
+    count = hash_map_size(&table->map); \
+    table->els_bound = count; \
+    table->els_num = count; \
+    if (count == 0) return 1; \
+    elements = (T##_htab_el_t *)calloc(count, sizeof(*elements)); \
+    if (!elements) return 0; \
+    for (size_t slot = 0, out = 0; slot < hash_map_capacity(&table->map); ++slot) { \
+        const char *const *key = (const char *const *)hash_map_key_at_const(&table->map, slot); \
+        const T *value = (const T *)hash_map_value_at_const(&table->map, slot); \
+        if (!key || !value) continue; \
+        elements[out].hash = exprtk_name_hash(key, sizeof(*key), NULL); \
+        if (elements[out].hash == HTAB_DELETED_HASH) --elements[out].hash; \
+        elements[out].el = *value; \
+        ++out; \
+    } \
+    table->els.data = elements; \
+    table->els.length = count; \
+    return 1; \
+} \
+static HTAB(T) *T##_htab_new(size_t entry_limit) { \
+    HTAB(T) *table = (HTAB(T) *)calloc(1, sizeof(*table)); \
+    if (!table) return NULL; \
+    if (hash_map_init_bytes(&table->map, sizeof(char *), _Alignof(char *), \
+                            sizeof(T), _Alignof(T), entry_limit, \
+                            exprtk_name_hash, exprtk_name_equal, NULL) != STL_OK) { \
+        free(table); \
+        return NULL; \
+    } \
+    return table; \
+} \
+static void T##_htab_destroy(HTAB(T) **table) { \
+    if (!table || !*table) return; \
+    free((*table)->els.data); \
+    hash_map_raw_destroy_storage(&(*table)->map); \
+    free(*table); \
+    *table = NULL; \
+} \
+static int T##_htab_do(HTAB(T) *table, T entry, int operation, T *result) { \
+    T *stored; \
+    T removed; \
+    if (!table || !entry.name) return 0; \
+    stored = (T *)hash_map_get(&table->map, &entry.name); \
+    if (operation == HTAB_FIND) { \
+        if (!stored) return 0; \
+        if (result) *result = *stored; \
+        return 1; \
+    } \
+    if (operation == HTAB_DELETE) { \
+        if (!stored || hash_map_remove(&table->map, &entry.name, &removed) != STL_OK) return 0; \
+        if (result) *result = removed; \
+        return T##_htab_sync(table); \
+    } \
+    if ((operation == HTAB_INSERT && stored) || \
+        (operation != HTAB_INSERT && operation != HTAB_REPLACE) || \
+        hash_map_put(&table->map, &entry.name, &entry) != STL_OK) return 0; \
+    if (result) *result = entry; \
+    return T##_htab_sync(table); \
+}
+
+EXPRTK_DEFINE_TABLE_ADAPTER(method_entry_t)
+EXPRTK_DEFINE_TABLE_ADAPTER(field_entry_t)
 
 static char *method_arity_key(const char *name, size_t argc) {
     if (!name) return NULL;
@@ -227,7 +307,10 @@ static int class_name_match_depth(exprtk_class_t *klass, const char *name) {
                 best_interface_depth = interface_depth;
             }
         }
-        if (best_interface_depth >= 0) return depth + best_interface_depth;
+        /* Crossing into an implemented interface is one inheritance edge.
+         * Preserve that cost so a directly implemented derived interface
+         * outranks one of its ancestor interfaces during overload dispatch. */
+        if (best_interface_depth >= 0) return depth + 1 + best_interface_depth;
         depth++;
     }
     return -1;
@@ -251,7 +334,9 @@ static int class_identity_match_depth(exprtk_class_t *klass, exprtk_class_t *tar
                 best_interface_depth = interface_depth;
             }
         }
-        if (best_interface_depth >= 0) return depth + best_interface_depth;
+        /* See class_name_match_depth: interface edges contribute to the
+         * distance used to choose the most specific typed overload. */
+        if (best_interface_depth >= 0) return depth + 1 + best_interface_depth;
         depth++;
     }
 
@@ -372,19 +457,6 @@ static int method_entry_is_for_func(method_entry_t entry) {
     return matches;
 }
 
-static htab_hash_t field_hash(field_entry_t entry, void *arg) {
-    (void)arg;
-    const char *s = entry.name;
-    htab_hash_t h = 0;
-    while (*s) h = h * 31 + (unsigned char)*s++;
-    return h;
-}
-
-static int field_eq(field_entry_t e1, field_entry_t e2, void *arg) {
-    (void)arg;
-    return strcmp(e1.name, e2.name) == 0;
-}
-
 static int field_table_find(void *table, const char *name, field_entry_t *out_entry) {
     if (!table || !name) return 0;
 
@@ -402,29 +474,9 @@ static exprtk_value_t *field_table_find_slot(void *table, const char *name) {
     if (!table || !name) return NULL;
 
     HTAB(field_entry_t) *htab = (HTAB(field_entry_t) *)table;
-    htab_size_t size = (htab_size_t)VARR_LENGTH(htab_ind_t, htab->entries);
-    if (size == 0) return NULL;
-
-    field_entry_t search;
-    search.name = (char *)name;
-    htab_hash_t hash = field_hash(search, htab->arg);
-    if (hash == HTAB_DELETED_HASH) hash += 1;
-
-    htab_size_t mask = size - 1;
-    htab_hash_t peterb = hash;
-    htab_ind_t *entries = VARR_ADDR(htab_ind_t, htab->entries);
-    HTAB_EL(field_entry_t) *els = VARR_ADDR(HTAB_EL(field_entry_t), htab->els);
-
-    for (htab_size_t ind = hash & mask;;) {
-        htab_ind_t el_ind = entries[ind];
-        if (el_ind == HTAB_EMPTY_IND) return NULL;
-        if (el_ind != HTAB_DELETED_IND && els[el_ind].hash == hash &&
-            field_eq(els[el_ind].el, search, htab->arg)) {
-            return &els[el_ind].el.value;
-        }
-        peterb >>= 11;
-        ind = (5 * ind + peterb + 1) & mask;
-    }
+    char *key = (char *)name;
+    field_entry_t *entry = (field_entry_t *)hash_map_get(&htab->map, &key);
+    return entry ? &entry->value : NULL;
 }
 
 static int method_table_find(void *table, const char *name, method_entry_t *out_entry) {
@@ -617,6 +669,9 @@ static void class_remove_satisfied_abstract_methods(exprtk_class_t *klass,
     HTAB_EL(method_entry_t) *els_addr =
         VARR_ADDR(HTAB_EL(method_entry_t), htab->els);
     htab_size_t bound = htab->els_bound;
+    const char **satisfied = (const char **)calloc(bound, sizeof(*satisfied));
+    size_t satisfied_count = 0;
+    if (!satisfied && bound != 0) return;
 
     for (htab_size_t i = 0; i < bound; ++i) {
         if (els_addr[i].hash == HTAB_DELETED_HASH || !els_addr[i].el.name) continue;
@@ -625,11 +680,15 @@ static void class_remove_satisfied_abstract_methods(exprtk_class_t *klass,
             continue;
         }
 
-        method_entry_t search;
+        satisfied[satisfied_count++] = els_addr[i].el.name;
+    }
+
+    for (size_t i = 0; i < satisfied_count; ++i) {
+        method_entry_t search = { .name = (char *)satisfied[i] };
         method_entry_t result;
-        search.name = els_addr[i].el.name;
         HTAB_OP(method_entry_t, do)(htab, search, HTAB_DELETE, &result);
     }
+    free(satisfied);
 }
 
 static char *class_copy_string(mem_pool_t *arena, const char *value) {
@@ -973,23 +1032,12 @@ exprtk_class_t *exprtk_class_create(
     // Constructor (will be created during evaluation)
     klass->constructor = NULL;
 
-    // Create method hash tables using MIR HTAB
-    HTAB(method_entry_t) *constructors_htab = NULL;
-    HTAB(method_entry_t) *methods_htab = NULL;
-    HTAB(method_entry_t) *static_methods_htab = NULL;
-    HTAB(method_entry_t) *abstract_methods_htab = NULL;
-    HTAB(field_entry_t) *static_fields_htab = NULL;
-    
-    HTAB_OP(method_entry_t, create)(&constructors_htab, mir_std_alloc, 8,
-                                    method_hash, method_eq, NULL, NULL);
-    HTAB_OP(method_entry_t, create)(&methods_htab, mir_std_alloc, 16,
-                                    method_hash, method_eq, NULL, NULL);
-    HTAB_OP(method_entry_t, create)(&static_methods_htab, mir_std_alloc, 16,
-                                    method_hash, method_eq, NULL, NULL);
-    HTAB_OP(method_entry_t, create)(&abstract_methods_htab, mir_std_alloc, 16,
-                                    method_hash, method_eq, NULL, NULL);
-    HTAB_OP(field_entry_t, create)(&static_fields_htab, mir_std_alloc, 16,
-                                   field_hash, field_eq, NULL, NULL);
+    // Class-owned raw CSTL tables: unbounded for source compatibility.
+    HTAB(method_entry_t) *constructors_htab = method_entry_t_htab_new(SIZE_MAX);
+    HTAB(method_entry_t) *methods_htab = method_entry_t_htab_new(SIZE_MAX);
+    HTAB(method_entry_t) *static_methods_htab = method_entry_t_htab_new(SIZE_MAX);
+    HTAB(method_entry_t) *abstract_methods_htab = method_entry_t_htab_new(SIZE_MAX);
+    HTAB(field_entry_t) *static_fields_htab = field_entry_t_htab_new(SIZE_MAX);
     
     if (!constructors_htab || !methods_htab || !static_methods_htab || !abstract_methods_htab ||
         !static_fields_htab) {
@@ -2026,10 +2074,8 @@ exprtk_instance_t *exprtk_instance_create(
     instance->field_slot_capacity = 0;
     instance->field_version = 1;
 
-    // Create fields hash table using MIR HTAB
-    HTAB(field_entry_t) *fields_htab;
-    HTAB_OP(field_entry_t, create)(&fields_htab, mir_std_alloc, 16,
-                                   field_hash, field_eq, NULL, NULL);
+    // Instance-owned raw CSTL table; field names are arena-owned.
+    HTAB(field_entry_t) *fields_htab = field_entry_t_htab_new(SIZE_MAX);
     
     if (!fields_htab) {
         return NULL;
@@ -2347,4 +2393,3 @@ void exprtk_instance_destroy(exprtk_instance_t *instance) {
 
     // Note: instance itself is arena-allocated
 }
-

@@ -79,15 +79,6 @@ Count: 11
 - `fuzzy.multi_search`
 - `fuzzy.tre_version`
 
-## wasm plugin (`wasm`)
-
-Count: 4
-
-- `wasm.open`
-- `wasm.call`
-- `wasm.close`
-- `wasm.last_error`
-
 ## vec plugin (`vec`)
 
 Count: 14

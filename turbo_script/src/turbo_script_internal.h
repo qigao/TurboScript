@@ -8,15 +8,15 @@
 
 #include "exprtk_module.h"
 #include "ts_plugin_loader.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
+#include "salts_coro_executor.h"
 #include "turbo_script.h"
 #include <mir.h>
-#include <rocida/stl.h>
+#include <cstl.h>
 #include <stdatomic.h>
 
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
 typedef struct ts_task_scheduler_s ts_task_scheduler_t;
-typedef struct coro_cancel_token_s coro_cancel_token_t;
 #ifndef TS_HOST_CALL_BUDGET_T_DEFINED
 #define TS_HOST_CALL_BUDGET_T_DEFINED
 typedef struct ts_host_call_budget_s ts_host_call_budget_t;
@@ -98,9 +98,8 @@ struct turbo_script_ctx_s {
   size_t peak_context_bytes;
   int memory_exhausted;
 
-  /* Timer callbacks are posted onto this borrowed serialized executor. */
-  turbo_script_executor_t executor;
-  coro_context_t *coro_ctx;
+  /* The context owns one serialized Executor shard for all script callbacks. */
+  salts_coro_executor_t *executor;
   ts_timer_scheduler_t *timer_scheduler;
   ts_task_scheduler_t *task_scheduler;
 
@@ -181,9 +180,6 @@ int ts_context_is_owner_thread(const turbo_script_ctx_t *ctx);
 /* Returns the caller environment owned by the currently running managed task,
  * or the root environment when execution is not inside one. */
 exprtk_env_t *ts_task_execution_env(turbo_script_ctx_t *ctx);
-
-/* Returns the cooperative cancellation token owned by the current managed task. */
-const coro_cancel_token_t *ts_task_cancel_token(turbo_script_ctx_t *ctx);
 
 /* Point-in-time bytes retained by managed task environments. */
 size_t ts_task_memory_used(turbo_script_ctx_t *ctx);

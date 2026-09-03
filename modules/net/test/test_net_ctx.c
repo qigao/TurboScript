@@ -5,7 +5,7 @@
 #include "net_ctx.h"
 #include "tinytest.h"
 #include <string.h>
-#include <turbo_buffer.h>
+#include <salts_buffer.h>
 spec("net_ctx") {
 
     describe("Lifecycle") {
@@ -31,13 +31,13 @@ spec("net_ctx") {
             net_ctx_t *ctx = net_ctx_create();
             check_null(ctx->client);
 
-            turbo_http_t *c = net_ctx_ensure_client(ctx);
+            chttp_client *c = net_ctx_ensure_client(ctx);
             check_not_null(c);
             check(ctx->client == c);
-            check_not_null(turbo_http_get_context(c));
+            check_not_null(c->impl);
 
             /* Second call returns same instance */
-            turbo_http_t *c2 = net_ctx_ensure_client(ctx);
+            chttp_client *c2 = net_ctx_ensure_client(ctx);
             check(c == c2);
 
             net_ctx_destroy(ctx);

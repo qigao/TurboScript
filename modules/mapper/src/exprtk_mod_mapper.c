@@ -5,7 +5,9 @@
 #include "mapper.h"
 #include "exprtk_class.h"
 #include "exprtk_module.h"
-#include "turbo_parser.h"
+#include "turbo_parser_json.h"
+#include "turbo_parser_yaml.h"
+#include "turbo_parser_xml.h"
 
 #include <errno.h>
 #include <limits.h>

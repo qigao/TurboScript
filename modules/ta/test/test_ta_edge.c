@@ -4,7 +4,7 @@
  */
 #include "ta.h"
 #include "tinytest.h"
-#include <turbo_buffer.h>
+#include <salts_buffer.h>
 #include <math.h>
 #include <string.h>
 

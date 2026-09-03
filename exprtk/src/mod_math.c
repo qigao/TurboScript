@@ -8,7 +8,7 @@
 #include "simd_helpers.h"
 #include "exprtk_internal.h"
 #include "linalg.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include <math.h>
 #include <limits.h>
 #include <simde/x86/avx2.h>

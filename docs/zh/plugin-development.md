@@ -357,13 +357,11 @@ macOS:   <name>.dylib
 - `import("ta")` → 搜索 `ta.dll`
 - `import("my_math")` → 搜索 `my_math.dll`
 
-以下两个内置插件的依赖库已经占用了逻辑名对应的动态库文件名，因此使用
-避碰文件名：
+crypto 插件的依赖库已经占用了逻辑名对应的动态库文件名，因此使用避碰文件名：
 
 - `import("crypto")` → `crypto_plugin.dll`（Linux 为 `crypto_plugin.so`）
-- `import("rules_forge")` → `rules_forge_plugin.dll`（Linux 为 `rules_forge_plugin.so`）
 
-它们的脚本逻辑名和插件描述符名称仍分别为 `crypto` 与 `rules_forge`。
+它的脚本逻辑名和插件描述符名称仍为 `crypto`。
 
 ---
 

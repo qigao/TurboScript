@@ -73,13 +73,12 @@ Core built-ins live under `exprtk/src` and optional extensions live under `modul
 Important module groups:
 
 - `core`, `math`, `stats`, `string`, `regex`, `io`
-- `parser`: configuration-oriented text parsing
-- `mapper`: class-first JSON/YAML/XML mapping through `turbo_parser.h`
+- `mapper`: class-first JSON/YAML/XML mapping through Salts DataBind parser APIs
 - `ts`, `ta`, `fin`: time-series, technical analysis, and finance helpers
-- `net`, `sqlite`, `wasm`, and other plugin modules
+- `net`, `sqlite`, and other plugin modules
 
 The mapper is the canonical path for structured JSON/YAML/XML values. TurboScript
-class field declarations are the type metadata and TurboUtils `turbo_parser.h`
+class field declarations are the type metadata and Salts DataBind parser APIs
 owns document syntax. Data modules should consume typed class instances rather
 than introducing a second schema format.
 

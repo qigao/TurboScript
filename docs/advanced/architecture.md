@@ -103,8 +103,8 @@ Plugin namespaces must resolve by registered module name. They must not fall thr
 - `mapper.write_json`, `mapper.write_yaml`, `mapper.write_xml`
 
 TurboScript class field declarations are the type source. The mapper uses
-TurboUtils `turbo_parser.h` for document syntax and never loads a separate
-schema or codec. `modules/parser` remains limited to configuration text.
+Salts DataBind parser APIs for document syntax and never loads a separate
+schema or codec.
 
 `ts`, `ta`, and `fin` should consume canonical runtime values from parser/data binding instead of owning independent parsing semantics.
 

@@ -237,8 +237,8 @@
 偏移，`utf8_start`/`utf8_end` 是 UTF-8 codepoint 偏移。
 
 Automaton 辅助函数返回 match map 列表。`fuzzy.levenshtein` 与
-`fuzzy.agrep` 使用 TurboUtils Levenshtein automaton；`fuzzy.ac` 使用
-TurboUtils Aho-Corasick 多模式匹配。可选 `mode` 默认为 `"utf8"`，也可传
+`fuzzy.agrep` 使用 Salts Levenshtein automaton；`fuzzy.ac` 使用
+Salts Aho-Corasick 多模式匹配。可选 `mode` 默认为 `"utf8"`，也可传
 `"byte"` 做原始字节匹配。
 
 flags 为字符串：`i` 表示忽略大小写，`n` 表示 newline 模式，`l` 表示字面量
@@ -538,7 +538,7 @@ var file = path_basename(full);                   // "data.csv"
 | 函数 | 说明 | 返回值 |
 |----------|-------------|---------|
 | `now()` | 当前 Unix 时间戳 | 自纪元以来的秒数 |
-| `date(str)` | 使用 TurboNet datetime parser 解析日期字符串 | Unix 时间戳 |
+| `date(str)` | 使用 Salts datetime parser 解析日期字符串 | Unix 时间戳 |
 | `date_utc(str)` | 按 UTC 解析 `YYYY-MM-DD`、`YYYY-MM-DD HH:MM:SS` 或 `YYYY-MM-DDTHH:MM:SSZ` | Unix 时间戳 |
 | `format_date(ts [, fmt])` | 格式化时间戳 | 字符串（默认 RFC 822；自定义格式使用宿主本地时间） |
 | `format_date_utc(ts [, fmt])` | 按 UTC 格式化时间戳 | 字符串（默认 RFC 822；自定义格式使用 UTC） |
@@ -546,7 +546,7 @@ var file = path_basename(full);                   // "data.csv"
 时区约定：
 
 - `now()` 返回 Unix 时间戳，本身不带时区。
-- `date(str)` 使用 TurboNet 的通用 datetime parser。
+- `date(str)` 使用 Salts 的通用 datetime parser。
 - `format_date(ts, fmt)` 为兼容旧脚本保留宿主本地时间格式化。
 - 需要确定性 UTC 行为时，使用 `date_utc(str)` 与 `format_date_utc(ts, fmt)`。
 - 需要原生 datetime 值时，使用 `datetime(text)` 或 `datetime.parse(text)`。
@@ -612,7 +612,7 @@ JSON object 和 XML 查询节点返回 plain object；`mapper.read_*` 返回带�
 | `decimal.to_string(d)` / `d.to_string()` | decimal 格式化为规范化文本 | `decimal.to_string(price)` |
 
 `datetime.parse`、`datetime.to_time`、`datetime.format_rfc822` 由脚本 parser 模块导出，
-底层使用 TurboNet 的 datetime parser/format helper。结构化文档映射由 `mapper` 提供：
+底层使用 Salts 的 datetime parser/format helper。结构化文档映射由 `mapper` 提供：
 
 | 函数 | 说明 |
 |----------|-------------|
@@ -657,7 +657,7 @@ print("进程 " + process_id + " 已运行 " + uptime + "ms");
 
 对于可选模块提供的函数：
 
-- **Parser / CSV / JSON / Datetime**：参见 [parser README](../../modules/parser/README.md)
+- **结构化文档**：使用 `mapper` 的 JSON/YAML/XML API。
 - **CSV 过滤表达式**：参见 [csv_filter_expression.md](../csv_filter_expression.md)
 - **技术分析**：参见 [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md)
 - **向量操作**：参见 [vec_cheatsheet.md](../vec_cheatsheet.md)

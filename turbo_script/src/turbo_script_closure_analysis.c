@@ -15,6 +15,7 @@ typedef struct {
   ts_var_set_t used;       // 使用的变量
   ts_var_set_t defined;    // 定义的变量（包括参数和局部）
   ts_var_set_t assigned;   // 赋值目标；需经外层绑定解析后才能捕获
+  ts_var_set_t read_before_assignment; // 局部赋值前读取的变量
   int has_nested_closure;  // 是否有嵌套闭包
   int has_modification;    // 是否修改捕获变量
 } ts_analysis_ctx_t;
@@ -73,6 +74,9 @@ static void ts_analyze_variable(exprtk_node_t *node, ts_analysis_ctx_t *ctx, int
     ts_var_set_add(&ctx->defined, name);
   } else {
     // 读取：记录为使用
+    if (!ts_var_set_contains(&ctx->defined, name) &&
+        !ts_var_set_contains(&ctx->assigned, name))
+      ts_var_set_add(&ctx->read_before_assignment, name);
     ts_var_set_add(&ctx->used, name);
   }
 }
@@ -236,6 +240,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   ts_var_set_init(&ctx.used);
   ts_var_set_init(&ctx.defined);
   ts_var_set_init(&ctx.assigned);
+  ts_var_set_init(&ctx.read_before_assignment);
   ctx.has_nested_closure = 0;
   ctx.has_modification = 0;
   
@@ -254,6 +259,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   
   // 计算自由变量（used - defined）
   ts_var_set_t free_vars;
+  int has_unbound_read_before_assignment = 0;
   ts_var_set_init(&free_vars);
   
   for (size_t i = 0; i < ctx.used.count; i++) {
@@ -261,8 +267,14 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
     if (!ts_var_set_contains(&ctx.defined, name)) {
       if (ts_var_set_contains(&ctx.assigned, name) &&
           !exprtk_env_has(closure_env, name) &&
-          !ts_outer_scope_defines_name(outer_scope, name))
+          !ts_outer_scope_defines_name(outer_scope, name)) {
+        /* A local written before its first read has a stable MIR register.
+         * Reading it first (x = x + 1) instead depends on exprtk's fresh
+         * per-call function environment and must stay interpreted. */
+        if (ts_var_set_contains(&ctx.read_before_assignment, name))
+          has_unbound_read_before_assignment = 1;
         continue;
+      }
       ts_var_set_add(&free_vars, name);
     }
   }
@@ -273,6 +285,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
     ts_var_set_free(&ctx.used);
     ts_var_set_free(&ctx.defined);
     ts_var_set_free(&ctx.assigned);
+    ts_var_set_free(&ctx.read_before_assignment);
     ts_var_set_free(&free_vars);
     return NULL;
   }
@@ -284,7 +297,10 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   result->can_jit = 1;
   result->reason = NULL;
   
-  if (ctx.has_nested_closure) {
+  if (has_unbound_read_before_assignment) {
+    result->can_jit = 0;
+    result->reason = "unbound assignment requires interpreter scope";
+  } else if (ctx.has_nested_closure) {
     result->can_jit = 0;
     result->reason = "nested closure not supported";
   } else if (free_vars.count > 10) {
@@ -299,6 +315,7 @@ ts_closure_analysis_t *ts_analyze_closure(exprtk_node_t *func_body,
   ts_var_set_free(&ctx.used);
   ts_var_set_free(&ctx.defined);
   ts_var_set_free(&ctx.assigned);
+  ts_var_set_free(&ctx.read_before_assignment);
   // free_vars.names 已转移给 result，不释放
   
   return result;

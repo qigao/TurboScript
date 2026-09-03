@@ -6,7 +6,7 @@
 
 **Architecture:** `turbo_script_ctx_t` 持有 owner-thread token 与冻结式 host registry；`turbo_script_module_t` 持有一次 parse/validate/lower 得到的 AST、export table、source map 和单一 MIR artifact；每个 `turbo_script_instance_t` 持有独立 runtime context、globals/closures、backend state 与 generation。解释器和 JIT 通过同一 backend bridge 调用同一 export descriptor，不能互相 fallback。
 
-**Tech Stack:** C11、TurboScript exprtk runtime、MIR interpreter/JIT、TurboUtils `tstr`/`turbo_vec_t`/`mem_pool_t`、TinyTest、CMake Presets、MSVC AddressSanitizer。
+**Tech Stack:** C11、TurboScript exprtk runtime、MIR interpreter/JIT、Salts `tstr`/`turbo_vec_t`/`mem_pool_t`、TinyTest、CMake Presets、MSVC AddressSanitizer。
 
 **Spec:** `docs/superpowers/specs/2026-08-25-turboscript-host-module-abi-design.md`
 
@@ -262,9 +262,9 @@ TURBO_SCRIPT_C_API turbo_script_status_t turbo_script_host_result_set_error(
 
 **Files:** No TurboScript source changes.
 
-- [ ] **Step 1: Install the matching TurboHttp Debug profile**
+- [ ] **Step 1: Install the matching Salts Debug profile**
 
-Run from `C:\projects\cpp\TurboHTTP` under `VsDevCmd.bat`:
+Run from `C:\projects\cpp\Salts` under `VsDevCmd.bat`:
 
 ```bat
 cmake --fresh --preset win-dev-user
@@ -273,7 +273,7 @@ ctest --preset win-dev-user --output-on-failure
 cmake --build --preset install-win-dev-user
 ```
 
-Expected: `C:\projects\cpp\external\pkgs\turbohttp\debug\lib\cmake\TurboHttp\TurboHttpConfig.cmake` exists. Do not copy `turbohttp-debug` into the new directory and do not add a fallback path.
+Expected: `C:\projects\cpp\external\pkgs\turbohttp\debug\lib\cmake\Salts\SaltsConfig.cmake` exists. Do not copy `turbohttp-debug` into the new directory and do not add a fallback path.
 
 - [ ] **Step 2: Configure and run the TurboScript baseline**
 
@@ -384,7 +384,7 @@ git commit -m "feat: add bounded TurboScript host results"
 
 - [ ] **Step 1: Write failing registry tests**
 
-Test descriptor `struct_size`, name UTF-8, arity ordering, duplicate name, missing unregister, capacity 256, owner-thread rejection, registry freeze while `active_host_modules > 0`, and unfreeze after the last module. Use a TurboUtils thread to prove wrong-thread status; join it before destroying the context.
+Test descriptor `struct_size`, name UTF-8, arity ordering, duplicate name, missing unregister, capacity 256, owner-thread rejection, registry freeze while `active_host_modules > 0`, and unfreeze after the last module. Use a Salts thread to prove wrong-thread status; join it before destroying the context.
 
 ```c
 static turbo_script_status_t host_echo(
@@ -404,10 +404,10 @@ Expected: missing registration API symbols.
 
 - [ ] **Step 3: Add explicit context state**
 
-Use `TURBO_THREAD_LOCAL` token identity rather than platform thread APIs:
+Use `SALTS_THREAD_LOCAL` token identity rather than platform thread APIs:
 
 ```c
-static TURBO_THREAD_LOCAL unsigned char ts_host_thread_token;
+static SALTS_THREAD_LOCAL unsigned char ts_host_thread_token;
 
 ctx->host_owner_thread_token = &ts_host_thread_token;
 ctx->active_host_modules = 0;

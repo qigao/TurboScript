@@ -26,8 +26,8 @@ var user = mapper.read_json(User, "{\"name\":\"Ada\",\"age\":37}");
 var json = mapper.write_json(user);
 ```
 
-详见 [Mapper 模块](../modules/mapper/README.md)。文档解析由 TurboUtils
-`turbo_parser.h` 提供；TurboScript 不再提供独立 schema、codec 或二进制
+详见 [Mapper 模块](../modules/mapper/README.md)。文档解析由 Salts
+Salts DataBind parser APIs 提供；TurboScript 不再提供独立 schema、codec 或二进制
 DataBind 公共接口。
 
 ## 其他模块

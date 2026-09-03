@@ -2,6 +2,17 @@ project(turbo_script)
 
 set(TARGET_NAME turbo_script)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
+set(TARGET_NAME_PLUGIN_LOADER ${TARGET_NAME}_plugin_loader)
+
+# Host-only native module loader. It is deliberately separate from the JIT
+# runtime so the ABI boundary can be tested without admitting task/timer code.
+add_library(${TARGET_NAME_PLUGIN_LOADER} STATIC src/host/ts_plugin_loader.c)
+cmake_config_target(${TARGET_NAME_PLUGIN_LOADER} FOLDER turbo_script)
+target_include_directories(
+  ${TARGET_NAME_PLUGIN_LOADER}
+  PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
+target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PRIVATE Salts::Core)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
@@ -56,9 +67,9 @@ target_include_directories(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk mir_static Rocida::STL
-  PUBLIC Rocida::Core TurboParser::Parser
-  PRIVATE TurboParser::Cron TurboNet::CoroNet)
+  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PUBLIC Salts::Core Salts::DataBind
+  PRIVATE Salts::Cron Salts::Coroutine)
 
 # Enable strict warnings for modularized code
 if(MSVC)
@@ -95,18 +106,18 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk mir_static Rocida::STL
-  PUBLIC Rocida::Core
-  PRIVATE TurboParser::Cron TurboNet::CoroNet)
+  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PUBLIC Salts::Core
+  PRIVATE Salts::Cron Salts::Coroutine)
 
 if(WIN32)
   add_custom_command(
     TARGET ${TARGET_NAME}
     POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboParser::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
+            $<TARGET_FILE:Salts::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:TurboParser::Mustache> $<TARGET_FILE_DIR:${TARGET_NAME}>
+            $<TARGET_FILE:Salts::Mustache> $<TARGET_FILE_DIR:${TARGET_NAME}>
     COMMENT "Synchronizing TurboScript runtime dependencies"
     VERBATIM)
 endif()

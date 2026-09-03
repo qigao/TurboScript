@@ -1,7 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
-#include "turbo_fs.h"
+#include "salts_fs.h"
 #include "turbo_script.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -536,16 +536,16 @@ spec("turbo_script_io") {
       char line_path[96];
       char token_path[96];
       char script[2048];
-      turbo_fs_buf_t buf;
+      salts_fs_buf_t buf;
       int res;
 
       ts_test_make_name(line_path, sizeof(line_path), "_test_stream_file_lines", ".txt");
       ts_test_make_name(token_path, sizeof(token_path), "_test_stream_file_tokens", ".txt");
 
-      buf = turbo_fs_buf_init((char *)line_text, strlen(line_text));
-      check((turbo_fs_write_file(line_path, &buf)) == (0));
-      buf = turbo_fs_buf_init((char *)token_text, strlen(token_text));
-      check((turbo_fs_write_file(token_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
+      check((salts_fs_write_file(line_path, &buf)) == (0));
+      buf = salts_fs_buf_init((char *)token_text, strlen(token_text));
+      check((salts_fs_write_file(token_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
           "var line_total = stream.text(io.read_file(\"%s\"))"
@@ -567,8 +567,8 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "line_total")) - (double)(6.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "token_total")) - (double)(12.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "score")) - (double)(18.0)) <= (double)(0.001));
-      turbo_fs_unlink(line_path);
-      turbo_fs_unlink(token_path);
+      salts_fs_unlink(line_path);
+      salts_fs_unlink(token_path);
       turbo_script_free(ctx);
     }
 
@@ -660,8 +660,8 @@ spec("turbo_script_io") {
       check(strcmp((ts_get_str(ctx, "copied")), ("abcdef")) == 0);
       check(strcmp((ts_get_str(ctx, "truncated")), ("abc")) == 0);
 
-      turbo_fs_unlink(src_path);
-      turbo_fs_unlink(dst_path);
+      salts_fs_unlink(src_path);
+      salts_fs_unlink(dst_path);
       turbo_script_free(ctx);
     }
 
@@ -773,9 +773,9 @@ spec("turbo_script_io") {
       char script[900];
 
       ts_test_make_name(root_dir, sizeof(root_dir), "_test_recursive_io", "");
-      turbo_fs_path_join(mid_dir, sizeof(mid_dir), root_dir, "a");
-      turbo_fs_path_join(nested_dir, sizeof(nested_dir), mid_dir, "b");
-      turbo_fs_path_join(file_path, sizeof(file_path), nested_dir, "data.txt");
+      salts_fs_path_join(mid_dir, sizeof(mid_dir), root_dir, "a");
+      salts_fs_path_join(nested_dir, sizeof(nested_dir), mid_dir, "b");
+      salts_fs_path_join(file_path, sizeof(file_path), nested_dir, "data.txt");
 
       snprintf(script, sizeof(script),
                "var mid = path_join(\"%s\", \"a\"); "
@@ -799,10 +799,10 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
 
       if (ts_get_num(ctx, "rm") != 0.0) {
-        turbo_fs_unlink(file_path);
-        turbo_fs_rmdir(nested_dir);
-        turbo_fs_rmdir(mid_dir);
-        turbo_fs_rmdir(root_dir);
+        salts_fs_unlink(file_path);
+        salts_fs_rmdir(nested_dir);
+        salts_fs_rmdir(mid_dir);
+        salts_fs_rmdir(root_dir);
       }
       turbo_script_free(ctx);
     }
@@ -830,9 +830,9 @@ spec("turbo_script_io") {
       char script[1400];
 
       ts_test_make_name(dir_name, sizeof(dir_name), "_test_glob_io", "");
-      turbo_fs_path_join(a_path, sizeof(a_path), dir_name, "a.txt");
-      turbo_fs_path_join(b_path, sizeof(b_path), dir_name, "b.txt");
-      turbo_fs_path_join(c_path, sizeof(c_path), dir_name, "c.log");
+      salts_fs_path_join(a_path, sizeof(a_path), dir_name, "a.txt");
+      salts_fs_path_join(b_path, sizeof(b_path), dir_name, "b.txt");
+      salts_fs_path_join(c_path, sizeof(c_path), dir_name, "c.log");
 
       snprintf(script, sizeof(script),
                "var r = mkdir(\"%s\"); "
@@ -856,10 +856,10 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "entry_score")) - (double)(6.0)) <= (double)(0.1));
       check(fabs((double)(ts_get_num(ctx, "glob_score")) - (double)(4.0)) <= (double)(0.1));
 
-      turbo_fs_unlink(a_path);
-      turbo_fs_unlink(b_path);
-      turbo_fs_unlink(c_path);
-      turbo_fs_rmdir(dir_name);
+      salts_fs_unlink(a_path);
+      salts_fs_unlink(b_path);
+      salts_fs_unlink(c_path);
+      salts_fs_rmdir(dir_name);
       turbo_script_free(ctx);
     }
   }

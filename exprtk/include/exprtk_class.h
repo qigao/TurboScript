@@ -13,10 +13,8 @@
 #ifndef EXPRTK_CLASS_H
 #define EXPRTK_CLASS_H
 
-#include "exprtk_export.h"
-
 #include "exprtk_types.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

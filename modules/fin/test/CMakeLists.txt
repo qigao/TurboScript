@@ -9,8 +9,8 @@ cmake_add_test(
   test_universe.c
   LIBS
   fin
-  Rocida::TinyTest
-  Rocida::Core
+  Salts::TinyTest
+  Salts::Core
   INCLUDES
   ${CMAKE_CURRENT_SOURCE_DIR}/../include
   FOLDER

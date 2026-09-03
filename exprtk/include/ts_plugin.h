@@ -12,17 +12,20 @@
 #ifndef TS_PLUGIN_H
 #define TS_PLUGIN_H
 
-#include "exprtk_export.h"
-
 #include "platform.h"
 #include <stddef.h>
 #include <stdint.h>
+
+/* ExprTk is statically embedded in TurboScript and plugins. */
+#ifndef EXPRTK_C_API
+#define EXPRTK_C_API
+#endif
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Forward declarations — avoids pulling in exprtk.h / turbo_buffer.h */
+/* Forward declarations — avoids pulling in exprtk.h / salts_buffer.h */
 typedef struct exprtk_env_s exprtk_env_t;
 typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;

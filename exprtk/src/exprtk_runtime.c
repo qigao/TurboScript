@@ -7,8 +7,7 @@
 #include "exprtk_internal.h"
 #include "exprtk_runtime_internal.h"
 #include "exprtk_class.h"
-#include "mir-htab.h"
-#include <rocida/stl.h>
+#include <cstl.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdarg.h>
@@ -46,38 +45,6 @@ static uintptr_t exprtk_current_tid(void) { return (uintptr_t)GetCurrentThreadId
 static uintptr_t exprtk_current_tid(void) { return (uintptr_t)pthread_self(); }
 #endif
 
-// MIR allocator wrapper for standard malloc/free
-static void* mir_std_malloc(size_t size, void *user_data) {
-    (void)user_data;
-    return malloc(size);
-}
-
-static void* mir_std_calloc(size_t num, size_t size, void *user_data) {
-    (void)user_data;
-    return calloc(num, size);
-}
-
-static void* mir_std_realloc(void *ptr, size_t old_size, size_t new_size, void *user_data) {
-    (void)user_data;
-    (void)old_size;
-    return realloc(ptr, new_size);
-}
-
-static void mir_std_free(void *ptr, void *user_data) {
-    (void)user_data;
-    free(ptr);
-}
-
-static const struct MIR_alloc mir_std_alloc_struct = {
-    mir_std_malloc,
-    mir_std_calloc,
-    mir_std_realloc,
-    mir_std_free,
-    NULL
-};
-
-static MIR_alloc_t mir_std_alloc = (MIR_alloc_t)&mir_std_alloc_struct;
-
 // Hash table entry for variables
 typedef struct {
     char *name;
@@ -86,21 +53,125 @@ typedef struct {
     int is_borrowed;
 } exprtk_var_entry_t;
 
-// Define hash table type for variables
-DEF_HTAB(exprtk_var_entry_t)
+/*
+ * Each environment owns its HashMap and the strdup'd variable names stored
+ * in it.  The map byte-copies entries; the destroy path releases names and
+ * non-borrowed values before releasing raw map storage.  Enumeration uses a
+ * short-lived snapshot so no map value pointer crosses a mutation boundary.
+ */
+typedef size_t htab_size_t;
+typedef size_t htab_hash_t;
+typedef struct { void *data; size_t length; } exprtk_var_snapshot_t;
+typedef struct { htab_hash_t hash; exprtk_var_entry_t el; } exprtk_var_entry_t_htab_el_t;
+typedef struct {
+    hash_map_t map;
+    exprtk_var_snapshot_t els;
+    htab_size_t els_bound;
+    htab_size_t els_num;
+} exprtk_var_entry_t_htab_t;
 
-// Hash table helper functions for variable storage
-static htab_hash_t var_hash(exprtk_var_entry_t entry, void *arg) {
-    (void)arg;
-    const char *s = entry.name;
-    htab_hash_t h = 0;
-    while (*s) h = h * 31 + (unsigned char)*s++;
-    return h;
+#define HTAB(T) T##_htab_t
+#define HTAB_EL(T) T##_htab_el_t
+#define VARR_ADDR(T, array) ((T *)((array).data))
+#define HTAB_DELETED_HASH SIZE_MAX
+#define HTAB_FIND 0
+#define HTAB_INSERT 1
+#define HTAB_REPLACE 2
+#define HTAB_DELETE 3
+#define HTAB_OP(T, operation) T##_htab_##operation
+
+static size_t exprtk_var_name_hash(const void *key, size_t key_size, void *context) {
+    const char *const *name = (const char *const *)key;
+    size_t hash = 5381u;
+    (void)key_size;
+    (void)context;
+    if (!name || !*name) return 0u;
+    for (const unsigned char *p = (const unsigned char *)*name; *p; ++p)
+        hash = ((hash << 5u) + hash) ^ *p;
+    return hash;
 }
 
-static int var_eq(exprtk_var_entry_t e1, exprtk_var_entry_t e2, void *arg) {
-    (void)arg;
-    return strcmp(e1.name, e2.name) == 0;
+static bool exprtk_var_name_equal(const void *left, const void *right,
+                                  size_t key_size, void *context) {
+    const char *const *lhs = (const char *const *)left;
+    const char *const *rhs = (const char *const *)right;
+    (void)key_size;
+    (void)context;
+    return lhs && rhs && *lhs && *rhs && strcmp(*lhs, *rhs) == 0;
+}
+
+static int exprtk_var_entry_t_htab_sync(HTAB(exprtk_var_entry_t) *table) {
+    size_t count;
+    exprtk_var_entry_t_htab_el_t *elements;
+    if (!table) return 0;
+    free(table->els.data);
+    table->els.data = NULL;
+    table->els.length = 0;
+    count = hash_map_size(&table->map);
+    table->els_bound = count;
+    table->els_num = count;
+    if (count == 0) return 1;
+    elements = (exprtk_var_entry_t_htab_el_t *)calloc(count, sizeof(*elements));
+    if (!elements) return 0;
+    for (size_t slot = 0, out = 0; slot < hash_map_capacity(&table->map); ++slot) {
+        const char *const *key =
+            (const char *const *)hash_map_key_at_const(&table->map, slot);
+        const exprtk_var_entry_t *value =
+            (const exprtk_var_entry_t *)hash_map_value_at_const(&table->map, slot);
+        if (!key || !value) continue;
+        elements[out].hash = exprtk_var_name_hash(key, sizeof(*key), NULL);
+        if (elements[out].hash == HTAB_DELETED_HASH) --elements[out].hash;
+        elements[out].el = *value;
+        ++out;
+    }
+    table->els.data = elements;
+    table->els.length = count;
+    return 1;
+}
+
+static HTAB(exprtk_var_entry_t) *exprtk_var_entry_t_htab_new(size_t entry_limit) {
+    HTAB(exprtk_var_entry_t) *table = (HTAB(exprtk_var_entry_t) *)calloc(1, sizeof(*table));
+    if (!table) return NULL;
+    if (hash_map_init_bytes(&table->map, sizeof(char *), _Alignof(char *),
+                            sizeof(exprtk_var_entry_t), _Alignof(exprtk_var_entry_t),
+                            entry_limit, exprtk_var_name_hash,
+                            exprtk_var_name_equal, NULL) != STL_OK) {
+        free(table);
+        return NULL;
+    }
+    return table;
+}
+
+static void exprtk_var_entry_t_htab_destroy(HTAB(exprtk_var_entry_t) **table) {
+    if (!table || !*table) return;
+    free((*table)->els.data);
+    hash_map_raw_destroy_storage(&(*table)->map);
+    free(*table);
+    *table = NULL;
+}
+
+static int exprtk_var_entry_t_htab_do(HTAB(exprtk_var_entry_t) *table,
+                                      exprtk_var_entry_t entry, int operation,
+                                      exprtk_var_entry_t *result) {
+    exprtk_var_entry_t *stored;
+    exprtk_var_entry_t removed;
+    if (!table || !entry.name) return 0;
+    stored = (exprtk_var_entry_t *)hash_map_get(&table->map, &entry.name);
+    if (operation == HTAB_FIND) {
+        if (!stored) return 0;
+        if (result) *result = *stored;
+        return 1;
+    }
+    if (operation == HTAB_DELETE) {
+        if (!stored || hash_map_remove(&table->map, &entry.name, &removed) != STL_OK) return 0;
+        if (result) *result = removed;
+        return exprtk_var_entry_t_htab_sync(table);
+    }
+    if ((operation == HTAB_INSERT && stored) ||
+        (operation != HTAB_INSERT && operation != HTAB_REPLACE) ||
+        hash_map_put(&table->map, &entry.name, &entry) != STL_OK) return 0;
+    if (result) *result = entry;
+    return exprtk_var_entry_t_htab_sync(table);
 }
 
 typedef struct {
@@ -626,11 +697,9 @@ static void exprtk_env_init_storage(exprtk_env_t *env) {
     if (env) {
         memset(env, 0, sizeof(exprtk_env_t));
 
-        // Create hash table for variables with standard allocator
-        // Note: We pass NULL for free_func to avoid double-free issues
-        HTAB(exprtk_var_entry_t) *htab = NULL;
-        HTAB_OP(exprtk_var_entry_t, create)(&htab, mir_std_alloc, 16,
-                                            var_hash, var_eq, NULL, NULL);
+        // Environment-owned raw CSTL table; retain source-compatible capacity.
+        HTAB(exprtk_var_entry_t) *htab =
+            exprtk_var_entry_t_htab_new(SIZE_MAX);
         env->vars = htab;
         env->funcs = NULL;
 
@@ -3217,13 +3286,13 @@ exprtk_value_t eval_bytes_method(mc_ctx_t *mc) {
 }
 
 exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
-    char text[TURBO_UUID_STRING_SIZE];
+    char text[SALTS_UUID_STRING_SIZE];
     char *buf;
     size_t len;
 
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "uuid");
-    if (turbo_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != TURBO_OK)
+    if (salts_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != SALTS_OK)
         return exprtk_val_num(0);
     len = strlen(text);
     buf = (char *)mem_alloc(mc->arena, len + 1);

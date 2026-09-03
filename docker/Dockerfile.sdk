@@ -3,7 +3,7 @@ ARG TURBONET_SDK_IMAGE=turbonet-sdk:bookworm
 FROM ${TURBONET_SDK_IMAGE}
 
 ENV CMAKE_PREFIX_PATH=/opt/turbonet
-ENV TURBONET_ROOT=/opt/turbonet
+ENV SALTS_ROOT=/opt/turbonet
 ENV VCPKG_ROOT=/opt/vcpkg
 ENV LD_LIBRARY_PATH=/opt/turbonet/lib
 
@@ -17,7 +17,7 @@ COPY . ./
 RUN cmake -S . -B build -G Ninja \
     -D CMAKE_BUILD_TYPE=Release \
     -D CMAKE_PREFIX_PATH=/opt/turbonet \
-    -D TURBONET_ROOT=/opt/turbonet \
+    -D SALTS_ROOT=/opt/turbonet \
     -D CMAKE_TOOLCHAIN_FILE=/opt/vcpkg/scripts/buildsystems/vcpkg.cmake \
     -D VCPKG_TARGET_TRIPLET=x64-linux \
     -D BUILD_TESTS=OFF \

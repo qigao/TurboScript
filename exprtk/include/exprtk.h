@@ -6,11 +6,10 @@
 #ifndef exprtk_H
 #define exprtk_H
 
-#include "exprtk_export.h"
 #include "platform.h"
 #include "exprtk_module.h"
 #include "exprtk_types.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {

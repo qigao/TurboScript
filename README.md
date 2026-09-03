@@ -22,8 +22,8 @@ is admission control, not process isolation.
 
 ## Build and test
 
-The build expects installed TurboUtils, TurboNet, TurboHTTP and RulesForge
-packages plus the vcpkg dependencies declared in `vcpkg.json`. Configure their
+The build expects installed Salts and SaltsUtils packages plus the vcpkg
+dependencies declared in `vcpkg.json`. Configure their
 locations in a local `CMakeUserPresets.json`, then use the repository presets:
 
 ```text

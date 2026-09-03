@@ -2,10 +2,10 @@
 #define TURBO_SCRIPT_HOST_INTERNAL_H
 
 #include "exprtk_module.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include "turbo_script_host_api_internal.h"
-#include "turbo_str.h"
-#include <rocida/stl.h>
+#include "salts_str.h"
+#include <cstl.h>
 
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
 #ifndef TS_HOST_CALL_BUDGET_T_DEFINED

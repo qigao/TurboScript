@@ -117,16 +117,13 @@ TurboScript 提供了丰富的可选模块：
 
 | 模块 | 说明 | 文档 |
 |--------|-------------|---------------|
-| `parser` | 面向配置的文本解析（INI、dotenv、TOML、命令行） | [parser README](../../modules/parser/README.md) |
 | `mapper` | 基于 class 的 JSON/YAML/XML 映射 | [mapper README](../../modules/mapper/README.md) |
 | `ta` | 技术分析指标 | [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) |
 | `fin` / `strategy` | 风险指标、策略上下文、组合辅助函数 | [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) |
 | `vec` | 高级向量操作 | [vec_cheatsheet.md](../vec_cheatsheet.md) |
 | `net` | HTTP/WebSocket 网络 | [modules/net.md](../modules/net.md) |
 | `sqlite` | 数据库访问 | [modules/sqlite.md](../modules/sqlite.md) |
-| `rules_forge` | 规则引擎集成、外部 RulesForge fact、TurboScript RHS 插件加载 | [rules_forge README](../../modules/rules_forge/README.md) |
 | `os` | 平台信息、无 shell 子进程、日志、服务和电源管理 | [os README](../../modules/os/README.md) |
-| `wasm` | WebAssembly 执行 | [../../modules/wasm/README.md](../../modules/wasm/README.md) |
 
 ---
 

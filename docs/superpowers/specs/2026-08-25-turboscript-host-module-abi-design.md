@@ -19,7 +19,7 @@ instance。FlexUI 只选择模式，不感知 exprtk/MIR 内部对象。
 
 当前 Windows Debug 基线还有一个独立环境前置条件：`win-dev-user` 要求
 `C:/projects/cpp/external/pkgs/turbohttp/debug`，本机仍安装在旧布局
-`turbohttp-debug`。实施测试前必须安装或迁移匹配 profile 的 TurboHttp package；不得在
+`turbohttp-debug`。实施测试前必须安装或迁移匹配 profile 的 Salts package；不得在
 preset 或 CMake 中增加旧路径 fallback。
 
 ## 2. 目标与非目标

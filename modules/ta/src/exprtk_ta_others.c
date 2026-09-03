@@ -9,7 +9,7 @@
 #include <simde/x86/avx2.h>
 #include <stdlib.h>
 #include <string.h>
-#include <turbo_buffer.h>
+#include <salts_buffer.h>
 
 
 size_t exprtk_ta_bbi(const double *in, size_t n, double *out, mem_pool_t *arena) {

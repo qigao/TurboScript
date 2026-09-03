@@ -6,7 +6,7 @@
  * exprtk_env_register_func. The user_data is a mir_instance_t*.
  */
 #include "turbo_script_internal.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include "exprtk.h"
 #include "exprtk_module.h"
 #include <mir.h>

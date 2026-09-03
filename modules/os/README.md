@@ -18,7 +18,7 @@ handle is used with `os.process_poll`, `os.process_wait`,
 and `os.process_close`. Each script environment has a bounded process-handle
 table, and unloading the module terminates and reaps remaining children.
 
-`os.log(level, message, component)` writes through the TurboUtils default
+`os.log(level, message, component)` writes through the Salts default
 logger. Levels are uppercase `DEBUG`, `INFO`, `WARN`, `ERROR`, and `FATAL`.
 `os.log_level()` and `os.log_set_level(level)` inspect and change the default
 logger threshold.

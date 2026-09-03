@@ -239,7 +239,6 @@ print("Latest SMA: " + average[len(average) - 1]);
 ### Common Modules
 
 ```javascript
-import("parser");       // INI, dotenv, TOML and command-line parsing
 import("mapper");       // Class-first JSON/YAML/XML mapping
 import("ta");           // Technical analysis, exposed as ta.*
 import("fin");          // Finance and strategy helpers, exposed as strategy.*

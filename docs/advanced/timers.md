@@ -1,6 +1,6 @@
 # Timer 与 Cron 调度
 
-TurboScript 原生提供一次性定时、固定延迟 interval 和 5 字段 cron 调度。调度器只决定“何时触发”；脚本回调统一投递到宿主提供的串行 executor，绝不在 TurboUtils 原生 timer 线程中直接进入 ExprTk。
+TurboScript 原生提供一次性定时、固定延迟 interval 和 5 字段 cron 调度。调度器只决定“何时触发”；脚本回调统一投递到宿主提供的串行 executor，绝不在 Salts 原生 timer 线程中直接进入 ExprTk。
 
 ## 脚本 API
 
@@ -8,7 +8,7 @@ TurboScript 原生提供一次性定时、固定延迟 interval 和 5 字段 cro
 | --- | --- | --- |
 | `timer.after(delay_ms, callback)` | 正整数 job ID | 延迟不是非负整数、超过跨平台原生 timer 上限（约 49.7 天）、callback 不是函数、未配置 executor 或容量耗尽 |
 | `timer.every(interval_ms, callback)` | 正整数 job ID | interval 不是正整数、超过相同上限，或同上 |
-| `timer.cron(expression, callback)` | 正整数 job ID | 不是有效的 TurboUtils 5 字段 cron 表达式，或同上 |
+| `timer.cron(expression, callback)` | 正整数 job ID | 不是有效的 Salts 5 字段 cron 表达式，或同上 |
 | `timer.cancel(job_id)` | `true`/`false` | ID 类型非法时终止当前脚本；未知或已结束的 ID 返回 `false` |
 | `timer.status(job_id)` | 状态字符串 | ID 类型非法时终止当前脚本；未知 ID 返回 `"invalid"` |
 | `timer.error(job_id)` | 错误字符串 | ID 类型非法时终止当前脚本；没有错误或未知 ID 返回空字符串 |
@@ -74,7 +74,7 @@ turbo_script_free(script);
 coro_context_destroy(coro);
 ```
 
-其他宿主可注入 `turbo_script_executor_t`。executor 必须串行执行同一 context 的任务；`post()` 返回成功后必须恰好执行一次任务。executor 与其 data 为借用关系，而且在已接受任务全部运行前必须保持有效。自定义 executor 若要在 callback 内使用 TurboHTTP，还必须让任务运行于可驱动该 HTTP client 的 coroutine/event-loop 上下文。
+其他宿主可注入 `turbo_script_executor_t`。executor 必须串行执行同一 context 的任务；`post()` 返回成功后必须恰好执行一次任务。executor 与其 data 为借用关系，而且在已接受任务全部运行前必须保持有效。自定义 executor 若要在 callback 内使用 Salts，还必须让任务运行于可驱动该 HTTP client 的 coroutine/event-loop 上下文。
 
 宿主可用 `turbo_script_timer_active_count()` 判断是否需要继续驱动事件循环，并用 `turbo_script_timer_failed_count()` 判断是否存在仍保留在 job 表中的失败记录。命令行模式检测到 timer callback 失败时会返回非零退出码。
 
@@ -82,21 +82,21 @@ coro_context_destroy(coro);
 
 ### 背景与状态归属
 
-TurboUtils `turbo_timer_t` 的回调运行在 OS 线程池或专用线程，而 `turbo_script_ctx_t` 的 ExprTk/MIR 状态是单线程可变状态。直接从 timer 线程调用脚本会让环境、AST、插件和错误状态发生数据竞争。
+Salts `turbo_timer_t` 的回调运行在 OS 线程池或专用线程，而 `turbo_script_ctx_t` 的 ExprTk/MIR 状态是单线程可变状态。直接从 timer 线程调用脚本会让环境、AST、插件和错误状态发生数据竞争。
 
 调度器是 job 生命周期的唯一事实源，拥有 job 状态、原生 timer、cron 表达式、回调引用和错误摘要。executor 只拥有任务队列与执行线程，不复制 job 状态。
 
 ### 候选方案
 
 1. timer 线程直接调用脚本：改动最小，但破坏现有单线程环境约束，排除。
-2. 每个 job 使用 `turbo_cron_runner` 或独立 worker：线程数和关闭路径随 job 数增长，且仍需跨线程进入脚本，排除。
+2. 每个 job 使用 `salts_cron_runner` 或独立 worker：线程数和关闭路径随 job 数增长，且仍需跨线程进入脚本，排除。
 3. 调度器加窄串行 lane：原生 timer/cron 只负责唤醒；CoroNet 适配器按队列逐个提交 managed task，前一 invocation 终态后才启动下一项，脚本状态只在 owner thread 改变，采用。
 4. 让 timer scheduler 同时承担通用 task：会把 timer 的串行、不重叠语义与 task 的多 coroutine 调度混为一体，排除；通用调度另由独立 `task.*` 层复用同一个 CoroNet context。
 
 ### 权衡、迁移与回滚
 
 - 性能：每次触发增加一次跨线程 post 和一次 managed-task 调度；内置适配器复用 CoroNet context，不建立 per-job 线程。换取统一取消传播、单线程脚本状态与确定的非重叠语义。
-- 依赖：`turbo_script` 新增 `Rocida::Cron` 与 `TurboNet::CoroNet` 私有链接依赖。
+- 依赖：`turbo_script` 新增 `Salts::Cron` 与 `Salts::Coroutine` 私有链接依赖。
 - 兼容性：既有同步脚本行为不变；只有使用 timer 的宿主必须提供 executor。原来只有声明而无实现的 `turbo_script_set_coro_context()` 现在成为兼容适配入口。
 - 关闭顺序：先标记 context closing，再停止/销毁原生 timers；已接受的 executor task 持有 context 引用，执行或跳过后才允许最终释放 ExprTk/MIR 状态。
 - 回滚：移除 timer 函数注册与 CLI loop 驱动即可恢复旧行为；调度代码独立在 `turbo_script_timer.c`，不需要迁移脚本数据格式。

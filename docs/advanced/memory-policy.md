@@ -35,7 +35,7 @@ callback local env；只有 callback 明确返回的值才会复制到 task 环�
 
 `vstr` 只表达 borrowed view，不能成为所有权事实源；`tstr` 用于局部字符串
 构建；`mem_pool_t` 用于有明确 reset/destroy 边界的存储；跨 owner 共享的 payload
-使用 TurboUtils `mem_buffer_t`。`mem_slice_t` 只适合受控的零拷贝子视图，slice 不得
+使用 Salts `mem_buffer_t`。`mem_slice_t` 只适合受控的零拷贝子视图，slice 不得
 长于其 buffer owner。vector 与 typed-array 也由 `mem_buffer_t` 支撑，变量替换会把
 旧 buffer 归还 owner pool，而不是让环境 arena 单调增长。
 
@@ -65,7 +65,7 @@ profile 后收紧阈值，再通过 `turbo_script_set_memory_policy()` 应用。
 策略切换、超额外部帧与完成时超额 task 都立即失败。
 context 超过总预算后进入 exhausted 状态，后续执行被拒绝；宿主必须读取错误、销毁
 context 并按业务恢复，运行时不会静默降级。算法实现中不逃逸的局部工作数组仍可使用
-栈、TurboUtils pool 或与第三方 API 对称的 allocator；它们不属于脚本值 owner graph，
+栈、Salts pool 或与第三方 API 对称的 allocator；它们不属于脚本值 owner graph，
 也不计作 managed payload 的兼容旁路。
 
 ```c

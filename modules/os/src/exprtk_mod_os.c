@@ -6,11 +6,11 @@
 #include "exprtk.h"
 #include "platform.h"
 #include "tlog.h"
-#include "turbo_error.h"
-#include "turbo_process.h"
-#include "turbo_str.h"
-#include "turbo_thread.h"
-#include "cron/turbo_cron.h"
+#include "salts_error.h"
+#include "salts_process.h"
+#include "salts_str.h"
+#include "salts_thread.h"
+#include "salts_cron.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -29,7 +29,7 @@
 #define OS_CRON_EXPRESSION_SIZE 128U
 
 typedef struct {
-    turbo_process_t *process;
+    salts_process_t *process;
 } os_process_slot_t;
 
 typedef struct {
@@ -46,7 +46,7 @@ struct os_module_s;
 
 typedef struct {
     struct os_module_s *owner;
-    turbo_cron_runner_t *runner;
+    salts_cron_runner_t *runner;
     char action[OS_POWER_ACTION_SIZE];
     char expression[OS_CRON_EXPRESSION_SIZE];
     char last_state[32];
@@ -63,7 +63,7 @@ typedef struct {
 typedef struct os_module_s {
     os_process_slot_t processes[OS_MAX_PROCESS_HANDLES];
     os_power_schedule_slot_t schedules[OS_MAX_POWER_SCHEDULES];
-    turbo_mutex_t schedule_mutex;
+    salts_mutex_t schedule_mutex;
 } os_module_t;
 
 static exprtk_value_t os_empty(void) { return exprtk_val_num(0); }
@@ -73,8 +73,8 @@ static exprtk_value_t os_platform_text(mem_pool_t *arena,
     char *buffer;
 
     if (!arena || !query) return os_empty();
-    buffer = (char *)mem_alloc(arena, TURBO_PLATFORM_INFO_MAX);
-    if (!buffer || query(buffer, TURBO_PLATFORM_INFO_MAX) != TURBO_OK)
+    buffer = (char *)mem_alloc(arena, SALTS_PLATFORM_INFO_MAX);
+    if (!buffer || query(buffer, SALTS_PLATFORM_INFO_MAX) != SALTS_OK)
         return os_empty();
     return exprtk_val_str(vstr_from_cstr(buffer));
 }
@@ -120,7 +120,7 @@ static int os_u64_arg(const exprtk_value_t *value, uint64_t *out) {
     return 1;
 }
 
-static turbo_process_t *os_process_get(os_module_t *module, int64_t id) {
+static salts_process_t *os_process_get(os_module_t *module, int64_t id) {
     if (!module || id < 1 || id > (int64_t)OS_MAX_PROCESS_HANDLES) return NULL;
     return module->processes[(size_t)id - 1U].process;
 }
@@ -136,14 +136,14 @@ static int os_process_find_free(const os_module_t *module) {
 }
 
 static int os_map_put(exprtk_value_t *map, const char *key, exprtk_value_t value) {
-    return map && key && exprtk_map_set(map, key, value) == TURBO_OK;
+    return map && key && exprtk_map_set(map, key, value) == SALTS_OK;
 }
 
 static exprtk_value_t os_process_result_map(os_module_t *module, int64_t id,
                                             int wait_code) {
     exprtk_value_t map;
-    turbo_process_t *process;
-    turbo_process_result_t result;
+    salts_process_t *process;
+    salts_process_result_t result;
     int poll_code;
     int64_t pid;
 
@@ -154,19 +154,19 @@ static exprtk_value_t os_process_result_map(os_module_t *module, int64_t id,
     result.exit_code = -1;
     result.term_signal = -1;
     result.error_code = 0;
-    poll_code = turbo_process_poll(process, &result);
-    if (poll_code != TURBO_OK) {
-        result.state = turbo_process_state(process);
+    poll_code = salts_process_poll(process, &result);
+    if (poll_code != SALTS_OK) {
+        result.state = salts_process_state(process);
     }
-    pid = (int64_t)turbo_process_pid(process);
+    pid = (int64_t)salts_process_pid(process);
 
     map = exprtk_val_map();
     if (!os_map_put(&map, "id", exprtk_val_int(id)) ||
         !os_map_put(&map, "pid", exprtk_val_int(pid)) ||
         !os_map_put(&map, "state", exprtk_val_str(vstr_from_cstr(
-                         turbo_process_state_name(result.state)))) ||
+                         salts_process_state_name(result.state)))) ||
         !os_map_put(&map, "running", exprtk_val_num(
-                         turbo_process_is_running(process) ? 1.0 : 0.0)) ||
+                         salts_process_is_running(process) ? 1.0 : 0.0)) ||
         !os_map_put(&map, "exit_code", exprtk_val_int(result.exit_code)) ||
         !os_map_put(&map, "term_signal", exprtk_val_int(result.term_signal)) ||
         !os_map_put(&map, "error_code", exprtk_val_int(result.error_code)) ||
@@ -181,7 +181,7 @@ static exprtk_value_t os_fn_platform_name(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, turbo_platform_os_name)
+    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_os_name)
                             : os_empty();
 }
 
@@ -189,7 +189,7 @@ static exprtk_value_t os_fn_platform_version(size_t argc, exprtk_value_t *args,
                                              exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, turbo_platform_os_version)
+    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_os_version)
                             : os_empty();
 }
 
@@ -197,14 +197,14 @@ static exprtk_value_t os_fn_arch(size_t argc, exprtk_value_t *args,
                                  exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, turbo_platform_arch) : os_empty();
+    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_arch) : os_empty();
 }
 
 static exprtk_value_t os_fn_hostname(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, turbo_platform_hostname)
+    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_hostname)
                             : os_empty();
 }
 
@@ -212,7 +212,7 @@ static exprtk_value_t os_fn_username(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, turbo_platform_username)
+    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_username)
                             : os_empty();
 }
 
@@ -221,7 +221,7 @@ static exprtk_value_t os_fn_pid(size_t argc, exprtk_value_t *args,
     (void)args;
     (void)env;
     (void)user_data;
-    return argc == 0 ? exprtk_val_int((int64_t)turbo_getpid()) : os_empty();
+    return argc == 0 ? exprtk_val_int((int64_t)salts_getpid()) : os_empty();
 }
 
 static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
@@ -229,7 +229,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
     const char *level_name;
     const char *message;
     const char *component = NULL;
-    turbo_log_level_t level;
+    salts_log_level_t level;
     tlog_t *logger;
     size_t message_length;
     size_t level_length;
@@ -244,11 +244,11 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
         return os_empty();
     if (argc == 3 && !os_string_arg(&args[2], &component, NULL)) return os_empty();
 
-    level = TURBO_LOG_LEVEL_INFO;
+    level = SALTS_LOG_LEVEL_INFO;
     for (i = 0; i < sizeof(level_names) / sizeof(level_names[0]); ++i) {
         if (strlen(level_names[i]) == level_length &&
             strncmp(level_names[i], level_name, level_length) == 0) {
-            level = (turbo_log_level_t)i;
+            level = (salts_log_level_t)i;
             break;
         }
     }
@@ -256,7 +256,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
 
     logger = tlog_get_default();
     if (!logger) return os_empty();
-    turbo_log_str(logger, level, component, NULL, 0, message, message_length);
+    salts_log_str(logger, level, component, NULL, 0, message, message_length);
     return exprtk_val_num(1);
 }
 
@@ -264,7 +264,7 @@ static exprtk_value_t os_fn_log_set_level(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     const char *level_name;
     size_t level_length;
-    turbo_log_level_t level;
+    salts_log_level_t level;
     tlog_t *logger;
     static const char *const level_names[] = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
     size_t i;
@@ -281,8 +281,8 @@ static exprtk_value_t os_fn_log_set_level(size_t argc, exprtk_value_t *args,
 
     logger = tlog_get_default();
     if (!logger) return os_empty();
-    level = (turbo_log_level_t)i;
-    return exprtk_val_num(tlog_set_level_ex(logger, level) == TURBO_OK ? 1 : 0);
+    level = (salts_log_level_t)i;
+    return exprtk_val_num(tlog_set_level_ex(logger, level) == SALTS_OK ? 1 : 0);
 }
 
 static exprtk_value_t os_fn_log_level(size_t argc, exprtk_value_t *args,
@@ -294,15 +294,15 @@ static exprtk_value_t os_fn_log_level(size_t argc, exprtk_value_t *args,
     (void)user_data;
     if (argc != 0) return os_empty();
     logger = tlog_get_default();
-    return logger ? exprtk_val_str(vstr_from_cstr(turbo_log_level_name(
+    return logger ? exprtk_val_str(vstr_from_cstr(salts_log_level_name(
                            tlog_get_level(logger)))) : os_empty();
 }
 
 static exprtk_value_t os_fn_process_start(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    turbo_process_options_t options;
-    turbo_process_t *process = NULL;
+    salts_process_options_t options;
+    salts_process_t *process = NULL;
     const char *program;
     const char **child_args;
     int slot;
@@ -322,10 +322,10 @@ static exprtk_value_t os_fn_process_start(size_t argc, exprtk_value_t *args,
     }
     child_args[argc - 1U] = NULL;
 
-    turbo_process_options_init(&options);
+    salts_process_options_init(&options);
     options.program = program;
     options.args = child_args;
-    if (turbo_process_spawn(&options, &process) != TURBO_OK || !process) return os_empty();
+    if (salts_process_spawn(&options, &process) != SALTS_OK || !process) return os_empty();
     module->processes[(size_t)slot].process = process;
     return exprtk_val_int((int64_t)slot + 1);
 }
@@ -339,14 +339,14 @@ static exprtk_value_t os_fn_process_poll(size_t argc, exprtk_value_t *args,
     if (argc != 1 || !os_u64_arg(&args[0], &raw_id) || raw_id > INT64_MAX)
         return os_empty();
     id = (int64_t)raw_id;
-    return os_process_result_map((os_module_t *)user_data, id, TURBO_OK);
+    return os_process_result_map((os_module_t *)user_data, id, SALTS_OK);
 }
 
 static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    turbo_process_t *process;
-    turbo_process_result_t result;
+    salts_process_t *process;
+    salts_process_result_t result;
     uint64_t timeout;
     uint64_t raw_id;
     int64_t id;
@@ -360,9 +360,9 @@ static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
     if (!process) return os_empty();
     if (argc == 2) {
         if (!os_u64_arg(&args[1], &timeout)) return os_empty();
-        wait_code = turbo_process_wait_for(process, timeout, &result);
+        wait_code = salts_process_wait_for(process, timeout, &result);
     } else {
-        wait_code = turbo_process_wait(process, &result);
+        wait_code = salts_process_wait(process, &result);
     }
     return os_process_result_map(module, id, wait_code);
 }
@@ -370,7 +370,7 @@ static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_fn_process_terminate(size_t argc, exprtk_value_t *args,
                                               exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    turbo_process_t *process;
+    salts_process_t *process;
     uint64_t raw_id;
     int64_t id;
 
@@ -379,14 +379,14 @@ static exprtk_value_t os_fn_process_terminate(size_t argc, exprtk_value_t *args,
         return os_empty();
     id = (int64_t)raw_id;
     process = os_process_get(module, id);
-    return process ? exprtk_val_num(turbo_process_terminate(process) == TURBO_OK ? 1 : 0)
+    return process ? exprtk_val_num(salts_process_terminate(process) == SALTS_OK ? 1 : 0)
                    : os_empty();
 }
 
 static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    turbo_process_t *process;
+    salts_process_t *process;
     uint64_t raw_id;
     int64_t id;
 
@@ -396,7 +396,7 @@ static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
     id = (int64_t)raw_id;
     process = os_process_get(module, id);
     if (!process) return os_empty();
-    turbo_process_destroy(process);
+    salts_process_destroy(process);
     module->processes[(size_t)id - 1U].process = NULL;
     return exprtk_val_num(1);
 }
@@ -404,7 +404,7 @@ static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_process_read(os_module_t *module, size_t argc,
                                       exprtk_value_t *args, exprtk_env_t *env,
                                       int stderr_stream) {
-    turbo_process_t *process;
+    salts_process_t *process;
     uint64_t requested = OS_DEFAULT_OUTPUT_READ;
     size_t read = 0;
     char *buffer;
@@ -424,9 +424,9 @@ static exprtk_value_t os_process_read(os_module_t *module, size_t argc,
     buffer = (char *)mem_alloc(&env->arena, (size_t)requested + 1U);
     if (!buffer) return os_empty();
     code = stderr_stream
-                ? turbo_process_read_stderr(process, buffer, (size_t)requested, &read)
-                : turbo_process_read_stdout(process, buffer, (size_t)requested, &read);
-    if (code != TURBO_OK && code != TURBO_EOF) return os_empty();
+                ? salts_process_read_stderr(process, buffer, (size_t)requested, &read)
+                : salts_process_read_stdout(process, buffer, (size_t)requested, &read);
+    if (code != SALTS_OK && code != SALTS_EOF) return os_empty();
     buffer[read] = '\0';
     return exprtk_val_str(vstr_from_buf(buffer, read));
 }
@@ -441,7 +441,7 @@ static exprtk_value_t os_fn_process_read_stderr(size_t argc, exprtk_value_t *arg
     return os_process_read((os_module_t *)user_data, argc, args, env, 1);
 }
 
-static size_t os_read_stream(turbo_process_t *process, int stderr_stream,
+static size_t os_read_stream(salts_process_t *process, int stderr_stream,
                              char *buffer, size_t capacity) {
     size_t total = 0;
     size_t read = 0;
@@ -451,12 +451,12 @@ static size_t os_read_stream(turbo_process_t *process, int stderr_stream,
     while (total + 1U < capacity) {
         read = 0;
         code = stderr_stream
-                   ? turbo_process_read_stderr(process, buffer + total, capacity - total - 1U,
+                   ? salts_process_read_stderr(process, buffer + total, capacity - total - 1U,
                                                &read)
-                   : turbo_process_read_stdout(process, buffer + total, capacity - total - 1U,
+                   : salts_process_read_stdout(process, buffer + total, capacity - total - 1U,
                                                &read);
         total += read;
-        if (code == TURBO_EOF || code != TURBO_OK || read == 0) break;
+        if (code == SALTS_EOF || code != SALTS_OK || read == 0) break;
     }
     buffer[total] = '\0';
     return total;
@@ -520,9 +520,9 @@ static exprtk_value_t os_action_map(const char *action, int success, int availab
 static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
                                            exprtk_env_t *env, void *user_data) {
     const char *service_name;
-    turbo_process_options_t options;
-    turbo_process_result_t result;
-    turbo_process_t *process = NULL;
+    salts_process_options_t options;
+    salts_process_result_t result;
+    salts_process_t *process = NULL;
     const char *process_args[3];
     char output[OS_SERVICE_OUTPUT_SIZE];
     size_t service_length;
@@ -540,26 +540,26 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
     process_args[0] = "query";
     process_args[1] = service_name;
     process_args[2] = NULL;
-    turbo_process_options_init(&options);
+    salts_process_options_init(&options);
     options.program = "sc.exe";
 #else
     process_args[0] = "is-active";
     process_args[1] = service_name;
     process_args[2] = NULL;
-    turbo_process_options_init(&options);
+    salts_process_options_init(&options);
     options.program = "systemctl";
 #endif
     options.args = process_args;
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
-    spawn_code = turbo_process_spawn(&options, &process);
-    if (spawn_code != TURBO_OK || !process)
+    spawn_code = salts_process_spawn(&options, &process);
+    if (spawn_code != SALTS_OK || !process)
         return os_service_map(0, 0, "unavailable", -1, spawn_code, "");
 
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    (void)turbo_process_wait(process, &result);
+    (void)salts_process_wait(process, &result);
     os_read_stream(process, 0, output, sizeof(output));
     if (output[0] == '\0') os_read_stream(process, 1, output, sizeof(output));
 
@@ -587,7 +587,7 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
     {
         exprtk_value_t map = os_service_map(1, active, state, result.exit_code,
                                             result.error_code, output);
-        turbo_process_destroy(process);
+        salts_process_destroy(process);
         return map;
     }
 }
@@ -595,9 +595,9 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
                                             const char *action) {
     const char *service_name;
-    turbo_process_options_t options;
-    turbo_process_result_t result;
-    turbo_process_t *process = NULL;
+    salts_process_options_t options;
+    salts_process_result_t result;
+    salts_process_t *process = NULL;
     const char *process_args[3];
     char output[OS_SERVICE_OUTPUT_SIZE];
     size_t service_length;
@@ -613,7 +613,7 @@ static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
     process_args[0] = action;
     process_args[1] = service_name;
     process_args[2] = NULL;
-    turbo_process_options_init(&options);
+    salts_process_options_init(&options);
 #ifdef _WIN32
     options.program = "sc.exe";
 #else
@@ -623,23 +623,23 @@ static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
 
-    spawn_code = turbo_process_spawn(&options, &process);
-    if (spawn_code != TURBO_OK || !process)
+    spawn_code = salts_process_spawn(&options, &process);
+    if (spawn_code != SALTS_OK || !process)
         return os_action_map(action, 0, 0, state, -1, spawn_code, spawn_code, "");
 
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    wait_code = turbo_process_wait(process, &result);
-    state = turbo_process_state_name(result.state);
+    wait_code = salts_process_wait(process, &result);
+    state = salts_process_state_name(result.state);
     os_read_stream(process, 0, output, sizeof(output));
     if (output[0] == '\0') os_read_stream(process, 1, output, sizeof(output));
-    success = wait_code == TURBO_OK && result.exit_code == 0 && result.error_code == 0;
+    success = wait_code == SALTS_OK && result.exit_code == 0 && result.error_code == 0;
 
     {
         exprtk_value_t map = os_action_map(
             action, success, 1, state, result.exit_code, result.error_code, wait_code, output);
-        turbo_process_destroy(process);
+        salts_process_destroy(process);
         return map;
     }
 }
@@ -662,21 +662,21 @@ static void os_action_result_init(os_action_result_t *result) {
     if (!result) return;
     memset(result, 0, sizeof(*result));
     result->exit_code = -1;
-    result->wait_code = TURBO_EINVAL;
+    result->wait_code = SALTS_EINVAL;
     (void)snprintf(result->state, sizeof(result->state), "%s", "unavailable");
 }
 
 static int os_run_power_action(const char *action, os_action_result_t *out) {
-    turbo_process_options_t options;
-    turbo_process_result_t result;
-    turbo_process_t *process = NULL;
+    salts_process_options_t options;
+    salts_process_result_t result;
+    salts_process_t *process = NULL;
     const char *process_args[4] = {NULL, NULL, NULL, NULL};
     int spawn_code;
     const char *program;
 
     if (!action || !out ||
         (strcmp(action, "reboot") != 0 && strcmp(action, "shutdown") != 0))
-        return TURBO_EINVAL;
+        return SALTS_EINVAL;
     os_action_result_init(out);
 
 #ifdef _WIN32
@@ -693,14 +693,14 @@ static int os_run_power_action(const char *action, os_action_result_t *out) {
     process_args[1] = "now";
 #endif
 
-    turbo_process_options_init(&options);
+    salts_process_options_init(&options);
     options.program = program;
     options.args = process_args;
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
 
-    spawn_code = turbo_process_spawn(&options, &process);
-    if (spawn_code != TURBO_OK || !process) {
+    spawn_code = salts_process_spawn(&options, &process);
+    if (spawn_code != SALTS_OK || !process) {
         out->error_code = spawn_code;
         out->wait_code = spawn_code;
         return spawn_code;
@@ -709,18 +709,18 @@ static int os_run_power_action(const char *action, os_action_result_t *out) {
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    out->wait_code = turbo_process_wait(process, &result);
+    out->wait_code = salts_process_wait(process, &result);
     out->available = 1;
-    out->success = out->wait_code == TURBO_OK && result.exit_code == 0 &&
+    out->success = out->wait_code == SALTS_OK && result.exit_code == 0 &&
                    result.error_code == 0;
     out->exit_code = result.exit_code;
     out->error_code = result.error_code;
     (void)snprintf(out->state, sizeof(out->state), "%s",
-                   turbo_process_state_name(result.state));
+                   salts_process_state_name(result.state));
     os_read_stream(process, 0, out->output, sizeof(out->output));
     if (out->output[0] == '\0') os_read_stream(process, 1, out->output, sizeof(out->output));
-    turbo_process_destroy(process);
-    return out->success ? TURBO_OK : TURBO_EPERM;
+    salts_process_destroy(process);
+    return out->success ? SALTS_OK : SALTS_EPERM;
 }
 
 static exprtk_value_t os_fn_power_control(size_t argc, const char *action) {
@@ -749,7 +749,7 @@ static exprtk_value_t os_fn_shutdown(size_t argc, exprtk_value_t *args,
     return os_fn_power_control(argc, "shutdown");
 }
 
-static void os_power_schedule_callback(const turbo_cron_expr_t *expression,
+static void os_power_schedule_callback(const salts_cron_expr_t *expression,
                                        time_t scheduled_at, void *user_data) {
     os_power_schedule_slot_t *slot = (os_power_schedule_slot_t *)user_data;
     os_action_result_t result;
@@ -758,7 +758,7 @@ static void os_power_schedule_callback(const turbo_cron_expr_t *expression,
     if (!slot || !slot->owner) return;
     (void)os_run_power_action(slot->action, &result);
 
-    turbo_mutex_lock(&slot->owner->schedule_mutex);
+    salts_mutex_lock(&slot->owner->schedule_mutex);
     if (slot->allocated) {
         slot->fire_count++;
         slot->last_success = result.success;
@@ -768,7 +768,7 @@ static void os_power_schedule_callback(const turbo_cron_expr_t *expression,
         (void)snprintf(slot->last_state, sizeof(slot->last_state), "%s", result.state);
         (void)snprintf(slot->last_output, sizeof(slot->last_output), "%s", result.output);
     }
-    turbo_mutex_unlock(&slot->owner->schedule_mutex);
+    salts_mutex_unlock(&slot->owner->schedule_mutex);
 }
 
 static int os_schedule_copy_arg(const exprtk_value_t *value, char *buffer,
@@ -813,7 +813,7 @@ static exprtk_value_t os_fn_power_schedule(size_t argc, exprtk_value_t *args,
     char action[OS_POWER_ACTION_SIZE];
     char expression[OS_CRON_EXPRESSION_SIZE];
     os_power_schedule_slot_t *slot = NULL;
-    turbo_cron_runner_t *runner;
+    salts_cron_runner_t *runner;
     size_t i;
     int id = -1;
 
@@ -823,7 +823,7 @@ static exprtk_value_t os_fn_power_schedule(size_t argc, exprtk_value_t *args,
         (strcmp(action, "reboot") != 0 && strcmp(action, "shutdown") != 0))
         return os_empty();
 
-    turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_lock(&module->schedule_mutex);
     for (i = 0; i < OS_MAX_POWER_SCHEDULES; ++i) {
         if (!module->schedules[i].allocated) {
             slot = &module->schedules[i];
@@ -837,26 +837,26 @@ static exprtk_value_t os_fn_power_schedule(size_t argc, exprtk_value_t *args,
             break;
         }
     }
-    turbo_mutex_unlock(&module->schedule_mutex);
+    salts_mutex_unlock(&module->schedule_mutex);
     if (!slot) return os_empty();
 
-    runner = turbo_cron_runner_create(expression, os_power_schedule_callback, slot);
+    runner = salts_cron_runner_create(expression, os_power_schedule_callback, slot);
     if (!runner) {
-        turbo_mutex_lock(&module->schedule_mutex);
+        salts_mutex_lock(&module->schedule_mutex);
         memset(slot, 0, sizeof(*slot));
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
 
-    turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_lock(&module->schedule_mutex);
     slot->runner = runner;
     slot->active = 1;
-    turbo_mutex_unlock(&module->schedule_mutex);
-    if (turbo_cron_runner_start(runner) != TURBO_CRON_OK) {
-        turbo_cron_runner_destroy(runner);
-        turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_unlock(&module->schedule_mutex);
+    if (salts_cron_runner_start(runner) != SALTS_CRON_OK) {
+        salts_cron_runner_destroy(runner);
+        salts_mutex_lock(&module->schedule_mutex);
         memset(slot, 0, sizeof(*slot));
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
     return exprtk_val_int((int64_t)id);
@@ -867,7 +867,7 @@ static exprtk_value_t os_fn_power_schedule_cancel(size_t argc, exprtk_value_t *a
     os_module_t *module = (os_module_t *)user_data;
     uint64_t raw_id;
     os_power_schedule_slot_t *slot;
-    turbo_cron_runner_t *runner;
+    salts_cron_runner_t *runner;
 
     (void)env;
     if (!module || argc != 1 || !os_u64_arg(&args[0], &raw_id) ||
@@ -875,22 +875,22 @@ static exprtk_value_t os_fn_power_schedule_cancel(size_t argc, exprtk_value_t *a
         return os_empty();
 
     slot = &module->schedules[(size_t)raw_id - 1U];
-    turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_lock(&module->schedule_mutex);
     if (!slot->allocated) {
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
         return exprtk_val_num(0);
     }
     slot->active = 0;
     runner = slot->runner;
-    turbo_mutex_unlock(&module->schedule_mutex);
+    salts_mutex_unlock(&module->schedule_mutex);
 
     if (runner) {
-        (void)turbo_cron_runner_stop(runner);
-        turbo_cron_runner_destroy(runner);
+        (void)salts_cron_runner_stop(runner);
+        salts_cron_runner_destroy(runner);
     }
-    turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_lock(&module->schedule_mutex);
     memset(slot, 0, sizeof(*slot));
-    turbo_mutex_unlock(&module->schedule_mutex);
+    salts_mutex_unlock(&module->schedule_mutex);
     return exprtk_val_num(1);
 }
 
@@ -906,13 +906,13 @@ static exprtk_value_t os_fn_power_schedule_status(size_t argc, exprtk_value_t *a
         raw_id == 0 || raw_id > OS_MAX_POWER_SCHEDULES)
         return os_empty();
     index = (size_t)raw_id - 1U;
-    turbo_mutex_lock(&module->schedule_mutex);
+    salts_mutex_lock(&module->schedule_mutex);
     if (!module->schedules[index].allocated) {
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
     snapshot = module->schedules[index];
-    turbo_mutex_unlock(&module->schedule_mutex);
+    salts_mutex_unlock(&module->schedule_mutex);
     return os_power_schedule_map(&snapshot, (int64_t)raw_id);
 }
 
@@ -922,35 +922,35 @@ static exprtk_value_t os_static_platform_name(size_t argc, exprtk_value_t *args,
                                               exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, turbo_platform_os_name) : os_empty();
+    return argc == 0 ? os_platform_text(arena, salts_platform_os_name) : os_empty();
 }
 
 static exprtk_value_t os_static_platform_version(size_t argc, exprtk_value_t *args,
                                                  exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, turbo_platform_os_version) : os_empty();
+    return argc == 0 ? os_platform_text(arena, salts_platform_os_version) : os_empty();
 }
 
 static exprtk_value_t os_static_arch(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, turbo_platform_arch) : os_empty();
+    return argc == 0 ? os_platform_text(arena, salts_platform_arch) : os_empty();
 }
 
 static exprtk_value_t os_static_hostname(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, turbo_platform_hostname) : os_empty();
+    return argc == 0 ? os_platform_text(arena, salts_platform_hostname) : os_empty();
 }
 
 static exprtk_value_t os_static_username(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, turbo_platform_username) : os_empty();
+    return argc == 0 ? os_platform_text(arena, salts_platform_username) : os_empty();
 }
 
 static exprtk_value_t os_static_pid(size_t argc, exprtk_value_t *args,
@@ -958,7 +958,7 @@ static exprtk_value_t os_static_pid(size_t argc, exprtk_value_t *args,
     (void)args;
     (void)env;
     (void)arena;
-    return argc == 0 ? exprtk_val_int((int64_t)turbo_getpid()) : os_empty();
+    return argc == 0 ? exprtk_val_int((int64_t)salts_getpid()) : os_empty();
 }
 
 static const exprtk_func_entry_t os_entries[] = {
@@ -980,7 +980,7 @@ const exprtk_module_t *exprtk_module_os(void) { return &os_module; }
 
 void *os_module_create(void) {
     os_module_t *module = (os_module_t *)calloc(1, sizeof(os_module_t));
-    if (module) turbo_mutex_init(&module->schedule_mutex);
+    if (module) salts_mutex_init(&module->schedule_mutex);
     return module;
 }
 
@@ -1021,28 +1021,28 @@ void os_module_load(void *opaque_module, void *opaque_env, void *opaque_scratch)
 void os_module_destroy(void *opaque_module) {
     os_module_t *module = (os_module_t *)opaque_module;
     size_t i;
-    turbo_cron_runner_t *runner;
+    salts_cron_runner_t *runner;
 
     if (!module) return;
     for (i = 0; i < OS_MAX_POWER_SCHEDULES; ++i) {
-        turbo_mutex_lock(&module->schedule_mutex);
+        salts_mutex_lock(&module->schedule_mutex);
         runner = module->schedules[i].runner;
         module->schedules[i].active = 0;
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
         if (runner) {
-            (void)turbo_cron_runner_stop(runner);
-            turbo_cron_runner_destroy(runner);
+            (void)salts_cron_runner_stop(runner);
+            salts_cron_runner_destroy(runner);
         }
-        turbo_mutex_lock(&module->schedule_mutex);
+        salts_mutex_lock(&module->schedule_mutex);
         memset(&module->schedules[i], 0, sizeof(module->schedules[i]));
-        turbo_mutex_unlock(&module->schedule_mutex);
+        salts_mutex_unlock(&module->schedule_mutex);
     }
     for (i = 0; i < OS_MAX_PROCESS_HANDLES; ++i) {
         if (module->processes[i].process) {
-            turbo_process_destroy(module->processes[i].process);
+            salts_process_destroy(module->processes[i].process);
             module->processes[i].process = NULL;
         }
     }
-    turbo_mutex_destroy(&module->schedule_mutex);
+    salts_mutex_destroy(&module->schedule_mutex);
     free(module);
 }

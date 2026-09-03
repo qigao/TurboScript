@@ -57,7 +57,7 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 
 ### Extensible Architecture
 - **Plugin system**: Load C/C++ DLLs dynamically via `import("plugin_name")`
-- **Module-based**: Clean namespace separation (`parser.*`, `mapper.*`, `ta.*`, `strategy.*`)
+- **Module-based**: Clean namespace separation (`mapper.*`, `ta.*`, `strategy.*`)
 - **Unified MIR backend**: `turbo_script_run()` executes generated MIR with MIR's interpreter; `turbo_script_run_jit()` uses the same IR and asks MIR to generate native code
 - **Pure MIR execution contract**: unsupported lowering forms report errors from the MIR pipeline
 - **Optimized hot paths**: direct math calls, pre-bound vector access, map numeric pointers, monomorphic OOP method lowering, `super.method(...)` inline, and public numeric instance field slot access
@@ -67,8 +67,8 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 
 ## 📦 Installation
 
-The source build requires installed TurboUtils, TurboNet, TurboHTTP and
-RulesForge packages plus the dependencies in `vcpkg.json`. Configure their
+The source build requires installed Salts and SaltsUtils packages plus the
+dependencies in `vcpkg.json`. Configure their
 locations in a local `CMakeUserPresets.json`, then follow the commands in the
 [repository README](../README.md#build-and-test).
 
@@ -108,8 +108,7 @@ TurboScript comes with a rich set of optional modules:
 
 | Module | Description | Documentation |
 |--------|-------------|---------------|
-| `parser` | Configuration-oriented text parsing (INI, dotenv, TOML, command line) | [parser README](../modules/parser/README.md) |
-| `mapper` | Class-first JSON/YAML/XML serialization through `turbo_parser.h` | [mapper README](../modules/mapper/README.md) |
+| `mapper` | Class-first JSON/YAML/XML serialization through Salts DataBind parser APIs | [mapper README](../modules/mapper/README.md) |
 | `ta` | Technical analysis indicators (`ta.*`) | [TA/finance cheatsheet](api/ta_fin_cheatsheet.md) |
 | `fin` | Risk metrics and strategy helpers (`strategy.*`) | [TA/finance cheatsheet](api/ta_fin_cheatsheet.md) |
 | `ts` | Time-series helpers (`ts.*`) | [module source](../modules/ts/) |
@@ -118,9 +117,7 @@ TurboScript comes with a rich set of optional modules:
 | `sqlite` | SQL, embeddings and local RAG | [SQLite README](../modules/sqlite/README.md) |
 | `img` | Image handles and pixel/image operations | [image README](../modules/img/README.md) |
 | `crypto`, `hash`, `fuzzy` | Cryptography, hashing and fuzzy matching | [API reference](api/api-reference.md) |
-| `rules_forge` | Rules engine integration and TurboScript RHS plugin loading | [rules_forge README](../modules/rules_forge/README.md) |
 | `os` | Platform information, shell-free child processes, logging, service and power management | [os README](../modules/os/README.md) |
-| `wasm` | Experimental source present, not enabled by the default build | [integration plan](../modules/wasm/WASI_INTEGRATION_PLAN.md) |
 
 ---
 

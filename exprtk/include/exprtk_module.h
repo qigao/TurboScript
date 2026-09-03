@@ -9,10 +9,8 @@
 #ifndef EXPRTK_MODULE_H
 #define EXPRTK_MODULE_H
 
-#include "exprtk_export.h"
-
 #include "exprtk_types.h"
-#include "turbo_buffer.h"
+#include "salts_buffer.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -84,7 +82,7 @@ static inline exprtk_value_t exprtk_val_bytes(vstr v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_uuid(turbo_uuid_t v) {
+static inline exprtk_value_t exprtk_val_uuid(salts_uuid_t v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_UUID;
