@@ -110,6 +110,23 @@ static wchar_t *join_path_win(const wchar_t *directory, const wchar_t *leaf) {
   return path;
 }
 
+static wchar_t *package_plugin_path_win(const wchar_t *leaf) {
+  const char *root;
+  wchar_t *wide_root;
+  wchar_t *plugins_dir;
+  wchar_t *path;
+
+  if (!leaf || !(root = getenv("TURBOSCRIPT_ROOT")) || !*root) return NULL;
+  wide_root = utf8_to_wide(root);
+  if (!wide_root) return NULL;
+  plugins_dir = join_path_win(wide_root, L"bin\\plugins");
+  free(wide_root);
+  if (!plugins_dir) return NULL;
+  path = join_path_win(plugins_dir, leaf);
+  free(plugins_dir);
+  return path;
+}
+
 static DLL_DIRECTORY_COOKIE add_package_dll_directory(const char *root_name) {
   const char *root;
   wchar_t *wide_root;
@@ -251,6 +268,12 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   if (candidate) module = open_exact_win(candidate, exe_dir, &native_error);
   free(candidate);
   free(plugins_dir);
+
+  if (!module) {
+    candidate = package_plugin_path_win(wide_path);
+    if (candidate) module = open_exact_win(candidate, exe_dir, &native_error);
+    free(candidate);
+  }
 
   if (!module) {
     candidate = join_path_win(exe_dir, wide_path);

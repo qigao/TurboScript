@@ -10,6 +10,7 @@
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dll"
 #define LOADER_LEGACY_FILE "loader_legacy.dll"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dll"
+#define LOADER_PACKAGE_FILE "loader_package.dll"
 #elif defined(__APPLE__)
 #define LOADER_FIXTURE_FILE "loader_fixture.dylib"
 #define LOADER_BAD_ABI_FILE "loader_bad_abi.dylib"
@@ -18,6 +19,7 @@
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dylib"
 #define LOADER_LEGACY_FILE "loader_legacy.dylib"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dylib"
+#define LOADER_PACKAGE_FILE "loader_package.dylib"
 #else
 #define LOADER_FIXTURE_FILE "loader_fixture.so"
 #define LOADER_BAD_ABI_FILE "loader_bad_abi.so"
@@ -26,6 +28,7 @@
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.so"
 #define LOADER_LEGACY_FILE "loader_legacy.so"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.so"
+#define LOADER_PACKAGE_FILE "loader_package.so"
 #endif
 
 spec("plugin loader") {
@@ -46,6 +49,17 @@ spec("plugin loader") {
 
       check_not_null(handle);
       if (handle) ts_plugin_unload(handle);
+    }
+
+    it("loads a plugin from the configured TurboScript package") {
+      ts_plugin_handle_t *handle = ts_plugin_load(LOADER_PACKAGE_FILE);
+
+      check_not_null(handle);
+      if (handle) {
+        check_not_null(handle->plugin);
+        check_equal(handle->plugin->name, "loader_fixture");
+        ts_plugin_unload(handle);
+      }
     }
 
     it("does not search the current working directory") {

@@ -92,6 +92,17 @@ cmake_add_test(
           test_plugin_loader_cwd_only
   FOLDER turbo_script
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+add_custom_command(
+  TARGET test_ts_plugin_loader POST_BUILD
+  COMMAND ${CMAKE_COMMAND} -E make_directory
+          $<TARGET_FILE_DIR:test_ts_plugin_loader>/loader-package/bin/plugins
+  COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          $<TARGET_FILE:test_plugin_loader_fixture>
+          $<TARGET_FILE_DIR:test_ts_plugin_loader>/loader-package/bin/plugins/loader_package$<TARGET_FILE_SUFFIX:test_plugin_loader_fixture>)
+set_tests_properties(
+  test_ts_plugin_loader
+  PROPERTIES ENVIRONMENT
+             "TURBOSCRIPT_ROOT=$<TARGET_FILE_DIR:test_ts_plugin_loader>/loader-package")
 
 macro(add_ts_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
