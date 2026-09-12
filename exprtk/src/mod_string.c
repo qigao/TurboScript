@@ -8,8 +8,8 @@
 #include "exprtk.h"
 #include "base64_utils.h"
 #include "mustache.h"
-#include "salts_str.h"
-#include "salts_vstr.h"
+#include "tstr.h"
+#include "vstr.h"
 
 #include <string.h>
 #include <stdlib.h>

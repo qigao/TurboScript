@@ -4,7 +4,7 @@
 #include "exprtk_module.h"
 #include "salts_buffer.h"
 #include "turbo_script_host_api_internal.h"
-#include "salts_str.h"
+#include "tstr.h"
 #include <cstl.h>
 
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;

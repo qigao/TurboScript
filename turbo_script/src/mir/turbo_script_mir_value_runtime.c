@@ -7,7 +7,7 @@
 #include "exprtk_grammar.h"
 #include "exprtk_module.h"
 #include "turbo_script_mir_internal.h"
-#include "salts_str.h"
+#include "tstr.h"
 #include <cstl.h>
 #include <math.h>
 #include <stdbool.h>

@@ -3,7 +3,7 @@
 
 #include "salts_buffer.h"
 #include "turbo_parser_datetime.h"
-#include "salts_vstr.h"
+#include "vstr.h"
 #include "salts_uuid.h"
 #include <stddef.h>
 #include <stdint.h>

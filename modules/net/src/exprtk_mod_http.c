@@ -6,7 +6,7 @@
 #include "turbo_script.h"
 #include "exprtk_module.h"
 #include <turbo_parser_json.h>
-#include <salts_str.h>
+#include <tstr.h>
 #include <ctype.h>
 #include <math.h>
 #include <stdint.h>

@@ -8,7 +8,7 @@
 #include "tlog.h"
 #include "salts_error.h"
 #include "salts_process.h"
-#include "salts_str.h"
+#include "tstr.h"
 #include "salts_thread.h"
 #include "salts_cron.h"
 

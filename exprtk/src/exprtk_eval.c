@@ -9,7 +9,7 @@
 #include "exprtk_grammar_gen.h"
 #include "exprtk_module.h"
 #include "exprtk_class.h"
-#include "salts_str.h"
+#include "tstr.h"
 #include <cstl.h>
 #include <string.h>
 #include <math.h>

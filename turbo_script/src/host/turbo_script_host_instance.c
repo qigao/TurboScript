@@ -3,7 +3,7 @@
 #include "../mir/turbo_script_mir_internal.h"
 #include "../turbo_script_internal.h"
 #include "exprtk.h"
-#include "salts_vstr.h"
+#include "vstr.h"
 
 #include <stdatomic.h>
 #include <stdint.h>

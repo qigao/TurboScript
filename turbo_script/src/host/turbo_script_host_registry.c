@@ -3,7 +3,7 @@
 #include "../turbo_script_internal.h"
 #include "exprtk.h"
 #include "exprtk_runtime_internal.h"
-#include "salts_vstr.h"
+#include "vstr.h"
 #include <cstl.h>
 
 #include <stdalign.h>
