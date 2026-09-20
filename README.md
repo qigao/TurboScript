@@ -42,3 +42,9 @@ See [Getting Started](docs/getting-started.md), the
 [language guide](docs/language-guide.md), the
 [C API](turbo_script/include/turbo_script.h), and the
 [plugin system](docs/PLUGIN_SYSTEM.md).
+
+## License
+
+TurboScript first-party code is licensed under the Apache License 2.0. See
+[LICENSE](LICENSE). Bundled and vendored third-party components retain their
+respective upstream licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
