@@ -13,4 +13,4 @@ set_target_properties(
   miniblas_linalg
   PROPERTIES C_STANDARD 11
              C_STANDARD_REQUIRED ON
-             FOLDER vendor)
+             FOLDER miniblas)
