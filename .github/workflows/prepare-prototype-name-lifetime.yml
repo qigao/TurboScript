@@ -16,7 +16,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: ${{ github.sha }}
-          fetch-depth: 2
+          fetch-depth: 3
           persist-credentials: false
       - name: Prepare exact source changes without moving a branch
         shell: bash
@@ -51,8 +51,8 @@ jobs:
           assert os.environ['GITHUB_REPOSITORY'] == repository
           assert os.environ['GITHUB_REF'] == 'refs/heads/fix/embedded-runtime-package'
           assert head == os.environ['GITHUB_SHA']
-          assert git('rev-parse', 'HEAD^') == source_base
-          assert git('diff', '--name-only', 'HEAD^', 'HEAD').splitlines() == [publisher]
+          assert git('rev-parse', 'HEAD^') == '49771f0b22ac45a891af62047fd7618e6739b85f'
+          assert git('diff', '--name-only', source_base, 'HEAD').splitlines() == [publisher]
           assert not git('status', '--porcelain', '--untracked-files=no')
           runtime = Path('turbo_script/src/mir/turbo_script_mir_runtime.c')
           test = Path('turbo_script/test/test_turbo_script_host_module.c')
@@ -62,19 +62,23 @@ jobs:
           }
           for name, (before, _) in expected.items():
               assert blob_sha(Path(name).read_bytes()) == before, name
-          old = '''static const char *ts_mir_prefixed_item_name(ts_mir_compiler_t *c, const char *name) {
-            char buf[192];
-            snprintf(buf, sizeof(buf), "%s_%s", c && c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
-            return strdup(buf);
-          }'''
-          new = '''static MIR_item_t ts_mir_new_prefixed_proto(ts_mir_compiler_t *c, const char *name,
-                                                       size_t nres, MIR_type_t *res_types,
-                                                       size_t nargs, MIR_var_t *args) {
-            char buf[192];
-            snprintf(buf, sizeof(buf), "%s_%s", c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
-            /* MIR copies the name into its context. No caller-owned heap copy is needed. */
-            return MIR_new_proto_arr(c->ctx, buf, nres, res_types, nargs, args);
-          }'''
+          old = '\n'.join([
+              'static const char *ts_mir_prefixed_item_name(ts_mir_compiler_t *c, const char *name) {',
+              '  char buf[192];',
+              '  snprintf(buf, sizeof(buf), "%s_%s", c && c->item_prefix[0] ? c->item_prefix : "ts_mir", name);',
+              '  return strdup(buf);',
+              '}',
+          ])
+          new = '\n'.join([
+              'static MIR_item_t ts_mir_new_prefixed_proto(ts_mir_compiler_t *c, const char *name,',
+              '                                             size_t nres, MIR_type_t *res_types,',
+              '                                             size_t nargs, MIR_var_t *args) {',
+              '  char buf[192];',
+              '  snprintf(buf, sizeof(buf), "%s_%s", c->item_prefix[0] ? c->item_prefix : "ts_mir", name);',
+              '  /* MIR copies the name into its context. No caller-owned heap copy is needed. */',
+              '  return MIR_new_proto_arr(c->ctx, buf, nres, res_types, nargs, args);',
+              '}',
+          ])
           text = runtime.read_text()
           assert text.count(old) == 1
           text = text.replace(old, new, 1)
@@ -83,42 +87,44 @@ jobs:
               r'ts_mir_new_prefixed_proto(c, \1,', text)
           assert count == 66 and 'ts_mir_prefixed_item_name' not in text
           runtime.write_text(text)
-          case = '''  it("releases MIR prototype names across repeated module lifetimes") {
-            enum { MODULE_CYCLES = 4 };
-            static const turbo_script_execution_mode_t modes[] = {
-                TURBO_SCRIPT_EXEC_INTERPRETER, TURBO_SCRIPT_EXEC_JIT};
-            turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-            turbo_script_result_t *result = NULL;
-            turbo_script_module_options_t module_options;
-            check_not_null(ctx);
-            check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
-            turbo_script_module_options_init(&module_options);
-            for (int cycle = 0; cycle < MODULE_CYCLES; ++cycle) {
-              turbo_script_module_t *module = NULL;
-              /* No named variables: isolate the temporary external-prototype names. */
-              check_equal(compile_text(ctx, result, "1 + 2;", &module_options, &module),
-                          TURBO_SCRIPT_STATUS_OK);
-              for (size_t mode = 0; mode < sizeof(modes) / sizeof(modes[0]); ++mode) {
-                turbo_script_instance_options_t options;
-                turbo_script_instance_t *instance = NULL;
-                turbo_script_instance_options_init(&options);
-                options.mode = modes[mode];
-                check_equal(turbo_script_instance_create(module, &options, result, &instance),
-                            TURBO_SCRIPT_STATUS_OK);
-                check_equal(turbo_script_instance_destroy(instance, result), TURBO_SCRIPT_STATUS_OK);
-              }
-              check_equal(turbo_script_module_destroy(module, result), TURBO_SCRIPT_STATUS_OK);
-            }
-            destroy_fixture(ctx, result, NULL);
-          }
-
-          '''
+          case = '\n'.join([
+              '  it("releases MIR prototype names across repeated module lifetimes") {',
+              '    enum { MODULE_CYCLES = 4 };',
+              '    static const turbo_script_execution_mode_t modes[] = {',
+              '        TURBO_SCRIPT_EXEC_INTERPRETER, TURBO_SCRIPT_EXEC_JIT};',
+              '    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);',
+              '    turbo_script_result_t *result = NULL;',
+              '    turbo_script_module_options_t module_options;',
+              '    check_not_null(ctx);',
+              '    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);',
+              '    turbo_script_module_options_init(&module_options);',
+              '    for (int cycle = 0; cycle < MODULE_CYCLES; ++cycle) {',
+              '      turbo_script_module_t *module = NULL;',
+              '      /* No named variables: isolate the temporary external-prototype names. */',
+              '      check_equal(compile_text(ctx, result, "1 + 2;", &module_options, &module),',
+              '                  TURBO_SCRIPT_STATUS_OK);',
+              '      for (size_t mode = 0; mode < sizeof(modes) / sizeof(modes[0]); ++mode) {',
+              '        turbo_script_instance_options_t options;',
+              '        turbo_script_instance_t *instance = NULL;',
+              '        turbo_script_instance_options_init(&options);',
+              '        options.mode = modes[mode];',
+              '        check_equal(turbo_script_instance_create(module, &options, result, &instance),',
+              '                    TURBO_SCRIPT_STATUS_OK);',
+              '        check_equal(turbo_script_instance_destroy(instance, result), TURBO_SCRIPT_STATUS_OK);',
+              '      }',
+              '      check_equal(turbo_script_module_destroy(module, result), TURBO_SCRIPT_STATUS_OK);',
+              '    }',
+              '    destroy_fixture(ctx, result, NULL);',
+              '  }',
+              '',
+              '',
+          ])
           text = test.read_text()
           anchor = 'spec("TurboScript immutable Host modules") {\n'
           assert text.count(anchor) == 1
           test.write_text(text.replace(anchor, anchor + case, 1))
           for name, (_, after) in expected.items():
-              assert blob_sha(Path(name).read_bytes()) == after, name
+              assert blob_sha(Path(name).read_bytes()) == after, (name, blob_sha(Path(name).read_bytes()))
           Path(publisher).unlink()
           subprocess.run(['git', 'diff', '--check'], check=True)
           assert set(git('diff', '--name-only').splitlines()) == set(expected) | {publisher}
@@ -144,6 +150,7 @@ jobs:
           print(json.dumps(record, indent=2))
           PY
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: prototype-name-fix-${{ github.sha }}
           path: build/prepared-prototype-fix
