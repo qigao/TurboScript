@@ -5,9 +5,10 @@
 #include "mapper.h"
 #include "exprtk_class.h"
 #include "exprtk_module.h"
-#include "turbo_parser_json.h"
-#include "turbo_parser_yaml.h"
-#include "turbo_parser_xml.h"
+#include "json_parser.h"
+#include <cyaml/cyaml.h>
+#include <cyaml/cyaml_json_adapter.h>
+#include <xml_parser/xml_parser.h>
 
 #include <errno.h>
 #include <limits.h>
@@ -132,15 +133,15 @@ static int mapper_json_to_instance(const json_value_t *node, exprtk_class_t *kla
     exprtk_value_t instance_value;
     size_t i;
     if (!node || !klass || !ctx || !ctx->env ||
-        turbo_json_type(node) != TURBO_JSON_OBJECT || !out) return 0;
+        json_type(node) != JSON_OBJECT || !out) return 0;
 
     instance_value = exprtk_oop_instantiate_class_value(
         exprtk_val_class(klass), klass->name, 0, NULL, ctx->env);
     if (instance_value.type != EXPRTK_VAL_INSTANCE) return 0;
 
-    for (i = 0; i < turbo_json_object_size(node); ++i) {
-        const char *name = turbo_json_object_key(node, i);
-        json_value_t *child = turbo_json_object_value(node, i);
+    for (i = 0; i < json_object_size(node); ++i) {
+        const char *name = json_object_key(node, i);
+        json_value_t *child = json_object_value(node, i);
         const char *field_type;
         exprtk_value_t converted;
         char field_error[MAPPER_ERROR_CAP];
@@ -178,9 +179,9 @@ static int mapper_json_to_object(const json_value_t *node, mapper_ctx_t *ctx,
     size_t i;
     exprtk_value_t object = exprtk_val_object();
     if (!object.data.map.htab) return 0;
-    for (i = 0; i < turbo_json_object_size(node); ++i) {
-        const char *key = turbo_json_object_key(node, i);
-        json_value_t *child = turbo_json_object_value(node, i);
+    for (i = 0; i < json_object_size(node); ++i) {
+        const char *key = json_object_key(node, i);
+        json_value_t *child = json_object_value(node, i);
         exprtk_value_t converted = mapper_null();
         if (!key || !child || !mapper_json_to_value(child, NULL, ctx, &converted) ||
             exprtk_map_set(&object, key, converted) != 0) {
@@ -198,9 +199,9 @@ static int mapper_json_to_list(const json_value_t *node, mapper_ctx_t *ctx,
                                exprtk_value_t *out) {
     size_t i;
     exprtk_value_t list = exprtk_val_list_empty();
-    for (i = 0; i < turbo_json_array_size(node); ++i) {
+    for (i = 0; i < json_array_size(node); ++i) {
         exprtk_value_t converted = mapper_null();
-        if (!mapper_json_to_value(turbo_json_array_get(node, i), NULL, ctx, &converted) ||
+        if (!mapper_json_to_value(json_array_get(node, i), NULL, ctx, &converted) ||
             exprtk_list_push(&list, converted) != 0) {
             exprtk_value_destroy(&converted);
             exprtk_value_destroy(&list);
@@ -214,30 +215,30 @@ static int mapper_json_to_list(const json_value_t *node, mapper_ctx_t *ctx,
 
 static int mapper_json_to_value(const json_value_t *node, const char *declared_type,
                                 mapper_ctx_t *ctx, exprtk_value_t *out) {
-    turbo_json_type_t kind;
+    json_type_t kind;
     if (!node || !ctx || !ctx->env || !out) return 0;
-    kind = turbo_json_type(node);
-    if (kind == TURBO_JSON_NULL) {
+    kind = json_type(node);
+    if (kind == JSON_NULL) {
         *out = mapper_null();
         return 1;
     }
-    if (kind == TURBO_JSON_BOOL) {
+    if (kind == JSON_BOOL) {
         if (declared_type && strcmp(declared_type, "bool") != 0 &&
             strcmp(declared_type, "boolean") != 0 && strcmp(declared_type, "any") != 0)
             return (mapper_error(ctx->env, "mapper: expected '%s', received bool",
                                  declared_type), 0);
-        *out = exprtk_val_bool(turbo_json_bool(node));
+        *out = exprtk_val_bool(json_bool(node));
         return 1;
     }
-    if (kind == TURBO_JSON_STRING) {
+    if (kind == JSON_STRING) {
         if (declared_type && strcmp(declared_type, "string") != 0 &&
             strcmp(declared_type, "any") != 0)
             return (mapper_error(ctx->env, "mapper: expected '%s', received string",
                                  declared_type), 0);
-        return mapper_copy_string(ctx->env, turbo_json_string(node),
-                                  turbo_json_string_len(node), out);
+        return mapper_copy_string(ctx->env, json_string(node),
+                                  json_string_len(node), out);
     }
-    if (kind == TURBO_JSON_NUMBER) {
+    if (kind == JSON_NUMBER) {
         const char *text;
         size_t len = 0;
         int64_t integer;
@@ -245,7 +246,7 @@ static int mapper_json_to_value(const json_value_t *node, const char *declared_t
         if (declared_type && (strcmp(declared_type, "int") == 0 ||
                               strcmp(declared_type, "int64") == 0 ||
                               strcmp(declared_type, "integer") == 0)) {
-            text = turbo_json_number_text(node, &len);
+            text = json_number_text(node, &len);
             if (!text || !mapper_parse_i64(text, len, &integer))
                 return (mapper_error(ctx->env, "mapper: invalid integer"), 0);
             *out = exprtk_val_int(integer);
@@ -255,18 +256,18 @@ static int mapper_json_to_value(const json_value_t *node, const char *declared_t
             strcmp(declared_type, "any") != 0)
             return (mapper_error(ctx->env, "mapper: expected '%s', received number",
                                  declared_type), 0);
-        number = turbo_json_number(node);
+        number = json_number(node);
         *out = exprtk_val_num(number);
         return 1;
     }
-    if (kind == TURBO_JSON_ARRAY) {
+    if (kind == JSON_ARRAY) {
         if (declared_type && strcmp(declared_type, "list") != 0 &&
             strcmp(declared_type, "array") != 0 && strcmp(declared_type, "any") != 0)
             return (mapper_error(ctx->env, "mapper: expected '%s', received array",
                                  declared_type), 0);
         return mapper_json_to_list(node, ctx, out);
     }
-    if (kind == TURBO_JSON_OBJECT) {
+    if (kind == JSON_OBJECT) {
         exprtk_class_t *klass = mapper_resolve_class(ctx->env, declared_type);
         if (klass) return mapper_json_to_instance(node, klass, ctx, out);
         if (declared_type && strcmp(declared_type, "map") != 0 &&
@@ -284,7 +285,7 @@ static int mapper_json_from_instance(const exprtk_instance_t *instance, json_val
     json_value_t *object;
     size_t i;
     if (!instance || !instance->klass || !out) return 0;
-    object = turbo_json_create_object();
+    object = json_create_object();
     if (!object) return 0;
     for (i = 0; i < instance->klass->instance_field_count; ++i) {
         json_value_t *child = NULL;
@@ -292,9 +293,9 @@ static int mapper_json_from_instance(const exprtk_instance_t *instance, json_val
         const char *name = instance->klass->instance_field_names[i];
         if (!name || !exprtk_instance_get_field((exprtk_instance_t *)instance, name, &value) ||
             !mapper_json_from_value(&value, &child) ||
-            !turbo_json_object_add_checked(object, name, child)) {
-            if (child) turbo_free_json(&child);
-            turbo_free_json(&object);
+            !json_object_add_checked(object, name, child)) {
+            if (child) json_free(child);
+            json_free(object);
             return 0;
         }
     }
@@ -306,12 +307,12 @@ static int mapper_json_from_value(const exprtk_value_t *value, json_value_t **ou
     size_t i;
     if (!value || !out) return 0;
     switch (value->type) {
-        case EXPRTK_VAL_NULL: *out = turbo_json_create_null(); return *out != NULL;
-        case EXPRTK_VAL_BOOL: *out = turbo_json_create_bool(value->data.boolean != 0); return *out != NULL;
-        case EXPRTK_VAL_NUMBER: *out = turbo_json_create_number(value->data.number); return *out != NULL;
-        case EXPRTK_VAL_INTEGER: *out = turbo_json_create_int64(value->data.integer); return *out != NULL;
+        case EXPRTK_VAL_NULL: *out = json_create_null(); return *out != NULL;
+        case EXPRTK_VAL_BOOL: *out = json_create_bool(value->data.boolean != 0); return *out != NULL;
+        case EXPRTK_VAL_NUMBER: *out = json_create_number(value->data.number); return *out != NULL;
+        case EXPRTK_VAL_INTEGER: *out = json_create_int64(value->data.integer); return *out != NULL;
         case EXPRTK_VAL_STRING:
-            *out = turbo_json_create_string_n(value->data.string.data, value->data.string.len);
+            *out = json_create_string_n(value->data.string.data, value->data.string.len);
             return *out != NULL;
         case EXPRTK_VAL_INSTANCE:
             return mapper_json_from_instance(value->data.instance_val.instance, out);
@@ -320,14 +321,14 @@ static int mapper_json_from_value(const exprtk_value_t *value, json_value_t **ou
             exprtk_map_iter_t iterator = exprtk_map_iter_begin(value);
             const char *key;
             exprtk_value_t child_value;
-            json_value_t *object = turbo_json_create_object();
+            json_value_t *object = json_create_object();
             if (!object) return 0;
             while (exprtk_map_iter_next(&iterator, &key, &child_value)) {
                 json_value_t *child = NULL;
                 if (!mapper_json_from_value(&child_value, &child) ||
-                    !turbo_json_object_add_checked(object, key, child)) {
-                    if (child) turbo_free_json(&child);
-                    turbo_free_json(&object);
+                    !json_object_add_checked(object, key, child)) {
+                    if (child) json_free(child);
+                    json_free(object);
                     return 0;
                 }
             }
@@ -336,14 +337,14 @@ static int mapper_json_from_value(const exprtk_value_t *value, json_value_t **ou
         }
         case EXPRTK_VAL_LIST:
         case EXPRTK_VAL_SET: {
-            json_value_t *array = turbo_json_create_array();
+            json_value_t *array = json_create_array();
             if (!array) return 0;
             for (i = 0; i < value->data.list.count; ++i) {
                 json_value_t *child = NULL;
                 if (!mapper_json_from_value(&value->data.list.items[i], &child) ||
-                    !turbo_json_array_add_checked(array, child)) {
-                    if (child) turbo_free_json(&child);
-                    turbo_free_json(&array);
+                    !json_array_add_checked(array, child)) {
+                    if (child) json_free(child);
+                    json_free(array);
                     return 0;
                 }
             }
@@ -370,28 +371,28 @@ static exprtk_value_t mapper_return_text(exprtk_env_t *env, char *text, size_t l
 static exprtk_value_t fn_read_json(size_t argc, exprtk_value_t *args,
                                    exprtk_env_t *env, void *user_data) {
     mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
-    turbo_json_doc_t *doc = NULL;
+    json_value_t *doc = NULL;
     exprtk_value_t result = mapper_null();
     exprtk_class_t *klass;
     if (!ctx || !env || argc != 2 || args[0].type != EXPRTK_VAL_CLASS ||
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_json expects (Class, string)");
     klass = args[0].data.class_val.klass;
-    if (turbo_parse_json((const uint8_t *)args[1].data.string.data,
-                         args[1].data.string.len, &doc) != 0 || !doc)
+    doc = json_parse(args[1].data.string.data, args[1].data.string.len);
+    if (!doc)
         return mapper_error(env, "mapper.read_json: invalid JSON");
     if (!mapper_json_to_instance(doc, klass, ctx, &result)) {
-        turbo_free_json(&doc);
+        json_free(doc);
         return mapper_null();
     }
-    turbo_free_json(&doc);
+    json_free(doc);
     return result;
 }
 
 static exprtk_value_t fn_read_yaml(size_t argc, exprtk_value_t *args,
                                    exprtk_env_t *env, void *user_data) {
     mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
-    turbo_yaml_doc_t *yaml = NULL;
+    cyaml_doc_t *yaml = NULL;
     json_value_t *json = NULL;
     exprtk_value_t result = mapper_null();
     exprtk_class_t *klass;
@@ -399,31 +400,31 @@ static exprtk_value_t fn_read_yaml(size_t argc, exprtk_value_t *args,
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_yaml expects (Class, string)");
     klass = args[0].data.class_val.klass;
-    if (turbo_parse_yaml((const uint8_t *)args[1].data.string.data,
-                         args[1].data.string.len, &yaml) != 0 || !yaml)
+    yaml = cyaml_parse(args[1].data.string.data, args[1].data.string.len, NULL, NULL);
+    if (!yaml)
         return mapper_error(env, "mapper.read_yaml: invalid YAML");
-    json = turbo_yaml_node_to_json(yaml, turbo_yaml_root(yaml));
+    json = json_value_from_cyaml_node(yaml, cyaml_root(yaml));
     if (!json || !mapper_json_to_instance(json, klass, ctx, &result)) {
-        if (json) turbo_free_json(&json);
-        turbo_free_yaml(&yaml);
+        if (json) json_free(json);
+        cyaml_free(yaml);
         return mapper_null();
     }
-    turbo_free_json(&json);
-    turbo_free_yaml(&yaml);
+    json_free(json);
+    cyaml_free(yaml);
     return result;
 }
 
-static int mapper_xml_to_value(turbo_xml_node_t *node, const char *declared_type,
+static int mapper_xml_to_value(salts_xml_node node, const char *declared_type,
                                mapper_ctx_t *ctx, exprtk_value_t *out);
 
-static int mapper_xml_add_instance(turbo_xml_node_t *parent,
+static int mapper_xml_add_instance(salts_xml_node parent,
                                    const exprtk_instance_t *instance);
 
-static int mapper_xml_to_instance(turbo_xml_node_t *node, exprtk_class_t *klass,
-                                  mapper_ctx_t *ctx, exprtk_value_t *out) {
+static int mapper_xml_to_instance(salts_xml_node node, exprtk_class_t *klass,
+                                   mapper_ctx_t *ctx, exprtk_value_t *out) {
     exprtk_value_t instance_value;
     size_t i;
-    if (!node || !klass || !ctx || !out) return 0;
+    if (!node.impl || !klass || !ctx || !out) return 0;
     instance_value = exprtk_oop_instantiate_class_value(
         exprtk_val_class(klass), klass->name, 0, NULL, ctx->env);
     if (instance_value.type != EXPRTK_VAL_INSTANCE) return 0;
@@ -432,7 +433,7 @@ static int mapper_xml_to_instance(turbo_xml_node_t *node, exprtk_class_t *klass,
         const char *type = exprtk_class_get_instance_field_type(klass, name);
         char query[MAPPER_ERROR_CAP];
         int query_len;
-        turbo_xml_node_t *child;
+        salts_xml_node child;
         exprtk_value_t value;
         char error[MAPPER_ERROR_CAP];
         query_len = name ? snprintf(query, sizeof(query), "<%s>/", name) : -1;
@@ -441,8 +442,8 @@ static int mapper_xml_to_instance(turbo_xml_node_t *node, exprtk_class_t *klass,
             exprtk_instance_destroy(instance_value.data.instance_val.instance);
             return 0;
         }
-        child = turbo_xml_find(node, query);
-        if (!child) continue;
+        child = salts_xml_node_find(node, query);
+        if (!child.impl) continue;
         memset(&value, 0, sizeof(value));
         value.type = EXPRTK_VAL_NULL;
         if (!mapper_xml_to_value(child, type, ctx, &value)) {
@@ -462,7 +463,7 @@ static int mapper_xml_to_instance(turbo_xml_node_t *node, exprtk_class_t *klass,
     return 1;
 }
 
-static int mapper_xml_to_value(turbo_xml_node_t *node, const char *declared_type,
+static int mapper_xml_to_value(salts_xml_node node, const char *declared_type,
                                mapper_ctx_t *ctx, exprtk_value_t *out) {
     char *text;
     size_t len;
@@ -471,10 +472,10 @@ static int mapper_xml_to_value(turbo_xml_node_t *node, const char *declared_type
     int boolean_ok;
     int64_t integer;
     double number;
-    if (!node || !ctx || !out) return 0;
+    if (!node.impl || !ctx || !out) return 0;
     klass = mapper_resolve_class(ctx->env, declared_type);
     if (klass) return mapper_xml_to_instance(node, klass, ctx, out);
-    text = turbo_xml_text_dup(node);
+    text = salts_xml_node_text_dup(node);
     if (!text) return 0;
     len = strlen(text);
     if (!declared_type || strcmp(declared_type, "string") == 0 ||
@@ -512,26 +513,31 @@ static int mapper_xml_to_value(turbo_xml_node_t *node, const char *declared_type
 static exprtk_value_t fn_read_xml(size_t argc, exprtk_value_t *args,
                                   exprtk_env_t *env, void *user_data) {
     mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
-    turbo_xml_doc_t *doc = NULL;
-    turbo_xml_node_t *root;
+    salts_xml_document doc = {0};
+    salts_xml_node root;
     exprtk_value_t result = mapper_null();
     exprtk_class_t *klass;
     if (!ctx || !env || argc != 2 || args[0].type != EXPRTK_VAL_CLASS ||
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_xml expects (Class, string)");
     klass = args[0].data.class_val.klass;
-    if (turbo_parse_xml((const uint8_t *)args[1].data.string.data,
-                        args[1].data.string.len, &doc) != 0 || !doc)
+    if (salts_xml_parse(&doc, args[1].data.string.data, args[1].data.string.len,
+                        NULL, NULL) != SALTS_XML_OK)
         return mapper_error(env, "mapper.read_xml: invalid XML");
-    root = turbo_xml_root_element(doc);
-    if (!root || (klass->name && turbo_xml_node_name(root) &&
-                  strcmp(klass->name, turbo_xml_node_name(root)) != 0) ||
+    root = salts_xml_document_root(&doc);
+    {
+        salts_xml_string_view root_name = salts_xml_node_qualified_name(root);
+        int root_name_mismatch =
+            klass->name && (!root_name.data || strlen(klass->name) != root_name.size ||
+                             strncmp(klass->name, root_name.data, root_name.size) != 0);
+        if (!root.impl || root_name_mismatch ||
         !mapper_xml_to_instance(root, klass, ctx, &result)) {
-        turbo_free_xml(&doc);
-        if (!env->aborted) mapper_error(env, "mapper.read_xml: root does not match class");
-        return mapper_null();
+            salts_xml_document_destroy(&doc);
+            if (!env->aborted) mapper_error(env, "mapper.read_xml: root does not match class");
+            return mapper_null();
+        }
     }
-    turbo_free_xml(&doc);
+    salts_xml_document_destroy(&doc);
     return result;
 }
 
@@ -541,9 +547,9 @@ static exprtk_value_t mapper_write_json_value(exprtk_value_t value, exprtk_env_t
     size_t len = 0;
     if (!mapper_json_from_value(&value, &json))
         return mapper_error(env, "mapper.write_json: unsupported value");
-    text = turbo_json_serialize(json, &len);
-    turbo_free_json(&json);
-    return mapper_return_text(env, text, len, turbo_json_serialize_free);
+    text = json_serialize(json, &len);
+    json_free(json);
+    return mapper_return_text(env, text, len, json_serialize_free);
 }
 
 static exprtk_value_t fn_write_json(size_t argc, exprtk_value_t *args,
@@ -557,7 +563,7 @@ static exprtk_value_t fn_write_json(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_write_yaml(size_t argc, exprtk_value_t *args,
                                     exprtk_env_t *env, void *user_data) {
     json_value_t *json = NULL;
-    turbo_yaml_doc_t *yaml;
+    cyaml_doc_t *yaml;
     char *text;
     size_t len = 0;
     (void)user_data;
@@ -565,31 +571,30 @@ static exprtk_value_t fn_write_yaml(size_t argc, exprtk_value_t *args,
         return mapper_error(env, "mapper.write_yaml expects (instance)");
     if (!mapper_json_from_value(&args[0], &json))
         return mapper_error(env, "mapper.write_yaml: unsupported value");
-    yaml = turbo_yaml_from_json(json);
-    turbo_free_json(&json);
+    yaml = cyaml_doc_from_json_value(json);
+    json_free(json);
     if (!yaml) return mapper_error(env, "mapper.write_yaml: conversion failed");
-    text = turbo_yaml_emit(yaml, &len);
-    turbo_free_yaml(&yaml);
-    return mapper_return_text(env, text, len, turbo_yaml_serialize_free);
+    text = cyaml_emit(yaml, NULL, &len);
+    cyaml_free(yaml);
+    return mapper_return_text(env, text, len, free);
 }
 
-static int mapper_xml_add_value(turbo_xml_node_t *parent, const char *name,
+static int mapper_xml_add_value(salts_xml_node parent, const char *name,
                                 const exprtk_value_t *value) {
-    turbo_xml_node_t *child;
+    salts_xml_node child = {0};
     char buffer[128];
-    if (!parent || !name || !value) return 0;
+    if (!parent.impl || !name || !value) return 0;
     if (value->type == EXPRTK_VAL_LIST || value->type == EXPRTK_VAL_SET) {
         size_t i;
         for (i = 0; i < value->data.list.count; ++i)
             if (!mapper_xml_add_value(parent, name, &value->data.list.items[i])) return 0;
         return 1;
     }
-    child = turbo_xml_add_element(parent, name);
-    if (!child) return 0;
+    if (salts_xml_node_add_element(parent, name, &child) != SALTS_XML_OK) return 0;
     if (value->type == EXPRTK_VAL_INSTANCE)
         return mapper_xml_add_instance(child, value->data.instance_val.instance);
     if (value->type == EXPRTK_VAL_STRING)
-        return turbo_xml_set_text(child, value->data.string.data) == 0;
+        return salts_xml_node_set_text(child, value->data.string.data) == SALTS_XML_OK;
     if (value->type == EXPRTK_VAL_INTEGER)
         snprintf(buffer, sizeof(buffer), "%lld", (long long)value->data.integer);
     else if (value->type == EXPRTK_VAL_NUMBER)
@@ -600,13 +605,13 @@ static int mapper_xml_add_value(turbo_xml_node_t *parent, const char *name,
         buffer[0] = '\0';
     else
         return 0;
-    return turbo_xml_set_text(child, buffer) == 0;
+    return salts_xml_node_set_text(child, buffer) == SALTS_XML_OK;
 }
 
-static int mapper_xml_add_instance(turbo_xml_node_t *parent,
+static int mapper_xml_add_instance(salts_xml_node parent,
                                    const exprtk_instance_t *instance) {
     size_t i;
-    if (!parent || !instance || !instance->klass) return 0;
+    if (!parent.impl || !instance || !instance->klass) return 0;
     for (i = 0; i < instance->klass->instance_field_count; ++i) {
         exprtk_value_t value;
         const char *name = instance->klass->instance_field_names[i];
@@ -619,8 +624,8 @@ static int mapper_xml_add_instance(turbo_xml_node_t *parent,
 
 static exprtk_value_t fn_write_xml(size_t argc, exprtk_value_t *args,
                                    exprtk_env_t *env, void *user_data) {
-    turbo_xml_doc_t *doc;
-    turbo_xml_node_t *root;
+    salts_xml_document doc = {0};
+    salts_xml_node root;
     char *text;
     size_t len = 0;
     (void)user_data;
@@ -628,16 +633,17 @@ static exprtk_value_t fn_write_xml(size_t argc, exprtk_value_t *args,
         !args[0].data.instance_val.instance ||
         !args[0].data.instance_val.instance->klass)
         return mapper_error(env, "mapper.write_xml expects (instance)");
-    doc = turbo_xml_create_document(args[0].data.instance_val.instance->klass->name);
-    if (!doc) return mapper_error(env, "mapper.write_xml: allocation failed");
-    root = turbo_xml_root_element(doc);
-    if (!root || !mapper_xml_add_instance(root, args[0].data.instance_val.instance)) {
-        turbo_free_xml(&doc);
+    if (salts_xml_document_create(
+            &doc, args[0].data.instance_val.instance->klass->name) != SALTS_XML_OK)
+        return mapper_error(env, "mapper.write_xml: allocation failed");
+    root = salts_xml_document_root(&doc);
+    if (!root.impl || !mapper_xml_add_instance(root, args[0].data.instance_val.instance)) {
+        salts_xml_document_destroy(&doc);
         return mapper_error(env, "mapper.write_xml: unsupported value");
     }
-    text = turbo_xml_serialize(doc, &len);
-    turbo_free_xml(&doc);
-    return mapper_return_text(env, text, len, turbo_xml_serialize_free);
+    text = salts_xml_document_serialize(&doc, &len);
+    salts_xml_document_destroy(&doc);
+    return mapper_return_text(env, text, len, salts_xml_owned_string_free);
 }
 
 void *mapper_ctx_create(void) {

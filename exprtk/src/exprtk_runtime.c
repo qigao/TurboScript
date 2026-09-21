@@ -3313,7 +3313,7 @@ static exprtk_value_t runtime_string_value(mem_pool_t *arena, const char *text) 
 }
 
 int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out) {
-    const turbo_datetime_t *dt;
+    const datetime_t *dt;
     time_t ts;
     if (!out || value.type != EXPRTK_VAL_DATETIME || !member) return 0;
     dt = &value.data.datetime;
@@ -3328,7 +3328,7 @@ int exprtk_datetime_member_get(exprtk_value_t value, const char *member, exprtk_
     else if (strcmp(member, "has_tz") == 0) *out = exprtk_val_bool(dt->has_tz != 0);
     else if (strcmp(member, "day_of_week") == 0) *out = exprtk_val_int(dt->day_of_week);
     else if (strcmp(member, "timestamp") == 0) {
-        ts = turbo_datetime_to_time(dt);
+        ts = datetime_to_time(dt);
         *out = exprtk_val_num((double)ts);
     } else {
         return 0;
@@ -3341,13 +3341,13 @@ exprtk_value_t eval_datetime_method(mc_ctx_t *mc) {
     time_t ts;
     char buf[64];
     if (strcmp(m, "timestamp") == 0 || strcmp(m, "to_time") == 0) {
-        ts = turbo_datetime_to_time(&mc->obj.data.datetime);
+        ts = datetime_to_time(&mc->obj.data.datetime);
         return exprtk_val_num((double)ts);
     }
     if (strcmp(m, "toString") == 0 || strcmp(m, "to_string") == 0 ||
         strcmp(m, "format_rfc822") == 0) {
-        ts = turbo_datetime_to_time(&mc->obj.data.datetime);
-        if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+        ts = datetime_to_time(&mc->obj.data.datetime);
+        if (ts == (time_t)-1 || datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
             return exprtk_val_str(vstr_from_cstr(""));
         return runtime_string_value(mc->arena, buf);
     }
@@ -3391,7 +3391,7 @@ int exprtk_offset_datetime_member_get(exprtk_value_t value, const char *member,
 exprtk_value_t eval_offset_datetime_method(mc_ctx_t *mc) {
     char buf[64];
     if (strcmp(mc->method, "timestamp") == 0 || strcmp(mc->method, "to_time") == 0)
-        return exprtk_val_num((double)turbo_datetime_to_time(&mc->obj.data.offset_datetime.datetime));
+        return exprtk_val_num((double)datetime_to_time(&mc->obj.data.offset_datetime.datetime));
     if (strcmp(mc->method, "toString") == 0 || strcmp(mc->method, "to_string") == 0) {
         if (!runtime_offset_datetime_text(mc->obj.data.offset_datetime, buf, sizeof(buf)))
             return exprtk_val_str(vstr_from_cstr(""));

@@ -1079,8 +1079,8 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
   }
   case EXPRTK_VAL_DATETIME: {
     char text[64];
-    time_t ts = turbo_datetime_to_time(&val->data.datetime);
-    if (ts != (time_t)-1 && turbo_datetime_format_rfc822(ts, text, sizeof(text)) >= 0)
+    time_t ts = datetime_to_time(&val->data.datetime);
+    if (ts != (time_t)-1 && datetime_format_rfc822(ts, text, sizeof(text)) >= 0)
       printf("%s", text);
     else
       printf("[datetime]");

@@ -29,7 +29,7 @@
 
 **Interfaces:**
 - Produces: `ExprTk::Syntax`, containing `exprtk_parse`, `exprtk_parse_ext`, `exprtk_free`, lexer and generated Lemon parser symbols.
-- Consumes: Salts Core allocation support and `Salts::DataBind`, because public AST values expose `turbo_datetime_t` from its installed headers.
+- Consumes: Salts Core allocation support, `Salts::DataBind`, and `Salts::DateTimeParser`, because public AST values expose `datetime_t` from its installed headers.
 
 - [x] **Step 1: Add a syntax-only parser test target**
 

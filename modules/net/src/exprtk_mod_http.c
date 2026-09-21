@@ -5,7 +5,7 @@
 #include "net_ctx.h"
 #include "turbo_script.h"
 #include "exprtk_module.h"
-#include <turbo_parser_json.h>
+#include <json_parser.h>
 #include <tstr.h>
 #include <ctype.h>
 #include <math.h>
@@ -271,31 +271,31 @@ static exprtk_value_t net_json_to_exprtk_value(http_ud_t *ud, const json_value_t
 
   if (!value) return net_null_value();
 
-  switch (turbo_json_type(value)) {
-    case TURBO_JSON_NULL:
+  switch (json_type(value)) {
+    case JSON_NULL:
       return net_null_value();
-    case TURBO_JSON_BOOL:
-      return exprtk_val_num(turbo_json_bool(value) ? 1.0 : 0.0);
-    case TURBO_JSON_NUMBER:
-      return exprtk_val_num(turbo_json_number(value));
-    case TURBO_JSON_STRING:
-      return net_make_string_value(ud->env, turbo_json_string(value), turbo_json_string_len(value));
-    case TURBO_JSON_ARRAY: {
+    case JSON_BOOL:
+      return exprtk_val_num(json_bool(value) ? 1.0 : 0.0);
+    case JSON_NUMBER:
+      return exprtk_val_num(json_number(value));
+    case JSON_STRING:
+      return net_make_string_value(ud->env, json_string(value), json_string_len(value));
+    case JSON_ARRAY: {
       exprtk_value_t list = exprtk_val_list_empty();
-      size_t count = turbo_json_array_size(value);
+      size_t count = json_array_size(value);
       for (i = 0; i < count; i++) {
-        exprtk_value_t item = net_json_to_exprtk_value(ud, turbo_json_array_get(value, i));
+        exprtk_value_t item = net_json_to_exprtk_value(ud, json_array_get(value, i));
         (void)exprtk_list_push(&list, item);
         exprtk_value_destroy(&item);
       }
       return list;
     }
-    case TURBO_JSON_OBJECT: {
+    case JSON_OBJECT: {
       exprtk_value_t map = exprtk_val_map();
-      size_t count = turbo_json_object_size(value);
+      size_t count = json_object_size(value);
       for (i = 0; i < count; i++) {
-        const char *key = turbo_json_object_key(value, i);
-        exprtk_value_t item = net_json_to_exprtk_value(ud, turbo_json_object_value(value, i));
+        const char *key = json_object_key(value, i);
+        exprtk_value_t item = net_json_to_exprtk_value(ud, json_object_value(value, i));
         exprtk_map_set(&map, key ? key : "", item);
         exprtk_value_destroy(&item);
       }
@@ -335,11 +335,12 @@ static exprtk_value_t net_response_data_value(http_ud_t *ud, const chttp_respons
 
   if (!resp || !resp->body || !net_response_is_json(resp)) return value;
 
-  if (turbo_parse_json((const uint8_t *)resp->body, resp->body_size, &json) != 0 || !json)
+  json = json_parse(resp->body, resp->body_size);
+  if (!json)
     return value;
 
   value = net_json_to_exprtk_value(ud, json);
-  turbo_free_json(&json);
+  json_free(json);
   return value;
 }
 

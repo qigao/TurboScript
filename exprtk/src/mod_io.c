@@ -7,7 +7,7 @@
  */
 #include "exprtk_module.h"
 #include "platform.h"
-#include "turbo_parser_datetime.h"
+#include "datetime_parser.h"
 #include "salts_fs.h"
 
 #ifdef _WIN32
@@ -128,7 +128,7 @@ static exprtk_value_t io_format_date_value(size_t argc, exprtk_value_t *args, me
 
   t = (time_t)(args[0].type == EXPRTK_VAL_INTEGER ? args[0].data.integer : args[0].data.number);
   if (argc == 1) {
-    if (turbo_datetime_format_rfc822(t, buf, sizeof(buf)) > 0) {
+    if (datetime_format_rfc822(t, buf, sizeof(buf)) > 0) {
       size_t len = strlen(buf);
       return io_make_string_value(arena, buf, len);
     }
@@ -753,11 +753,11 @@ static exprtk_value_t fn_date(size_t argc, exprtk_value_t *args, exprtk_env_t *e
                               mem_pool_t *arena) {
   (void)env;
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
-    turbo_datetime_t dt;
+  datetime_t dt;
     char *ds = vstr_to_arena(args[0].data.string, arena);
     if (ds) {
-      if (turbo_parse_datetime(ds, args[0].data.string.len, &dt) == 0)
-        return exprtk_val_num((double)turbo_datetime_to_time(&dt));
+      if (datetime_parse(ds, args[0].data.string.len, &dt) == 0)
+        return exprtk_val_num((double)datetime_to_time(&dt));
     }
   }
   return io_fail_empty();

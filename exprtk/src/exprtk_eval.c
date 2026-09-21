@@ -97,8 +97,8 @@ static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
         *out_len = strlen(buf);
         return 1;
     } else if (value.type == EXPRTK_VAL_DATETIME) {
-        time_t ts = turbo_datetime_to_time(&value.data.datetime);
-        if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, buf_size) < 0) return 0;
+        time_t ts = datetime_to_time(&value.data.datetime);
+        if (ts == (time_t)-1 || datetime_format_rfc822(ts, buf, buf_size) < 0) return 0;
         *out_data = buf;
         *out_len = strlen(buf);
         return 1;

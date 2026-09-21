@@ -8,7 +8,7 @@
 
 保留 `ExprTk::Core` 作为现有 `exprtk` target 的静态库名称，并新增静态 `ExprTk::Syntax`：
 
-- `ExprTk::Syntax`：re2c lexer、Lemon parser、AST 构造和 `exprtk_parse*`/`exprtk_free`；其公开 AST 值类型暴露 `turbo_datetime_t`，因此公开依赖 `Salts::DataBind` 作为已安装头的所有者。
+- `ExprTk::Syntax`：re2c lexer、Lemon parser、AST 构造和 `exprtk_parse*`/`exprtk_free`；其公开 AST 值类型暴露 Salts 的 `datetime_t`，因此公开依赖 `Salts::DateTimeParser` 作为已安装头和实现的所有者。
 - `ExprTk::Core`：值、环境、解释执行、类、集合、内建模块和正则；它公开依赖 Syntax。
 - `TurboScript`：脚本生命周期、`import()`、动态插件加载、任务/计时器，以及全部 MIR/JIT 编译、缓存和执行。
 

@@ -51,21 +51,21 @@ static exprtk_value_t core_string_value(mem_pool_t *arena, const char *text) {
     return exprtk_val_str(vstr_from_buf(buf, len));
 }
 
-static int core_datetime_from_value(exprtk_value_t value, turbo_datetime_t *out) {
+static int core_datetime_from_value(exprtk_value_t value, datetime_t *out) {
     if (!out) return 0;
     if (value.type == EXPRTK_VAL_DATETIME) {
         *out = value.data.datetime;
         return 1;
     }
     if (value.type == EXPRTK_VAL_STRING && value.data.string.data) {
-        return turbo_parse_datetime(value.data.string.data, value.data.string.len, out) == 0;
+        return datetime_parse(value.data.string.data, value.data.string.len, out) == 0;
     }
     return 0;
 }
 
 static int core_offset_datetime_from_value(exprtk_value_t value,
                                            exprtk_offset_datetime_t *out) {
-    turbo_datetime_t dt;
+  datetime_t dt;
     if (!out) return 0;
     if (value.type == EXPRTK_VAL_OFFSET_DATETIME) {
         *out = value.data.offset_datetime;
@@ -77,7 +77,7 @@ static int core_offset_datetime_from_value(exprtk_value_t value,
         return 1;
     }
     if (value.type == EXPRTK_VAL_STRING && value.data.string.data &&
-        turbo_parse_datetime(value.data.string.data, value.data.string.len, &dt) == 0 &&
+        datetime_parse(value.data.string.data, value.data.string.len, &dt) == 0 &&
         dt.has_tz) {
         out->datetime = dt;
         out->offset_minutes = dt.tz_offset;
@@ -87,7 +87,7 @@ static int core_offset_datetime_from_value(exprtk_value_t value,
 }
 
 static int core_date_from_value(exprtk_value_t value, exprtk_date_t *out) {
-    turbo_datetime_t dt;
+  datetime_t dt;
     if (!out) return 0;
     if (value.type == EXPRTK_VAL_DATE) {
         *out = value.data.date;
@@ -110,7 +110,7 @@ static int core_date_from_value(exprtk_value_t value, exprtk_date_t *out) {
                 return 1;
             }
         }
-        if (turbo_parse_datetime(value.data.string.data, value.data.string.len, &dt) == 0) {
+        if (datetime_parse(value.data.string.data, value.data.string.len, &dt) == 0) {
             out->year = dt.year;
             out->month = dt.month;
             out->day = dt.day;
@@ -1135,7 +1135,7 @@ static exprtk_value_t fn_uuid_string(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args,
                                         exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
-    turbo_datetime_t dt;
+    datetime_t dt;
     if (argc != 1 || !core_datetime_from_value(args[0], &dt))
         return core_null_value();
     return exprtk_val_datetime(dt);
@@ -1144,24 +1144,24 @@ static exprtk_value_t fn_datetime_parse(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_datetime_timestamp(size_t argc, exprtk_value_t *args,
                                             exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
-    turbo_datetime_t dt;
+    datetime_t dt;
     time_t ts;
     if (argc != 1 || !core_datetime_from_value(args[0], &dt))
         return exprtk_val_num(-1.0);
-    ts = turbo_datetime_to_time(&dt);
+  ts = datetime_to_time(&dt);
     return exprtk_val_num((double)ts);
 }
 
 static exprtk_value_t fn_datetime_string(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, mem_pool_t *arena) {
     (void)env;
-    turbo_datetime_t dt;
+  datetime_t dt;
     time_t ts;
     char buf[64];
     if (argc != 1 || !core_datetime_from_value(args[0], &dt))
         return exprtk_val_str(vstr_from_cstr(""));
-    ts = turbo_datetime_to_time(&dt);
-    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+  ts = datetime_to_time(&dt);
+  if (ts == (time_t)-1 || datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
         return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
@@ -1178,10 +1178,10 @@ static exprtk_value_t fn_datetime_format_rfc822(size_t argc, exprtk_value_t *arg
     else if (args[0].type == EXPRTK_VAL_NUMBER)
         ts = (time_t)args[0].data.number;
     else if (args[0].type == EXPRTK_VAL_DATETIME)
-        ts = turbo_datetime_to_time(&args[0].data.datetime);
+        ts = datetime_to_time(&args[0].data.datetime);
     else
         return exprtk_val_str(vstr_from_cstr(""));
-    if (ts == (time_t)-1 || turbo_datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
+    if (ts == (time_t)-1 || datetime_format_rfc822(ts, buf, sizeof(buf)) < 0)
         return exprtk_val_str(vstr_from_cstr(""));
     return core_string_value(arena, buf);
 }
@@ -1201,7 +1201,7 @@ static exprtk_value_t fn_offset_datetime_timestamp(size_t argc, exprtk_value_t *
     exprtk_offset_datetime_t value;
     if (argc != 1 || !core_offset_datetime_from_value(args[0], &value))
         return exprtk_val_num(-1.0);
-    return exprtk_val_num((double)turbo_datetime_to_time(&value.datetime));
+    return exprtk_val_num((double)datetime_to_time(&value.datetime));
 }
 
 static exprtk_value_t fn_offset_datetime_string(size_t argc, exprtk_value_t *args,

@@ -232,6 +232,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
     salts_log_level_t level;
     tlog_t *logger;
     size_t message_length;
+    size_t component_length = 0;
     size_t level_length;
     static const char *const level_names[] = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
     size_t i;
@@ -242,7 +243,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
         !os_string_arg(&args[0], &level_name, &level_length) ||
         !os_string_arg(&args[1], &message, &message_length))
         return os_empty();
-    if (argc == 3 && !os_string_arg(&args[2], &component, NULL)) return os_empty();
+    if (argc == 3 && !os_string_arg(&args[2], &component, &component_length)) return os_empty();
 
     level = SALTS_LOG_LEVEL_INFO;
     for (i = 0; i < sizeof(level_names) / sizeof(level_names[0]); ++i) {
@@ -256,7 +257,8 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
 
     logger = tlog_get_default();
     if (!logger) return os_empty();
-    salts_log_str(logger, level, component, NULL, 0, message, message_length);
+    salts_log_str(logger, level, vstr_from_buf(component, component_length),
+                  vstr_from_cstr(__FILE__), __LINE__, vstr_from_buf(message, message_length));
     return exprtk_val_num(1);
 }
 

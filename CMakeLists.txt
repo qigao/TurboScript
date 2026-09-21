@@ -43,34 +43,11 @@ include(Sanitizers)
 include(GNUInstallDirs)
 include(CmakeUtils)
 
-set(_turbo_script_dependency_roots SALTS_ROOT SALTS_UTILS_ROOT)
-
-foreach(_turbo_script_dependency_root IN LISTS _turbo_script_dependency_roots)
-  if(NOT DEFINED ENV{${_turbo_script_dependency_root}} OR
-     "$ENV{${_turbo_script_dependency_root}}" STREQUAL "")
-    message(FATAL_ERROR
-            "Required dependency root is not defined: ${_turbo_script_dependency_root}")
-  endif()
-  if(NOT IS_DIRECTORY "$ENV{${_turbo_script_dependency_root}}")
-    message(FATAL_ERROR
-            "${_turbo_script_dependency_root} is not a directory: $ENV{${_turbo_script_dependency_root}}")
-  endif()
-endforeach()
-
-find_package(Threads REQUIRED) 
-find_package(Salts CONFIG REQUIRED
-             PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
-find_package(SaltsUtils CONFIG REQUIRED
-             PATHS "$ENV{SALTS_UTILS_ROOT}" NO_DEFAULT_PATH)
-foreach(_turbo_script_required_target IN ITEMS
-        Salts::CNet Salts::CHTTP Salts::Coroutine Salts::Cron Salts::Mustache
-        Salts::DataBind)
-  if(NOT TARGET ${_turbo_script_required_target})
-    message(FATAL_ERROR
-            "Required Salts target is unavailable: ${_turbo_script_required_target}")
-  endif()
-endforeach()
-
+find_package(Threads REQUIRED)
+find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
+find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
+             NO_DEFAULT_PATH)
+find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
@@ -89,10 +66,7 @@ include(CMakePackageConfigHelpers)
 
 # Project-owned installation policy
 install(
-  TARGETS turbo_script
-          exprtk
-          exprtk_syntax
-          miniblas_linalg
+  TARGETS turbo_script exprtk exprtk_syntax miniblas_linalg
   EXPORT TurboScriptTargets
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}

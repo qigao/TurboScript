@@ -69,8 +69,9 @@
       "environment": {
         "SALTS_ROOT": "$env{PKG_ROOT}/salts/debug",
         "SALTS_UTILS_ROOT": "$env{PKG_ROOT}/salts-utils/debug",
+        "CHTTP_ROOT": "$env{PKG_ROOT}/http-services/debug",
         "VCPKG_RUNTIME_BIN": "$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin",
-        "PATH": "${sourceDir}/build/Msvc/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$penv{PATH}"
+        "PATH": "${sourceDir}/build/Msvc/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}"
       },
       "cacheVariables": {
         "ENABLE_SANITIZER_ADDRESS": "ON",
@@ -84,8 +85,9 @@
       "environment": {
         "SALTS_ROOT": "$env{PKG_ROOT}/salts/release",
         "SALTS_UTILS_ROOT": "$env{PKG_ROOT}/salts-utils/release",
+        "CHTTP_ROOT": "$env{PKG_ROOT}/http-services/release",
         "VCPKG_RUNTIME_BIN": "$env{VCPKG_INSTALLED_DIR}/x64-windows/bin",
-        "PATH": "${sourceDir}/build/Msvc-Release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$penv{PATH}"
+        "PATH": "${sourceDir}/build/Msvc-Release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}"
       },
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/x64-windows",
@@ -98,7 +100,8 @@
       "environment": {
         "SALTS_ROOT": "$env{PKG_ROOT}/salts/debug",
         "SALTS_UTILS_ROOT": "$env{PKG_ROOT}/salts-utils/debug",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+        "CHTTP_ROOT": "$env{PKG_ROOT}/http-services/debug",
+        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
       },
       "cacheVariables": {
         "ENABLE_SANITIZER_ADDRESS": "ON",
@@ -112,7 +115,8 @@
       "environment": {
         "SALTS_ROOT": "$env{PKG_ROOT}/salts/release",
         "SALTS_UTILS_ROOT": "$env{PKG_ROOT}/salts-utils/release",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+        "CHTTP_ROOT": "$env{PKG_ROOT}/http-services/release",
+        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
       },
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/x64-linux",
@@ -180,8 +184,22 @@
     {"name": "install-android-x86-release-win", "configurePreset": "android-x86-release-win", "targets": ["install"]}
   ],
   "testPresets": [
-    {"name": "win-dev-user", "inherits": "base-test", "configurePreset": "win-dev-user"},
-    {"name": "win-release-user", "inherits": "base-test", "configurePreset": "win-release-user"},
+    {
+      "name": "win-dev-user",
+      "inherits": "base-test",
+      "configurePreset": "win-dev-user",
+      "environment": {
+        "PATH": "${sourceDir}/build/Msvc/bin${pathListSep}${sourceDir}/vcpkg_installed/x64-windows/debug/bin${pathListSep}${sourceDir}/vcpkg_installed/x64-windows/bin${pathListSep}C:/projects/cpp/external/pkgs/salts/debug/bin${pathListSep}C:/projects/cpp/external/pkgs/salts-utils/debug/bin${pathListSep}C:/projects/cpp/external/pkgs/http-services/debug/bin${pathListSep}$penv{PATH}"
+      }
+    },
+    {
+      "name": "win-release-user",
+      "inherits": "base-test",
+      "configurePreset": "win-release-user",
+      "environment": {
+        "PATH": "${sourceDir}/build/Msvc-Release/bin${pathListSep}${sourceDir}/vcpkg_installed/x64-windows/bin${pathListSep}C:/projects/cpp/external/pkgs/salts/release/bin${pathListSep}C:/projects/cpp/external/pkgs/salts-utils/release/bin${pathListSep}C:/projects/cpp/external/pkgs/http-services/release/bin${pathListSep}$penv{PATH}"
+      }
+    },
     {"name": "linux-dev-user", "inherits": "base-test", "configurePreset": "linux-dev-user"},
     {"name": "linux-release-user", "inherits": "base-test", "configurePreset": "linux-release-user"}
   ]

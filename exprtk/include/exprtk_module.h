@@ -90,7 +90,7 @@ static inline exprtk_value_t exprtk_val_uuid(salts_uuid_t v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_datetime(turbo_datetime_t v) {
+static inline exprtk_value_t exprtk_val_datetime(datetime_t v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_DATETIME;
@@ -157,7 +157,7 @@ static inline exprtk_value_t exprtk_val_enum(vstr type_name, vstr symbol, int64_
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_offset_datetime(turbo_datetime_t datetime,
+static inline exprtk_value_t exprtk_val_offset_datetime(datetime_t datetime,
                                                         int offset_minutes) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));

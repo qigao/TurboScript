@@ -50,7 +50,7 @@ var report = task.spawn(() => {
 
 仓库内版本见 [task_parallel_http.tbs](../../examples/task_parallel_http.tbs)。`http.get()` 对当前脚本 task 仍是同步调用：函数返回后下一行才执行；底层连接、发送和接收等待会挂起当前 coroutine，因此其他 task 可以继续运行。这是协作式并发，不是多线程并行，CPU 密集代码必须显式 `task.yield()` 才会让出执行权。
 
-`http.get()` 与 `http.post()` 通过 `Salts::CHTTP` facade 发起请求。options 中的 `transport` 可取 `"auto"`、`"h1"` 或 `"h2"`；默认 `"auto"` 会先尝试 HTTP/2，只在连接阶段、尚未发送请求数据时回退到 HTTP/1。显式 `"h2"` 不执行 H1 fallback。`ws.*` 继续使用 CoroNet 的 `ws://` / `wss://` 客户端，因为当前 Salts facade 未公开 WebSocket 客户端句柄；现有 task 连接隔离和取消语义不变。
+`http.get()` 与 `http.post()` 通过 `CHttp::Client` facade 发起请求。options 中的 `transport` 可取 `"auto"`、`"h1"` 或 `"h2"`；默认 `"auto"` 会先尝试 HTTP/2，只在连接阶段、尚未发送请求数据时回退到 HTTP/1。显式 `"h2"` 不执行 H1 fallback。`ws.*` 继续使用 CoroNet 的 `ws://` / `wss://` 客户端，因为当前 Salts facade 未公开 WebSocket 客户端句柄；现有 task 连接隔离和取消语义不变。
 
 每个 task 拥有一个 CoroNet cancellation source。`task.cancel()` 会唤醒 `task.sleep()`、`task.join()` 以及通过 `turbo_http_request_ex()` 执行的 HTTP 等待；被取消的 HTTP transport 会从连接池丢弃且不进入 retry。取消是协作式的：纯 CPU callback 只能在下一次 `task.yield()`、task API、可取消 I/O 或 callback 返回时观察请求，runtime 不会强制销毁正在运行的栈。
 
