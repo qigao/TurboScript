@@ -38,14 +38,6 @@ set_target_properties(
              VERSION ${PROJECT_VERSION}
              SOVERSION ${PROJECT_VERSION_MAJOR})
 
-if(WIN32)
-  add_custom_command(
-    TARGET ${TARGET_NAME_PLUGIN}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:xxHash::xxhash>
-            $<TARGET_FILE_DIR:${TARGET_NAME_PLUGIN}>)
-endif()
-
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
                      DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/hash)
 

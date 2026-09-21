@@ -164,6 +164,7 @@ static void *open_exact_win(const wchar_t *path, const wchar_t *dependency_dir,
   DLL_DIRECTORY_COOKIE dependency_cookie;
   DLL_DIRECTORY_COOKIE salts_cookie;
   DLL_DIRECTORY_COOKIE salts_utils_cookie;
+  DLL_DIRECTORY_COOKIE chttp_cookie;
   DLL_DIRECTORY_COOKIE vcpkg_cookie;
   HMODULE module;
   const DWORD flags = LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR |
@@ -185,11 +186,13 @@ static void *open_exact_win(const wchar_t *path, const wchar_t *dependency_dir,
    * runtime DLLs without weakening the plugin search policy. */
   salts_cookie = add_package_dll_directory("SALTS_ROOT");
   salts_utils_cookie = add_package_dll_directory("SALTS_UTILS_ROOT");
+  chttp_cookie = add_package_dll_directory("CHTTP_ROOT");
   vcpkg_cookie = add_runtime_dll_directory("VCPKG_RUNTIME_BIN");
   length = GetFullPathNameW(path, 0, NULL, NULL);
   if (length == 0) {
     if (native_error) *native_error = GetLastError();
     if (vcpkg_cookie) RemoveDllDirectory(vcpkg_cookie);
+    if (chttp_cookie) RemoveDllDirectory(chttp_cookie);
     if (salts_utils_cookie) RemoveDllDirectory(salts_utils_cookie);
     if (salts_cookie) RemoveDllDirectory(salts_cookie);
     RemoveDllDirectory(dependency_cookie);
@@ -199,6 +202,7 @@ static void *open_exact_win(const wchar_t *path, const wchar_t *dependency_dir,
   if (!absolute_path) {
     if (native_error) *native_error = ERROR_NOT_ENOUGH_MEMORY;
     if (vcpkg_cookie) RemoveDllDirectory(vcpkg_cookie);
+    if (chttp_cookie) RemoveDllDirectory(chttp_cookie);
     if (salts_utils_cookie) RemoveDllDirectory(salts_utils_cookie);
     if (salts_cookie) RemoveDllDirectory(salts_cookie);
     RemoveDllDirectory(dependency_cookie);
@@ -208,6 +212,7 @@ static void *open_exact_win(const wchar_t *path, const wchar_t *dependency_dir,
     if (native_error) *native_error = GetLastError();
     free(absolute_path);
     if (vcpkg_cookie) RemoveDllDirectory(vcpkg_cookie);
+    if (chttp_cookie) RemoveDllDirectory(chttp_cookie);
     if (salts_utils_cookie) RemoveDllDirectory(salts_utils_cookie);
     if (salts_cookie) RemoveDllDirectory(salts_cookie);
     RemoveDllDirectory(dependency_cookie);
@@ -216,6 +221,7 @@ static void *open_exact_win(const wchar_t *path, const wchar_t *dependency_dir,
   module = LoadLibraryExW(absolute_path, NULL, flags);
   if (!module && native_error) *native_error = GetLastError();
   if (vcpkg_cookie) RemoveDllDirectory(vcpkg_cookie);
+  if (chttp_cookie) RemoveDllDirectory(chttp_cookie);
   if (salts_utils_cookie) RemoveDllDirectory(salts_utils_cookie);
   if (salts_cookie) RemoveDllDirectory(salts_cookie);
   RemoveDllDirectory(dependency_cookie);

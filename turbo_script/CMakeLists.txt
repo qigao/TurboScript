@@ -110,18 +110,6 @@ target_link_libraries(
   PUBLIC Salts::Core
   PRIVATE Salts::Cron Salts::Coroutine)
 
-if(WIN32)
-  add_custom_command(
-    TARGET ${TARGET_NAME}
-    POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:Salts::Cron> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:Salts::Mustache> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMENT "Synchronizing TurboScript runtime dependencies"
-    VERBATIM)
-endif()
-
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  
 

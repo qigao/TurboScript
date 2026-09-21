@@ -1,5 +1,4 @@
-# Helper macro: build one turbo_script test binary and register it as a CTest.
-# Each binary gets the plugin .tbs files copied to its output directory.
+# Plugin loader fixtures use the same output layout as production plugins.
 add_library(test_plugin_loader_fixture SHARED plugin_loader_fixture.c)
 cmake_config_target(
   test_plugin_loader_fixture
@@ -65,6 +64,14 @@ set_target_properties(
   PROPERTIES RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}
              LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR})
 
+add_plugin_loader_fixture(test_plugin_loader_package loader_package)
+set_target_properties(
+  test_plugin_loader_package
+  PROPERTIES RUNTIME_OUTPUT_DIRECTORY
+             ${CMAKE_BINARY_DIR}/bin/loader-package/bin/plugins
+             LIBRARY_OUTPUT_DIRECTORY
+             ${CMAKE_BINARY_DIR}/bin/loader-package/bin/plugins)
+
 add_library(test_plugin_loader_missing_entry SHARED plugin_loader_missing_entry.c)
 cmake_config_target(
   test_plugin_loader_missing_entry
@@ -89,16 +96,9 @@ cmake_add_test(
           test_plugin_loader_prefixed_conflict
           test_plugin_loader_wrong_name test_plugin_loader_missing_entry
           test_plugin_loader_init_failure test_plugin_loader_legacy
-          test_plugin_loader_cwd_only
+          test_plugin_loader_cwd_only test_plugin_loader_package
   FOLDER turbo_script
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
-add_custom_command(
-  TARGET test_ts_plugin_loader POST_BUILD
-  COMMAND ${CMAKE_COMMAND} -E make_directory
-          $<TARGET_FILE_DIR:test_ts_plugin_loader>/loader-package/bin/plugins
-  COMMAND ${CMAKE_COMMAND} -E copy_if_different
-          $<TARGET_FILE:test_plugin_loader_fixture>
-          $<TARGET_FILE_DIR:test_ts_plugin_loader>/loader-package/bin/plugins/loader_package$<TARGET_FILE_SUFFIX:test_plugin_loader_fixture>)
 set_tests_properties(
   test_ts_plugin_loader
   PROPERTIES ENVIRONMENT
@@ -112,14 +112,6 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
     DEPENDS mapper_tbs fin_tbs ta_tbs ts_tbs net_tbs
     FOLDER turbo_script)
-  add_custom_command(
-    TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:fin_tbs>    $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ta_tbs>     $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:ts_tbs>     $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:mapper_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_FILE:net_tbs>    $<TARGET_FILE_DIR:${TARGET_NAME}>
-    )
 endmacro()
 
 # Interpreter test suites (split by module)
@@ -208,10 +200,6 @@ macro(add_mir_test TARGET_NAME SOURCE_FILE)
     INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
     DEPENDS mapper_tbs
     FOLDER turbo_script)
-  add_custom_command(
-    TARGET ${TARGET_NAME} POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            $<TARGET_FILE:mapper_tbs> $<TARGET_FILE_DIR:${TARGET_NAME}>)
 endmacro()
 
 add_mir_test(test_turbo_script_mir        test_turbo_script_mir.c)
