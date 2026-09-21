@@ -1,0 +1,109 @@
+name: Prepare Lemon sanitizer fix
+
+on:
+  push:
+    branches: [fix/embedded-runtime-package]
+    paths: [.github/workflows/prepare-lemon-fix.yml]
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      ASAN_OPTIONS: detect_leaks=1:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - name: Validate and prepare the bounded patch without moving a ref
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, hashlib, json, os, shutil, subprocess
+          from pathlib import Path
+          repository = 'qigao/TurboScript'
+          publisher = '.github/workflows/prepare-lemon-fix.yml'
+          filename = 'tools/lemon/lemon.c'
+          parent = '3458e06eb33e028c928c23cb7f63f796689a491e'
+          expected_before = '9071e77194bd00ed74db9ab168b458109fadc5e9'
+          expected_after = 'a112dfa7e724f55c7d746068db532cd66350b2c4'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          def blob_sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          def post(endpoint, payload):
+              return json.loads(subprocess.check_output(['gh', 'api', '--method', 'POST', endpoint, '--input', '-'], input=json.dumps(payload), text=True))
+          head = git('rev-parse', 'HEAD')
+          assert os.environ['GITHUB_REPOSITORY'] == repository
+          assert head == os.environ['GITHUB_SHA'] and git('rev-parse', 'HEAD^') == parent
+          assert git('diff', '--name-only', 'HEAD^', 'HEAD').splitlines() == [publisher]
+          assert not git('status', '--porcelain')
+          path = Path(filename)
+          original = path.read_bytes()
+          assert blob_sha(original) == expected_before
+          old = b'  qsort(azDefine, nDefine, sizeof(azDefine[0]), defineCmp);'
+          assert original.count(old) == 1
+          fixed = original.replace(old, b'  if( nDefine>1 ){\n    qsort(azDefine, nDefine, sizeof(azDefine[0]), defineCmp);\n  }', 1)
+          assert blob_sha(fixed) == expected_after
+          work = Path(os.environ['RUNNER_TEMP']) / 'lemon-fix'
+          work.mkdir()
+          original_source = work / 'lemon-original.c'
+          fixed_source = work / 'lemon-fixed.c'
+          original_source.write_bytes(original)
+          fixed_source.write_bytes(fixed)
+          common = ['gcc', '-g', '-O1', '-fno-omit-frame-pointer']
+          sanitized = ['-fsanitize=address,undefined']
+          for output, source, extra in [('original', original_source, sanitized), ('reference', original_source, []), ('fixed', fixed_source, sanitized)]:
+              subprocess.run([*common, *extra, str(source), '-o', str(work / output)], check=True)
+          grammar = work / 'exprtk_grammar.y'
+          shutil.copyfile('exprtk/parser/exprtk_grammar.y', grammar)
+          args = ['-T' + str(Path('tools/lemon/lempar.c').resolve()), str(grammar)]
+          bad = subprocess.run([str(work / 'original'), *args], capture_output=True, text=True)
+          (work / 'original-sanitized.log').write_text(bad.stdout + bad.stderr)
+          assert bad.returncode != 0 and 'null pointer passed as argument 1' in bad.stderr
+          rows = []
+          for defines in ([], ['-DFOO'], ['-DZ', '-DA', '-DM']):
+              reference = subprocess.run([str(work / 'reference'), *defines, *args], capture_output=True, text=True)
+              assert reference.returncode == 0, reference.stderr
+              hashes = {suffix: hashlib.sha256(grammar.with_suffix(suffix).read_bytes()).hexdigest() for suffix in ('.c', '.h', '.out')}
+              result = subprocess.run([str(work / 'fixed'), *defines, *args], capture_output=True, text=True)
+              (work / f'fixed-{len(defines)}.log').write_text(result.stdout + result.stderr)
+              assert result.returncode == 0 and 'runtime error:' not in result.stderr and 'Sanitizer' not in result.stderr, result.stderr
+              assert hashes == {suffix: hashlib.sha256(grammar.with_suffix(suffix).read_bytes()).hexdigest() for suffix in hashes}
+              rows.append({'defines': defines, 'exit': result.returncode, 'output_sha256': hashes})
+          (work / 'results.json').write_text(json.dumps({'original_sanitized_exit': bad.returncode, 'patched': rows}, indent=2) + '\n')
+          path.write_bytes(fixed)
+          Path(publisher).unlink()
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          assert set(git('diff', '--name-only').splitlines()) == {filename, publisher}
+          patch = subprocess.check_output(['git', 'diff', '--', filename], text=True)
+          (work / 'source.patch').write_text(patch)
+          print(patch)
+          blob = post(f'repos/{repository}/git/blobs', {'encoding': 'base64', 'content': base64.b64encode(fixed).decode('ascii')})
+          assert blob['sha'] == expected_after
+          tree = post(f'repos/{repository}/git/trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': [
+              {'path': filename, 'mode': '100644', 'type': 'blob', 'sha': blob['sha']},
+              {'path': publisher, 'mode': '100644', 'type': 'blob', 'sha': None}]})
+          commit = post(f'repos/{repository}/git/commits', {'message': 'fix(lemon): avoid sorting a null macro array\n\nSort only when at least two definitions exist. Preserve parser output and all sanitizer settings. Verified zero/one/multiple-definition full ExprTk grammar generation against original output, with ASan/UBSan clean on the fixed generator. Remove the one-shot preparer.\n\nFixes the actual UBSan blocker in Stun run 35579692795; tracks Stun #31/#34 and TurboScript #8.', 'tree': tree['sha'], 'parents': [head]})
+          record = {'base': head, 'source_base': parent, 'commit': commit['sha'], 'tree': tree['sha'], 'before': expected_before, 'after': expected_after, 'ref_updated': False}
+          (work / 'commit.json').write_text(json.dumps(record, indent=2) + '\n')
+          print(json.dumps(record, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: lemon-fix-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/lemon-fix/*.json
+            ${{ runner.temp }}/lemon-fix/*.patch
+            ${{ runner.temp }}/lemon-fix/*.log
+          if-no-files-found: error
