@@ -1,7 +1,7 @@
 #include "tinytest.h"
 
 #include "../src/turbo_script_internal.h"
-#include "turbo_script_host_api_internal.h"
+#include "turbo_script.h"
 #include "exprtk.h"
 
 #include <stdint.h>
@@ -84,6 +84,35 @@ static void destroy_fixture(turbo_script_ctx_t *ctx, turbo_script_result_t *resu
 }
 
 spec("TurboScript immutable Host modules") {
+  it("releases MIR prototype names across repeated module lifetimes") {
+    enum { MODULE_CYCLES = 4 };
+    static const turbo_script_execution_mode_t modes[] = {
+        TURBO_SCRIPT_EXEC_INTERPRETER, TURBO_SCRIPT_EXEC_JIT};
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    turbo_script_result_t *result = NULL;
+    turbo_script_module_options_t module_options;
+    check_not_null(ctx);
+    check_equal(turbo_script_result_create(ctx, &result), TURBO_SCRIPT_STATUS_OK);
+    turbo_script_module_options_init(&module_options);
+    for (int cycle = 0; cycle < MODULE_CYCLES; ++cycle) {
+      turbo_script_module_t *module = NULL;
+      /* No named variables: isolate the temporary external-prototype names. */
+      check_equal(compile_text(ctx, result, "1 + 2;", &module_options, &module),
+                  TURBO_SCRIPT_STATUS_OK);
+      for (size_t mode = 0; mode < sizeof(modes) / sizeof(modes[0]); ++mode) {
+        turbo_script_instance_options_t options;
+        turbo_script_instance_t *instance = NULL;
+        turbo_script_instance_options_init(&options);
+        options.mode = modes[mode];
+        check_equal(turbo_script_instance_create(module, &options, result, &instance),
+                    TURBO_SCRIPT_STATUS_OK);
+        check_equal(turbo_script_instance_destroy(instance, result), TURBO_SCRIPT_STATUS_OK);
+      }
+      check_equal(turbo_script_module_destroy(module, result), TURBO_SCRIPT_STATUS_OK);
+    }
+    destroy_fixture(ctx, result, NULL);
+  }
+
   it("copies source and module name and publishes ordered exports") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
     turbo_script_result_t *result = NULL;

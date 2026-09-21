@@ -68,7 +68,7 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
-  PUBLIC Salts::Core Salts::DataBind
+  PUBLIC Salts::Core Salts::Databind
   PRIVATE Salts::Cron Salts::Coroutine)
 
 # Enable strict warnings for modularized code
@@ -113,7 +113,13 @@ target_link_libraries(
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  
 
+if(TURBOSCRIPT_BUILD_HOST_TESTS OR (BUILD_TESTS AND ENABLE_TESTS))
+  add_subdirectory(test/host)
+endif()
+
 if(BUILD_TESTS AND ENABLE_TESTS)
   add_subdirectory(test)
 endif()
-add_subdirectory(app)
+if(TURBOSCRIPT_BUILD_CLI)
+  add_subdirectory(app)
+endif()

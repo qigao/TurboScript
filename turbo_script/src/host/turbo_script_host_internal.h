@@ -3,7 +3,7 @@
 
 #include "exprtk_module.h"
 #include "salts_buffer.h"
-#include "turbo_script_host_api_internal.h"
+#include "turbo_script.h"
 #include "tstr.h"
 #include <cstl.h>
 

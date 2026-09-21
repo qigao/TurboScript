@@ -1,7 +1,7 @@
 #include "tinytest.h"
 
 #include "../src/turbo_script_internal.h"
-#include "turbo_script_host_api_internal.h"
+#include "turbo_script.h"
 #include "turbo_script_host_internal.h"
 
 #include <stdint.h>
