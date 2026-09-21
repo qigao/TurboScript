@@ -1,3 +1,6 @@
+# CHttp is owned by this optional native module, not the embedding runtime.
+find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+
 set(TARGET_NAME net_tbs)
 set(TARGET_NAME_LIB ${TARGET_NAME}_lib)
 
@@ -8,7 +11,7 @@ add_library(${TARGET_NAME_LIB} STATIC ${SOURCE_FILES})
 
 cmake_config_target(${TARGET_NAME_LIB} FOLDER modules/net)
 
-target_link_libraries(${TARGET_NAME_LIB} PUBLIC exprtk CHttp::Client Salts::DataBind Salts::JsonParser turbo_script)
+target_link_libraries(${TARGET_NAME_LIB} PUBLIC exprtk CHttp::Client Salts::Databind Salts::JsonParser turbo_script)
 target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -19,7 +22,7 @@ add_library(${TARGET_NAME} SHARED ${SOURCE_FILES})
 cmake_config_target(${TARGET_NAME} FOLDER modules/net OUTPUT_NAME net
                     PLUGIN)
 
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk CHttp::Client Salts::DataBind Salts::JsonParser turbo_script)
+target_link_libraries(${TARGET_NAME} PUBLIC exprtk CHttp::Client Salts::Databind Salts::JsonParser turbo_script)
 target_include_directories(${TARGET_NAME} PRIVATE ${net_INCLUDES})
 set_target_properties(
   ${TARGET_NAME}

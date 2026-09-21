@@ -47,7 +47,10 @@ find_package(Threads REQUIRED)
 find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
 find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH)
-find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+if(NOT TARGET Salts::Databind)
+  message(FATAL_ERROR
+    "TurboScript requires SaltsUtils to export Salts::Databind. Install the matching SaltsUtils package; no separate DataBind package or compatibility target is supported.")
+endif()
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
@@ -60,7 +63,9 @@ add_subdirectory(miniblas)
 
 add_subdirectory(exprtk)
 add_subdirectory(turbo_script)
-add_subdirectory(modules)
+if(TURBOSCRIPT_BUILD_MODULES)
+  add_subdirectory(modules)
+endif()
 
 # Package Configuration
 include(CMakePackageConfigHelpers)
@@ -73,21 +78,23 @@ install(
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
-install(
-  TARGETS net_tbs
-          ta_tbs
-          fin_tbs
-          ts_tbs
-          sqlite_tbs
-          mapper_tbs
-          img_tbs
-          crypto_tbs
-          hash_tbs
-          fuzzy_tbs
-          os_tbs
-  LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
-  ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
+if(TURBOSCRIPT_BUILD_MODULES)
+  install(
+    TARGETS net_tbs
+            ta_tbs
+            fin_tbs
+            ts_tbs
+            sqlite_tbs
+            mapper_tbs
+            img_tbs
+            crypto_tbs
+            hash_tbs
+            fuzzy_tbs
+            os_tbs
+    LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
+endif()
 
 install(
   EXPORT TurboScriptTargets
