@@ -1,0 +1,171 @@
+name: Prepare Host ABI publication
+on:
+  push:
+    branches: [fix/embedded-runtime-package]
+    paths: [.github/workflows/prepare-host-abi-publication.yml]
+permissions:
+  contents: write
+jobs:
+  prepare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          repository: qigao/salts
+          ref: c4197712261a563ed7e238152b34cb50a2ef98a9
+          path: .ci/host-core
+          persist-credentials: false
+      - name: Prepare reviewed source objects without updating refs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/host-publication"
+          python3 - <<'PY'
+          import base64, hashlib, json, os, re, subprocess
+          from pathlib import Path
+          repo = 'qigao/TurboScript'
+          publisher = '.github/workflows/prepare-host-abi-publication.yml'
+          parent = '3d954a59677be04e5b5206cbbbcbf4ba92ca2438'
+          output = Path(os.environ['RUNNER_TEMP']) / 'host-publication'
+          def git(*args):
+              return subprocess.check_output(['git', *args], text=True).strip()
+          def sha(data):
+              return hashlib.sha1(b'blob ' + str(len(data)).encode() + b'\0' + data).hexdigest()
+          def request(endpoint, payload=None):
+              args = ['gh', 'api', endpoint]
+              if payload is not None:
+                  args += ['--method', 'POST', '--input', '-']
+              return json.loads(subprocess.check_output(args, text=True,
+                                  input=json.dumps(payload) if payload is not None else None))
+          head = git('rev-parse', 'HEAD')
+          assert os.environ['GITHUB_REPOSITORY'] == repo
+          assert os.environ['GITHUB_REF'] == 'refs/heads/fix/embedded-runtime-package'
+          assert head == os.environ['GITHUB_SHA'] and git('rev-parse', 'HEAD^') == parent
+          assert git('diff', '--name-only', 'HEAD^', 'HEAD').splitlines() == [publisher]
+          assert not git('status', '--porcelain', '--untracked-files=no')
+          assert git('-C', '.ci/host-core', 'rev-parse', 'HEAD') == 'c4197712261a563ed7e238152b34cb50a2ef98a9'
+          expected = {
+              'CMakeOptions.cmake': ['8e1e207f109cadfae582426dd0f7fb7ebd1c782f', '09f442dcd17f4bc65dca6dbcf289d2ce94d7c50a'],
+              'turbo_script/CMakeLists.txt': ['18d9a919f1bd375ce63dedfe2277f3db4cf7968a', '691b4ff4eec5d90ff081bebfaaae6e318400e2ae'],
+              'turbo_script/include/turbo_script.h': ['d65ba9a7698a9efdd096baf89c81426d032859b0', '84d51c71d0fdb885e4cef09a9b66303bd5b37b81'],
+              'turbo_script/src/host/turbo_script_host_api_internal.h': ['10b727a74b7ba5224cbbd4f354efe18304be86e2', None],
+              'turbo_script/src/host/turbo_script_host_internal.h': ['a1ba8570c5d2181f66f839f82ab4ce209f93493e', '10388018482319ef52ac53ebc680e2415810f325'],
+              'turbo_script/test/CMakeLists.txt': ['224cf2251cbf2317bbcc3d2918ebdf4bd1087076', '1486e07c9ae28c87e5099efb23d8b486e8379f3b'],
+              'turbo_script/test/test_turbo_script_host_call.c': ['59c7c1da784a15fae31c69b059ec956ded64a256', '9d34cea8d952d82211dd30a62231791d1bb902cf'],
+              'turbo_script/test/test_turbo_script_host_instance.c': ['e3629f5e643119bfc1850376f6b6f542d4909d5e', '2b624e295a148e0b4fd4c7c86b1ba090afa3a544'],
+              'turbo_script/test/test_turbo_script_host_limits.c': ['b245375b138a6c712b7c47546ab4af317656e777', '8140d4c40ac79b0298bdc0a523ac2331039149a1'],
+              'turbo_script/test/test_turbo_script_host_module.c': ['ca7a69550f711016be335a55f95ede6b2ca2cbaf', '57609e5a9288d8daf1c0077ce56ed941b8d95f82'],
+              'turbo_script/test/test_turbo_script_host_state.c': ['4d1d4adf92c3302d3f52bc2fcd65d14113f2a45e', '189c29394322c86b05a60a81c2c50261f28e4ccb'],
+              'turbo_script/test/test_turbo_script_mir_core.c': ['f31b3250e1884eaddcd5ce4d0dd263d053bf99dc', '61fb6e7c8fa3d8668b0042d8e689264fc29d8aab'],
+              'cmake/ci/host-abi/CMakeLists.txt': [None, '7fd3988a5112dc69f5cd28b4031d8616727a413d'],
+              'cmake/ci/host-abi/host_contract.c': [None, 'dbce2f1f858686ee9ef1e07180bea95761af5c32'],
+              'cmake/ci/host-abi/host_contract.cpp': [None, 'c6fce544b23e7e982e36a11413c146157750ede8'],
+              'turbo_script/test/host/CMakeLists.txt': [None, 'bcec0ee3bad23e1968e4ccadcc28fc8ae75db484'],
+          }
+          for filename, (before, after) in expected.items():
+              path = Path(filename)
+              if before is not None:
+                  assert sha(path.read_bytes()) == before, filename
+              else:
+                  assert not path.exists(), filename
+                  blob = request(f'repos/{repo}/git/blobs/{after}')
+                  assert blob['encoding'] == 'base64'
+                  data = base64.b64decode(blob['content'])
+                  assert sha(data) == after
+                  path.parent.mkdir(parents=True, exist_ok=True)
+                  path.write_bytes(data)
+          private = Path('turbo_script/src/host/turbo_script_host_api_internal.h')
+          text = private.read_text()
+          body = text[text.index('#define TURBO_SCRIPT_HOST_ABI_VERSION'):text.rindex('#ifdef __cplusplus')].rstrip()
+          body = re.sub(r'(?m)^(void turbo_script_(?:module_options_init|instance_options_init|call_options_init))', r'TURBO_SCRIPT_C_API \1', body)
+          body = re.sub(r'(?m)^turbo_script_status_t(?=[ \n])', r'TURBO_SCRIPT_C_API turbo_script_status_t', body)
+          body = '''/**
+           * Host ABI v1: opaque modules, mode-fixed instances and context-owned results.
+           * All operations run synchronously on the context's owner thread. Register host
+           * callbacks before compiling a module; the registry is frozen while modules
+           * retain it. Destroy instances, modules and results before freeing the context.
+           * Export handles belong to the instance that resolves them; zero is invalid.
+           * Source, argument and callback views are borrowed only for the receiving call.
+           * Result getter views remain valid until that result is reset, written or freed.
+           * Initialize options with the matching initializer and keep reserved fields zero.
+           * Initialize export/error info to zero with struct_size set to sizeof the struct.
+           * Non-OK status never authorizes use of an output handle or value. Use the result
+           * error getter for diagnostics when the operation could validate that result.
+           * Interpreter and JIT use the same ABI; selecting JIT does not permit fallback.
+           * See docs/superpowers/specs/2026-08-25-turboscript-host-module-abi-design.md.
+           */
+          ''' + body + '\n\n'
+          public = Path('turbo_script/include/turbo_script.h')
+          text = public.read_text()
+          marker = '#ifdef __cplusplus\n}\n#endif'
+          assert text.count(marker) == 1
+          public.write_text(text.replace(marker, body + marker))
+          for filename, (before, after) in expected.items():
+              if before and after and filename.endswith(('.c', '_internal.h')):
+                  path = Path(filename)
+                  text = path.read_text()
+                  text = text.replace('"turbo_script_host_api_internal.h"', '"turbo_script.h"')
+                  text = text.replace('"../src/host/turbo_script_host_api_internal.h"', '"turbo_script.h"')
+                  path.write_text(text)
+          private.unlink()
+          path = Path('CMakeOptions.cmake')
+          path.write_text(path.read_text() + '\noption(TURBOSCRIPT_BUILD_HOST_TESTS "Build the module/instance host contracts without bundled modules" OFF)\n')
+          path = Path('turbo_script/CMakeLists.txt')
+          text = path.read_text()
+          needle = 'if(BUILD_TESTS AND ENABLE_TESTS)\n  add_subdirectory(test)\nendif()'
+          assert text.count(needle) == 1
+          path.write_text(text.replace(needle, 'if(TURBOSCRIPT_BUILD_HOST_TESTS OR (BUILD_TESTS AND ENABLE_TESTS))\n  add_subdirectory(test/host)\nendif()\n\n' + needle))
+          path = Path('turbo_script/test/CMakeLists.txt')
+          text = path.read_text()
+          start = text.index('cmake_add_test(\n  TARGET test_turbo_script_host_result')
+          end = text.index('cmake_add_test(\n  SOURCES bench_turbo_script.c', start)
+          assert text[start:end].count('cmake_add_test(') == 7
+          path.write_text(text[:start] + text[end:])
+          Path(publisher).unlink()
+          for filename, (before, after) in expected.items():
+              path = Path(filename)
+              assert (sha(path.read_bytes()) if path.exists() else None) == after, filename
+          subprocess.run(['git', 'diff', '--check'], check=True)
+          compile_results = []
+          for compiler, standard, extension in [('gcc', 'c11', 'c'), ('g++', 'c++17', 'cpp')]:
+              command = [compiler, '-std=' + standard, '-Wall', '-Wextra', '-Wpedantic', '-Werror', '-fsyntax-only',
+                         '-Iturbo_script/include', '-I.ci/host-core/utils/include', '-I.ci/host-core/platform/include',
+                         f'cmake/ci/host-abi/host_contract.{extension}']
+              result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+              (output / f'public-{standard}.log').write_text(result.stdout)
+              assert result.returncode == 0, result.stdout
+              compile_results.append({'language': standard, 'exit_code': result.returncode, 'command': command})
+          patch = subprocess.check_output(['git', 'diff', '--', *expected], text=True)
+          (output / 'source.patch').write_text(patch)
+          entries = []
+          for filename, (before, after) in expected.items():
+              if after and before:
+                  blob = request(f'repos/{repo}/git/blobs', {'encoding': 'base64',
+                      'content': base64.b64encode(Path(filename).read_bytes()).decode('ascii')})
+                  assert blob['sha'] == after
+              entries.append({'path': filename, 'mode': '100644', 'type': 'blob', 'sha': after})
+          entries.append({'path': publisher, 'mode': '100644', 'type': 'blob', 'sha': None})
+          tree = request(f'repos/{repo}/git/trees', {'base_tree': git('rev-parse', 'HEAD^{tree}'), 'tree': entries})
+          commit = request(f'repos/{repo}/git/commits', {
+              'message': 'fix(host): publish the canonical Host ABI and installed consumers\n\nConsolidate the existing v1 types and 19 entry points in turbo_script.h, decorate every exported declaration, and remove the duplicate private API header. Preserve layouts, signatures, implementations, owner rules, and all test assertions.\n\nKeep the seven existing host contracts independently buildable for the embedding profile and add installed C11/C++17 consumers for interpreter/JIT instance isolation, handles, owned UTF-8/NUL values, callbacks and structured errors. Remove the one-shot preparer. Full library/install/runtime acceptance remains pending under #1 and qigao/stun#34.',
+              'tree': tree['sha'], 'parents': [head]})
+          record = {'source_base': parent, 'parent': head, 'commit': commit['sha'], 'tree': tree['sha'],
+                    'files': expected, 'public_compile': compile_results, 'ref_updated': False,
+                    'runtime_validation': 'Pending actual producer/host/installed/editor CI; header compilation is not runtime acceptance.'}
+          (output / 'commit.json').write_text(json.dumps(record, indent=2) + '\n')
+          print(json.dumps(record, indent=2))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: host-publication-${{ github.sha }}
+          path: ${{ runner.temp }}/host-publication
+          if-no-files-found: error
