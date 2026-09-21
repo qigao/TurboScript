@@ -95,6 +95,10 @@ target_link_libraries(
   PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser
   PRIVATE Salts::CSTL Salts::Mustache miniblas_linalg)
 
+if(NOT MSVC)
+  target_link_libraries(${TARGET_NAME} PUBLIC m)
+endif()
+
 # Enable AVX/AVX2 for SIMD optimizations
 if(MSVC)
   target_compile_options(${TARGET_NAME} PRIVATE /arch:AVX2)
