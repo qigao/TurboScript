@@ -47,7 +47,7 @@ find_package(Threads REQUIRED)
 find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
 find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH)
-find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+find_package(Chttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
