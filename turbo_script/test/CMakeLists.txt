@@ -125,67 +125,6 @@ add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
 cmake_add_test(
-  TARGET test_turbo_script_host_result
-  SOURCES test_turbo_script_host_result.c
-  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_registry
-  SOURCES test_turbo_script_host_registry.c
-  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_module
-  SOURCES test_turbo_script_host_module.c
-  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_instance
-  SOURCES test_turbo_script_host_instance.c
-  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_call
-  SOURCES test_turbo_script_host_call.c
-  LIBS turbo_script_lib Salts::TinyTest exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_state
-  SOURCES test_turbo_script_host_state.c
-  LIBS turbo_script_lib Salts::TinyTest exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
-  FOLDER turbo_script)
-
-cmake_add_test(
-  TARGET test_turbo_script_host_limits
-  SOURCES test_turbo_script_host_limits.c
-  LIBS turbo_script_lib Salts::TinyTest exprtk ta mir_static
-  INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
-  FOLDER turbo_script)
-
-cmake_add_test(
   SOURCES bench_turbo_script.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk mir_static
   INCLUDES ${CMAKE_SOURCE_DIR}/vendor/mir

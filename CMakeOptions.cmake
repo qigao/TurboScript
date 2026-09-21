@@ -18,3 +18,5 @@ if(TURBOSCRIPT_BUILD_CLI AND NOT TURBOSCRIPT_BUILD_MODULES)
     "The CLI requires bundled modules. For embedding, explicitly set both TURBOSCRIPT_BUILD_MODULES=OFF and TURBOSCRIPT_BUILD_CLI=OFF.")
 endif()
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
+
+option(TURBOSCRIPT_BUILD_HOST_TESTS "Build the module/instance host contracts without bundled modules" OFF)

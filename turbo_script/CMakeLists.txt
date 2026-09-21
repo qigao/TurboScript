@@ -113,6 +113,10 @@ target_link_libraries(
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/)
  
 
+if(TURBOSCRIPT_BUILD_HOST_TESTS OR (BUILD_TESTS AND ENABLE_TESTS))
+  add_subdirectory(test/host)
+endif()
+
 if(BUILD_TESTS AND ENABLE_TESTS)
   add_subdirectory(test)
 endif()

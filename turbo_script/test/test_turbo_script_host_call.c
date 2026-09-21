@@ -3,7 +3,7 @@
 #include "../src/host/turbo_script_host_internal.h"
 #include "../src/mir/turbo_script_mir_internal.h"
 #include "../src/turbo_script_internal.h"
-#include "turbo_script_host_api_internal.h"
+#include "turbo_script.h"
 
 #include <float.h>
 #include <math.h>
