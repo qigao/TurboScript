@@ -56,6 +56,7 @@ find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
 add_subdirectory(tools)
 include(FindTools)
 add_subdirectory(vendor)
+add_subdirectory(miniblas)
 
 add_subdirectory(exprtk)
 add_subdirectory(turbo_script)

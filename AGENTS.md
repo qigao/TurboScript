@@ -33,6 +33,12 @@
 - 注释只解释意图、约束与设计理由，不复述代码字面逻辑
 - 若用户、协议、外部接口或既有文件明确要求其他语言，则以兼容性为先
 
+## 许可证与源文件
+
+- first-party 源码、测试、构建文件不得添加 `SPDX-License-Identifier` 或逐文件许可证模板
+- first-party 许可信息只维护在仓库根目录的 `LICENSE`、`NOTICE` 与 `THIRD_PARTY_NOTICES.md`
+- vendored/third-party 文件必须保留上游版权、许可证与 SPDX 标识，不得为了统一格式而删除或改写
+
 ## 分析与结论表达
 
 - 发现代码结构、调用关系、算法路径或边界问题时，必须说明其影响与用途：影响哪些模块、接口、数据、测试或用户可见行为
@@ -210,8 +216,8 @@
 #### 库优先级顺序（从高到低）
 
 1. **Salts**（仓库 `utils/` 模块；构建时优先通过 CMake target `Salts::Core` 使用）— 最优先
-2. **项目内模块**（`exprtk/`、`plugins/` 等）
-3. **vendor/ 库**（sds、croar、mir、monocypher、sha2、uuid、miniblas）
+2. **项目内模块**（`exprtk/`、`miniblas/`、`plugins/` 等）
+3. **vendor/ 库**（sds、croar、mir、monocypher、sha2、uuid）
 4. **vcpkg 依赖**（xxhash、sqlite3、zstd、openssl、c-ares、aklomp-base64、simde）
 5. **C 标准库**（libc：`string.h`、`stdlib.h`、`stdio.h`）
 6. **底层系统 API**（仅允许封装在 Salts 平台/协程适配层或项目适配层之后使用）
