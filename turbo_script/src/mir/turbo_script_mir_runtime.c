@@ -20,10 +20,13 @@ int exprtk_time_member_get(exprtk_value_t value, const char *member, exprtk_valu
 int exprtk_duration_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
 int exprtk_decimal_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
 
-static const char *ts_mir_prefixed_item_name(ts_mir_compiler_t *c, const char *name) {
+static MIR_item_t ts_mir_new_prefixed_proto(ts_mir_compiler_t *c, const char *name,
+                                             size_t nres, MIR_type_t *res_types,
+                                             size_t nargs, MIR_var_t *args) {
   char buf[192];
-  snprintf(buf, sizeof(buf), "%s_%s", c && c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
-  return strdup(buf);
+  snprintf(buf, sizeof(buf), "%s_%s", c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
+  /* MIR copies the name into its context. No caller-owned heap copy is needed. */
+  return MIR_new_proto_arr(c->ctx, buf, nres, res_types, nargs, args);
 }
 
 /* =========================================================================
@@ -420,7 +423,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_D, "a", 0}, {MIR_T_D, "b", 0}};
-    c->ext.fmod_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_fmod"), 1, &res, 2, args);
+    c->ext.fmod_proto = ts_mir_new_prefixed_proto(c, "p_fmod", 1, &res, 2, args);
     c->ext.fmod_import = MIR_new_import(ctx, "fmod");
   }
 
@@ -428,7 +431,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_D, "a", 0}, {MIR_T_D, "b", 0}};
-    c->ext.pow_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_pow"), 1, &res, 2, args);
+    c->ext.pow_proto = ts_mir_new_prefixed_proto(c, "p_pow", 1, &res, 2, args);
     c->ext.pow_import = MIR_new_import(ctx, "pow");
   }
 
@@ -437,43 +440,43 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[1] = {{MIR_T_D, "x", 0}};
     
-    c->ext.sin_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_sin"), 1, &res, 1, args);
+    c->ext.sin_proto = ts_mir_new_prefixed_proto(c, "p_sin", 1, &res, 1, args);
     c->ext.sin_import = MIR_new_import(ctx, "sin");
     
-    c->ext.cos_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_cos"), 1, &res, 1, args);
+    c->ext.cos_proto = ts_mir_new_prefixed_proto(c, "p_cos", 1, &res, 1, args);
     c->ext.cos_import = MIR_new_import(ctx, "cos");
     
-    c->ext.sqrt_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_sqrt"), 1, &res, 1, args);
+    c->ext.sqrt_proto = ts_mir_new_prefixed_proto(c, "p_sqrt", 1, &res, 1, args);
     c->ext.sqrt_import = MIR_new_import(ctx, "sqrt");
     
-    c->ext.tan_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_tan"), 1, &res, 1, args);
+    c->ext.tan_proto = ts_mir_new_prefixed_proto(c, "p_tan", 1, &res, 1, args);
     c->ext.tan_import = MIR_new_import(ctx, "tan");
     
-    c->ext.asin_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_asin"), 1, &res, 1, args);
+    c->ext.asin_proto = ts_mir_new_prefixed_proto(c, "p_asin", 1, &res, 1, args);
     c->ext.asin_import = MIR_new_import(ctx, "asin");
     
-    c->ext.acos_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_acos"), 1, &res, 1, args);
+    c->ext.acos_proto = ts_mir_new_prefixed_proto(c, "p_acos", 1, &res, 1, args);
     c->ext.acos_import = MIR_new_import(ctx, "acos");
     
-    c->ext.atan_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_atan"), 1, &res, 1, args);
+    c->ext.atan_proto = ts_mir_new_prefixed_proto(c, "p_atan", 1, &res, 1, args);
     c->ext.atan_import = MIR_new_import(ctx, "atan");
     
-    c->ext.log_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_log"), 1, &res, 1, args);
+    c->ext.log_proto = ts_mir_new_prefixed_proto(c, "p_log", 1, &res, 1, args);
     c->ext.log_import = MIR_new_import(ctx, "log");
     
-    c->ext.exp_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_exp"), 1, &res, 1, args);
+    c->ext.exp_proto = ts_mir_new_prefixed_proto(c, "p_exp", 1, &res, 1, args);
     c->ext.exp_import = MIR_new_import(ctx, "exp");
     
-    c->ext.floor_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_floor"), 1, &res, 1, args);
+    c->ext.floor_proto = ts_mir_new_prefixed_proto(c, "p_floor", 1, &res, 1, args);
     c->ext.floor_import = MIR_new_import(ctx, "floor");
     
-    c->ext.ceil_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_ceil"), 1, &res, 1, args);
+    c->ext.ceil_proto = ts_mir_new_prefixed_proto(c, "p_ceil", 1, &res, 1, args);
     c->ext.ceil_import = MIR_new_import(ctx, "ceil");
     
-    c->ext.round_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_round"), 1, &res, 1, args);
+    c->ext.round_proto = ts_mir_new_prefixed_proto(c, "p_round", 1, &res, 1, args);
     c->ext.round_import = MIR_new_import(ctx, "round");
     
-    c->ext.fabs_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_fabs"), 1, &res, 1, args);
+    c->ext.fabs_proto = ts_mir_new_prefixed_proto(c, "p_fabs", 1, &res, 1, args);
     c->ext.fabs_import = MIR_new_import(ctx, "fabs");
   }
 
@@ -482,13 +485,13 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_D, "a", 0}, {MIR_T_D, "b", 0}};
     
-    c->ext.atan2_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_atan2"), 1, &res, 2, args);
+    c->ext.atan2_proto = ts_mir_new_prefixed_proto(c, "p_atan2", 1, &res, 2, args);
     c->ext.atan2_import = MIR_new_import(ctx, "atan2");
     
-    c->ext.fmax_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_fmax"), 1, &res, 2, args);
+    c->ext.fmax_proto = ts_mir_new_prefixed_proto(c, "p_fmax", 1, &res, 2, args);
     c->ext.fmax_import = MIR_new_import(ctx, "fmax");
     
-    c->ext.fmin_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_fmin"), 1, &res, 2, args);
+    c->ext.fmin_proto = ts_mir_new_prefixed_proto(c, "p_fmin", 1, &res, 2, args);
     c->ext.fmin_import = MIR_new_import(ctx, "fmin");
   }
 
@@ -496,14 +499,14 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}};
-    c->ext.load_var_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_load_var"), 1, &res, 2, args);
+    c->ext.load_var_proto = ts_mir_new_prefixed_proto(c, "p_load_var", 1, &res, 2, args);
     c->ext.load_var_import = MIR_new_import(ctx, "ts_mir_load_var");
   }
 
   /* ts_mir_store_var(void *ctx, const char *name, double value) -> void */
   {
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_D, "value", 0}};
-    c->ext.store_var_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_store_var"), 0, NULL, 3, args);
+    c->ext.store_var_proto = ts_mir_new_prefixed_proto(c, "p_store_var", 0, NULL, 3, args);
     c->ext.store_var_import = MIR_new_import(ctx, "ts_mir_store_var");
   }
 
@@ -513,7 +516,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0},
                          {MIR_T_P, "target", 0},
                          {MIR_T_P, "source", 0}};
-    c->ext.assign_var_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_assign_var"), 1, &res, 3, args);
+    c->ext.assign_var_proto = ts_mir_new_prefixed_proto(c, "p_assign_var", 1, &res, 3, args);
     c->ext.assign_var_import = MIR_new_import(ctx, "ts_mir_assign_var");
   }
 
@@ -521,7 +524,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}};
-    c->ext.call0_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call0"), 1, &res, 2, args);
+    c->ext.call0_proto = ts_mir_new_prefixed_proto(c, "p_call0", 1, &res, 2, args);
     c->ext.call0_import = MIR_new_import(ctx, "ts_mir_call0");
   }
 
@@ -529,7 +532,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_D, "a0", 0}};
-    c->ext.call1_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call1"), 1, &res, 3, args);
+    c->ext.call1_proto = ts_mir_new_prefixed_proto(c, "p_call1", 1, &res, 3, args);
     c->ext.call1_import = MIR_new_import(ctx, "ts_mir_call1");
   }
 
@@ -538,7 +541,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[4] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_D, "a0", 0}, {MIR_T_D, "a1", 0}};
-    c->ext.call2_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call2"), 1, &res, 4, args);
+    c->ext.call2_proto = ts_mir_new_prefixed_proto(c, "p_call2", 1, &res, 4, args);
     c->ext.call2_import = MIR_new_import(ctx, "ts_mir_call2");
   }
 
@@ -550,7 +553,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_D, "a0", 0},
                          {MIR_T_D, "a1", 0},
                          {MIR_T_D, "a2", 0}};
-    c->ext.call3_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call3"), 1, &res, 5, args);
+    c->ext.call3_proto = ts_mir_new_prefixed_proto(c, "p_call3", 1, &res, 5, args);
     c->ext.call3_import = MIR_new_import(ctx, "ts_mir_call3");
   }
 
@@ -559,7 +562,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[4] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_I64, "argc", 0}, {MIR_T_P, "argv", 0}};
-    c->ext.calln_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_calln"), 1, &res, 4, args);
+    c->ext.calln_proto = ts_mir_new_prefixed_proto(c, "p_calln", 1, &res, 4, args);
     c->ext.calln_import = MIR_new_import(ctx, "ts_mir_calln");
   }
   /* ts_mir_call_assign(void *ctx, const char *target, const char *name, int64_t argc, double *argv) -> double */
@@ -570,7 +573,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "name", 0},
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
-    c->ext.call_assign_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_assign"), 1, &res, 5, args);
+    c->ext.call_assign_proto = ts_mir_new_prefixed_proto(c, "p_call_assign", 1, &res, 5, args);
     c->ext.call_assign_import = MIR_new_import(ctx, "ts_mir_call_assign");
   }
   /* ts_mir_call_value_assign(void *ctx, const char *target, const char *name,
@@ -582,14 +585,14 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "name", 0},
                          {MIR_T_P, "call_node", 0}};
     c->ext.call_value_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_value_assign"), 1, &res, 4, args);
+        ts_mir_new_prefixed_proto(c, "p_call_value_assign", 1, &res, 4, args);
     c->ext.call_value_assign_import = MIR_new_import(ctx, "ts_mir_call_value_assign");
   }
   /* ts_mir_value_expr(void *ctx, void *node) -> double */
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "node", 0}};
-    c->ext.value_expr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_value_expr"), 1, &res, 2, args);
+    c->ext.value_expr_proto = ts_mir_new_prefixed_proto(c, "p_value_expr", 1, &res, 2, args);
     c->ext.value_expr_import = MIR_new_import(ctx, "ts_mir_value_expr");
   }
   /* ts_mir_value_expr_assign(void *ctx, const char *target, void *node) -> double */
@@ -598,14 +601,14 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target_name", 0}, {MIR_T_P, "node", 0}};
     c->ext.value_expr_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_value_expr_assign"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_value_expr_assign", 1, &res, 3, args);
     c->ext.value_expr_assign_import = MIR_new_import(ctx, "ts_mir_value_expr_assign");
   }
   /* ts_mir_await_value(void *ctx, void *arg_node) -> double */
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "arg_node", 0}};
-    c->ext.await_value_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_await_value"), 1, &res, 2, args);
+    c->ext.await_value_proto = ts_mir_new_prefixed_proto(c, "p_await_value", 1, &res, 2, args);
     c->ext.await_value_import = MIR_new_import(ctx, "ts_mir_await_value");
   }
   /* ts_mir_await_assign(void *ctx, const char *target, void *arg_node) -> double */
@@ -613,7 +616,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target_name", 0}, {MIR_T_P, "arg_node", 0}};
-    c->ext.await_assign_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_await_assign"), 1, &res, 3, args);
+    c->ext.await_assign_proto = ts_mir_new_prefixed_proto(c, "p_await_assign", 1, &res, 3, args);
     c->ext.await_assign_import = MIR_new_import(ctx, "ts_mir_await_assign");
   }
   /* ts_mir_function_expr_assign(void *ctx, const char *target, void *node) -> double */
@@ -622,7 +625,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target_name", 0}, {MIR_T_P, "node", 0}};
     c->ext.function_expr_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_function_expr_assign"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_function_expr_assign", 1, &res, 3, args);
     c->ext.function_expr_assign_import = MIR_new_import(ctx, "ts_mir_function_expr_assign");
   }
   /* ts_mir_try_catch_assign(void *ctx, const char *target, void *node) -> double */
@@ -631,7 +634,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target_name", 0}, {MIR_T_P, "node", 0}};
     c->ext.try_catch_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_try_catch_assign"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_try_catch_assign", 1, &res, 3, args);
     c->ext.try_catch_assign_import = MIR_new_import(ctx, "ts_mir_try_catch_assign");
   }
 
@@ -639,7 +642,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_D, "index", 0}};
-    c->ext.vec_get_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_vec_get"), 1, &res, 3, args);
+    c->ext.vec_get_proto = ts_mir_new_prefixed_proto(c, "p_vec_get", 1, &res, 3, args);
     c->ext.vec_get_import = MIR_new_import(ctx, "ts_mir_vec_get");
   }
 
@@ -650,7 +653,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "target", 0},
                          {MIR_T_I64, "count", 0},
                          {MIR_T_P, "values", 0}};
-    c->ext.vec_assign_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_vec_assign"), 1, &res, 4, args);
+    c->ext.vec_assign_proto = ts_mir_new_prefixed_proto(c, "p_vec_assign", 1, &res, 4, args);
     c->ext.vec_assign_import = MIR_new_import(ctx, "ts_mir_vector_assign");
   }
 
@@ -662,7 +665,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "target", 0},
                          {MIR_T_P, "value_name", 0},
                          {MIR_T_I64, "is_constant", 0}};
-    c->ext.destruct_var_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_destruct_var"), 1, &res, 4, args);
+    c->ext.destruct_var_proto = ts_mir_new_prefixed_proto(c, "p_destruct_var", 1, &res, 4, args);
     c->ext.destruct_var_import = MIR_new_import(ctx, "ts_mir_destructure_var");
   }
 
@@ -676,7 +679,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_I64, "count", 0},
                          {MIR_T_P, "values", 0}};
     c->ext.destruct_vector_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_destruct_vector"), 1, &res, 5, args);
+        ts_mir_new_prefixed_proto(c, "p_destruct_vector", 1, &res, 5, args);
     c->ext.destruct_vector_import = MIR_new_import(ctx, "ts_mir_destructure_vector");
   }
 
@@ -688,7 +691,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "target", 0},
                          {MIR_T_P, "data", 0},
                          {MIR_T_I64, "len", 0}};
-    c->ext.string_assign_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_string_assign"), 1, &res, 4, args);
+    c->ext.string_assign_proto = ts_mir_new_prefixed_proto(c, "p_string_assign", 1, &res, 4, args);
     c->ext.string_assign_import = MIR_new_import(ctx, "ts_mir_string_assign");
   }
 
@@ -699,14 +702,14 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "target", 0},
                          {MIR_T_P, "node", 0}};
     c->ext.template_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_template_assign"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_template_assign", 1, &res, 3, args);
     c->ext.template_assign_import = MIR_new_import(ctx, "ts_mir_template_assign");
   }
 
   /* ts_mir_define_func(void *ctx, void *node) -> void */
   {
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "node", 0}};
-    c->ext.define_func_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_define_func"), 0, NULL, 2, args);
+    c->ext.define_func_proto = ts_mir_new_prefixed_proto(c, "p_define_func", 0, NULL, 2, args);
     c->ext.define_func_import = MIR_new_import(ctx, "ts_mir_define_func");
   }
 
@@ -719,7 +722,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "member", 0},
                          {MIR_T_P, "cache", 0},
                          {MIR_T_P, "object_node", 0}};
-    c->ext.member_get_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_member_get"), 1, &res, 5, args);
+    c->ext.member_get_proto = ts_mir_new_prefixed_proto(c, "p_member_get", 1, &res, 5, args);
     c->ext.member_get_import = MIR_new_import(ctx, "ts_mir_member_get");
   }
 
@@ -734,7 +737,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "cache", 0},
                          {MIR_T_P, "object_node", 0}};
     c->ext.member_get_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_member_get_assign"), 1, &res, 6, args);
+        ts_mir_new_prefixed_proto(c, "p_member_get_assign", 1, &res, 6, args);
     c->ext.member_get_assign_import = MIR_new_import(ctx, "ts_mir_member_get_assign");
   }
 
@@ -742,7 +745,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_I64;
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}};
-    c->ext.vec_data_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_vec_data"), 1, &res, 2, args);
+    c->ext.vec_data_proto = ts_mir_new_prefixed_proto(c, "p_vec_data", 1, &res, 2, args);
     c->ext.vec_data_import = MIR_new_import(ctx, "ts_mir_vec_data");
   }
 
@@ -750,7 +753,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "obj_name", 0}, {MIR_T_P, "key", 0}};
-    c->ext.map_get_key_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_get_key"), 1, &res, 3, args);
+    c->ext.map_get_key_proto = ts_mir_new_prefixed_proto(c, "p_map_get_key", 1, &res, 3, args);
     c->ext.map_get_key_import = MIR_new_import(ctx, "ts_mir_map_get_key");
   }
 
@@ -763,7 +766,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "node", 0},
                          {MIR_T_I64, "count", 0},
                          {MIR_T_P, "values", 0}};
-    c->ext.map_assign_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_assign"), 1, &res, 5, args);
+    c->ext.map_assign_proto = ts_mir_new_prefixed_proto(c, "p_map_assign", 1, &res, 5, args);
     c->ext.map_assign_import = MIR_new_import(ctx, "ts_mir_map_assign");
   }
 
@@ -773,7 +776,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target", 0}, {MIR_T_P, "node", 0}};
     c->ext.map_value_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_value_assign"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_map_value_assign", 1, &res, 3, args);
     c->ext.map_value_assign_import = MIR_new_import(ctx, "ts_mir_map_value_assign");
   }
 
@@ -781,7 +784,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_I64;
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "obj_name", 0}, {MIR_T_P, "key", 0}};
-    c->ext.map_num_ptr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_num_ptr"), 1, &res, 3, args);
+    c->ext.map_num_ptr_proto = ts_mir_new_prefixed_proto(c, "p_map_num_ptr", 1, &res, 3, args);
     c->ext.map_num_ptr_import = MIR_new_import(ctx, "ts_mir_map_num_ptr");
   }
 
@@ -789,7 +792,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}, {MIR_T_P, "closure_env", 0}};
-    c->ext.load_captured_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_load_captured"), 1, &res, 3, args);
+    c->ext.load_captured_proto = ts_mir_new_prefixed_proto(c, "p_load_captured", 1, &res, 3, args);
     c->ext.load_captured_import = MIR_new_import(ctx, "ts_mir_load_captured_var");
   }
 
@@ -801,7 +804,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "ud", 0},
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
-    c->ext.call_native_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_native"), 1, &res, 5, args);
+    c->ext.call_native_proto = ts_mir_new_prefixed_proto(c, "p_call_native", 1, &res, 5, args);
     c->ext.call_native_import = MIR_new_import(ctx, "ts_mir_call_native");
   }
   /* Frozen Host callsites carry a registry slot, never a mutable name lookup. */
@@ -811,8 +814,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "runtime_ctx", 0},
                          {MIR_T_I64, "slot", 0}, {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
-    c->ext.call_host_slot_proto = MIR_new_proto_arr(
-        ctx, ts_mir_prefixed_item_name(c, "p_call_host_slot"), 1, &res, 5, args);
+    c->ext.call_host_slot_proto = ts_mir_new_prefixed_proto(c, "p_call_host_slot", 1, &res, 5, args);
     c->ext.call_host_slot_import = MIR_new_import(ctx, "ts_mir_call_host_slot");
   }
   /*  ts_mir_call_builtin(void *ctx, void *fn, i64 argc, void *argv) -> double */
@@ -820,7 +822,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_type_t res = MIR_T_D;
     MIR_var_t args[4] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "fn", 0}, {MIR_T_I64, "argc", 0}, {MIR_T_P, "argv", 0}};
-    c->ext.call_builtin_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_builtin"), 1, &res, 4, args);
+    c->ext.call_builtin_proto = ts_mir_new_prefixed_proto(c, "p_call_builtin", 1, &res, 4, args);
     c->ext.call_builtin_import = MIR_new_import(ctx, "ts_mir_call_builtin");
   }
 
@@ -828,7 +830,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   {
     MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "node", 0}};
     c->ext.oop_define_class_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_define_class"), 0, NULL, 2, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_define_class", 0, NULL, 2, args);
     c->ext.oop_define_class_import = MIR_new_import(ctx, "ts_mir_oop_define_class");
   }
 
@@ -838,7 +840,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "target_name", 0}, {MIR_T_P, "source_name", 0}};
     c->ext.oop_alias_class_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_class_alias"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_class_alias", 1, &res, 3, args);
     c->ext.oop_alias_class_import = MIR_new_import(ctx, "ts_mir_oop_class_alias");
   }
 
@@ -851,7 +853,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
     c->ext.oop_new_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_new_assign"), 1, &res, 5, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_new_assign", 1, &res, 5, args);
     c->ext.oop_new_assign_import = MIR_new_import(ctx, "ts_mir_oop_new_assign");
   }
 
@@ -866,7 +868,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
     c->ext.oop_member_call_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call"), 1, &res, 6, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call", 1, &res, 6, args);
     c->ext.oop_member_call_import = MIR_new_import(ctx, "ts_mir_oop_member_call");
   }
 
@@ -883,7 +885,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
     c->ext.oop_member_call_cached_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call_cached"), 1, &res, 7, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call_cached", 1, &res, 7, args);
     c->ext.oop_member_call_cached_import = MIR_new_import(ctx, "ts_mir_oop_member_call_cached");
   }
 
@@ -901,7 +903,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_I64, "argc", 0},
                          {MIR_T_P, "argv", 0}};
     c->ext.oop_member_call_assign_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call_assign"), 1, &res, 8, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call_assign", 1, &res, 8, args);
     c->ext.oop_member_call_assign_import =
         MIR_new_import(ctx, "ts_mir_oop_member_call_assign");
   }
@@ -916,7 +918,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "object_node", 0},
                          {MIR_T_P, "call_node", 0}};
     c->ext.oop_member_call_value_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call_value"), 1, &res, 5, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call_value", 1, &res, 5, args);
     c->ext.oop_member_call_value_import =
         MIR_new_import(ctx, "ts_mir_oop_member_call_value");
   }
@@ -933,7 +935,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "object_node", 0},
                          {MIR_T_P, "call_node", 0}};
     c->ext.oop_member_call_mono_value_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call_mono_value"), 1, &res, 6, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call_mono_value", 1, &res, 6, args);
     c->ext.oop_member_call_mono_value_import =
         MIR_new_import(ctx, "ts_mir_oop_member_call_mono_value");
   }
@@ -950,7 +952,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "object_node", 0},
                          {MIR_T_P, "call_node", 0}};
     c->ext.oop_member_call_assign_value_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_call_assign_value"), 1, &res, 6, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_call_assign_value", 1, &res, 6, args);
     c->ext.oop_member_call_assign_value_import =
         MIR_new_import(ctx, "ts_mir_oop_member_call_assign_value");
   }
@@ -965,7 +967,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "cache", 0},
                          {MIR_T_P, "object_node", 0}};
     c->ext.oop_member_get_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_get"), 1, &res, 5, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_get", 1, &res, 5, args);
     c->ext.oop_member_get_import = MIR_new_import(ctx, "ts_mir_oop_member_get");
   }
 
@@ -980,7 +982,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "object_node", 0},
                          {MIR_T_D, "value", 0}};
     c->ext.oop_member_set_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_member_set"), 1, &res, 6, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_member_set", 1, &res, 6, args);
     c->ext.oop_member_set_import = MIR_new_import(ctx, "ts_mir_oop_member_set");
   }
 
@@ -994,7 +996,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "object_node", 0},
                          {MIR_T_I64, "create_if_missing", 0},
                          {MIR_T_P, "slot_cache", 0}};
-    c->ext.oop_num_ptr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_num_ptr"), 1, &res, 6, args);
+    c->ext.oop_num_ptr_proto = ts_mir_new_prefixed_proto(c, "p_oop_num_ptr", 1, &res, 6, args);
     c->ext.oop_num_ptr_import = MIR_new_import(ctx, "ts_mir_oop_num_ptr");
   }
 
@@ -1004,7 +1006,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     MIR_var_t args[3] = {
         {MIR_T_P, "ctx", 0}, {MIR_T_P, "object_name", 0}, {MIR_T_P, "class_name", 0}};
     c->ext.oop_instanceof_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_instanceof"), 1, &res, 3, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_instanceof", 1, &res, 3, args);
     c->ext.oop_instanceof_import = MIR_new_import(ctx, "ts_mir_oop_instanceof");
   }
 
@@ -1018,7 +1020,7 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
                          {MIR_T_P, "member", 0},
                          {MIR_T_P, "object_node", 0}};
     c->ext.oop_predicate_proto =
-        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_predicate"), 1, &res, 5, args);
+        ts_mir_new_prefixed_proto(c, "p_oop_predicate", 1, &res, 5, args);
     c->ext.oop_predicate_import = MIR_new_import(ctx, "ts_mir_oop_predicate");
   }
 }
