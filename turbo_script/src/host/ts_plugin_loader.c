@@ -423,6 +423,14 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   free(candidate);
   free(plugins_dir);
   if (!module) {
+    const char *root = getenv("TURBOSCRIPT_ROOT");
+    plugins_dir = root && *root ? join_path_posix(root, "bin/plugins") : NULL;
+    candidate = plugins_dir ? join_path_posix(plugins_dir, path) : NULL;
+    if (candidate) module = open_exact_posix(candidate);
+    free(candidate);
+    free(plugins_dir);
+  }
+  if (!module) {
     candidate = join_path_posix(exe_dir, path);
     if (candidate) module = open_exact_posix(candidate);
     if (!module) {
