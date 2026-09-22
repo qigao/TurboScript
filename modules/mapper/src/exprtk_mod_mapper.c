@@ -356,6 +356,8 @@ static int mapper_json_from_value(const exprtk_value_t *value, json_value_t **ou
     }
 }
 
+static void mapper_free_text(char *text) { free(text); }
+
 static exprtk_value_t mapper_return_text(exprtk_env_t *env, char *text, size_t len,
                                          void (*free_fn)(char *)) {
     exprtk_value_t result;
@@ -576,7 +578,7 @@ static exprtk_value_t fn_write_yaml(size_t argc, exprtk_value_t *args,
     if (!yaml) return mapper_error(env, "mapper.write_yaml: conversion failed");
     text = cyaml_emit(yaml, NULL, &len);
     cyaml_free(yaml);
-    return mapper_return_text(env, text, len, free);
+    return mapper_return_text(env, text, len, mapper_free_text);
 }
 
 static int mapper_xml_add_value(salts_xml_node parent, const char *name,

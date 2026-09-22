@@ -1,14 +1,14 @@
 # TurboScript.Native
 
-嵌入式 C/C++ SDK，保留 MIR 解释器和 JIT，不附带 CLI 与原生扩展模块。
+嵌入式 C/C++ SDK，保留 MIR 解释器和 JIT，包含原生扩展模块（含 Praktor 需要的 os/net），不附带 CLI。
 SDK 目录：`sdk/linux-x64`、`sdk/macos-arm64`、`sdk/android-arm64-v8a`。
-依赖 NuGet 包 Salts.Native 1.2.0 和 SaltsUtils.Native 2.0.2。
+依赖 NuGet 包 Salts.Native 1.2.0、SaltsUtils.Native 2.0.2、CHttp.Native 1.0.0。
 
-还原包后设置 `SALTS_ROOT`、`SALTS_UTILS_ROOT` 和包含三个 SDK 目录的
+还原包后设置 `SALTS_ROOT`、`SALTS_UTILS_ROOT`、`CHTTP_ROOT`、`TURBOSCRIPT_ROOT` 和包含各 SDK 目录的
 `CMAKE_PREFIX_PATH`，使用 `find_package(TurboScript CONFIG REQUIRED)` 与
 `TurboScript::TurboScript`。第三方依赖继续由共享 vcpkg 工具链提供。
 
-Linux/macOS 验证重新解包后的 C 与 C++ 消费端解释执行、JIT 执行和结果值。
+Linux/macOS 验证重新解包后的 C 与 C++ 消费端解释执行、JIT 执行、os/net 模块加载和结果值。
 Android 使用 NDK API 26、c++_shared，验证 ELF 架构及 C/C++ 消费端交叉链接；
 不把交叉编译成功当作设备运行验证。应用需自行部署 libc++_shared.so 和依赖动态库。
 
