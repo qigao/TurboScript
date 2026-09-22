@@ -116,3 +116,8 @@ write_basic_config_version_file(
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
               ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfigVersion.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/TurboScript)
+
+install(FILES LICENSE NOTICE THIRD_PARTY_NOTICES.md
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/TurboScript)
+install(FILES vendor/mir/LICENSE
+        DESTINATION ${CMAKE_INSTALL_DATADIR}/TurboScript/licenses/MIR)
