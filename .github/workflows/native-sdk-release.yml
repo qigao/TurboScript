@@ -79,7 +79,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          args=()
+          args=(-DCMAKE_BUILD_TYPE=Release)
           if [[ "$RID" == android-arm64-v8a ]]; then
             mkdir -p build/host
             cc tools/lemon/lemon.c -o build/host/lemon
@@ -121,7 +121,7 @@ jobs:
           prefix="$relocated/$RID"
           export LD_LIBRARY_PATH="$prefix/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/$TRIPLET/lib"
           export DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-          args=()
+          args=(-DCMAKE_BUILD_TYPE=Release)
           if [[ "$RID" == android-arm64-v8a ]]; then
             args+=( -DCMAKE_SYSTEM_NAME=Android
               "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
@@ -129,6 +129,7 @@ jobs:
           fi
           cmake -S cmake/ci/sdk-smoke -B build/sdk-smoke -G Ninja -DCMAKE_BUILD_TYPE=Release \
             "-DCMAKE_PREFIX_PATH=$prefix;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
+            "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
             "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
             "-DVCPKG_TARGET_TRIPLET=$TRIPLET" -DVCPKG_MANIFEST_MODE=OFF \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" "${args[@]}"
