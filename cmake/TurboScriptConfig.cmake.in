@@ -3,8 +3,8 @@
 include(CMakeFindDependencyMacro)
 
 find_dependency(Threads)
-find_dependency(Salts CONFIG REQUIRED)
-find_dependency(SaltsUtils CONFIG REQUIRED)
+find_dependency(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_CMAKE_FIND_ROOT_PATH)
+find_dependency(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}" NO_CMAKE_FIND_ROOT_PATH)
 
 set_and_check(TurboScript_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 set_and_check(TurboScript_LIBRARY_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")
