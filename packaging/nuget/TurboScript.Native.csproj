@@ -5,7 +5,7 @@
     <IncludeBuildOutput>false</IncludeBuildOutput>
     <PackageId>TurboScript.Native</PackageId>
     <Authors>qigao</Authors>
-    <Description>TurboScript embedded MIR interpreter/JIT SDK for Linux x64, macOS arm64 and Android arm64-v8a. Bundled modules and CLI are excluded.</Description>
+    <Description>TurboScript MIR interpreter/JIT and native module SDK for Linux x64, macOS arm64 and Android arm64-v8a. Bundled native modules are included; CLI is excluded.</Description>
     <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <RepositoryUrl>https://github.com/qigao/TurboScript</RepositoryUrl>
@@ -15,6 +15,7 @@
   <ItemGroup>
     <PackageReference Include="Salts.Native" Version="[1.2.0]" />
     <PackageReference Include="SaltsUtils.Native" Version="[2.0.2]" />
+    <PackageReference Include="CHttp.Native" Version="[1.0.0]" />
     <None Include="README.md" Pack="true" PackagePath="/" />
     <None Include="$(PackageRoot)/sdk/**/*" Pack="true" PackagePath="sdk/" />
   </ItemGroup>
