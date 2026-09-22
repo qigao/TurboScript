@@ -64,7 +64,7 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
           ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::DataBind Salts::DateTimeParser)
+target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::Databind Salts::DateTimeParser)
 
 add_library(
   ${TARGET_NAME} STATIC
@@ -92,14 +92,19 @@ target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser
+  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::Databind Salts::DateTimeParser
   PRIVATE Salts::CSTL Salts::Mustache miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
-if(MSVC)
-  target_compile_options(${TARGET_NAME} PRIVATE /arch:AVX2)
-else()
-  target_compile_options(${TARGET_NAME} PRIVATE -mavx2 -mfma)
+if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64|amd64|i.86)$")
+  if(MSVC)
+    target_compile_options(${TARGET_NAME} PRIVATE /arch:AVX2)
+  else()
+    target_compile_options(${TARGET_NAME} PRIVATE -mavx2 -mfma)
+  endif()
+endif()
+if(UNIX)
+  target_link_libraries(${TARGET_NAME} PUBLIC m)
 endif()
 
 set_target_properties(

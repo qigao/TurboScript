@@ -1,0 +1,211 @@
+name: TurboScript native SDK release
+on:
+  pull_request:
+  push:
+    branches: [master]
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+concurrency:
+  group: turboscript-sdk-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  metadata:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          version="$(awk '/^[[:space:]]*VERSION [0-9]/{print $2; exit}' CMakeLists.txt)"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+  build:
+    needs: metadata
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {runner: ubuntu-24.04, rid: linux-x64, triplet: x64-linux}
+          - {runner: macos-15, rid: macos-arm64, triplet: arm64-osx}
+          - {runner: ubuntu-24.04, rid: android-arm64-v8a, triplet: arm64-android}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      RID: ${{ matrix.rid }}
+      TRIPLET: ${{ matrix.triplet }}
+      SDK_VERSION: ${{ needs.metadata.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+        with:
+          mode: read
+      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Prepare tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            sudo apt-get update
+            sudo apt-get install -y ninja-build pkg-config nasm
+          else
+            brew install ninja nasm
+          fi
+          if [[ "$RID" == macos-arm64 ]]; then test "$(uname -m)" = arm64; fi
+      - name: Restore dependency SDKs
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/sdk-nuget.config"
+          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
+          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
+            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
+          packages="$RUNNER_TEMP/native-dependencies"
+          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
+          echo "SALTS_ROOT=$packages/salts.native/1.2.0/sdk/$RID" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/2.0.2/sdk/$RID" >> "$GITHUB_ENV"
+      - name: Configure, build and install embedded SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=()
+          if [[ "$RID" == android-arm64-v8a ]]; then
+            mkdir -p build/host
+            cc tools/lemon/lemon.c -o build/host/lemon
+            args+=( -DCMAKE_SYSTEM_NAME=Android
+              "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared
+              "-DTURBOSCRIPT_HOST_LEMON_EXECUTABLE=$GITHUB_WORKSPACE/build/host/lemon" )
+          fi
+          cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DVCPKG_TARGET_TRIPLET=$TRIPLET" "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            "-DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/stage/$RID" \
+            -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
+            -DTURBOSCRIPT_BUILD_MODULES=OFF -DTURBOSCRIPT_BUILD_CLI=OFF "${args[@]}"
+          cmake --build build/sdk --parallel 2
+          cmake --install build/sdk
+          cat > "stage/$RID/turboscript-sdk-manifest.txt" <<EOF
+          version=$SDK_VERSION
+          commit=$(git rev-parse HEAD)
+          rid=$RID
+          profile=Release
+          interpreter=MIR
+          jit=MIR
+          modules=OFF
+          cli=OFF
+          salts=1.2.0
+          salts_utils=2.0.2
+          EOF
+          mkdir -p dist
+          tar -chzf "dist/turboscript-$RID.tar.gz" -C stage "$RID"
+      - name: Verify relocated SDK consumer
+        shell: bash
+        run: |
+          set -euo pipefail
+          relocated="$RUNNER_TEMP/turboscript-sdk"
+          mkdir -p "$relocated"
+          tar -xzf "dist/turboscript-$RID.tar.gz" -C "$relocated"
+          mv stage stage-hidden
+          prefix="$relocated/$RID"
+          export LD_LIBRARY_PATH="$prefix/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/$TRIPLET/lib"
+          export DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
+          args=()
+          if [[ "$RID" == android-arm64-v8a ]]; then
+            args+=( -DCMAKE_SYSTEM_NAME=Android
+              "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
+              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared )
+          fi
+          cmake -S cmake/ci/sdk-smoke -B build/sdk-smoke -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_PREFIX_PATH=$prefix;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DVCPKG_TARGET_TRIPLET=$TRIPLET" -DVCPKG_MANIFEST_MODE=OFF \
+            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" "${args[@]}"
+          cmake --build build/sdk-smoke --parallel 2
+          if [[ "$RID" == android-arm64-v8a ]]; then
+            readelf -h "$prefix/lib/libturbo_script.so" | tee "$RUNNER_TEMP/elf-header.txt"
+            grep -q 'AArch64' "$RUNNER_TEMP/elf-header.txt"
+            echo 'Android: cross-link validated; device runtime not exercised.' >> "$GITHUB_STEP_SUMMARY"
+          else
+            ctest --test-dir build/sdk-smoke --no-tests=error --output-on-failure
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: turboscript-sdk-${{ matrix.rid }}
+          path: dist/*.tar.gz
+          if-no-files-found: error
+  pack:
+    needs: [metadata, build]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: turboscript-sdk-*
+          merge-multiple: true
+          path: dist
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Pack SDK graph
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SDK_VERSION: ${{ needs.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p package/sdk
+          for rid in linux-x64 macos-arm64 android-arm64-v8a; do
+            tar -xzf "dist/turboscript-$rid.tar.gz" -C package/sdk
+            test -f "package/sdk/$rid/lib/cmake/TurboScript/TurboScriptConfig.cmake"
+          done
+          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
+            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text
+          dotnet pack packaging/nuget/TurboScript.Native.csproj --configuration Release --output dist \
+            "-p:PackageVersion=$SDK_VERSION" "-p:PackageRoot=$GITHUB_WORKSPACE/package"
+          unzip -Z1 "dist/TurboScript.Native.$SDK_VERSION.nupkg" > "$RUNNER_TEMP/package-files.txt"
+          for rid in linux-x64 macos-arm64 android-arm64-v8a; do
+            grep -Fx "sdk/$rid/include/turbo_script.h" "$RUNNER_TEMP/package-files.txt"
+            grep -Fx "sdk/$rid/lib/cmake/TurboScript/TurboScriptTargets.cmake" "$RUNNER_TEMP/package-files.txt"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: turboscript-native-nuget
+          path: dist/*.nupkg
+          if-no-files-found: error
+  publish:
+    needs: [metadata, pack]
+    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: turboscript-native-nuget
+          path: dist
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Publish qualified SDK
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SDK_VERSION: ${{ needs.metadata.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
+            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text
+          dotnet nuget push "dist/TurboScript.Native.$SDK_VERSION.nupkg" --source github --api-key "$GITHUB_TOKEN"

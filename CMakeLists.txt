@@ -47,7 +47,9 @@ find_package(Threads REQUIRED)
 find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
 find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH)
-find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+if(TURBOSCRIPT_BUILD_MODULES)
+  find_package(Chttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+endif()
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
@@ -60,7 +62,9 @@ add_subdirectory(miniblas)
 
 add_subdirectory(exprtk)
 add_subdirectory(turbo_script)
-add_subdirectory(modules)
+if(TURBOSCRIPT_BUILD_MODULES)
+  add_subdirectory(modules)
+endif()
 
 # Package Configuration
 include(CMakePackageConfigHelpers)
@@ -73,6 +77,7 @@ install(
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+if(TURBOSCRIPT_BUILD_MODULES)
 install(
   TARGETS net_tbs
           ta_tbs
@@ -88,6 +93,7 @@ install(
   LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
+endif()
 
 install(
   EXPORT TurboScriptTargets
