@@ -125,6 +125,14 @@ add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
 cmake_add_test(
+  TARGET test_turbo_script_cmeta_bridge
+  SOURCES test_turbo_script_cmeta_bridge.c
+  LIBS turbo_script_lib Salts::TinyTest Salts::CMeta exprtk
+  INCLUDES ${CMAKE_SOURCE_DIR}/exprtk/include
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
+  FOLDER turbo_script)
+
+cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta mir_static

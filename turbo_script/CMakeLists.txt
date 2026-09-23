@@ -16,6 +16,8 @@ target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PRIVATE Salts::Core)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
+  src/graph/turbo_script_cmeta_bridge.c
+  src/graph/turbo_script_cmeta_bridge.h
   src/host/turbo_script_host_instance.c
   src/host/turbo_script_host_limits.c
   src/host/turbo_script_host_module.c
@@ -62,12 +64,13 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>
   PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
           ${CMAKE_SOURCE_DIR}/exprtk/src
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/graph
           ${CMAKE_CURRENT_SOURCE_DIR}/src/host
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # internal compiler/backend headers
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core Salts::Databind
   PRIVATE Salts::Cron Salts::Coroutine)
 
@@ -96,8 +99,9 @@ target_include_directories(
          $<INSTALL_INTERFACE:include>
   PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
           ${CMAKE_SOURCE_DIR}/exprtk/src
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/graph
           ${CMAKE_CURRENT_SOURCE_DIR}/src/host
-          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
+          ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # internal compiler/backend headers
 
 target_compile_definitions(
   ${TARGET_NAME}
@@ -106,7 +110,7 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core
   PRIVATE Salts::Cron Salts::Coroutine)
 
