@@ -72,6 +72,76 @@ static bool ts_cflow_lower_node(const exprtk_node_t *expr,
     return true;
   }
 
+  if (expr->type == EXPRTK_NODE_MEMBER_CALL &&
+      expr->data.member_call.method) {
+    const exprtk_node_t *object = expr->data.member_call.object;
+    name = expr->data.member_call.method;
+
+    /* vector.stream() is a language facade boundary, not a graph node. */
+    if (strcmp(name, "stream") == 0) {
+      if (expr->data.member_call.arg_count != 0u) {
+        if (error) *error = "stream() pipeline source takes no arguments";
+        return false;
+      }
+      return ts_cflow_lower_node(object, out, error);
+    }
+
+    /* stream.of(vector) is represented by the parser as a module-style
+     * member call on the 'stream' namespace. */
+    if (strcmp(name, "of") == 0 && object &&
+        object->type == EXPRTK_NODE_VARIABLE &&
+        object->data.variable.name &&
+        strcmp(object->data.variable.name, "stream") == 0) {
+      if (expr->data.member_call.arg_count != 1u) {
+        if (error) *error = "stream.of() requires exactly one source";
+        return false;
+      }
+      return ts_cflow_lower_node(expr->data.member_call.args[0], out, error);
+    }
+
+    if (strcmp(name, "filter") == 0) {
+      if (expr->data.member_call.arg_count != 1u) {
+        if (error) *error = "stream filter requires one predicate";
+        return false;
+      }
+      if (!ts_cflow_lower_node(object, out, error))
+        return false;
+      return ts_cflow_append_callable(out, expr->data.member_call.args[0],
+                                      TS_CMETA_LAMBDA_FILTER,
+                                      CFLOW_OP_FILTER, error);
+    }
+
+    if (strcmp(name, "map") == 0) {
+      if (expr->data.member_call.arg_count != 1u) {
+        if (error) *error = "stream map requires one mapper";
+        return false;
+      }
+      if (!ts_cflow_lower_node(object, out, error))
+        return false;
+      return ts_cflow_append_callable(out, expr->data.member_call.args[0],
+                                      TS_CMETA_LAMBDA_MAP,
+                                      CFLOW_OP_MAP, error);
+    }
+
+    if (strcmp(name, "reduce") == 0) {
+      if (expr->data.member_call.arg_count != 2u) {
+        if (error) *error = "stream reduce requires seed and reducer";
+        return false;
+      }
+      if (!ts_cflow_lower_node(object, out, error))
+        return false;
+      out->reduce_seed_expr = expr->data.member_call.args[0];
+      out->has_reduce_seed = true;
+      return ts_cflow_append_callable(out, expr->data.member_call.args[1],
+                                      TS_CMETA_LAMBDA_REDUCE,
+                                      CFLOW_OP_REDUCE, error);
+    }
+
+    if (error) *error =
+        "member call is not part of the first CFlow pipeline slice";
+    return false;
+  }
+
   if (expr->type != EXPRTK_NODE_FUNCTION_CALL ||
       !expr->data.function.name) {
     if (error) *error =
