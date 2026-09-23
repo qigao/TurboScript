@@ -16,6 +16,8 @@ target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PRIVATE Salts::Core)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
+  src/graph/turbo_script_cflow_lower.c
+  src/graph/turbo_script_cflow_lower.h
   src/graph/turbo_script_cmeta_bridge.c
   src/graph/turbo_script_cmeta_bridge.h
   src/host/turbo_script_host_instance.c
@@ -70,7 +72,7 @@ target_include_directories(
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta Salts::CFlow ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core Salts::Databind
   PRIVATE Salts::Cron Salts::Coroutine)
 
@@ -110,7 +112,7 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk mir_static Salts::CSTL Salts::CMeta Salts::CFlow ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core
   PRIVATE Salts::Cron Salts::Coroutine)
 
