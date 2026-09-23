@@ -64,6 +64,57 @@ describe(cflow_pipeline_lowering) {
     exprtk_free(root);
   }
 
+  it("lowers vector stream method chains into the same CFlow topology") {
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *expr = ts_test_single_expr(
+        "[1, -2, 3, 0].stream()"
+        ".filter(x => x > 0)"
+        ".map(x => x * 10)"
+        ".reduce(0, (acc, x) => acc + x)",
+        &root);
+    ts_cflow_lowered_pipeline_t lowered;
+    const cflow_subgraph *sg;
+    const char *error = NULL;
+
+    check_not_null(expr);
+    check_true(ts_cflow_lower_pipeline(expr, &lowered, &error));
+    check_null(error);
+    check_true(lowered.has_reduce_seed);
+
+    sg = cflow_graph_subgraph(&lowered.graph, lowered.graph.root);
+    check_not_null(sg);
+    check((sg->node_count) == (4u));
+    check((sg->nodes[0].op) == (CFLOW_OP_INPUT));
+    check((sg->nodes[1].op) == (CFLOW_OP_FILTER));
+    check((sg->nodes[2].op) == (CFLOW_OP_MAP));
+    check((sg->nodes[3].op) == (CFLOW_OP_REDUCE));
+
+    ts_cflow_lowered_pipeline_destroy(&lowered);
+    exprtk_free(root);
+  }
+
+  it("lowers stream.of numeric vectors as CFlow sources") {
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *expr = ts_test_single_expr(
+        "stream.of([1, 2, 3]).map(x => x * 2)", &root);
+    ts_cflow_lowered_pipeline_t lowered;
+    const cflow_subgraph *sg;
+    const char *error = NULL;
+
+    check_not_null(expr);
+    check_true(ts_cflow_lower_pipeline(expr, &lowered, &error));
+    check_null(error);
+
+    sg = cflow_graph_subgraph(&lowered.graph, lowered.graph.root);
+    check_not_null(sg);
+    check((sg->node_count) == (2u));
+    check((sg->nodes[0].op) == (CFLOW_OP_INPUT));
+    check((sg->nodes[1].op) == (CFLOW_OP_MAP));
+
+    ts_cflow_lowered_pipeline_destroy(&lowered);
+    exprtk_free(root);
+  }
+
   it("retains the TurboScript reduce seed outside the unseeded CFlow fold") {
     exprtk_node_t *root = NULL;
     exprtk_node_t *expr = ts_test_single_expr(
