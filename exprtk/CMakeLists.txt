@@ -64,7 +64,7 @@ target_include_directories(
   PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/parser ${CMAKE_CURRENT_BINARY_DIR}
           ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::DataBind Salts::DateTimeParser)
+target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::DataBind Salts::DateTimeParser Salts::CMeta)
 if(UNIX)
   target_link_libraries(exprtk_syntax PRIVATE m)
 endif()
@@ -95,7 +95,7 @@ target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser
+  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser Salts::CMeta
   PRIVATE Salts::CSTL Salts::Mustache miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations

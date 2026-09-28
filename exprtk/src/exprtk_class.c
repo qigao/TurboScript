@@ -35,6 +35,31 @@ typedef struct {
 
 static uint64_t next_class_type_id = 1;
 
+static void class_invalidate_cmeta(exprtk_class_t *klass) {
+    if (klass) klass->cmeta_ready = 0;
+}
+
+static uint64_t class_cmeta_hash_byte(uint64_t hash, unsigned char byte) {
+    hash ^= (uint64_t)byte;
+    return hash * UINT64_C(1099511628211);
+}
+
+static uint64_t class_cmeta_hash_u64(uint64_t hash, uint64_t value) {
+    for (unsigned int shift = 0; shift < 64; shift += 8)
+        hash = class_cmeta_hash_byte(
+            hash, (unsigned char)((value >> shift) & UINT64_C(0xff)));
+    return hash;
+}
+
+static uint64_t class_cmeta_hash_string(uint64_t hash, const char *text) {
+    if (text) {
+        for (const unsigned char *p = (const unsigned char *)text; *p; ++p)
+            hash = class_cmeta_hash_byte(hash, *p);
+    }
+    /* Delimit adjacent strings so ["ab","c"] != ["a","bc"]. */
+    return class_cmeta_hash_byte(hash, 0xffu);
+}
+
 /*
  * The class runtime keeps its public storage opaque, but owns the raw CSTL
  * maps below.  Keys are borrowed `char *` values whose lifetime is owned by
@@ -725,6 +750,7 @@ static int class_append_instance_field(exprtk_class_t *klass, const char *name,
                                        size_t *out_index) {
     size_t index = 0;
     if (!klass || !name) return 0;
+    class_invalidate_cmeta(klass);
     if (class_find_instance_field_index(klass, name, &index)) {
         if (update_existing && klass->instance_field_access_levels)
             klass->instance_field_access_levels[index] = access_level;
@@ -1073,6 +1099,10 @@ exprtk_class_t *exprtk_class_create(
     klass->is_abstract = 0;
     klass->is_interface = 0;
     klass->is_final = 0;
+    klass->cmeta_stable_id = NULL;
+    memset(&klass->cmeta_identity, 0, sizeof(klass->cmeta_identity));
+    memset(&klass->cmeta_type, 0, sizeof(klass->cmeta_type));
+    klass->cmeta_ready = 0;
     klass->arena = arena;
 
     return klass;
@@ -1132,28 +1162,33 @@ exprtk_class_t *exprtk_class_clone_to_arena(exprtk_class_t *klass, mem_pool_t *a
     copy->is_final = klass->is_final;
     copy->type_id = klass->type_id;
 
+    if (!exprtk_class_finalize_cmeta(copy)) return NULL;
     return copy;
 }
 
 void exprtk_class_set_prototype(exprtk_class_t *klass, exprtk_class_t *parent) {
     if (!klass) return;
+    class_invalidate_cmeta(klass);
     klass->prototype = parent;
     class_sync_prototype_instance_fields(klass);
 }
 
 void exprtk_class_set_abstract(exprtk_class_t *klass, int is_abstract) {
     if (!klass) return;
+    class_invalidate_cmeta(klass);
     klass->is_abstract = is_abstract ? 1 : 0;
 }
 
 void exprtk_class_set_interface(exprtk_class_t *klass, int is_interface) {
     if (!klass) return;
+    class_invalidate_cmeta(klass);
     klass->is_interface = is_interface ? 1 : 0;
     if (klass->is_interface) klass->is_abstract = 1;
 }
 
 void exprtk_class_set_final(exprtk_class_t *klass, int is_final) {
     if (!klass) return;
+    class_invalidate_cmeta(klass);
     klass->is_final = is_final ? 1 : 0;
 }
 
@@ -1163,6 +1198,7 @@ int exprtk_class_is_final(exprtk_class_t *klass) {
 
 void exprtk_class_add_interface(exprtk_class_t *klass, exprtk_class_t *interface_class) {
     if (!klass || !interface_class) return;
+    class_invalidate_cmeta(klass);
 
     for (size_t i = 0; i < klass->interface_count; ++i) {
         if (klass->interfaces[i] == interface_class) return;
@@ -1916,6 +1952,95 @@ int exprtk_class_is_abstract(exprtk_class_t *klass) {
 
 int exprtk_class_is_interface(exprtk_class_t *klass) {
     return klass && klass->is_interface;
+}
+
+int exprtk_class_finalize_cmeta(exprtk_class_t *klass) {
+    uint64_t hash = UINT64_C(1469598103934665603);
+    int needed;
+    char *stable_id;
+
+    if (!klass || !klass->arena || !klass->name) return 0;
+    if (klass->cmeta_ready == 1) return 1;
+    if (klass->cmeta_ready < 0) return 0; /* inheritance/interface cycle */
+
+    klass->cmeta_ready = -1;
+    hash = class_cmeta_hash_string(hash, "turboscript.class.v1");
+    hash = class_cmeta_hash_string(hash, klass->name);
+    hash = class_cmeta_hash_u64(hash, (uint64_t)(klass->is_abstract ? 1u : 0u));
+    hash = class_cmeta_hash_u64(hash, (uint64_t)(klass->is_interface ? 1u : 0u));
+    hash = class_cmeta_hash_u64(hash, (uint64_t)(klass->is_final ? 1u : 0u));
+
+    if (klass->prototype) {
+        const cmeta_type_desc *parent_type;
+        if (!exprtk_class_finalize_cmeta(klass->prototype)) goto fail;
+        parent_type = exprtk_class_cmeta_type(klass->prototype);
+        if (!parent_type || !parent_type->identity ||
+            !parent_type->identity->stable_atom_id) goto fail;
+        hash = class_cmeta_hash_string(
+            hash, parent_type->identity->stable_atom_id);
+    } else {
+        hash = class_cmeta_hash_string(hash, NULL);
+    }
+
+    hash = class_cmeta_hash_u64(hash, (uint64_t)klass->interface_count);
+    for (size_t i = 0; i < klass->interface_count; ++i) {
+        const cmeta_type_desc *interface_type;
+        if (!exprtk_class_finalize_cmeta(klass->interfaces[i])) goto fail;
+        interface_type = exprtk_class_cmeta_type(klass->interfaces[i]);
+        if (!interface_type || !interface_type->identity ||
+            !interface_type->identity->stable_atom_id) goto fail;
+        hash = class_cmeta_hash_string(
+            hash, interface_type->identity->stable_atom_id);
+    }
+
+    hash = class_cmeta_hash_u64(hash, (uint64_t)klass->instance_field_count);
+    for (size_t i = 0; i < klass->instance_field_count; ++i) {
+        hash = class_cmeta_hash_string(hash, klass->instance_field_names[i]);
+        hash = class_cmeta_hash_string(
+            hash, klass->instance_field_types
+                      ? klass->instance_field_types[i]
+                      : NULL);
+        hash = class_cmeta_hash_u64(
+            hash, (uint64_t)(klass->instance_field_access_levels
+                                 ? klass->instance_field_access_levels[i]
+                                 : EXPRTK_ACCESS_PUBLIC));
+    }
+
+    needed = snprintf(NULL, 0, "turboscript.class.%s.%016llx",
+                      klass->name, (unsigned long long)hash);
+    if (needed < 0) goto fail;
+    stable_id = (char *)mem_alloc(klass->arena, (size_t)needed + 1u);
+    if (!stable_id) goto fail;
+    snprintf(stable_id, (size_t)needed + 1u, "turboscript.class.%s.%016llx",
+             klass->name, (unsigned long long)hash);
+
+    klass->cmeta_stable_id = stable_id;
+    klass->cmeta_identity.form = CMETA_TYPE_ATOM;
+    klass->cmeta_identity.stable_atom_id = stable_id;
+    klass->cmeta_identity.constructor = NULL;
+    klass->cmeta_identity.base = NULL;
+    klass->cmeta_identity.args = NULL;
+    klass->cmeta_identity.arity = 0u;
+
+    klass->cmeta_type.name = klass->name;
+    klass->cmeta_type.size = sizeof(exprtk_instance_t);
+    klass->cmeta_type.align = _Alignof(exprtk_instance_t);
+    klass->cmeta_type.kind = CMETA_T_OBJECT;
+    klass->cmeta_type.pointee = NULL;
+    klass->cmeta_type.traits = NULL;
+    klass->cmeta_type.identity = &klass->cmeta_identity;
+
+    if (!cmeta_type_desc_valid(&klass->cmeta_type)) goto fail;
+    klass->cmeta_ready = 1;
+    return 1;
+
+fail:
+    klass->cmeta_ready = 0;
+    return 0;
+}
+
+const cmeta_type_desc *exprtk_class_cmeta_type(const exprtk_class_t *klass) {
+    return klass && klass->cmeta_ready == 1 ? &klass->cmeta_type : NULL;
 }
 
 void exprtk_class_destroy(exprtk_class_t *klass) {
