@@ -38,6 +38,7 @@ typedef struct ts_mir_externals_s ts_mir_externals_t;
 typedef struct ts_mir_var_entry_s ts_mir_var_entry_t;
 typedef struct ts_mir_compile_frame_s ts_mir_compile_frame_t;
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
+typedef struct ts_mir_owned_string_block_s ts_mir_owned_string_block_t;
 
 typedef int (*ts_mir_host_export_fn)(turbo_script_ctx_t *runtime_ctx, const exprtk_value_t *args,
                                      size_t arg_count, exprtk_value_t *out_value);
@@ -242,6 +243,13 @@ typedef struct {
   const char *class_name;
 } ts_mir_class_type_entry_t;
 
+struct ts_mir_owned_string_block_s {
+  char **items;
+  size_t count;
+  size_t capacity;
+  ts_mir_owned_string_block_t *next;
+};
+
 typedef struct {
   char *name;
   exprtk_function_reflection_t reflection;
@@ -350,10 +358,8 @@ struct ts_mir_compiler_s {
   int builtin_admission_capacity;
 
   // Strings embedded as MIR immediates. Frames borrow these pointers; ownership
-  // remains here until transferred to the finished MIR artifact.
-  char **owned_strings;
-  size_t owned_string_count;
-  size_t owned_string_capacity;
+  // remains here until this block is transferred to the MIR lifetime owner.
+  ts_mir_owned_string_block_t *owned_string_block;
 };
 
 int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
@@ -415,8 +421,8 @@ const exprtk_function_reflection_t *ts_mir_admit_builtin(
 ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c);
 void ts_mir_begin_isolated_compile(ts_mir_compiler_t *c);
 void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *frame);
-void ts_mir_take_owned_strings(ts_mir_compiler_t *c, char ***out_strings,
-                               size_t *out_count);
+ts_mir_owned_string_block_t *ts_mir_take_owned_strings(ts_mir_compiler_t *c);
+void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block);
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);
