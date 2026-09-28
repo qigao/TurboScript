@@ -22,8 +22,8 @@ is admission control, not process isolation.
 
 ## Build and test
 
-The build expects installed Salts and SaltsUtils packages plus the vcpkg
-dependencies declared in `vcpkg.json`. Configure their
+The build requires the installed Salts 1.7.12 and SaltsUtils 4.0.3 packages plus
+the vcpkg dependencies declared in `vcpkg.json`. Configure their
 locations in a local `CMakeUserPresets.json`, then use the repository presets:
 
 ```text

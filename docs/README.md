@@ -67,8 +67,8 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 
 ## 📦 Installation
 
-The source build requires installed Salts and SaltsUtils packages plus the
-dependencies in `vcpkg.json`. Configure their
+The source build requires installed Salts 1.7.12 and SaltsUtils 4.0.3 packages
+plus the dependencies in `vcpkg.json`. Configure their
 locations in a local `CMakeUserPresets.json`, then follow the commands in the
 [repository README](../README.md#build-and-test).
 
