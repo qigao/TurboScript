@@ -191,6 +191,89 @@ jobs:
           path: build/host-sanitizer/host-module-results.xml
           if-no-files-found: error
 
+  host-abi:
+    name: Linux installed Host ABI v1
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          persist-credentials: false
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+        with:
+          mode: read
+      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Prepare Host ABI toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config nasm
+      - name: Restore exact dependency SDK graph
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/sdk-nuget.config"
+          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
+          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
+            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
+          packages="$RUNNER_TEMP/native-dependencies"
+          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
+      - name: Build modules-off Host contracts and install SDK
+        shell: bash
+        run: |
+          set -euxo pipefail
+          prefix="$GITHUB_WORKSPACE/stage/host-abi"
+          cmake -S . -B build/host-abi -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            "-DCMAKE_INSTALL_PREFIX=$prefix" \
+            -DBUILD_TESTING=ON -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF \
+            -DBUILD_EXAMPLES=OFF \
+            -DTURBOSCRIPT_BUILD_HOST_TESTS=ON \
+            -DTURBOSCRIPT_BUILD_MODULES=OFF \
+            -DTURBOSCRIPT_BUILD_CLI=OFF
+          cmake --build build/host-abi --parallel 2
+          export LD_LIBRARY_PATH="$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          ctest --test-dir build/host-abi -R '^test_turbo_script_host_' \
+            --no-tests=error --output-on-failure
+          cmake --install build/host-abi
+      - name: Verify installed public-only C11 and C++17 consumers
+        shell: bash
+        run: |
+          set -euxo pipefail
+          prefix="$GITHUB_WORKSPACE/stage/host-abi"
+          export LD_LIBRARY_PATH="$prefix/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          cmake -S cmake/ci/host-abi -B build/installed-host-abi -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
+            "-DCMAKE_PREFIX_PATH=$prefix;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            -DVCPKG_MANIFEST_MODE=OFF \
+            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed"
+          cmake --build build/installed-host-abi --parallel 2
+          ctest --test-dir build/installed-host-abi --no-tests=error --output-on-failure
+      - name: Verify exact head and clean tracked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git status --short --untracked-files=no
+          git diff --quiet --exit-code
+          git diff --cached --quiet --exit-code
+
   build:
     needs: metadata
     strategy:
@@ -318,7 +401,7 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
   pack:
-    needs: [metadata, source-test, build]
+    needs: [metadata, source-test, host-sanitizer, host-abi, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4

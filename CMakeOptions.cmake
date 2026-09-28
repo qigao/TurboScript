@@ -11,6 +11,7 @@ option(ENABLE_TESTS "Enable the tests" ON)
 
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
+option(TURBOSCRIPT_BUILD_HOST_TESTS "Build Host ABI contract suites without bundled modules" OFF)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 
 option(TURBOSCRIPT_BUILD_MODULES "Build the bundled native extension modules" ON)
