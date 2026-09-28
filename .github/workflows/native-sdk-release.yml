@@ -169,17 +169,80 @@ jobs:
             -DTURBOSCRIPT_BUILD_MODULES=ON \
             -DTURBOSCRIPT_BUILD_CLI=OFF
           cmake --build build/bench --target bench_turbo_script_mir --parallel 2
-      - name: Run affected OOP quick benchmarks
+      - name: Compare affected OOP benchmarks with master
         shell: bash
         run: |
-          set -euo pipefail
+          set -euxo pipefail
           export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          bench="$GITHUB_WORKSPACE/build/bench/bin/bench_turbo_script_mir"
-          test -x "$bench"
-          "$bench" --quick --filter "OOP Direct Field Read/Write" | tee "$RUNNER_TEMP/oop-direct.txt"
-          "$bench" --quick --filter "OOP Method Field Read/Write" | tee "$RUNNER_TEMP/oop-method-field.txt"
-          grep -q "Result:.*verified" "$RUNNER_TEMP/oop-direct.txt"
-          grep -q "Result:.*verified" "$RUNNER_TEMP/oop-method-field.txt"
+          head_bench="$GITHUB_WORKSPACE/build/bench/bin/bench_turbo_script_mir"
+          test -x "$head_bench"
+
+          git fetch --no-tags origin master
+          master_src="$RUNNER_TEMP/turboscript-master"
+          git worktree add --detach "$master_src" origin/master
+          # Keep the benchmark workload identical; compare implementation only.
+          cp "$GITHUB_WORKSPACE/turbo_script/test/bench_turbo_script_mir.c" \
+             "$master_src/turbo_script/test/bench_turbo_script_mir.c"
+          cmake -S "$master_src" -B "$RUNNER_TEMP/master-bench" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DTURBOSCRIPT_BUILD_MODULES=ON \
+            -DTURBOSCRIPT_BUILD_CLI=OFF
+          cmake --build "$RUNNER_TEMP/master-bench" --target bench_turbo_script_mir --parallel 2
+          master_bench="$RUNNER_TEMP/master-bench/bin/bench_turbo_script_mir"
+          test -x "$master_bench"
+
+          export HEAD_BENCH="$head_bench"
+          export MASTER_BENCH="$master_bench"
+          python3 - <<'PY'
+          import os, re, statistics, subprocess, sys
+
+          cases = [
+              "OOP Direct Field Read/Write",
+              "OOP Method Field Read/Write",
+          ]
+          patterns = {
+              "warm": re.compile(r"JIT run_jit warm:\s+[0-9.]+ ms total,\s+([0-9.]+) ms/iter"),
+              "exec": re.compile(r"JIT exec only:\s+[0-9.]+ ms total,\s+([0-9.]+) ms/iter"),
+          }
+
+          def samples(binary, case, count=12):
+              values = {key: [] for key in patterns}
+              for _ in range(count):
+                  out = subprocess.check_output(
+                      [binary, "--filter", case], text=True,
+                      stderr=subprocess.STDOUT, env=os.environ)
+                  if "Result:" not in out or "(verified)" not in out:
+                      print(out)
+                      raise SystemExit(f"{case}: benchmark result was not verified")
+                  for key, pattern in patterns.items():
+                      match = pattern.search(out)
+                      if not match:
+                          print(out)
+                          raise SystemExit(f"{case}: missing {key} timing")
+                      values[key].append(float(match.group(1)))
+              return {key: statistics.median(seq) for key, seq in values.items()}
+
+          failed = False
+          for case in cases:
+              base = samples(os.environ["MASTER_BENCH"], case)
+              head = samples(os.environ["HEAD_BENCH"], case)
+              print(f"=== {case} median (12 runs) ===")
+              for metric in ("warm", "exec"):
+                  ratio = head[metric] / base[metric] if base[metric] else float("inf")
+                  print(
+                      f"{metric}: master={base[metric]:.6f} ms/iter "
+                      f"head={head[metric]:.6f} ms/iter ratio={ratio:.3f}")
+                  if ratio > 1.10:
+                      failed = True
+              print()
+          if failed:
+              raise SystemExit("OOP MIR benchmark regression exceeds 10% allowance")
+          PY
 
   build:
     needs: metadata
