@@ -6,6 +6,7 @@
 #include "exprtk_module.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* exprtk_value_t is the exact storage carrier for dynamic/script-owned values.
@@ -22,6 +23,44 @@ static const cmeta_type_desc EXPRTK_VALUE_CMETA_TYPE = {
     .traits = NULL,
     .identity = &EXPRTK_VALUE_CMETA_IDENTITY
 };
+
+static const cmeta_type_identity EXPRTK_STRING_SLOT_CMETA_IDENTITY =
+    CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.string-slot");
+static const cmeta_type_desc EXPRTK_STRING_SLOT_CMETA_TYPE = {
+    .name = "exprtk_cmeta_string_slot_t",
+    .size = sizeof(exprtk_cmeta_string_slot_t),
+    .align = _Alignof(exprtk_cmeta_string_slot_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = NULL,
+    .identity = &EXPRTK_STRING_SLOT_CMETA_IDENTITY
+};
+
+static char *exprtk_cmeta_arena_join3(
+    mem_pool_t *arena, const char *a, const char *b, const char *c) {
+    size_t a_len;
+    size_t b_len;
+    size_t c_len;
+    size_t total;
+    char *out;
+
+    if (!arena || !a || !b || !c) return NULL;
+    a_len = strlen(a);
+    b_len = strlen(b);
+    c_len = strlen(c);
+    if (a_len > SIZE_MAX - b_len ||
+        a_len + b_len > SIZE_MAX - c_len ||
+        a_len + b_len + c_len == SIZE_MAX)
+        return NULL;
+    total = a_len + b_len + c_len;
+    out = (char *)mem_alloc(arena, total + 1u);
+    if (!out) return NULL;
+    memcpy(out, a, a_len);
+    memcpy(out + a_len, b, b_len);
+    memcpy(out + a_len + b_len, c, c_len);
+    out[total] = '\0';
+    return out;
+}
 
 static const char EXPRTK_DYNAMIC_SHAPE[] = "turboscript.dynamic";
 static const char EXPRTK_DYNAMIC_LIST_SHAPE[] = "turboscript.dynamic.list";
@@ -61,67 +100,73 @@ EXPRTK_DYNAMIC_DATA(EXPRTK_DYNAMIC_INSTANCE_DATA,
                     "TurboScript dynamic instance", EXPRTK_DYNAMIC_INSTANCE_SHAPE);
 
 static bool exprtk_string_cmeta_is_zero(const void *object) {
-    const exprtk_value_t *value = (const exprtk_value_t *)object;
-    return value != NULL && value->type == EXPRTK_VAL_NULL &&
-           value->storage == NULL && value->storage_aux == NULL;
+    const exprtk_cmeta_string_slot_t *value =
+        (const exprtk_cmeta_string_slot_t *)object;
+    return value != NULL && value->data == NULL &&
+           value->length == 0u && value->owned == 0u;
 }
 
 static cmeta_status exprtk_string_cmeta_init_zero(void *object) {
-    exprtk_value_t *value = (exprtk_value_t *)object;
+    exprtk_cmeta_string_slot_t *value =
+        (exprtk_cmeta_string_slot_t *)object;
     if (value == NULL) return CMETA_INVALID_ARGUMENT;
     memset(value, 0, sizeof(*value));
-    value->type = EXPRTK_VAL_NULL;
     return CMETA_OK;
 }
 
 static cmeta_status exprtk_string_cmeta_assign(
     void *object, const unsigned char *data, size_t size, size_t max_bytes) {
-    exprtk_value_t *value = (exprtk_value_t *)object;
-    exprtk_value_t source;
+    exprtk_cmeta_string_slot_t *value =
+        (exprtk_cmeta_string_slot_t *)object;
+    char *copy;
 
     if (value == NULL || (size != 0u && data == NULL))
         return CMETA_INVALID_ARGUMENT;
     if (!exprtk_string_cmeta_is_zero(value))
         return CMETA_INVALID_ARGUMENT;
-    if (size > max_bytes)
+    if (size > max_bytes || size == SIZE_MAX)
         return CMETA_CAPACITY_EXCEEDED;
 
-    source = exprtk_val_str(vstr_from_buf((const char *)data, size));
-    if (exprtk_value_copy_to_pool(source, mem_global(), value) != 0) {
-        memset(value, 0, sizeof(*value));
-        value->type = EXPRTK_VAL_NULL;
-        return CMETA_OUT_OF_MEMORY;
-    }
-    return value->type == EXPRTK_VAL_STRING ? CMETA_OK : CMETA_CALLBACK_ERROR;
+    copy = (char *)malloc(size + 1u);
+    if (!copy) return CMETA_OUT_OF_MEMORY;
+    if (size != 0u) memcpy(copy, data, size);
+    copy[size] = '\0';
+
+    value->data = copy;
+    value->length = size;
+    value->owned = 1u;
+    return CMETA_OK;
 }
 
 static void exprtk_string_cmeta_restore_zero(void *object) {
-    exprtk_value_t *value = (exprtk_value_t *)object;
+    exprtk_cmeta_string_slot_t *value =
+        (exprtk_cmeta_string_slot_t *)object;
     if (value == NULL) return;
-    exprtk_value_destroy(value);
+    if (value->owned) free(value->data);
+    memset(value, 0, sizeof(*value));
 }
 
 static cmeta_status exprtk_string_cmeta_read(
     const void *object, const unsigned char **out_data, size_t *out_size) {
-    const exprtk_value_t *value = (const exprtk_value_t *)object;
+    const exprtk_cmeta_string_slot_t *value =
+        (const exprtk_cmeta_string_slot_t *)object;
     if (value == NULL || out_data == NULL || out_size == NULL)
         return CMETA_INVALID_ARGUMENT;
-    if (value->type != EXPRTK_VAL_STRING)
-        return CMETA_TYPE_MISMATCH;
-    if (value->data.string.len != 0u && value->data.string.data == NULL)
+    if (value->length != 0u && value->data == NULL)
         return CMETA_CALLBACK_ERROR;
-    *out_data = (const unsigned char *)value->data.string.data;
-    *out_size = value->data.string.len;
+    *out_data = (const unsigned char *)value->data;
+    *out_size = value->length;
     return CMETA_OK;
 }
 
 static void exprtk_string_cmeta_move(void *destination, void *source) {
-    exprtk_value_t *to = (exprtk_value_t *)destination;
-    exprtk_value_t *from = (exprtk_value_t *)source;
+    exprtk_cmeta_string_slot_t *to =
+        (exprtk_cmeta_string_slot_t *)destination;
+    exprtk_cmeta_string_slot_t *from =
+        (exprtk_cmeta_string_slot_t *)source;
     if (to == NULL || from == NULL) return;
     *to = *from;
     memset(from, 0, sizeof(*from));
-    from->type = EXPRTK_VAL_NULL;
 }
 
 static const cmeta_data_buffer_shape EXPRTK_STRING_CMETA_SHAPE = {
@@ -130,7 +175,7 @@ static const cmeta_data_buffer_shape EXPRTK_STRING_CMETA_SHAPE = {
 static const cmeta_data_buffer_ops EXPRTK_STRING_CMETA_OPS = {
     .struct_size = sizeof(cmeta_data_buffer_ops),
     .abi_version = CMETA_DATA_BUFFER_OPS_ABI_VERSION,
-    .storage_type = &EXPRTK_VALUE_CMETA_TYPE,
+    .storage_type = &EXPRTK_STRING_SLOT_CMETA_TYPE,
     .ownership = CMETA_DATA_BUFFER_OWNED,
     .is_zero = exprtk_string_cmeta_is_zero,
     .assign = exprtk_string_cmeta_assign,
@@ -145,7 +190,7 @@ static const cmeta_data_desc EXPRTK_STRING_CMETA_DATA = {
     .stable_id = "turboscript.exprtk.string.data",
     .display_name = "TurboScript string",
     .kind = CMETA_DATA_STRING,
-    .storage_type = &EXPRTK_VALUE_CMETA_TYPE,
+    .storage_type = &EXPRTK_STRING_SLOT_CMETA_TYPE,
     .shape = &EXPRTK_STRING_CMETA_SHAPE,
     .buffer_ops = &EXPRTK_STRING_CMETA_OPS,
     .enum_ops = NULL,
@@ -236,8 +281,15 @@ static cmeta_status exprtk_cmeta_field_read(
         return CMETA_OK;
     }
     if (data == &EXPRTK_STRING_CMETA_DATA) {
-        if (slot->type != EXPRTK_VAL_STRING) return CMETA_TYPE_MISMATCH;
-        *out_value = slot;
+        exprtk_cmeta_string_slot_t *projection;
+        if (slot->type != EXPRTK_VAL_STRING ||
+            instance->cmeta_string_slots == NULL)
+            return CMETA_TYPE_MISMATCH;
+        projection = &((exprtk_instance_t *)instance)->cmeta_string_slots[index];
+        projection->data = (char *)slot->data.string.data;
+        projection->length = slot->data.string.len;
+        projection->owned = 0u;
+        *out_value = projection;
         return CMETA_OK;
     }
 
@@ -268,9 +320,12 @@ static cmeta_status exprtk_cmeta_field_assign(
     else if (data == &cmeta_data_bool)
         converted = exprtk_val_bool(*(const bool *)value ? 1 : 0);
     else if (data == &EXPRTK_STRING_CMETA_DATA) {
-        const exprtk_value_t *source = (const exprtk_value_t *)value;
-        if (source->type != EXPRTK_VAL_STRING) return CMETA_TYPE_MISMATCH;
-        converted = exprtk_value_borrow(*source);
+        const exprtk_cmeta_string_slot_t *source =
+            (const exprtk_cmeta_string_slot_t *)value;
+        if (source->length != 0u && source->data == NULL)
+            return CMETA_TYPE_MISMATCH;
+        converted = exprtk_val_str(
+            vstr_from_buf(source->data ? source->data : "", source->length));
     } else {
         const exprtk_value_t *source = (const exprtk_value_t *)value;
         converted = exprtk_value_borrow(*source);
@@ -315,8 +370,8 @@ int exprtk_class_finalize_cmeta_data(exprtk_class_t *klass) {
             !cmeta_type_desc_valid(data->storage_type))
             goto fail;
 
-        field_id = mem_sprintf(
-            klass->arena, "%s.field.%s", klass->cmeta_stable_id, name);
+        field_id = exprtk_cmeta_arena_join3(
+            klass->arena, klass->cmeta_stable_id, ".field.", name);
         if (field_id == NULL) goto fail;
 
         klass->cmeta_layout_fields[i] = (cmeta_field_desc){
@@ -348,7 +403,8 @@ int exprtk_class_finalize_cmeta_data(exprtk_class_t *klass) {
         .fields = klass->cmeta_data_fields,
         .field_count = klass->instance_field_count
     };
-    data_id = mem_sprintf(klass->arena, "%s.data", klass->cmeta_stable_id);
+    data_id = exprtk_cmeta_arena_join3(
+        klass->arena, klass->cmeta_stable_id, ".data", "");
     if (data_id == NULL) goto fail;
 
     klass->cmeta_data = (cmeta_data_desc){
