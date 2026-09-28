@@ -275,6 +275,42 @@ static int ts_node_mentions_this_field(exprtk_node_t *node, const char *member_n
   }
 }
 
+static int ts_oop_cmeta_num_field_admission(
+    ts_mir_compiler_t *c, const char *class_name, const char *member_name) {
+  exprtk_value_t class_value;
+  exprtk_class_t *klass;
+  exprtk_class_t *owner = NULL;
+  const cmeta_data_desc *data;
+  const cmeta_data_struct_shape *shape;
+  const cmeta_data_field_desc *field;
+  int access;
+
+  if (!c || !class_name || !member_name) return 0;
+  class_value = exprtk_env_get(&c->ts_ctx->env, class_name);
+  if (class_value.type != EXPRTK_VAL_CLASS ||
+      !class_value.data.class_val.klass)
+    return 0; /* same-source class may not exist until generated MIR executes */
+
+  klass = class_value.data.class_val.klass;
+  access = exprtk_class_get_instance_field_access(
+      klass, member_name, &owner);
+  if (access != EXPRTK_ACCESS_PUBLIC)
+    return -1;
+  if (!exprtk_class_finalize_cmeta_data(klass))
+    return -1;
+
+  data = exprtk_class_cmeta_data(klass);
+  if (!cmeta_data_desc_valid(data) ||
+      data->kind != CMETA_DATA_STRUCT || data->shape == NULL)
+    return -1;
+  shape = (const cmeta_data_struct_shape *)data->shape;
+  field = cmeta_data_struct_find_field(shape, member_name);
+  if (!field || !cmeta_data_desc_valid(field->value))
+    return -1;
+
+  return cmeta_data_desc_equal(field->value, &cmeta_data_double) ? 1 : -1;
+}
+
 static int ts_class_has_public_instance_field_hint(ts_mir_compiler_t *c,
                                                    const char *class_name,
                                                    const char *member_name) {
@@ -287,18 +323,25 @@ static int ts_class_has_public_instance_field_hint(ts_mir_compiler_t *c,
     if (entry->type == EXPRTK_NODE_FIELD_DECL && entry->data.field_decl.name &&
         strcmp(entry->data.field_decl.name, member_name) == 0 &&
         !entry->data.field_decl.is_static) {
-      /* Explicitly typed fields must use the value bridge. The numeric slot
-       * stores only doubles and cannot preserve string, bool, map, or integer
-       * value identity for the class type checker. */
-      if (entry->data.field_decl.declared_type) return 0;
-      return entry->data.field_decl.access_level == EXPRTK_ACCESS_PUBLIC ? 1 : -1;
+      /* Only an explicitly numeric-double declaration may propose the slot
+       * fast path. Runtime cache fill still requires canonical CMeta
+       * cmeta_data_double admission before direct slot access. */
+      if (entry->data.field_decl.declared_type) {
+        const char *type = entry->data.field_decl.declared_type;
+        const int is_double =
+            strcmp(type, "number") == 0 ||
+            strcmp(type, "float") == 0 ||
+            strcmp(type, "double") == 0;
+        return is_double &&
+                       entry->data.field_decl.access_level == EXPRTK_ACCESS_PUBLIC
+                   ? 1
+                   : -1;
+      }
+      /* Untyped fields are dynamic CUSTOM CMeta values. They must never be
+       * frozen into a direct double slot merely because their current value is
+       * numeric. */
+      return -1;
     }
-  }
-
-  for (size_t i = 0; i < class_node->data.class_def.method_count; ++i) {
-    exprtk_node_t *entry = class_node->data.class_def.methods[i];
-    if (!entry || entry->type != EXPRTK_NODE_METHOD || entry->data.method.is_static) continue;
-    if (ts_node_mentions_this_field(entry->data.method.body, member_name)) return 1;
   }
 
   const char *parent_name = ts_direct_parent_class_name(c, class_name);
@@ -309,9 +352,19 @@ static int ts_class_has_public_instance_field_hint(ts_mir_compiler_t *c,
 int ts_oop_member_can_use_num_slot(ts_mir_compiler_t *c, const char *object_name,
                                    const char *member_name) {
   const char *class_name = ts_mir_find_var_class(c, object_name);
+  int cmeta_admission;
   if (!class_name || !member_name) return 0;
   if (member_name[0] == '_') return 0;
-  return ts_class_has_public_instance_field_hint(c, class_name, member_name) > 0;
+
+  /* Prefer already-finalized runtime reflection when the class exists in the
+   * compile environment. For same-source classes, class definition executes
+   * later, so the AST can only propose a typed-number candidate; runtime cache
+   * fill performs the mandatory CMeta admission before exposing a slot. */
+  cmeta_admission =
+      ts_oop_cmeta_num_field_admission(c, class_name, member_name);
+  if (cmeta_admission != 0) return cmeta_admission > 0;
+  return ts_class_has_public_instance_field_hint(
+             c, class_name, member_name) > 0;
 }
 
 static int ts_oop_inline_expr_supported(ts_mir_compiler_t *c, const char *class_name,
@@ -1441,6 +1494,47 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
   }
 
   exprtk_instance_t *instance = object.data.instance_val.instance;
+  exprtk_class_t *field_owner = NULL;
+  const cmeta_data_desc *class_data;
+  const cmeta_data_struct_shape *shape;
+  const cmeta_data_field_desc *field;
+  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
+  int access;
+
+  /* Direct slot access is admitted only for an explicit public CMeta double
+   * field. Dynamic/untyped fields remain on the generic value bridge even if
+   * their current runtime value happens to be numeric. */
+  access = exprtk_class_get_instance_field_access(
+      instance->klass, member_name, &field_owner);
+  if (access != EXPRTK_ACCESS_PUBLIC ||
+      exprtk_instance_borrow_cmeta_object(instance, &reflected) != CMETA_OK) {
+    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "JIT runtime error: field '%s' is not admitted for direct numeric access",
+             member_name);
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+    ctx->env.aborted = 1;
+    return NULL;
+  }
+
+  class_data = reflected.data;
+  shape = class_data && class_data->kind == CMETA_DATA_STRUCT
+              ? (const cmeta_data_struct_shape *)class_data->shape
+              : NULL;
+  field = cmeta_data_struct_find_field(shape, member_name);
+  if (!field || !cmeta_data_desc_valid(field->value) ||
+      !cmeta_data_desc_equal(field->value, &cmeta_data_double)) {
+    cmeta_object_release(&reflected);
+    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "JIT runtime error: field '%s' is not a canonical number field",
+             member_name);
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+    ctx->env.aborted = 1;
+    return NULL;
+  }
+  cmeta_object_release(&reflected);
+
   exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
   if (!slot && create_if_missing) {
     exprtk_instance_set_field(instance, member_name, exprtk_val_num(0.0));
@@ -1458,20 +1552,18 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     return NULL;
   }
 
-  if (slot->type == EXPRTK_VAL_INTEGER) {
-    slot->type = EXPRTK_VAL_NUMBER;
-    slot->data.number = (double)slot->data.integer;
-  }
   if (slot->type != EXPRTK_VAL_NUMBER) {
     ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
     snprintf(ctx->error_msg, sizeof(ctx->error_msg),
-             "JIT runtime error: field '%s' is not numeric", member_name);
+             "JIT runtime error: field '%s' violates its canonical number storage",
+             member_name);
     snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
     ctx->env.aborted = 1;
     return NULL;
   }
 
   (void)object_node;
+  (void)field_owner;
   slot_cache->instance = instance;
   slot_cache->index = (size_t)(slot - instance->field_slots);
   return instance;

@@ -427,6 +427,69 @@ spec("turbo_script_mir_oop") {
 
   describe("OOP helper lowering") {
 
+    it("should match interpreter for CMeta-admitted typed number slots") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "class Point {"
+                           "  x: number = 1.0;"
+                           "  y: number = 2.0;"
+                           "};"
+                           "p = Point();"
+                           "p.x = 4.5;"
+                           "result = p.x + p.y;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(6.5)) <=
+            (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should preserve int64 fields outside the double slot fast path") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "class Counter {"
+                           "  value: int64 = 1;"
+                           "};"
+                           "c = Counter();"
+                           "c.value = 41;"
+                           "is_i64 = (typeof(c.value) == \"int64\");"
+                           "result = c.value + 1;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check_equal(ts_get_num(ctx_jit, "is_i64"), 1.0);
+      check_equal(ts_get_num(ctx_jit, "is_i64"), ts_get_num(ctx_interp, "is_i64"));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) - (double)(42.0)) <=
+            (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should keep untyped fields dynamic instead of freezing a numeric slot") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "class Box {"
+                           "  constructor(v) { this.value = v; }"
+                           "};"
+                           "b = Box(1);"
+                           "b.value = \"dynamic\";"
+                           "is_string = (typeof(b.value) == \"string\");";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check_equal(ts_get_num(ctx_jit, "is_string"), 1.0);
+      check_equal(ts_get_num(ctx_jit, "is_string"), ts_get_num(ctx_interp, "is_string"));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
     it("should assign to typed bool fields from to_bool") {
       turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);

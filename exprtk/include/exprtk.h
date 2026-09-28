@@ -125,6 +125,17 @@ EXPRTK_C_API exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t arg
 
 EXPRTK_C_API exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env);
 
+/**
+ * Resolve one builtin/module entry and copy its canonical CMeta admission
+ * descriptor. The returned reflection owns no registry storage; its parameter
+ * array is embedded in @p out and remains valid while @p out remains alive.
+ *
+ * This is intended for parse/compile admission. Hot execution should retain
+ * the resolved invoke pointer/descriptor and must not re-query the registry.
+ */
+EXPRTK_C_API int exprtk_find_builtin_reflection(
+    const char *name, exprtk_env_t *env, exprtk_function_reflection_t *out);
+
 /* OOP runtime entry points used by JIT lowering. These operate on already-lowered
  * names and numeric arguments instead of evaluating arbitrary AST expressions. */
 EXPRTK_C_API exprtk_value_t exprtk_oop_define_class(const exprtk_node_t *node, exprtk_env_t *env);

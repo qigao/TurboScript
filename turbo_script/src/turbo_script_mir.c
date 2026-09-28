@@ -246,18 +246,27 @@ int ts_emit_direct_resolved_call(ts_mir_compiler_t *c, const char *name, size_t 
     f = f->next;
   }
 
-  /* 2) module/registry builtins */
-  exprtk_builtin_fn bfn = exprtk_find_builtin(name, &c->ts_ctx->env);
-  if (bfn) {
-    MIR_reg_t arr_reg = ts_emit_packed_args(c, argc, arg_regs);
-    MIR_append_insn(
-        c->ctx, c->func,
-        MIR_new_call_insn(c->ctx, 7, MIR_new_ref_op(c->ctx, c->ext.call_builtin_proto),
-                          MIR_new_ref_op(c->ctx, c->ext.call_builtin_import),
-                          MIR_new_reg_op(c->ctx, res), MIR_new_reg_op(c->ctx, c->ctx_reg),
-                          MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)bfn),
-                          MIR_new_int_op(c->ctx, (int64_t)argc), MIR_new_reg_op(c->ctx, arr_reg)));
-    return 1;
+  /* 2) module/registry builtins: admit canonical CMeta metadata once
+   * during lowering, then bake only the validated invoke pointer into MIR. */
+  {
+    const exprtk_function_reflection_t *builtin =
+        ts_mir_admit_builtin(c, name);
+    if (builtin) {
+      MIR_reg_t arr_reg = ts_emit_packed_args(c, argc, arg_regs);
+      MIR_append_insn(
+          c->ctx, c->func,
+          MIR_new_call_insn(
+              c->ctx, 7,
+              MIR_new_ref_op(c->ctx, c->ext.call_builtin_proto),
+              MIR_new_ref_op(c->ctx, c->ext.call_builtin_import),
+              MIR_new_reg_op(c->ctx, res),
+              MIR_new_reg_op(c->ctx, c->ctx_reg),
+              MIR_new_uint_op(
+                  c->ctx, (uint64_t)(uintptr_t)builtin->invoke),
+              MIR_new_int_op(c->ctx, (int64_t)argc),
+              MIR_new_reg_op(c->ctx, arr_reg)));
+      return 1;
+    }
   }
 
   return 0;
@@ -429,7 +438,7 @@ int ts_resolves_core_compat_func(const char *name) {
 static int ts_resolves_runtime_func(ts_mir_compiler_t *c, const char *name) {
   if (!c || !name) return 0;
   return ts_env_has_func(&c->ts_ctx->env, name) ||
-         exprtk_find_builtin(name, &c->ts_ctx->env) != NULL ||
+         ts_mir_admit_builtin(c, name) != NULL ||
          ts_resolves_core_compat_func(name);
 }
 
