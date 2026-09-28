@@ -222,19 +222,24 @@ static void build_mod_cache(exprtk_env_t *env) {
 }
 
 /** O(log n) lookup in the sorted module cache. */
-static exprtk_builtin_fn mod_cache_find(exprtk_env_t *env, const char *name) {
+static const exprtk_func_entry_t *mod_cache_find_entry(
+    exprtk_env_t *env, const char *name) {
     if (!env->mod_cache) build_mod_cache(env);
     if (!env->mod_cache || env->mod_cache_count == 0) return NULL;
 
-    const exprtk_func_entry_t *hit = (const exprtk_func_entry_t *)bsearch(
+    return (const exprtk_func_entry_t *)bsearch(
         name, (exprtk_func_entry_t *)env->mod_cache, env->mod_cache_count,
         sizeof(exprtk_func_entry_t), search_cmp);
-    return hit ? hit->fn : NULL;
 }
 
-static exprtk_builtin_fn mod_find_in_named_module(exprtk_env_t *env, const char *module_name,
-                                                  size_t module_name_len,
-                                                  const char *entry_name) {
+static exprtk_builtin_fn mod_cache_find(exprtk_env_t *env, const char *name) {
+    const exprtk_func_entry_t *entry = mod_cache_find_entry(env, name);
+    return entry ? entry->fn : NULL;
+}
+
+static const exprtk_func_entry_t *mod_find_entry_in_named_module(
+    exprtk_env_t *env, const char *module_name,
+    size_t module_name_len, const char *entry_name) {
     if (!env || !module_name || !entry_name) return NULL;
 
     for (exprtk_env_t *e = env; e; e = e->parent) {
@@ -247,11 +252,19 @@ static exprtk_builtin_fn mod_find_in_named_module(exprtk_env_t *env, const char 
 
             for (size_t i = 0; i < mod->count; ++i) {
                 if (strcmp(mod->entries[i].name, entry_name) == 0)
-                    return mod->entries[i].fn;
+                    return &mod->entries[i];
             }
         }
     }
     return NULL;
+}
+
+static exprtk_builtin_fn mod_find_in_named_module(
+    exprtk_env_t *env, const char *module_name,
+    size_t module_name_len, const char *entry_name) {
+    const exprtk_func_entry_t *entry = mod_find_entry_in_named_module(
+        env, module_name, module_name_len, entry_name);
+    return entry ? entry->fn : NULL;
 }
 
 static int is_global_compat_namespace(const char *module_name, size_t module_name_len) {
@@ -307,18 +320,35 @@ exprtk_builtin_fn exprtk_registry_find(const char *name) {
     return NULL;
 }
 
-exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env) {
-    if (env) {
-        exprtk_builtin_fn fn = mod_cache_find(env, name);
-        if (fn) return fn;
+const exprtk_func_entry_t *exprtk_find_builtin_entry(
+    const char *name, exprtk_env_t *env) {
+    const exprtk_func_entry_t *entry;
 
-        const char *dot = strchr(name, '.');
-        if (dot) {
-            fn = mod_find_in_named_module(env, name, (size_t)(dot - name), dot + 1);
-            if (fn) return fn;
+    if (!name) return NULL;
+    if (env) {
+        entry = mod_cache_find_entry(env, name);
+        if (entry) return entry;
+
+        {
+            const char *dot = strchr(name, '.');
+            if (dot) {
+                entry = mod_find_entry_in_named_module(
+                    env, name, (size_t)(dot - name), dot + 1);
+                if (entry) return entry;
+            }
         }
     }
-    return exprtk_registry_find(name);
+
+    if (!g_registry_ready) exprtk_registry_init();
+    if (g_registry_count == 0) return NULL;
+    return (const exprtk_func_entry_t *)bsearch(
+        name, g_registry, g_registry_count,
+        sizeof(exprtk_func_entry_t), search_cmp);
+}
+
+exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env) {
+    const exprtk_func_entry_t *entry = exprtk_find_builtin_entry(name, env);
+    return entry ? entry->fn : NULL;
 }
 
 exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
