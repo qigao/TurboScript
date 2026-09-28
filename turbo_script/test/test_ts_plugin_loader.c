@@ -38,8 +38,8 @@ spec("plugin loader") {
 
       check_not_null(handle);
       if (handle) {
-        check_not_null(handle->plugin);
-        check_equal(handle->plugin->name, "loader_fixture");
+        check_not_null(handle->manifest);
+        check_equal(handle->manifest->plugin_id, "loader_fixture");
         ts_plugin_unload(handle);
       }
     }
@@ -56,8 +56,8 @@ spec("plugin loader") {
 
       check_not_null(handle);
       if (handle) {
-        check_not_null(handle->plugin);
-        check_equal(handle->plugin->name, "loader_fixture");
+        check_not_null(handle->manifest);
+        check_equal(handle->manifest->plugin_id, "loader_fixture");
         ts_plugin_unload(handle);
       }
     }
@@ -104,7 +104,7 @@ spec("plugin loader") {
                   TS_PLUGIN_ERROR_SYMBOL);
       check_null(handle);
       check_equal(error.stage, TS_PLUGIN_STAGE_SYMBOL);
-      check_not_null(strstr(error.message, "ts_api_create"));
+      check_not_null(strstr(error.message, "salts_plugin_query"));
     }
   }
 
