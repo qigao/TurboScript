@@ -189,13 +189,13 @@ static int mapper_build_schema(
     if (!klass || !out_schema || !out_length ||
         !exprtk_class_finalize_cmeta_data(klass)) {
         mapper_set_error(error, error_len, "mapper: class reflection is unavailable");
-        return -1;
+        return 0;
     }
 
     object_data = exprtk_class_cmeta_data(klass);
     if (!object_data || object_data->kind != CMETA_DATA_STRUCT) {
         mapper_set_error(error, error_len, "mapper: invalid class CMeta data surface");
-        return -1;
+        return 0;
     }
 
     if (!mapper_builder_append(
@@ -204,7 +204,7 @@ static int mapper_build_schema(
         !mapper_builder_append(&builder, " {")) {
         free(builder.data);
         mapper_set_error(error, error_len, "mapper: out of memory building DataBind contract");
-        return -1;
+        return 0;
     }
 
     for (size_t i = 0; i < klass->instance_field_count; ++i) {
@@ -215,7 +215,7 @@ static int mapper_build_schema(
 
         if (!type || !name) {
             free(builder.data);
-            return 0; /* TurboScript dynamic-value domain, not a typed plan. */
+            return -1; /* TurboScript dynamic-value domain, not a typed plan. */
         }
         if (!mapper_builder_append(&builder, " ") ||
             !mapper_builder_append(&builder, type) ||
@@ -224,7 +224,7 @@ static int mapper_build_schema(
             free(builder.data);
             mapper_set_error(error, error_len,
                              "mapper: out of memory building DataBind fields");
-            return -1;
+            return 0;
         }
 
         if (klass->instance_field_has_default &&
@@ -236,7 +236,7 @@ static int mapper_build_schema(
                 mapper_set_error(error, error_len,
                                  "mapper: unsupported typed class default for '%s'",
                                  name);
-                return -1;
+                return 0;
             }
         }
 
@@ -244,7 +244,7 @@ static int mapper_build_schema(
             free(builder.data);
             mapper_set_error(error, error_len,
                              "mapper: out of memory building DataBind contract");
-            return -1;
+            return 0;
         }
     }
 
@@ -252,7 +252,7 @@ static int mapper_build_schema(
         free(builder.data);
         mapper_set_error(error, error_len,
                          "mapper: out of memory finalizing DataBind contract");
-        return -1;
+        return 0;
     }
 
     *out_schema = builder.data;
@@ -291,7 +291,7 @@ static int mapper_plan_get(
     if (out) *out = NULL;
     if (!ctx || !klass || !out || !exprtk_class_finalize_cmeta_data(klass)) {
         mapper_set_error(error, error_len, "mapper: invalid reflected class");
-        return -1;
+        return 0;
     }
 
     data = exprtk_class_cmeta_data(klass);
@@ -309,7 +309,7 @@ static int mapper_plan_get(
     if (!entry) {
         free(schema);
         mapper_set_error(error, error_len, "mapper: out of memory caching MessagePlan");
-        return -1;
+        return 0;
     }
 
     status = data_bind_create_from_text(
@@ -320,7 +320,7 @@ static int mapper_plan_get(
             error, error_len, "mapper: DataBind contract compile failed: %s",
             bind_error.message[0] ? bind_error.message : "invalid contract");
         free(entry);
-        return -1;
+        return 0;
     }
 
     status = data_bind_message_plan_compile_object(
@@ -331,16 +331,21 @@ static int mapper_plan_get(
             diagnostic.message[0] ? diagnostic.message : "invalid object binding");
         data_bind_free(entry->codec);
         free(entry);
-        return -1;
+        return 0;
     }
 
-    entry->stable_id = data->stable_id ? strdup(data->stable_id) : NULL;
+    if (data->stable_id) {
+        const size_t stable_len = strlen(data->stable_id);
+        entry->stable_id = (char *)malloc(stable_len + 1u);
+        if (entry->stable_id)
+            memcpy(entry->stable_id, data->stable_id, stable_len + 1u);
+    }
     if (!entry->stable_id) {
         data_bind_message_plan_free(entry->plan);
         data_bind_free(entry->codec);
         free(entry);
         mapper_set_error(error, error_len, "mapper: out of memory caching class identity");
-        return -1;
+        return 0;
     }
 
     entry->next = (mapper_plan_entry_t *)ctx->plans;
