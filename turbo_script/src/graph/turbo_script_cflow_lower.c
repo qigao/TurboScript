@@ -303,13 +303,14 @@ static bool ts_cflow_lower_pipeline_impl(
     if (error) *error = "pipeline lowering requires an output object";
     return false;
   }
+
+  memset(out, 0, sizeof(*out));
+  out->graph.root = CMETA_INVALID_ID;
+
   if (executable_mode && !runtime_ctx) {
     if (error) *error = "executable CFlow lowering requires a runtime context";
     return false;
   }
-
-  memset(out, 0, sizeof(*out));
-  out->graph.root = CMETA_INVALID_ID;
 
   if (!ts_cflow_lower_node(runtime_ctx, executable_mode, expr, out, error)) {
     ts_cflow_release_owned_lowering(out);
