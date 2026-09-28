@@ -81,8 +81,8 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.0/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.0/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
           echo "CHTTP_ROOT=$packages/chttp.native/1.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
       - name: Configure full source test graph
         shell: bash
@@ -166,8 +166,8 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.0/sdk/$RID" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.0/sdk/$RID" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/$RID" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/$RID" >> "$GITHUB_ENV"
           echo "CHTTP_ROOT=$packages/chttp.native/1.1.2/sdk/$RID" >> "$GITHUB_ENV"
       - name: Configure, build and install SDK with native modules
         shell: bash
@@ -199,8 +199,8 @@ jobs:
           jit=MIR
           modules=ON
           cli=OFF
-          salts=1.8.0
-          salts_utils=4.1.0
+          salts=1.8.2
+          salts_utils=4.1.2
           chttp=1.1.2
           EOF
           mkdir -p dist
