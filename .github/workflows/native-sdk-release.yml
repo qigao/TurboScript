@@ -98,7 +98,10 @@ jobs:
         run: cmake --build build/source-test --parallel 2
       - name: Run full CTest graph
         shell: bash
-        run: ctest --test-dir build/source-test --no-tests=error --output-on-failure
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          ctest --test-dir build/source-test --no-tests=error --output-on-failure
       - name: Verify exact head and clean tracked source
         shell: bash
         run: |
