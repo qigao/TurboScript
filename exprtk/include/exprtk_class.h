@@ -15,6 +15,7 @@
 
 #include "exprtk_types.h"
 #include "salts_buffer.h"
+#include <cmeta/cmeta.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -68,6 +69,15 @@ struct exprtk_class_s {
     int is_abstract;                 /* Whether this class cannot be instantiated */
     int is_interface;                /* Whether this class is an interface constraint */
     int is_final;                    /* Whether this class cannot be extended */
+
+    /* Canonical CMeta identity projected from the finalized script class shape.
+     * The descriptor describes the native exprtk_instance_t carrier while its
+     * semantic identity is class-specific and deterministic across clones. */
+    char *cmeta_stable_id;
+    cmeta_type_identity cmeta_identity;
+    cmeta_type_desc cmeta_type;
+    int cmeta_ready;
+
     mem_pool_t *arena;               /* Memory arena for class metadata */
 };
 
@@ -357,6 +367,21 @@ EXPRTK_C_API void exprtk_class_finalize_abstract_methods(exprtk_class_t *klass);
 EXPRTK_C_API int exprtk_class_is_abstract(exprtk_class_t *klass);
 
 EXPRTK_C_API int exprtk_class_is_interface(exprtk_class_t *klass);
+
+/**
+ * @brief Finalize the canonical CMeta type identity for this class.
+ *
+ * The identity is derived from the finalized semantic shape (class name,
+ * inheritance/interfaces and instance field name/type/access metadata), not
+ * from the process-local type_id. Repeated finalization is allowed.
+ */
+EXPRTK_C_API int exprtk_class_finalize_cmeta(exprtk_class_t *klass);
+
+/**
+ * @brief Return the finalized canonical CMeta type descriptor, or NULL.
+ */
+EXPRTK_C_API const cmeta_type_desc *exprtk_class_cmeta_type(
+    const exprtk_class_t *klass);
 
 /**
  * @brief Free class resources
