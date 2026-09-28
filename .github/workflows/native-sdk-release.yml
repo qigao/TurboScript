@@ -2,10 +2,8 @@ name: TurboScript native SDK release
 on:
   pull_request:
   push:
-    branches: [master]
     tags:
       - "v*"
-  workflow_dispatch:
 permissions:
   contents: read
   packages: read
@@ -81,18 +79,20 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/linux-x64" >> "$GITHUB_ENV"
       - name: Configure full source test graph
         shell: bash
         run: |
           set -euxo pipefail
           cmake -S . -B build/source-test -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
             -DBUILD_EXAMPLES=OFF \
             -DTURBOSCRIPT_BUILD_MODULES=ON \
@@ -151,18 +151,20 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/linux-x64" >> "$GITHUB_ENV"
       - name: Configure sanitized Host graph
         shell: bash
         run: |
           set -euxo pipefail
           cmake -S . -B build/host-sanitizer -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
             -DBUILD_EXAMPLES=OFF \
             -DTURBOSCRIPT_BUILD_MODULES=ON \
@@ -231,8 +233,8 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
       - name: Build modules-off Host contracts and install SDK
         shell: bash
         run: |
@@ -240,9 +242,11 @@ jobs:
           prefix="$GITHUB_WORKSPACE/stage/host-abi"
           cmake -S . -B build/host-abi -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             "-DCMAKE_INSTALL_PREFIX=$prefix" \
             -DBUILD_TESTING=ON -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF \
             -DBUILD_EXAMPLES=OFF \
@@ -264,7 +268,8 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
             "-DCMAKE_PREFIX_PATH=$prefix;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             -DVCPKG_MANIFEST_MODE=OFF \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed"
@@ -329,9 +334,9 @@ jobs:
             --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
           packages="$RUNNER_TEMP/native-dependencies"
           dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.2/sdk/$RID" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.2/sdk/$RID" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.3/sdk/$RID" >> "$GITHUB_ENV"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/$RID" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/$RID" >> "$GITHUB_ENV"
+          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/$RID" >> "$GITHUB_ENV"
       - name: Configure, build and install SDK with native modules
         shell: bash
         run: |
@@ -346,8 +351,9 @@ jobs:
               "-DTURBOSCRIPT_HOST_LEMON_EXECUTABLE=$GITHUB_WORKSPACE/build/host/lemon" )
           fi
           cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
             "-DVCPKG_TARGET_TRIPLET=$TRIPLET" "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             "-DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/stage/$RID" \
             -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
             -DTURBOSCRIPT_BUILD_MODULES=ON -DTURBOSCRIPT_BUILD_CLI=OFF "${args[@]}"
@@ -362,9 +368,9 @@ jobs:
           jit=MIR
           modules=ON
           cli=OFF
-          salts=1.8.2
-          salts_utils=4.1.2
-          chttp=1.1.3
+          salts=1.8.3
+          salts_utils=4.1.3
+          chttp=1.1.4
           EOF
           mkdir -p dist
           tar -chzf "dist/turboscript-$RID.tar.gz" -C stage "$RID"
@@ -389,7 +395,7 @@ jobs:
           cmake -S cmake/ci/sdk-smoke -B build/sdk-smoke -G Ninja -DCMAKE_BUILD_TYPE=Release \
             "-DCMAKE_PREFIX_PATH=$prefix;$CHTTP_ROOT;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
             "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
-            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
             "-DVCPKG_TARGET_TRIPLET=$TRIPLET" -DVCPKG_MANIFEST_MODE=OFF \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" "${args[@]}"
           cmake --build build/sdk-smoke --parallel 2
