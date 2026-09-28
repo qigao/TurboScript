@@ -89,7 +89,6 @@ jobs:
           cmake -S . -B build/source-test -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
             -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
@@ -161,7 +160,6 @@ jobs:
           cmake -S . -B build/host-sanitizer -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
             -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
@@ -243,7 +241,6 @@ jobs:
           cmake -S . -B build/host-abi -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
             -DVCPKG_TARGET_TRIPLET=x64-linux \
             "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
             -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
