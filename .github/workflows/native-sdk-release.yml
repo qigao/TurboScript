@@ -169,10 +169,13 @@ jobs:
             -DTURBOSCRIPT_BUILD_CLI=OFF \
             -DENABLE_SANITIZER_ADDRESS=ON \
             -DENABLE_SANITIZER_UNDEFINED=ON
-      - name: Build Host module sanitizer target
+      - name: Build Host and CFlow kernel sanitizer targets
         shell: bash
-        run: cmake --build build/host-sanitizer --target test_turbo_script_host_module --parallel 2
-      - name: Run unfiltered Host module suite under sanitizers
+        run: |
+          cmake --build build/host-sanitizer \
+            --target test_turbo_script_host_module test_turbo_script_cflow_mir_kernel \
+            --parallel 2
+      - name: Run Host and CFlow kernel suites under sanitizers
         shell: bash
         run: |
           set -euo pipefail
@@ -181,14 +184,14 @@ jobs:
           export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
           unset LSAN_OPTIONS
           ctest --test-dir build/host-sanitizer \
-            -R '^test_turbo_script_host_module$' \
+            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel)$' \
             --no-tests=error --verbose --output-on-failure \
-            --output-junit host-module-results.xml
+            --output-junit host-cflow-sanitizer-results.xml
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: host-module-sanitizer-evidence
-          path: build/host-sanitizer/host-module-results.xml
+          name: host-cflow-sanitizer-evidence
+          path: build/host-sanitizer/host-cflow-sanitizer-results.xml
           if-no-files-found: error
 
   host-abi:

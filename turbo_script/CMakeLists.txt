@@ -18,6 +18,8 @@ target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PUBLIC Salts::Plugin)
 set(SOURCE_FILES
   src/graph/turbo_script_cflow_lower.c
   src/graph/turbo_script_cflow_lower.h
+  src/graph/turbo_script_cflow_mir_kernel.c
+  src/graph/turbo_script_cflow_mir_kernel.h
   src/graph/turbo_script_cmeta_bridge.c
   src/graph/turbo_script_cmeta_bridge.h
   src/host/turbo_script_host_instance.c
