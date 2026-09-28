@@ -729,28 +729,34 @@ int exprtk_inv3(const double *A, double *out) {
 
 void exprtk_matmul(const double *A, const double *B, size_t m, size_t k, size_t n, double *out) {
     if (!A || !B || !out || m == 0 || k == 0 || n == 0 ||
-        m > (size_t)INT_MAX || k > (size_t)INT_MAX || n > (size_t)INT_MAX)
+        m > SIZE_MAX / n)
         return;
 
-    float *a = (float *)malloc(m * k * sizeof(float));
-    float *b = (float *)malloc(k * n * sizeof(float));
-    float *c = (float *)malloc(m * n * sizeof(float));
-    if (!a || !b || !c) {
-        free(a);
-        free(b);
-        free(c);
-        return;
+    /*
+     * Keep the public double contract end-to-end.  The previous path converted
+     * both inputs to float for MiniBLAS, which accumulated visible error for
+     * ordinary medium-sized matrices.  Accumulate four output columns at a
+     * time: A[i,p] is broadcast while B[p,j..j+3] is contiguous row-major.
+     */
+    memset(out, 0, m * n * sizeof(double));
+    for (size_t i = 0; i < m; ++i) {
+        double *out_row = &out[i * n];
+        for (size_t p = 0; p < k; ++p) {
+            const double a = A[i * k + p];
+            const double *b_row = &B[p * n];
+            size_t j = 0;
+
+            for (; j + 4 <= n; j += 4) {
+                __m256d acc = _mm256_loadu_pd(&out_row[j]);
+                const __m256d av = _mm256_set1_pd(a);
+                const __m256d bv = _mm256_loadu_pd(&b_row[j]);
+                acc = _mm256_fmadd_pd(av, bv, acc);
+                _mm256_storeu_pd(&out_row[j], acc);
+            }
+            for (; j < n; ++j)
+                out_row[j] += a * b_row[j];
+        }
     }
-
-    simd_row_major_double_to_col_float(A, m, k, a);
-    simd_row_major_double_to_col_float(B, k, n, b);
-    memset(c, 0, m * n * sizeof(float));
-    matmul("N", "N", (int)m, (int)n, (int)k, 1.0f, a, b, 0.0f, c);
-    simd_col_float_to_row_major_double(c, m, n, out);
-
-    free(a);
-    free(b);
-    free(c);
 }
 
 void exprtk_transpose(const double *A, size_t rows, size_t cols, double *out) {
