@@ -7,7 +7,7 @@ upstream license terms continue to apply.
 | Component | Repository path | Upstream license | Notes |
 | --- | --- | --- | --- |
 | CRoaring | `vendor/croar/` | Apache-2.0 OR MIT | Both license notices are embedded in the amalgamated source. |
-| MIR | `qigao/vcpkg-cache` port `mir-jit` (upstream MIR v1.0.0) | MIT | Linked through the canonical `MIR::MIR` vcpkg package; the retained `vendor/mir/LICENSE` is a license copy only and the vendored MIR sources are not built. |
+| MIR | `qigao/vcpkg-cache` port `mir-jit` (upstream MIR v1.0.0) | MIT | External vcpkg dependency linked through canonical `MIR::MIR`; MIR source is not vendored in TurboScript. |
 | TRE | `vendor/tre/` | BSD-2-Clause | See `vendor/tre/LICENSE`. |
 | libecc | `vendor/turbo_crypto/libecc/` | BSD-2-Clause OR GPL-2.0-or-later | TurboScript selects the BSD license for redistribution. See `vendor/turbo_crypto/libecc/LICENSE`. |
 | Monocypher | `vendor/turbo_crypto/monocypher/` | BSD-2-Clause OR CC0-1.0 | License notice is embedded in the upstream source headers. |
