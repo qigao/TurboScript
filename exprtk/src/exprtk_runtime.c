@@ -2321,6 +2321,9 @@ EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_checked_value_nodes(
     return result;
 }
 
+static const cmeta_type_desc *oop_admit_receiver_type(
+    exprtk_class_t *klass);
+
 EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_numeric(const char *object_name,
                                                         const char *method_name, size_t argc,
                                                         const double *argv, exprtk_env_t *env) {
