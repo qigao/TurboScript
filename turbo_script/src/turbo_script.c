@@ -143,6 +143,8 @@ static void ts_context_destroy_final(turbo_script_ctx_t *ctx) {
   if (ctx->script_mir_ctx) {
     MIR_finish(ctx->script_mir_ctx);
   }
+  ts_mir_owned_string_blocks_destroy(ctx->mir_owned_string_blocks);
+  ctx->mir_owned_string_blocks = NULL;
 
   /* expr is freed by compiled_asts[] loop below if expr_in_compiled_asts == 1;
    * otherwise free it directly here. */
