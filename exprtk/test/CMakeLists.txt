@@ -58,7 +58,7 @@ if(UNIX)
 endif()
 
 cmake_add_test(
-  SOURCES test_simd_helpers.c test_mod_io.c test_oop.c
+  SOURCES test_simd_helpers.c test_mod_io.c test_oop.c test_cmeta_class.c
   LIBS ${EXPRTK_TEST_LIBS}
   INCLUDES ${EXPRTK_TEST_INCLUDES}
   FOLDER exprtk
