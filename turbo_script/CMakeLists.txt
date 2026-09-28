@@ -60,7 +60,7 @@ target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
-          ${CMAKE_SOURCE_DIR}/exprtk/src
+  PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/src
           ${CMAKE_CURRENT_SOURCE_DIR}/src/host
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
