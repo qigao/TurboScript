@@ -16,6 +16,8 @@
 #include "exprtk_types.h"
 #include "salts_buffer.h"
 #include <cmeta/cmeta.h>
+#include <cmeta/data.h>
+#include <cmeta/object.h>
 #include <stddef.h>
 
 #ifdef __cplusplus
@@ -78,6 +80,17 @@ struct exprtk_class_s {
     cmeta_type_desc cmeta_type;
     int cmeta_ready;
 
+    /* Canonical data/object surface. Logical fields are provider-backed and
+     * always use CMETA_FIELD_DYNAMIC_OFFSET; no script slot is projected as a
+     * native C struct offset. */
+    cmeta_field_desc *cmeta_layout_fields;
+    cmeta_data_field_desc *cmeta_data_fields;
+    cmeta_struct_desc cmeta_struct;
+    cmeta_data_struct_shape cmeta_shape;
+    cmeta_data_desc cmeta_data;
+    cmeta_object_field_provider cmeta_field_provider;
+    int cmeta_data_ready;
+
     mem_pool_t *arena;               /* Memory arena for class metadata */
 };
 
@@ -93,6 +106,7 @@ struct exprtk_instance_s {
     void *fields;           /* HTAB(exprtk_map_kv_t)* - instance fields (this.x, this.y, ...) */
     exprtk_value_t *field_slots;      /* Field values indexed by klass->instance_field_names */
     unsigned char *field_slot_used;   /* Whether the corresponding slot has been assigned */
+    bool *cmeta_bool_slots;            /* Exact _Bool projection for typed bool fields */
     size_t field_slot_count;
     size_t field_slot_capacity;
     uint64_t field_version;  /* Bumped when the instance field table shape changes */
@@ -382,6 +396,28 @@ EXPRTK_C_API int exprtk_class_finalize_cmeta(exprtk_class_t *klass);
  */
 EXPRTK_C_API const cmeta_type_desc *exprtk_class_cmeta_type(
     const exprtk_class_t *klass);
+
+/**
+ * @brief Finalize the canonical CMeta data/object surface for this class.
+ *
+ * Every reflected logical field is marked CMETA_FIELD_DYNAMIC_OFFSET and is
+ * accessed only through the class-owned field provider. This never treats the
+ * slot/hash-backed runtime as a fixed-layout C struct.
+ */
+EXPRTK_C_API int exprtk_class_finalize_cmeta_data(exprtk_class_t *klass);
+
+/** @brief Return the finalized canonical CMeta data descriptor, or NULL. */
+EXPRTK_C_API const cmeta_data_desc *exprtk_class_cmeta_data(
+    const exprtk_class_t *klass);
+
+/**
+ * @brief Borrow one instance as a provider-backed canonical CMeta object.
+ *
+ * The borrow is valid while instance, its class metadata and field storage
+ * remain alive. Mutation follows the existing TurboScript instance rules.
+ */
+EXPRTK_C_API cmeta_status exprtk_instance_borrow_cmeta_object(
+    exprtk_instance_t *instance, cmeta_object_ref *out);
 
 /**
  * @brief Free class resources
