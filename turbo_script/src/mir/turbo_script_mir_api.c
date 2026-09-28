@@ -29,6 +29,10 @@ struct ts_mir_artifact_s {
   size_t export_count;
   /* Borrowed from the module-retained context for the artifact lifetime. */
   turbo_script_ctx_t *registry_owner_ctx;
+  /* Owns every string address embedded as a MIR immediate. They are released
+   * only after MIR_gen_finish/MIR_finish can no longer execute or inspect code. */
+  char **owned_strings;
+  size_t owned_string_count;
   int gen_initialized;
 };
 
@@ -65,14 +69,19 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
                                      const ts_host_export_table_t *exports,
                                      MIR_item_t *out_initializer, MIR_item_t *out_export_items,
                                      MIR_item_t *out_numeric_export_wrappers,
-                                     MIR_item_t *out_host_export_wrappers) {
+                                     MIR_item_t *out_host_export_wrappers,
+                                     char ***out_owned_strings,
+                                     size_t *out_owned_string_count) {
   ts_mir_compiler_t compiler = {0};
   const exprtk_node_t **metadata_nodes = NULL;
   size_t export_count = exports ? vec_size(&exports->entries) : 0;
   int success = 0;
   int module_finished = 0;
-  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !policy || !out_initializer)
+  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !policy ||
+      !out_initializer || !out_owned_strings || !out_owned_string_count)
     return -1;
+  *out_owned_strings = NULL;
+  *out_owned_string_count = 0u;
   if ((policy->host_slots == TS_MIR_HOST_SLOTS_FROZEN &&
        (!policy->registry_owner_ctx || policy->registry_owner_ctx->active_host_modules == 0)) ||
       (policy->host_slots == TS_MIR_HOST_SLOTS_DISABLED && policy->registry_owner_ctx) ||
@@ -247,6 +256,12 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
 done:
   if (!module_finished) MIR_finish_module(mir_ctx);
   free(metadata_nodes);
+  /* Detach MIR-immediate strings before compiler-frame cleanup. The artifact
+   * keeps them alive through interpreter/JIT execution and releases them only
+   * after the MIR context is finished. This also covers failed compilation:
+   * the caller destroys the partial artifact and therefore the detached pool. */
+  ts_mir_take_owned_strings(&compiler, out_owned_strings,
+                            out_owned_string_count);
   ts_mir_destroy_compiler_storage(&compiler);
   return success ? 0 : -1;
 }
@@ -287,7 +302,9 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
   if (ts_mir_lower_owned_module(artifact->ctx, artifact->module, compile_ctx, ast, "ts_host",
                                 &policy, exports, &artifact->initializer, artifact->export_items,
                                 artifact->numeric_export_wrappers,
-                                artifact->host_export_wrappers) != 0)
+                                artifact->host_export_wrappers,
+                                &artifact->owned_strings,
+                                &artifact->owned_string_count) != 0)
     goto done;
   for (size_t i = 0; i < export_count; ++i) {
     const ts_host_export_entry_t *entry =
@@ -348,6 +365,9 @@ void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact) {
     if (artifact->gen_initialized) MIR_gen_finish(artifact->ctx);
     MIR_finish(artifact->ctx);
   }
+  for (size_t i = 0; i < artifact->owned_string_count; ++i)
+    free(artifact->owned_strings[i]);
+  free(artifact->owned_strings);
   free(artifact->export_items);
   free(artifact->numeric_export_wrappers);
   free(artifact->host_export_wrappers);
