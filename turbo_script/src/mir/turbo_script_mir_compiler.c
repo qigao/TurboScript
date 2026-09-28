@@ -184,6 +184,46 @@ static int ts_mir_ensure_builtin_admission_capacity(
   return 1;
 }
 
+
+static int ts_mir_ensure_owned_string_capacity(ts_mir_compiler_t *c,
+                                               size_t needed) {
+  char **grown;
+  size_t capacity;
+
+  if (!c) return 0;
+  if (needed <= c->owned_string_capacity) return 1;
+
+  capacity = c->owned_string_capacity ? c->owned_string_capacity * 2u : 32u;
+  if (capacity < needed) capacity = needed;
+  grown = (char **)realloc(c->owned_strings, capacity * sizeof(*grown));
+  if (!grown) {
+    ts_mir_fail(c, "JIT compile error: out of memory growing MIR string ownership");
+    return 0;
+  }
+  c->owned_strings = grown;
+  c->owned_string_capacity = capacity;
+  return 1;
+}
+
+static const char *ts_mir_retain_string(ts_mir_compiler_t *c,
+                                        const char *value) {
+  char *copy;
+
+  if (!c || !value) return NULL;
+  if (!ts_mir_ensure_owned_string_capacity(
+          c, c->owned_string_count + 1u))
+    return NULL;
+
+  copy = strdup(value);
+  if (!copy) {
+    ts_mir_fail(c, "JIT compile error: out of memory retaining MIR string '%s'",
+                value);
+    return NULL;
+  }
+  c->owned_strings[c->owned_string_count++] = copy;
+  return copy;
+}
+
 const exprtk_function_reflection_t *ts_mir_admit_builtin(
     ts_mir_compiler_t *c, const char *name) {
   exprtk_function_reflection_t reflected;
@@ -237,11 +277,9 @@ MIR_reg_t ts_mir_get_or_create_reg(ts_mir_compiler_t *c, const char *name) {
     return ts_mir_new_temp_reg(c);
   }
 
-  entry->name = strdup(name);
+  entry->name = ts_mir_retain_string(c, name);
   if (!entry->name) {
     free(entry);
-    ts_mir_fail(c, "JIT compile error: out of memory duplicating variable name '%s'",
-                name ? name : "<unnamed>");
     return ts_mir_new_temp_reg(c);
   }
   entry->reg = MIR_new_func_reg(c->ctx, c->func->u.func, MIR_T_D, name);
@@ -264,11 +302,9 @@ int ts_mir_bind_existing_reg(ts_mir_compiler_t *c, const char *name, MIR_reg_t r
     return 0;
   }
 
-  entry->name = strdup(name);
+  entry->name = ts_mir_retain_string(c, name);
   if (!entry->name) {
     free(entry);
-    ts_mir_fail(c, "JIT compile error: out of memory duplicating parameter name '%s'",
-                name ? name : "<unnamed>");
     return 0;
   }
 
@@ -381,13 +417,10 @@ int ts_mir_set_var_class(ts_mir_compiler_t *c, const char *var_name,
 
   for (int i = 0; i < c->class_type_count; ++i) {
     if (strcmp(c->class_types[i].var_name, var_name) == 0) {
-      char *copy = strdup(class_name);
-      if (!copy) {
-        ts_mir_fail(c, "JIT compile error: out of memory duplicating class name '%s'",
-                    class_name);
-        return 0;
-      }
-      /* Do not free the old class string: it may already be referenced by MIR. */
+      const char *copy = ts_mir_retain_string(c, class_name);
+      if (!copy) return 0;
+      /* The previous string remains artifact-owned because emitted MIR may
+       * already contain its address. */
       c->class_types[i].class_name = copy;
       return 1;
     }
@@ -406,15 +439,14 @@ int ts_mir_set_var_class(ts_mir_compiler_t *c, const char *var_name,
     c->class_type_capacity = new_capacity;
   }
 
-  c->class_types[c->class_type_count].var_name = strdup(var_name);
-  c->class_types[c->class_type_count].class_name = strdup(class_name);
+  c->class_types[c->class_type_count].var_name =
+      ts_mir_retain_string(c, var_name);
+  c->class_types[c->class_type_count].class_name =
+      ts_mir_retain_string(c, class_name);
   if (!c->class_types[c->class_type_count].var_name ||
       !c->class_types[c->class_type_count].class_name) {
-    free(c->class_types[c->class_type_count].var_name);
-    free(c->class_types[c->class_type_count].class_name);
     c->class_types[c->class_type_count].var_name = NULL;
     c->class_types[c->class_type_count].class_name = NULL;
-    ts_mir_fail(c, "JIT compile error: out of memory tracking OOP type for '%s'", var_name);
     return 0;
   }
   c->class_type_count++;
@@ -454,18 +486,10 @@ const char *ts_mir_find_var_class(ts_mir_compiler_t *c, const char *var_name) {
 
 const char *ts_mir_new_hidden_receiver_name(ts_mir_compiler_t *c) {
   char name[64];
-  char *copy = NULL;
   if (!c) return NULL;
 
   snprintf(name, sizeof(name), "$ts_oop_recv_%d", c->tmp_count++);
-  copy = strdup(name);
-  if (!copy) {
-    ts_mir_fail(c, "JIT compile error: out of memory allocating hidden OOP receiver");
-    return NULL;
-  }
-
-  /* Names are embedded as MIR immediates and must live for the MIR context lifetime. */
-  return copy;
+  return ts_mir_retain_string(c, name);
 }
 
 MIR_reg_t ts_mir_get_or_add_vec_ptr(ts_mir_compiler_t *c, const char *name) {
@@ -638,13 +662,34 @@ static void ts_mir_discard_class_names(ts_mir_compiler_t *c) {
 
 static void ts_mir_discard_class_types(ts_mir_compiler_t *c) {
   if (!c) return;
-  /* Strings can be baked into MIR immediates for monomorphic OOP calls.
-   * Match the existing variable-name policy: keep those allocations alive
-   * for the MIR context lifetime and release only the tracking array. */
+  /* String pointers are borrowed from owned_strings and may be embedded in MIR. */
   free(c->class_types);
   c->class_types = NULL;
   c->class_type_count = 0;
   c->class_type_capacity = 0;
+}
+
+static void ts_mir_destroy_owned_strings(ts_mir_compiler_t *c) {
+  if (!c) return;
+  for (size_t i = 0; i < c->owned_string_count; ++i)
+    free(c->owned_strings[i]);
+  free(c->owned_strings);
+  c->owned_strings = NULL;
+  c->owned_string_count = 0u;
+  c->owned_string_capacity = 0u;
+}
+
+void ts_mir_take_owned_strings(ts_mir_compiler_t *c, char ***out_strings,
+                               size_t *out_count) {
+  if (out_strings) *out_strings = NULL;
+  if (out_count) *out_count = 0u;
+  if (!c || !out_strings || !out_count) return;
+
+  *out_strings = c->owned_strings;
+  *out_count = c->owned_string_count;
+  c->owned_strings = NULL;
+  c->owned_string_count = 0u;
+  c->owned_string_capacity = 0u;
 }
 
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
@@ -657,6 +702,7 @@ void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
   ts_mir_destroy_builtin_admissions(c);
   ts_mir_destroy_class_names(c);
   ts_mir_discard_class_types(c);
+  ts_mir_destroy_owned_strings(c);
 }
 
 ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c) {
