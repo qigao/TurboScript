@@ -59,6 +59,16 @@ EXPRTK_C_API int exprtk_module_function_reflect(
     size_t index,
     exprtk_function_reflection_t *out);
 
+/**
+ * Resolve one builtin entry for compile/admission-time inspection.
+ *
+ * The returned pointer is borrowed and must not be retained across module-cache
+ * invalidation. Consumers that need a stable contract should immediately copy
+ * it through exprtk_func_entry_reflect().
+ */
+EXPRTK_C_API const exprtk_func_entry_t *exprtk_find_builtin_entry(
+    const char *name, exprtk_env_t *env);
+
 struct exprtk_module_s {
     const char *module_name;
     const exprtk_func_entry_t *entries;
