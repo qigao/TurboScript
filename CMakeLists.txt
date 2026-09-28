@@ -50,6 +50,7 @@ find_package(SaltsUtils 4.1.2 EXACT CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT
 if(TURBOSCRIPT_BUILD_MODULES)
   find_package(Chttp 1.1.3 EXACT CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 endif()
+find_package(MIR CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
