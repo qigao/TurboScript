@@ -130,6 +130,12 @@ cmake_add_test(
   INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
   FOLDER turbo_script)
 cmake_add_test(
+  TARGET test_turbo_script_cflow_lower
+  SOURCES test_turbo_script_cflow_lower.c
+  LIBS turbo_script_lib Salts::TinyTest Salts::CMeta Salts::CFlow exprtk
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
+  FOLDER turbo_script)
+cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR
