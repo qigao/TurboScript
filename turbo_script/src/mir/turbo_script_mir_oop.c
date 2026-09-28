@@ -1494,6 +1494,47 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
   }
 
   exprtk_instance_t *instance = object.data.instance_val.instance;
+  exprtk_class_t *field_owner = NULL;
+  const cmeta_data_desc *class_data;
+  const cmeta_data_struct_shape *shape;
+  const cmeta_data_field_desc *field;
+  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
+  int access;
+
+  /* Direct slot access is admitted only for an explicit public CMeta double
+   * field. Dynamic/untyped fields remain on the generic value bridge even if
+   * their current runtime value happens to be numeric. */
+  access = exprtk_class_get_instance_field_access(
+      instance->klass, member_name, &field_owner);
+  if (access != EXPRTK_ACCESS_PUBLIC ||
+      exprtk_instance_borrow_cmeta_object(instance, &reflected) != CMETA_OK) {
+    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "JIT runtime error: field '%s' is not admitted for direct numeric access",
+             member_name);
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+    ctx->env.aborted = 1;
+    return NULL;
+  }
+
+  class_data = reflected.data;
+  shape = class_data && class_data->kind == CMETA_DATA_STRUCT
+              ? (const cmeta_data_struct_shape *)class_data->shape
+              : NULL;
+  field = cmeta_data_struct_find_field(shape, member_name);
+  if (!field || !cmeta_data_desc_valid(field->value) ||
+      !cmeta_data_desc_equal(field->value, &cmeta_data_double)) {
+    cmeta_object_release(&reflected);
+    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+             "JIT runtime error: field '%s' is not a canonical number field",
+             member_name);
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+    ctx->env.aborted = 1;
+    return NULL;
+  }
+  cmeta_object_release(&reflected);
+
   exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
   if (!slot && create_if_missing) {
     exprtk_instance_set_field(instance, member_name, exprtk_val_num(0.0));
@@ -1511,20 +1552,18 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     return NULL;
   }
 
-  if (slot->type == EXPRTK_VAL_INTEGER) {
-    slot->type = EXPRTK_VAL_NUMBER;
-    slot->data.number = (double)slot->data.integer;
-  }
   if (slot->type != EXPRTK_VAL_NUMBER) {
     ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
     snprintf(ctx->error_msg, sizeof(ctx->error_msg),
-             "JIT runtime error: field '%s' is not numeric", member_name);
+             "JIT runtime error: field '%s' violates its canonical number storage",
+             member_name);
     snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
     ctx->env.aborted = 1;
     return NULL;
   }
 
   (void)object_node;
+  (void)field_owner;
   slot_cache->instance = instance;
   slot_cache->index = (size_t)(slot - instance->field_slots);
   return instance;
