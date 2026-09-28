@@ -1,3 +1,4 @@
+#include "exprtk.h"
 #include "exprtk_module.h"
 #include "tinytest.h"
 
@@ -44,6 +45,32 @@ spec("CMeta builtin function reflection") {
         check(exprtk_module_function_reflect(module, 0u, &right));
         check(cmeta_function_desc_equal(&left.function, &right.function));
         check((left.invoke) == (right.invoke));
+    }
+
+    it("resolves registry builtins through the same admitted invoke authority") {
+        exprtk_env_t env;
+        const exprtk_module_t *module = exprtk_module_math();
+        exprtk_function_reflection_t left = {0};
+        exprtk_function_reflection_t right = {0};
+        const char *name;
+
+        check_not_null(module);
+        check(module->count > 0u);
+        name = module->entries[0].name;
+        check_not_null(name);
+
+        exprtk_env_init(&env);
+        exprtk_env_add_module(&env, module);
+
+        check(exprtk_find_builtin_reflection(name, &env, &left));
+        check(exprtk_find_builtin_reflection(name, &env, &right));
+        check(cmeta_function_desc_valid(&left.function));
+        check(cmeta_function_desc_equal(&left.function, &right.function));
+        check((left.invoke) == (module->entries[0].fn));
+        check((left.invoke) == (exprtk_find_builtin(name, &env)));
+        check((right.invoke) == (left.invoke));
+
+        exprtk_env_free(&env);
     }
 
     it("fails closed for invalid module entries") {
