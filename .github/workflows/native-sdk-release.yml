@@ -107,6 +107,8 @@ jobs:
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          git status --short --untracked-files=no
+          git diff -- . ':(exclude)build/**'
           test -z "$(git status --porcelain --untracked-files=no)"
 
   build:
