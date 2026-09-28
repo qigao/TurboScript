@@ -95,7 +95,7 @@ target_include_directories(${TARGET_NAME} PRIVATE ${SIMDE_INCLUDE_DIRS})
 
 target_link_libraries(
   ${TARGET_NAME}
-  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser Salts::CMeta
+  PUBLIC TurboScript::ExprTkSyntax Salts::Core Salts::DataBind Salts::DateTimeParser Salts::CMeta Salts::PluginABI
   PRIVATE Salts::CSTL Salts::Mustache miniblas_linalg)
 
 # Enable AVX/AVX2 for SIMD optimizations
