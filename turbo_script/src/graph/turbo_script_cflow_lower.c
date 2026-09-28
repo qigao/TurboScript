@@ -11,14 +11,26 @@ static bool ts_cflow_fail(ts_cflow_lowered_pipeline_t *out,
   return false;
 }
 
+static bool ts_cflow_numeric_source_literal(const exprtk_node_t *node) {
+  if (!node) return false;
+  if (node->type == EXPRTK_NODE_NUMBER || node->type == EXPRTK_NODE_INTEGER)
+    return true;
+
+  /* TurboScript represents unary +/- as a BINARY_OP with a NULL left operand.
+   * Match the canonical AST/MIR contract instead of rejecting negative numeric
+   * literals such as -2 as a non-numeric vector source. */
+  return node->type == EXPRTK_NODE_BINARY_OP &&
+         node->data.binary.left == NULL &&
+         (node->data.binary.op == exprtk_TOKEN_PLUS ||
+          node->data.binary.op == exprtk_TOKEN_MINUS) &&
+         ts_cflow_numeric_source_literal(node->data.binary.right);
+}
+
 static bool ts_cflow_vector_source(const exprtk_node_t *node) {
   size_t i;
   if (!node || node->type != EXPRTK_NODE_VECTOR) return false;
   for (i = 0; i < node->data.vector.count; ++i) {
-    const exprtk_node_t *element = node->data.vector.elements[i];
-    if (!element ||
-        (element->type != EXPRTK_NODE_NUMBER &&
-         element->type != EXPRTK_NODE_INTEGER))
+    if (!ts_cflow_numeric_source_literal(node->data.vector.elements[i]))
       return false;
   }
   return true;
