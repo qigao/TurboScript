@@ -12,5 +12,10 @@ Linux/macOS 验证重新解包后的 C 与 C++ 消费端解释执行、JIT 执�
 Android 使用 NDK API 26、c++_shared，验证 ELF 架构及 C/C++ 消费端交叉链接；
 不把交叉编译成功当作设备运行验证。应用需自行部署 libc++_shared.so 和依赖动态库。
 
-版本从产品版本派生为唯一 `-ci.<run>.<attempt>` 预发布版本。每个 SDK 内的
-manifest 记录实际源码提交、依赖版本和构建配置。本包不代表未合并 Host ABI PR 的验收。
+正式发布采用与 Salts 相同的 tag contract：`CMakeLists.txt`、root `vcpkg.json`、
+Git tag 和 NuGet package 使用同一个版本。当前正式版本为 `3.0.0`，只有
+`v3.0.0` tag 可以发布 `TurboScript.Native 3.0.0`。
+
+PR/master qualification 仍使用唯一的 `3.0.0-ci.<run>.<attempt>` 构建版本，但只作为
+CI artifact，不推送到 GitHub Packages。每个 SDK 内的 manifest 记录实际源码提交、
+依赖版本和构建配置。
