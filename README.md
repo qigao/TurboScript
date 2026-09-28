@@ -22,7 +22,7 @@ is admission control, not process isolation.
 
 ## Build and test
 
-The build requires the installed Salts 1.8.0 and SaltsUtils 4.1.0 packages plus
+The build requires the installed Salts 1.8.2 and SaltsUtils 4.1.2 packages plus
 the vcpkg dependencies declared in `vcpkg.json`. Configure their
 locations in a local `CMakeUserPresets.json`, then use the repository presets:
 
