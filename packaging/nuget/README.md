@@ -2,7 +2,7 @@
 
 嵌入式 C/C++ SDK，保留 MIR 解释器和 JIT，包含原生扩展模块（含 Praktor 需要的 os/net），不附带 CLI。
 SDK 目录：`sdk/linux-x64`、`sdk/macos-arm64`、`sdk/android-arm64-v8a`。
-依赖 NuGet 包 Salts.Native 1.7.12、SaltsUtils.Native 4.0.3、CHttp.Native 1.0.0。
+依赖 NuGet 包 Salts.Native 1.7.12、SaltsUtils.Native 4.0.3、CHttp.Native 1.1.1。
 
 还原包后设置 `SALTS_ROOT`、`SALTS_UTILS_ROOT`、`CHTTP_ROOT`、`TURBOSCRIPT_ROOT` 和包含各 SDK 目录的
 `CMAKE_PREFIX_PATH`，使用 `find_package(TurboScript CONFIG REQUIRED)` 与
