@@ -19,6 +19,9 @@
 
 #include <cserde/writer.h>
 
+#include <errno.h>
+#include <limits.h>
+#include <math.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -374,6 +377,211 @@ static const DataBindFormatProvider *mapper_format_provider(DataBindFormat forma
     }
 }
 
+typedef struct mapper_coercion_reader_s {
+    cserde_reader reader;
+    cserde_reader *inner;
+    exprtk_class_t *klass;
+    const cmeta_data_desc *pending;
+    int root_map;
+    int expect_key;
+} mapper_coercion_reader_t;
+
+static const cmeta_data_desc *mapper_field_data_by_slice(
+    const exprtk_class_t *klass, const cserde_slice *name) {
+    if (!klass || !name || !klass->cmeta_data_fields) return NULL;
+    for (size_t i = 0; i < klass->instance_field_count; ++i) {
+        const char *field_name = klass->instance_field_names[i];
+        size_t field_len;
+        if (!field_name) continue;
+        field_len = strlen(field_name);
+        if (field_len == name->size &&
+            (field_len == 0u ||
+             memcmp(field_name, name->data, field_len) == 0))
+            return klass->cmeta_data_fields[i].value;
+    }
+    return NULL;
+}
+
+static int mapper_slice_to_cstr(
+    const cserde_slice *slice, char *buffer, size_t capacity) {
+    if (!slice || !buffer || capacity == 0u ||
+        slice->size >= capacity ||
+        (slice->size != 0u && slice->data == NULL))
+        return 0;
+    if (slice->size != 0u)
+        memcpy(buffer, slice->data, slice->size);
+    buffer[slice->size] = '\0';
+    return 1;
+}
+
+static cserde_status mapper_coerce_sint(cserde_token *token) {
+    char buffer[128];
+    char *end = NULL;
+    long long parsed;
+
+    if (!token) return CSERDE_INVALID_ARGUMENT;
+    if (token->kind == CSERDE_SINT) return CSERDE_OK;
+    if (token->kind == CSERDE_UINT) {
+        if (token->value.uint > (uint64_t)INT64_MAX)
+            return CSERDE_VALUE_OUT_OF_RANGE;
+        token->kind = CSERDE_SINT;
+        token->value.sint = (int64_t)token->value.uint;
+        return CSERDE_OK;
+    }
+    if (token->kind == CSERDE_FLOAT) {
+        double integral = 0.0;
+        const double value = token->value.floating;
+        if (!isfinite(value) ||
+            modf(value, &integral) != 0.0 ||
+            value < (double)INT64_MIN || value > (double)INT64_MAX ||
+            fabs(value) > 9007199254740991.0)
+            return CSERDE_VALUE_OUT_OF_RANGE;
+        token->kind = CSERDE_SINT;
+        token->value.sint = (int64_t)integral;
+        return CSERDE_OK;
+    }
+    if (token->kind != CSERDE_STRING ||
+        !mapper_slice_to_cstr(&token->value.slice, buffer, sizeof(buffer)))
+        return CSERDE_INVALID_TOKEN;
+
+    errno = 0;
+    parsed = strtoll(buffer, &end, 10);
+    if (errno == ERANGE || end == buffer || *end != '\0')
+        return CSERDE_VALUE_OUT_OF_RANGE;
+    token->kind = CSERDE_SINT;
+    token->value.sint = (int64_t)parsed;
+    return CSERDE_OK;
+}
+
+static cserde_status mapper_coerce_float(cserde_token *token) {
+    char buffer[128];
+    char *end = NULL;
+    double parsed;
+
+    if (!token) return CSERDE_INVALID_ARGUMENT;
+    if (token->kind == CSERDE_FLOAT)
+        return isfinite(token->value.floating)
+                   ? CSERDE_OK
+                   : CSERDE_VALUE_OUT_OF_RANGE;
+    if (token->kind == CSERDE_SINT) {
+        token->kind = CSERDE_FLOAT;
+        token->value.floating = (double)token->value.sint;
+        return CSERDE_OK;
+    }
+    if (token->kind == CSERDE_UINT) {
+        token->kind = CSERDE_FLOAT;
+        token->value.floating = (double)token->value.uint;
+        return isfinite(token->value.floating)
+                   ? CSERDE_OK
+                   : CSERDE_VALUE_OUT_OF_RANGE;
+    }
+    if (token->kind != CSERDE_STRING ||
+        !mapper_slice_to_cstr(&token->value.slice, buffer, sizeof(buffer)))
+        return CSERDE_INVALID_TOKEN;
+
+    errno = 0;
+    parsed = strtod(buffer, &end);
+    if (errno == ERANGE || end == buffer || *end != '\0' || !isfinite(parsed))
+        return CSERDE_VALUE_OUT_OF_RANGE;
+    token->kind = CSERDE_FLOAT;
+    token->value.floating = parsed;
+    return CSERDE_OK;
+}
+
+static cserde_status mapper_coerce_bool(cserde_token *token) {
+    const cserde_slice *slice;
+    if (!token) return CSERDE_INVALID_ARGUMENT;
+    if (token->kind == CSERDE_BOOL) return CSERDE_OK;
+    if (token->kind != CSERDE_STRING) return CSERDE_INVALID_TOKEN;
+    slice = &token->value.slice;
+    if (slice->data == NULL && slice->size != 0u) return CSERDE_INVALID_TOKEN;
+
+    if ((slice->size == 4u && memcmp(slice->data, "true", 4u) == 0) ||
+        (slice->size == 1u && slice->data[0] == '1')) {
+        token->kind = CSERDE_BOOL;
+        token->value.boolean = true;
+        return CSERDE_OK;
+    }
+    if ((slice->size == 5u && memcmp(slice->data, "false", 5u) == 0) ||
+        (slice->size == 1u && slice->data[0] == '0')) {
+        token->kind = CSERDE_BOOL;
+        token->value.boolean = false;
+        return CSERDE_OK;
+    }
+    return CSERDE_VALUE_OUT_OF_RANGE;
+}
+
+static cserde_status mapper_coerce_value(
+    const cmeta_data_desc *expected, cserde_token *token) {
+    if (!expected || !token) return CSERDE_OK;
+    if (cmeta_data_desc_equal(expected, &cmeta_data_int64))
+        return mapper_coerce_sint(token);
+    if (cmeta_data_desc_equal(expected, &cmeta_data_double))
+        return mapper_coerce_float(token);
+    if (cmeta_data_desc_equal(expected, &cmeta_data_bool))
+        return mapper_coerce_bool(token);
+    if (expected->kind == CMETA_DATA_STRING)
+        return token->kind == CSERDE_STRING ? CSERDE_OK : CSERDE_INVALID_TOKEN;
+    return CSERDE_OK;
+}
+
+static cserde_status mapper_coercion_next(void *opaque, cserde_token *out) {
+    mapper_coercion_reader_t *context =
+        (mapper_coercion_reader_t *)opaque;
+    cserde_status status;
+
+    if (!context || !context->inner || !out)
+        return CSERDE_INVALID_ARGUMENT;
+
+    status = cserde_reader_next(context->inner, out);
+    if (status != CSERDE_OK) return status;
+
+    if (!context->root_map) {
+        if (out->kind == CSERDE_MAP_BEGIN) {
+            context->root_map = 1;
+            context->expect_key = 1;
+        }
+        return CSERDE_OK;
+    }
+
+    if (context->expect_key) {
+        if (out->kind == CSERDE_MAP_END) {
+            context->root_map = 0;
+            context->pending = NULL;
+            return CSERDE_OK;
+        }
+        if (out->kind == CSERDE_STRING) {
+            context->pending =
+                mapper_field_data_by_slice(context->klass, &out->value.slice);
+            context->expect_key = 0;
+        }
+        return CSERDE_OK;
+    }
+
+    status = mapper_coerce_value(context->pending, out);
+    context->pending = NULL;
+    context->expect_key = 1;
+    return status;
+}
+
+static const cserde_reader_ops MAPPER_COERCION_READER_OPS = {
+    sizeof(cserde_reader_ops),
+    CSERDE_READER_OPS_ABI_VERSION,
+    mapper_coercion_next
+};
+
+static cserde_status mapper_coercion_reader_init(
+    mapper_coercion_reader_t *context,
+    cserde_reader *inner,
+    exprtk_class_t *klass) {
+    if (!context || !inner || !klass) return CSERDE_INVALID_ARGUMENT;
+    memset(context, 0, sizeof(*context));
+    context->inner = inner;
+    context->klass = klass;
+    return cserde_reader_init(
+        &context->reader, &MAPPER_COERCION_READER_OPS, context);
+}
+
 static int mapper_xml_root_matches(
     exprtk_class_t *klass, const char *data, size_t len) {
     salts_xml_document document = {0};
@@ -421,6 +629,7 @@ int mapper_databind_decode(
     DataBindMessagePlanDiagnostic diagnostic =
         DATA_BIND_MESSAGE_PLAN_DIAGNOSTIC_INIT;
     DataBindNativeOptions options;
+    mapper_coercion_reader_t coercion = {0};
     cmeta_object_ref object = CMETA_OBJECT_REF_INIT;
     exprtk_value_t instance_value;
     unsigned char *workspace = NULL;
@@ -486,8 +695,19 @@ int mapper_databind_decode(
         return 0;
     }
 
+    if (mapper_coercion_reader_init(&coercion, lease.reader, klass) !=
+        CSERDE_OK) {
+        cmeta_object_release(&object);
+        free(workspace);
+        data_bind_format_reader_close(&lease);
+        exprtk_instance_destroy(instance_value.data.instance_val.instance);
+        mapper_set_error(error, error_len,
+                         "mapper: failed to initialize typed format coercion");
+        return 0;
+    }
+
     status = data_bind_message_plan_decode_object(
-        entry->plan, &options, lease.reader, &object, NULL, &diagnostic);
+        entry->plan, &options, &coercion.reader, &object, NULL, &diagnostic);
     cmeta_object_release(&object);
     free(workspace);
     data_bind_format_reader_close(&lease);
