@@ -382,6 +382,7 @@ typedef struct mapper_coercion_reader_s {
     cserde_reader *inner;
     exprtk_class_t *klass;
     const cmeta_data_desc *pending;
+    const cmeta_data_desc *failed_expected;
     int root_map;
     int expect_key;
 } mapper_coercion_reader_t;
@@ -559,6 +560,8 @@ static cserde_status mapper_coercion_next(void *opaque, cserde_token *out) {
     }
 
     status = mapper_coerce_value(context->pending, out);
+    if (status != CSERDE_OK)
+        context->failed_expected = context->pending;
     context->pending = NULL;
     context->expect_key = 1;
     return status;
@@ -714,9 +717,35 @@ int mapper_databind_decode(
 
     if (status != DATA_BIND_OK) {
         exprtk_instance_destroy(instance_value.data.instance_val.instance);
-        mapper_set_error(
-            error, error_len, "mapper: %s",
-            diagnostic.message[0] ? diagnostic.message : "typed decode failed");
+        if (coercion.failed_expected != NULL) {
+            if (cmeta_data_desc_equal(
+                    coercion.failed_expected, &cmeta_data_int64))
+                mapper_set_error(error, error_len,
+                                 "mapper: Expected signed integer value");
+            else if (cmeta_data_desc_equal(
+                         coercion.failed_expected, &cmeta_data_double))
+                mapper_set_error(error, error_len,
+                                 "mapper: Expected numeric value");
+            else if (cmeta_data_desc_equal(
+                         coercion.failed_expected, &cmeta_data_bool))
+                mapper_set_error(error, error_len,
+                                 "mapper: Expected boolean value");
+            else if (coercion.failed_expected->kind == CMETA_DATA_STRING)
+                mapper_set_error(error, error_len,
+                                 "mapper: Expected string value");
+            else
+                mapper_set_error(
+                    error, error_len, "mapper: %s",
+                    diagnostic.message[0]
+                        ? diagnostic.message
+                        : "typed decode failed");
+        } else {
+            mapper_set_error(
+                error, error_len, "mapper: %s",
+                diagnostic.message[0]
+                    ? diagnostic.message
+                    : "typed decode failed");
+        }
         return 0;
     }
 
