@@ -365,7 +365,7 @@ int main(int argc, char **argv) {
                  "  value: number;"
                  "  constructor(value) { this.value = value; }"
                  "};"
-                 "c = new Counter(0);"
+                 "c = new Counter(0.0);"
                  "sum = 0;"
                  "for (i = 0; i < 10000; i += 1) { c.value = c.value + 1; sum += c.value; }",
        .iterations = 50,
@@ -378,7 +378,7 @@ int main(int argc, char **argv) {
                  "  constructor(value) { this.value = value; }"
                  "  bump(delta) { this.value = this.value + delta; return this.value; }"
                  "};"
-                 "c = new Counter(0);"
+                 "c = new Counter(0.0);"
                  "sum = 0;"
                  "for (i = 0; i < 10000; i += 1) { sum += c.bump(1); }",
        .iterations = 50,
@@ -391,7 +391,7 @@ int main(int argc, char **argv) {
                  "  constructor(base) { this.base = base; }"
                  "  add(x) { return this.base + x; }"
                  "};"
-                 "a = new Accumulator(2);"
+                 "a = new Accumulator(2.0);"
                  "sum = 0;"
                  "for (i = 0; i < 10000; i += 1) { sum += a.add(i); }",
        .iterations = 50,
