@@ -61,7 +61,11 @@ spec("CMeta class reflection") {
         int64_t id = INT64_C(37);
         double score = 3.5;
         bool active = true;
-        exprtk_value_t name = exprtk_val_str(vstr_from_cstr("Ada"));
+        exprtk_cmeta_string_slot_t name = {
+            .data = (char *)"Ada",
+            .length = 3u,
+            .owned = 0u
+        };
 
         check((mem_init(&arena, 8192)) == (0));
         klass = exprtk_class_create(&arena, "User", NULL, NULL, 0);
