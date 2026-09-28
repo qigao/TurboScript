@@ -68,7 +68,7 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
-  PUBLIC Salts::Core Salts::Databind
+  PUBLIC Salts::Core Salts::DataBind
   PRIVATE Salts::Cron Salts::Coroutine)
 
 # Enable strict warnings for modularized code
