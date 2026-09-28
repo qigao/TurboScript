@@ -222,19 +222,25 @@ static void build_mod_cache(exprtk_env_t *env) {
 }
 
 /** O(log n) lookup in the sorted module cache. */
-static exprtk_builtin_fn mod_cache_find(exprtk_env_t *env, const char *name) {
+static const exprtk_func_entry_t *mod_cache_find_entry(
+    exprtk_env_t *env, const char *name) {
+    if (!env || !name) return NULL;
     if (!env->mod_cache) build_mod_cache(env);
     if (!env->mod_cache || env->mod_cache_count == 0) return NULL;
 
-    const exprtk_func_entry_t *hit = (const exprtk_func_entry_t *)bsearch(
+    return (const exprtk_func_entry_t *)bsearch(
         name, (exprtk_func_entry_t *)env->mod_cache, env->mod_cache_count,
         sizeof(exprtk_func_entry_t), search_cmp);
+}
+
+static exprtk_builtin_fn mod_cache_find(exprtk_env_t *env, const char *name) {
+    const exprtk_func_entry_t *hit = mod_cache_find_entry(env, name);
     return hit ? hit->fn : NULL;
 }
 
-static exprtk_builtin_fn mod_find_in_named_module(exprtk_env_t *env, const char *module_name,
-                                                  size_t module_name_len,
-                                                  const char *entry_name) {
+static const exprtk_func_entry_t *mod_find_entry_in_named_module(
+    exprtk_env_t *env, const char *module_name, size_t module_name_len,
+    const char *entry_name) {
     if (!env || !module_name || !entry_name) return NULL;
 
     for (exprtk_env_t *e = env; e; e = e->parent) {
@@ -247,11 +253,19 @@ static exprtk_builtin_fn mod_find_in_named_module(exprtk_env_t *env, const char 
 
             for (size_t i = 0; i < mod->count; ++i) {
                 if (strcmp(mod->entries[i].name, entry_name) == 0)
-                    return mod->entries[i].fn;
+                    return &mod->entries[i];
             }
         }
     }
     return NULL;
+}
+
+static exprtk_builtin_fn mod_find_in_named_module(
+    exprtk_env_t *env, const char *module_name, size_t module_name_len,
+    const char *entry_name) {
+    const exprtk_func_entry_t *hit = mod_find_entry_in_named_module(
+        env, module_name, module_name_len, entry_name);
+    return hit ? hit->fn : NULL;
 }
 
 static int is_global_compat_namespace(const char *module_name, size_t module_name_len) {
@@ -289,36 +303,55 @@ void exprtk_registry_init(void) {
     g_registry_ready = 1;
 }
 
-exprtk_builtin_fn exprtk_registry_find(const char *name) {
+static const exprtk_func_entry_t *exprtk_registry_find_entry(
+    const char *name) {
+    if (!name) return NULL;
     if (!g_registry_ready) exprtk_registry_init();
     if (g_registry_count == 0) return NULL;
 
-    /* 1. Try exact match (could be "sum" or "math.sum") */
-    const exprtk_func_entry_t *hit = (const exprtk_func_entry_t *)bsearch(
+    return (const exprtk_func_entry_t *)bsearch(
         name, g_registry, g_registry_count,
         sizeof(exprtk_func_entry_t), search_cmp);
-    if (hit) return hit->fn;
+}
 
-    /* 2. If name doesn't have a dot, it might be registered with a prefix we don't know here.
-     * But our current registry flattens everything.
-     * If a module "math" has "sum", it's currently registered as "sum".
-     * If we want to support "math.sum", we need to register it as both or handle dots.
-     */
-    return NULL;
+exprtk_builtin_fn exprtk_registry_find(const char *name) {
+    const exprtk_func_entry_t *hit = exprtk_registry_find_entry(name);
+    return hit ? hit->fn : NULL;
+}
+
+static const exprtk_func_entry_t *exprtk_find_builtin_entry(
+    const char *name, exprtk_env_t *env) {
+    const exprtk_func_entry_t *hit;
+    const char *dot;
+
+    if (!name) return NULL;
+    if (env) {
+        hit = mod_cache_find_entry(env, name);
+        if (hit) return hit;
+
+        dot = strchr(name, '.');
+        if (dot) {
+            hit = mod_find_entry_in_named_module(
+                env, name, (size_t)(dot - name), dot + 1);
+            if (hit) return hit;
+        }
+    }
+    return exprtk_registry_find_entry(name);
 }
 
 exprtk_builtin_fn exprtk_find_builtin(const char *name, exprtk_env_t *env) {
-    if (env) {
-        exprtk_builtin_fn fn = mod_cache_find(env, name);
-        if (fn) return fn;
+    const exprtk_func_entry_t *hit = exprtk_find_builtin_entry(name, env);
+    return hit ? hit->fn : NULL;
+}
 
-        const char *dot = strchr(name, '.');
-        if (dot) {
-            fn = mod_find_in_named_module(env, name, (size_t)(dot - name), dot + 1);
-            if (fn) return fn;
-        }
-    }
-    return exprtk_registry_find(name);
+int exprtk_find_builtin_reflection(
+    const char *name, exprtk_env_t *env, exprtk_function_reflection_t *out) {
+    const exprtk_func_entry_t *entry;
+
+    if (!out) return 0;
+    memset(out, 0, sizeof(*out));
+    entry = exprtk_find_builtin_entry(name, env);
+    return entry != NULL && exprtk_func_entry_reflect(entry, out);
 }
 
 exprtk_value_t exprtk_call_builtin(exprtk_builtin_fn fn, size_t argc,
