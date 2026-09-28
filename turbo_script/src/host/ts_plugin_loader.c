@@ -324,6 +324,11 @@ static int plugin_error_from_salts(ts_plugin_error_t *error,
                             "required symbol '%s' was not found",
                             SALTS_PLUGIN_QUERY_SYMBOL);
   }
+  if (status == SALTS_PLUGIN_UNSUPPORTED_ABI ||
+      status == SALTS_PLUGIN_QUERY_REJECTED) {
+    return plugin_error_set(error, code, stage, (uint32_t)status, path,
+                            "plugin ABI mismatch: %s", detail);
+  }
   return plugin_error_set(error, code, stage, (uint32_t)status, path,
                           "Salts plugin admission failed: %s", detail);
 }
