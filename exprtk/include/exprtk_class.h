@@ -94,6 +94,12 @@ struct exprtk_class_s {
     mem_pool_t *arena;               /* Memory arena for class metadata */
 };
 
+typedef struct exprtk_cmeta_string_slot_s {
+    char *data;
+    size_t length;
+    unsigned char owned;
+} exprtk_cmeta_string_slot_t;
+
 /**
  * @brief Instance object - represents a class instance
  * 
@@ -107,6 +113,7 @@ struct exprtk_instance_s {
     exprtk_value_t *field_slots;      /* Field values indexed by klass->instance_field_names */
     unsigned char *field_slot_used;   /* Whether the corresponding slot has been assigned */
     bool *cmeta_bool_slots;            /* Exact _Bool projection for typed bool fields */
+    exprtk_cmeta_string_slot_t *cmeta_string_slots; /* Exact string projection for CMeta */
     size_t field_slot_count;
     size_t field_slot_capacity;
     uint64_t field_version;  /* Bumped when the instance field table shape changes */
