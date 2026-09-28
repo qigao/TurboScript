@@ -207,44 +207,55 @@ static int mapper_build_schema(
         return 0;
     }
 
+    /* DataBind/TBE requires canonical record ordering: fixed-width scalar
+     * fields precede variable data. MessagePlan binds object fields by name, so
+     * this projection order never changes TurboScript class/slot semantics. */
     for (size_t i = 0; i < klass->instance_field_count; ++i) {
         const cmeta_data_desc *data =
             klass->cmeta_data_fields ? klass->cmeta_data_fields[i].value : NULL;
-        const char *type = mapper_databind_type(data);
-        const char *name = klass->instance_field_names[i];
-
-        if (!type || !name) {
+        if (!mapper_databind_type(data) || !klass->instance_field_names[i]) {
             free(builder.data);
             return -1; /* TurboScript dynamic-value domain, not a typed plan. */
         }
-        if (!mapper_builder_append(&builder, " ") ||
-            !mapper_builder_append(&builder, type) ||
-            !mapper_builder_append(&builder, " ") ||
-            !mapper_builder_append(&builder, name)) {
-            free(builder.data);
-            mapper_set_error(error, error_len,
-                             "mapper: out of memory building DataBind fields");
-            return 0;
-        }
+    }
 
-        if (klass->instance_field_has_default &&
-            klass->instance_field_has_default[i]) {
-            if (!klass->instance_field_defaults ||
-                !mapper_schema_default(
-                    &builder, data, &klass->instance_field_defaults[i])) {
+    for (unsigned pass = 0u; pass < 2u; ++pass) {
+        for (size_t i = 0; i < klass->instance_field_count; ++i) {
+            const cmeta_data_desc *data = klass->cmeta_data_fields[i].value;
+            const char *type = mapper_databind_type(data);
+            const char *name = klass->instance_field_names[i];
+            const unsigned variable = data->kind == CMETA_DATA_STRING ? 1u : 0u;
+
+            if (variable != pass) continue;
+            if (!mapper_builder_append(&builder, " ") ||
+                !mapper_builder_append(&builder, type) ||
+                !mapper_builder_append(&builder, " ") ||
+                !mapper_builder_append(&builder, name)) {
                 free(builder.data);
                 mapper_set_error(error, error_len,
-                                 "mapper: unsupported typed class default for '%s'",
-                                 name);
+                                 "mapper: out of memory building DataBind fields");
                 return 0;
             }
-        }
 
-        if (!mapper_builder_append(&builder, ";")) {
-            free(builder.data);
-            mapper_set_error(error, error_len,
-                             "mapper: out of memory building DataBind contract");
-            return 0;
+            if (klass->instance_field_has_default &&
+                klass->instance_field_has_default[i]) {
+                if (!klass->instance_field_defaults ||
+                    !mapper_schema_default(
+                        &builder, data, &klass->instance_field_defaults[i])) {
+                    free(builder.data);
+                    mapper_set_error(
+                        error, error_len,
+                        "mapper: unsupported typed class default for '%s'", name);
+                    return 0;
+                }
+            }
+
+            if (!mapper_builder_append(&builder, ";")) {
+                free(builder.data);
+                mapper_set_error(error, error_len,
+                                 "mapper: out of memory building DataBind contract");
+                return 0;
+            }
         }
     }
 
