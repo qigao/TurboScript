@@ -6,15 +6,16 @@
       "name": "xxhash",
       "version>=": "0.8.3"
     },
+    "mir-jit",
     {
       "name": "tiny-aes-c"
-    }, 
+    },
     {
       "name": "boringssl"
-    }, 
+    },
     {
       "name": "stb"
-    }, 
+    },
     {
       "name": "pkgconf"
     },
@@ -23,7 +24,7 @@
     },
     {
       "name": "simde"
-    }, 
+    },
     {
       "name": "sqlite3",
       "version>=": "3.49.0",

@@ -38,6 +38,7 @@ typedef struct ts_mir_externals_s ts_mir_externals_t;
 typedef struct ts_mir_var_entry_s ts_mir_var_entry_t;
 typedef struct ts_mir_compile_frame_s ts_mir_compile_frame_t;
 typedef struct ts_mir_artifact_s ts_mir_artifact_t;
+typedef struct ts_mir_owned_string_block_s ts_mir_owned_string_block_t;
 
 typedef int (*ts_mir_host_export_fn)(turbo_script_ctx_t *runtime_ctx, const exprtk_value_t *args,
                                      size_t arg_count, exprtk_value_t *out_value);
@@ -171,7 +172,7 @@ struct ts_mir_externals_s {
  * ========================================================================= */
 
 struct ts_mir_var_entry_s {
-  char *name;        // Variable name
+  const char *name;  // Borrowed from the compiler-owned MIR string pool
   MIR_reg_t reg;     // MIR register
   int dirty;         // Dirty flag: 1 = needs sync to environment
   int dynamic_value; // 1 = holds dynamic value (not numeric)
@@ -238,9 +239,16 @@ typedef struct {
  * ========================================================================= */
 
 typedef struct {
-  char *var_name;
-  char *class_name;
+  const char *var_name;
+  const char *class_name;
 } ts_mir_class_type_entry_t;
+
+struct ts_mir_owned_string_block_s {
+  char **items;
+  size_t count;
+  size_t capacity;
+  ts_mir_owned_string_block_t *next;
+};
 
 typedef struct {
   char *name;
@@ -287,6 +295,7 @@ struct ts_mir_compiler_s {
   const exprtk_node_t *const *metadata_nodes;
   size_t metadata_node_count;
   char item_prefix[64];
+  char item_name_buffer[192];
 
   ts_mir_var_entry_t **vars;
   int var_count;
@@ -347,6 +356,10 @@ struct ts_mir_compiler_s {
   ts_mir_builtin_admission_t *builtin_admissions;
   int builtin_admission_count;
   int builtin_admission_capacity;
+
+  // Strings embedded as MIR immediates. Frames borrow these pointers; ownership
+  // remains here until this block is transferred to the MIR lifetime owner.
+  ts_mir_owned_string_block_t *owned_string_block;
 };
 
 int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
@@ -408,6 +421,8 @@ const exprtk_function_reflection_t *ts_mir_admit_builtin(
 ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c);
 void ts_mir_begin_isolated_compile(ts_mir_compiler_t *c);
 void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *frame);
+ts_mir_owned_string_block_t *ts_mir_take_owned_strings(ts_mir_compiler_t *c);
+void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block);
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);

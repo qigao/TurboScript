@@ -21,9 +21,12 @@ int exprtk_duration_member_get(exprtk_value_t value, const char *member, exprtk_
 int exprtk_decimal_member_get(exprtk_value_t value, const char *member, exprtk_value_t *out);
 
 static const char *ts_mir_prefixed_item_name(ts_mir_compiler_t *c, const char *name) {
-  char buf[192];
-  snprintf(buf, sizeof(buf), "%s_%s", c && c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
-  return strdup(buf);
+  if (!c || !name) return name;
+  /* MIR_new_proto_arr copies/interns the item name synchronously, so one
+   * compiler-local scratch buffer is sufficient and requires no heap owner. */
+  snprintf(c->item_name_buffer, sizeof(c->item_name_buffer), "%s_%s",
+           c->item_prefix[0] ? c->item_prefix : "ts_mir", name);
+  return c->item_name_buffer;
 }
 
 /* =========================================================================

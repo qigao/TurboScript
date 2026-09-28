@@ -17,6 +17,7 @@
 
 typedef struct ts_timer_scheduler_s ts_timer_scheduler_t;
 typedef struct ts_task_scheduler_s ts_task_scheduler_t;
+struct ts_mir_owned_string_block_s;
 #ifndef TS_HOST_CALL_BUDGET_T_DEFINED
 #define TS_HOST_CALL_BUDGET_T_DEFINED
 typedef struct ts_host_call_budget_s ts_host_call_budget_t;
@@ -123,6 +124,9 @@ struct turbo_script_ctx_s {
   MIR_context_t mir_interp_ctx;
   MIR_item_t mir_interp_last_func;
   int mir_interp_externals_loaded;
+  /* Owns string addresses embedded in ordinary MIR/JIT modules. Blocks are
+   * released only after both context-owned MIR engines are finished. */
+  struct ts_mir_owned_string_block_s *mir_owned_string_blocks;
 
   /* Isolated context for script-level mir.load/mir.call to prevent interface clash and duplicate
    * linking */
@@ -155,6 +159,8 @@ void turbo_script_register_mir(struct turbo_script_ctx_s *ctx);
 exprtk_value_t turbo_script_mir_eval_node(const exprtk_node_t *node, exprtk_env_t *env);
 int turbo_script_mir_exec_script_body(exprtk_func_t *func, exprtk_env_t *local_env,
                                       exprtk_env_t *caller_env, exprtk_value_t *out);
+
+void ts_mir_owned_string_blocks_destroy(struct ts_mir_owned_string_block_s *block);
 
 /* Internal JIT API - for testing and advanced use */
 TURBO_SCRIPT_C_API int turbo_script_compile_mir(turbo_script_ctx_t *ctx, const char *script);

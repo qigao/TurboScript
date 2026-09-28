@@ -29,6 +29,9 @@ struct ts_mir_artifact_s {
   size_t export_count;
   /* Borrowed from the module-retained context for the artifact lifetime. */
   turbo_script_ctx_t *registry_owner_ctx;
+  /* Owns every string address embedded as a MIR immediate. They are released
+   * only after MIR_gen_finish/MIR_finish can no longer execute or inspect code. */
+  ts_mir_owned_string_block_t *owned_string_blocks;
   int gen_initialized;
 };
 
@@ -65,14 +68,17 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
                                      const ts_host_export_table_t *exports,
                                      MIR_item_t *out_initializer, MIR_item_t *out_export_items,
                                      MIR_item_t *out_numeric_export_wrappers,
-                                     MIR_item_t *out_host_export_wrappers) {
+                                     MIR_item_t *out_host_export_wrappers,
+                                     ts_mir_owned_string_block_t **out_owned_strings) {
   ts_mir_compiler_t compiler = {0};
   const exprtk_node_t **metadata_nodes = NULL;
   size_t export_count = exports ? vec_size(&exports->entries) : 0;
   int success = 0;
   int module_finished = 0;
-  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !policy || !out_initializer)
+  if (!mir_ctx || !module || !compile_ctx || !ast || !prefix || !policy ||
+      !out_initializer || !out_owned_strings)
     return -1;
+  *out_owned_strings = NULL;
   if ((policy->host_slots == TS_MIR_HOST_SLOTS_FROZEN &&
        (!policy->registry_owner_ctx || policy->registry_owner_ctx->active_host_modules == 0)) ||
       (policy->host_slots == TS_MIR_HOST_SLOTS_DISABLED && policy->registry_owner_ctx) ||
@@ -247,6 +253,11 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
 done:
   if (!module_finished) MIR_finish_module(mir_ctx);
   free(metadata_nodes);
+  /* Detach MIR-immediate strings before compiler-frame cleanup. The artifact
+   * keeps them alive through interpreter/JIT execution and releases them only
+   * after the MIR context is finished. This also covers failed compilation:
+   * the caller destroys the partial artifact and therefore the detached pool. */
+  *out_owned_strings = ts_mir_take_owned_strings(&compiler);
   ts_mir_destroy_compiler_storage(&compiler);
   return success ? 0 : -1;
 }
@@ -287,7 +298,8 @@ int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
   if (ts_mir_lower_owned_module(artifact->ctx, artifact->module, compile_ctx, ast, "ts_host",
                                 &policy, exports, &artifact->initializer, artifact->export_items,
                                 artifact->numeric_export_wrappers,
-                                artifact->host_export_wrappers) != 0)
+                                artifact->host_export_wrappers,
+                                &artifact->owned_string_blocks) != 0)
     goto done;
   for (size_t i = 0; i < export_count; ++i) {
     const ts_host_export_entry_t *entry =
@@ -348,6 +360,7 @@ void ts_mir_artifact_destroy(ts_mir_artifact_t *artifact) {
     if (artifact->gen_initialized) MIR_gen_finish(artifact->ctx);
     MIR_finish(artifact->ctx);
   }
+  ts_mir_owned_string_blocks_destroy(artifact->owned_string_blocks);
   free(artifact->export_items);
   free(artifact->numeric_export_wrappers);
   free(artifact->host_export_wrappers);
@@ -637,9 +650,16 @@ static int turbo_script_compile_mir_backend(turbo_script_ctx_t *ctx, const char 
   MIR_module_t mod = MIR_new_module(mir_ctx, mod_name);
 
   MIR_item_t shared_initializer = NULL;
+  ts_mir_owned_string_block_t *owned_strings = NULL;
   const ts_mir_lowering_policy_t policy = {TS_MIR_HOST_SLOTS_DISABLED, NULL};
-  if (ts_mir_lower_owned_module(mir_ctx, mod, ctx, ast, mod_name, &policy, NULL,
-                                &shared_initializer, NULL, NULL, NULL) != 0) {
+  int lower_status = ts_mir_lower_owned_module(
+      mir_ctx, mod, ctx, ast, mod_name, &policy, NULL, &shared_initializer,
+      NULL, NULL, NULL, &owned_strings);
+  if (owned_strings) {
+    owned_strings->next = ctx->mir_owned_string_blocks;
+    ctx->mir_owned_string_blocks = owned_strings;
+  }
+  if (lower_status != 0) {
     if (ctx->error_code == TURBO_SCRIPT_ERROR_NONE) ctx->error_code = TURBO_SCRIPT_ERROR_JIT;
     return -1;
   }
