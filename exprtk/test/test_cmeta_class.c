@@ -1,4 +1,5 @@
 #include "exprtk_class.h"
+#include "exprtk_module.h"
 #include "tinytest.h"
 
 #include <string.h>
@@ -48,6 +49,93 @@ spec("CMeta class reflection") {
         exprtk_class_destroy(source);
         mem_destroy(&clone_arena);
         mem_destroy(&source_arena);
+    }
+
+    it("binds typed script fields through the canonical CMeta object facade") {
+        mem_pool_t arena = {0};
+        exprtk_class_t *klass;
+        exprtk_instance_t *instance;
+        cmeta_object_ref object = CMETA_OBJECT_REF_INIT;
+        const cmeta_data_desc *data;
+        const void *value = NULL;
+        int64_t id = INT64_C(37);
+        double score = 3.5;
+        bool active = true;
+        exprtk_value_t name = exprtk_val_str(vstr_from_cstr("Ada"));
+
+        check((mem_init(&arena, 8192)) == (0));
+        klass = exprtk_class_create(&arena, "User", NULL, NULL, 0);
+        check_not_null(klass);
+        check(exprtk_class_declare_instance_field_typed(
+            klass, "id", "int64", null_value(), 0, EXPRTK_ACCESS_PUBLIC));
+        check(exprtk_class_declare_instance_field_typed(
+            klass, "score", "number", null_value(), 0, EXPRTK_ACCESS_PUBLIC));
+        check(exprtk_class_declare_instance_field_typed(
+            klass, "active", "bool", null_value(), 0, EXPRTK_ACCESS_PUBLIC));
+        check(exprtk_class_declare_instance_field_typed(
+            klass, "name", "string", null_value(), 0, EXPRTK_ACCESS_PUBLIC));
+        check(exprtk_class_finalize_cmeta_data(klass));
+
+        data = exprtk_class_cmeta_data(klass);
+        check_not_null(data);
+        check(cmeta_data_desc_valid(data));
+        check_equal(data->kind, CMETA_DATA_STRUCT);
+        check_not_null(data->shape);
+        check_equal(((const cmeta_data_struct_shape *)data->shape)->field_count, 4u);
+        for (size_t i = 0; i < 4u; ++i) {
+            check_equal(klass->cmeta_data_fields[i].offset,
+                        CMETA_FIELD_DYNAMIC_OFFSET);
+            check_equal(klass->cmeta_layout_fields[i].offset,
+                        CMETA_FIELD_DYNAMIC_OFFSET);
+        }
+
+        instance = exprtk_instance_create(klass, &arena);
+        check_not_null(instance);
+        check_equal(exprtk_instance_borrow_cmeta_object(instance, &object),
+                    CMETA_OK);
+        check(cmeta_object_ref_valid(&object));
+
+        check_equal(cmeta_object_field_assign(
+                        &object, "id", klass->cmeta_data_fields[0].value, &id),
+                    CMETA_OK);
+        check_equal(cmeta_object_field_assign(
+                        &object, "score", klass->cmeta_data_fields[1].value,
+                        &score),
+                    CMETA_OK);
+        check_equal(cmeta_object_field_assign(
+                        &object, "active", klass->cmeta_data_fields[2].value,
+                        &active),
+                    CMETA_OK);
+        check_equal(cmeta_object_field_assign(
+                        &object, "name", klass->cmeta_data_fields[3].value,
+                        &name),
+                    CMETA_OK);
+
+        check_equal(cmeta_object_field_read(&object, "id", &data, &value),
+                    CMETA_OK);
+        check_true(data == &cmeta_data_int64);
+        check_equal(*(const int64_t *)value, INT64_C(37));
+
+        check_equal(cmeta_object_field_read(&object, "score", &data, &value),
+                    CMETA_OK);
+        check_true(data == &cmeta_data_double);
+        check_true(*(const double *)value == 3.5);
+
+        check_equal(cmeta_object_field_read(&object, "active", &data, &value),
+                    CMETA_OK);
+        check_true(data == &cmeta_data_bool);
+        check_true(*(const bool *)value);
+
+        check_equal(cmeta_object_field_read(&object, "name", &data, &value),
+                    CMETA_OK);
+        check_equal(data->kind, CMETA_DATA_STRING);
+        check_equal(((const exprtk_value_t *)value)->type, EXPRTK_VAL_STRING);
+        check_equal(((const exprtk_value_t *)value)->data.string.data, "Ada");
+
+        cmeta_object_release(&object);
+        exprtk_instance_destroy(instance);
+        exprtk_class_destroy(klass);
+        mem_destroy(&arena);
     }
 
     it("distinguishes classes with different field type shapes") {
