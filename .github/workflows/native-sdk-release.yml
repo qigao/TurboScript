@@ -3,6 +3,8 @@ on:
   pull_request:
   push:
     branches: [master]
+    tags:
+      - "v*"
   workflow_dispatch:
 permissions:
   contents: read
@@ -15,6 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.version.outputs.version }}
+      release: ${{ steps.version.outputs.release }}
     steps:
       - uses: actions/checkout@v4
       - id: version
@@ -23,7 +26,23 @@ jobs:
           set -euo pipefail
           version="$(awk '/^[[:space:]]*VERSION [0-9]/{print $2; exit}' CMakeLists.txt)"
           [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          vcpkg_version="$(python3 -c 'import json; print(json.load(open("vcpkg.json", encoding="utf-8"))["version-semver"])')"
+          if [[ "$vcpkg_version" != "$version" ]]; then
+            echo "release version mismatch: CMake=$version vcpkg=$vcpkg_version" >&2
+            exit 1
+          fi
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            expected_tag="v$version"
+            if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+              echo "release tag mismatch: pushed=$GITHUB_REF_NAME expected=$expected_tag" >&2
+              exit 1
+            fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
+          fi
   build:
     needs: metadata
     strategy:
@@ -190,7 +209,7 @@ jobs:
           if-no-files-found: error
   publish:
     needs: [metadata, pack]
-    if: github.ref == 'refs/heads/master' && github.event_name != 'pull_request'
+    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: read
