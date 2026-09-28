@@ -15,8 +15,11 @@ cmake_config_target(${TARGET_NAME}
 target_include_directories(${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>)
-target_link_libraries(${TARGET_NAME} PUBLIC exprtk Salts::Core Salts::DataBind Salts::JsonParser
-                                             Salts::CYaml Salts::CYamlJsonAdapter Salts::XmlParser)
+target_link_libraries(${TARGET_NAME}
+  PUBLIC exprtk Salts::Core Salts::DataBind Salts::JsonParser
+         Salts::CYaml Salts::CYamlJsonAdapter Salts::XmlParser
+  PRIVATE Salts::DataBindJsonAdapter Salts::DataBindYamlAdapter
+          Salts::DataBindXmlAdapter)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${MAPPER_PLUGIN_SOURCES})
 cmake_config_target(${TARGET_NAME_PLUGIN}
