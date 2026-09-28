@@ -4,7 +4,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # TurboScript Project - A Simple DSL with MIR JIT Backend
 project(
   TurboScript
-  VERSION 3.0.0
+  VERSION 3.0.1
   LANGUAGES C CXX)
 
 # Project configuration - output directories
@@ -44,11 +44,11 @@ include(GNUInstallDirs)
 include(CmakeUtils)
 
 find_package(Threads REQUIRED)
-find_package(Salts 1.7.12 EXACT CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
-find_package(SaltsUtils 4.0.3 EXACT CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
+find_package(Salts 1.8.0 EXACT CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_package(SaltsUtils 4.1.0 EXACT CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 if(TURBOSCRIPT_BUILD_MODULES)
-  find_package(Chttp 1.1.1 EXACT CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  find_package(Chttp 1.1.2 EXACT CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 endif()
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
