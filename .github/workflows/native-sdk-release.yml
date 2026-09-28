@@ -169,13 +169,15 @@ jobs:
             -DTURBOSCRIPT_BUILD_CLI=OFF \
             -DENABLE_SANITIZER_ADDRESS=ON \
             -DENABLE_SANITIZER_UNDEFINED=ON
-      - name: Build Host and CFlow kernel sanitizer targets
+      - name: Build Host and CFlow sanitizer targets
         shell: bash
         run: |
           cmake --build build/host-sanitizer \
-            --target test_turbo_script_host_module test_turbo_script_cflow_mir_kernel \
+            --target test_turbo_script_host_module \
+                     test_turbo_script_cflow_mir_kernel \
+                     test_turbo_script_cflow_lower \
             --parallel 2
-      - name: Run Host and CFlow kernel suites under sanitizers
+      - name: Run Host and CFlow suites under sanitizers
         shell: bash
         run: |
           set -euo pipefail
@@ -184,7 +186,7 @@ jobs:
           export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
           unset LSAN_OPTIONS
           ctest --test-dir build/host-sanitizer \
-            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel)$' \
+            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower)$' \
             --no-tests=error --verbose --output-on-failure \
             --output-junit host-cflow-sanitizer-results.xml
       - uses: actions/upload-artifact@v4
