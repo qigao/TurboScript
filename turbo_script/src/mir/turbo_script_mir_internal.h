@@ -242,6 +242,11 @@ typedef struct {
   char *class_name;
 } ts_mir_class_type_entry_t;
 
+typedef struct {
+  char *name;
+  exprtk_function_reflection_t reflection;
+} ts_mir_builtin_admission_t;
+
 /* =========================================================================
  * Compile frame (for nested function compilation)
  * ========================================================================= */
@@ -336,6 +341,12 @@ struct ts_mir_compiler_s {
   ts_mir_class_type_entry_t *class_types;
   int class_type_count;
   int class_type_capacity;
+
+  // Compile-time CMeta admission cache for immutable builtin/module entries.
+  // This is never consulted by generated hot execution paths.
+  ts_mir_builtin_admission_t *builtin_admissions;
+  int builtin_admission_count;
+  int builtin_admission_capacity;
 };
 
 int ts_mir_artifact_compile(turbo_script_ctx_t *compile_ctx, exprtk_node_t *ast,
@@ -389,6 +400,9 @@ void ts_mir_clear_var_class(ts_mir_compiler_t *c, const char *var_name);
 const char *ts_mir_new_hidden_receiver_name(ts_mir_compiler_t *c);
 const char *ts_mir_find_var_class(ts_mir_compiler_t *c, const char *var_name);
 int ts_mir_is_known_class_name(ts_mir_compiler_t *c, const char *name);
+
+const exprtk_function_reflection_t *ts_mir_admit_builtin(
+    ts_mir_compiler_t *c, const char *name);
 
 // Frame management
 ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c);
