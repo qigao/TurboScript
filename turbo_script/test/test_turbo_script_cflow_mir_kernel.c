@@ -33,8 +33,11 @@ spec("TurboScript CFlow MIR kernels") {
     cflow_graph graph = {0};
     cflow_plan plan = {0};
     cflow_result result = {0};
+    cflow_result repeated = {0};
+    const cflow_subgraph *surface = NULL;
     const char *error = NULL;
     const double input[] = {-2.0, 0.0, 3.0};
+    const double repeated_input[] = {1.0, 2.0};
 
     graph.root = CMETA_INVALID_ID;
     check_not_null(ctx);
@@ -58,6 +61,18 @@ spec("TurboScript CFlow MIR kernels") {
         &graph, CFLOW_OP_FILTER, filter_binding.callable, NULL));
     check_true(cflow_graph_add(
         &graph, CFLOW_OP_MAP, map_binding.callable, NULL));
+
+    surface = cflow_graph_subgraph(&graph, graph.root);
+    check_not_null(surface);
+    check((surface->node_count) == ((size_t)3u));
+    check((surface->nodes[0].op) == (CFLOW_OP_INPUT));
+    check((surface->nodes[1].op) == (CFLOW_OP_FILTER));
+    check((surface->nodes[2].op) == (CFLOW_OP_MAP));
+    check_true(cmeta_callable_same(
+        surface->nodes[1].fn, filter_binding.callable));
+    check_true(cmeta_callable_same(
+        surface->nodes[2].fn, map_binding.callable));
+
     check_true(cflow_plan_compile_surface(&plan, &graph, NULL));
     check_true(cflow_plan_eval_array(
         &plan, input, sizeof(input) / sizeof(input[0]), &result));
@@ -67,8 +82,17 @@ spec("TurboScript CFlow MIR kernels") {
     check_not_null(result.data);
     check((((const double *)result.data)[0]) == (6.0));
 
+    check_true(cflow_plan_eval_array(
+        &plan, repeated_input,
+        sizeof(repeated_input) / sizeof(repeated_input[0]), &repeated));
+    check_true(cmeta_type_equal(repeated.type, &cmeta_type_double));
+    check((repeated.count) == ((size_t)2u));
+    check((((const double *)repeated.data)[0]) == (2.0));
+    check((((const double *)repeated.data)[1]) == (4.0));
+
     /* CFlow snapshots copy callable by value but borrow the captured kernel
      * pointer. Destroy all result/plan/graph users before the TurboScript owner. */
+    cflow_result_destroy(&repeated);
     cflow_result_destroy(&result);
     cflow_plan_destroy(&plan);
     cflow_graph_destroy(&graph);
