@@ -120,5 +120,3 @@ install(FILES ${CMAKE_CURRENT_BINARY_DIR}/TurboScriptConfig.cmake
 
 install(FILES LICENSE NOTICE THIRD_PARTY_NOTICES.md
         DESTINATION ${CMAKE_INSTALL_DATADIR}/TurboScript)
-install(FILES vendor/mir/LICENSE
-        DESTINATION ${CMAKE_INSTALL_DATADIR}/TurboScript/licenses/MIR)
