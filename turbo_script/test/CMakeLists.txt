@@ -7,7 +7,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_fixture PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(test_plugin_loader_fixture PRIVATE Salts::Core)
+target_link_libraries(test_plugin_loader_fixture PRIVATE Salts::PluginABI)
 set_target_properties(
   test_plugin_loader_fixture
   PROPERTIES PREFIX ""
@@ -22,7 +22,7 @@ function(add_plugin_loader_fixture target output_name)
     OUTPUT_NAME ${output_name}
     PLUGIN)
   target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-  target_link_libraries(${target} PRIVATE Salts::Core)
+  target_link_libraries(${target} PRIVATE Salts::PluginABI)
   set_target_properties(
     ${target}
     PROPERTIES PREFIX ""
@@ -80,7 +80,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_missing_entry PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(test_plugin_loader_missing_entry PRIVATE Salts::Core)
+target_link_libraries(test_plugin_loader_missing_entry PRIVATE Salts::PluginABI)
 set_target_properties(
   test_plugin_loader_missing_entry
   PROPERTIES PREFIX ""

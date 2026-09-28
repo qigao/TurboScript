@@ -1,22 +1,19 @@
 /**
  * @file ts_plugin.h
- * @brief TurboScript plugin ABI — zero dependencies.
+ * @brief TurboScript module adapter published through the canonical Salts Plugin ABI.
  *
- * Every plugin DLL exports exactly one function: ts_api_create().
- * It returns a pointer to a static ts_plugin_t descriptor.
- *
- * Two convenience macros eliminate boilerplate for common patterns:
- *   TS_PLUGIN_MODULE   — stateless plugin that registers an exprtk_module_t
- *   TS_PLUGIN_STATEFUL — stateful plugin with create/load/destroy lifecycle
+ * Salts owns DSO publication, loading, lifecycle and leases. TurboScript owns
+ * only the per-script-context module adapter semantics: load(env, scratch)
+ * mounts one module/context and returns its opaque context instance; unload()
+ * releases that context instance.
  */
 #ifndef TS_PLUGIN_H
 #define TS_PLUGIN_H
 
-#include "platform.h"
+#include <salts/plugin.h>
 #include <stddef.h>
 #include <stdint.h>
 
-/* ExprTk is statically embedded in TurboScript and plugins. */
 #ifndef EXPRTK_C_API
 #define EXPRTK_C_API
 #endif
@@ -25,91 +22,126 @@
 extern "C" {
 #endif
 
-/* Forward declarations — avoids pulling in exprtk.h / salts_buffer.h */
 typedef struct exprtk_env_s exprtk_env_t;
 typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;
-EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
+EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env,
+                                        const exprtk_module_t *mod);
 
-#define TS_PLUGIN_ABI_VERSION 1U
+#define TS_PLUGIN_MODULE_EXPORT_ID "turboscript.module"
+#define TS_PLUGIN_MODULE_CONTRACT_ID "turboscript.module"
+#define TS_PLUGIN_MODULE_CONTRACT_VERSION 1u
 
-typedef struct ts_plugin_s {
-  const char *name; /* "ta", "csv", "vec", ... */
-  uint32_t version; /* ABI version (1) */
+/*
+ * This interface is intentionally per-context. It is not the Salts DSO
+ * lifecycle: the plugin manifest remains passive and Salts::Plugin owns the
+ * module start/lease/stop/unload state machine.
+ */
+#define TS_PLUGIN_MODULE_METHODS(X, I) \
+    X(I, R2, void *, load, void *, env, void *, scratch) \
+    X(I, V1, void, unload, void *, instance)
 
-  /**
-   * Called by turbo_script when import("<name>") is executed.
-   * Plugin registers its functions into env.
-   * @param env     exprtk_env_t*  — register functions here
-   * @param scratch mem_pool_t* — temp allocator
-   * @return opaque plugin instance (passed to unload), or NULL
-   */
-  void *(*load)(void *env, void *scratch);
+CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
 
-  /**
-   * Called when turbo_script context is freed.
-   * @param instance — the value returned by load()
-   */
-  void (*unload)(void *instance);
-} ts_plugin_t;
+#define TS_PLUGIN_DETAIL_EXPORT(plugin_name, load_fn, unload_fn)                 \
+    static char ts__##plugin_name##_adapter_token;                              \
+    static const ts_plugin_module_vtable ts__##plugin_name##_adapter_vtable = { \
+        .implementation = #plugin_name,                                         \
+        .capabilities = 0u,                                                     \
+        .load = (load_fn),                                                      \
+        .unload = (unload_fn),                                                  \
+    };                                                                          \
+    static ts_plugin_module ts__##plugin_name##_adapter = {                     \
+        &ts__##plugin_name##_adapter_token,                                     \
+        &ts__##plugin_name##_adapter_vtable                                     \
+    };                                                                          \
+    static const salts_plugin_export ts__##plugin_name##_export = {             \
+        .struct_size = SALTS_PLUGIN_EXPORT_SIZE,                                \
+        .kind = SALTS_PLUGIN_EXPORT_INTERFACE,                                  \
+        .contract_version = TS_PLUGIN_MODULE_CONTRACT_VERSION,                  \
+        .capabilities = 0u,                                                     \
+        .export_id = TS_PLUGIN_MODULE_EXPORT_ID,                                \
+        .contract_id = TS_PLUGIN_MODULE_CONTRACT_ID,                            \
+        .value.interface = {                                                    \
+            .desc = &ts_plugin_module_interface_meta,                           \
+            .value = &ts__##plugin_name##_adapter,                             \
+        },                                                                      \
+    };                                                                          \
+    static const salts_plugin_manifest ts__##plugin_name##_manifest = {         \
+        .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,                              \
+        .abi_version = SALTS_PLUGIN_ABI_VERSION,                                \
+        .plugin_id = #plugin_name,                                              \
+        .version = {1u, 0u, 0u},                                               \
+        .exports = &ts__##plugin_name##_export,                                \
+        .export_count = 1u,                                                     \
+        .self = NULL,                                                           \
+        .start = NULL,                                                          \
+        .request_stop = NULL,                                                   \
+        .is_quiescent = NULL,                                                   \
+        .destroy = NULL,                                                        \
+    };                                                                          \
+    SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL    \
+    salts_plugin_query(uint32_t host_abi) {                                     \
+        return host_abi == SALTS_PLUGIN_ABI_VERSION                            \
+                   ? &ts__##plugin_name##_manifest                             \
+                   : NULL;                                                      \
+    }
 
-/* Every plugin DLL exports exactly this function */
-typedef const ts_plugin_t *(*ts_api_create_fn)(void);
+/* Stateless module: mount one exprtk_module_t into the target environment. */
+#define TS_PLUGIN_MODULE(plugin_name, module_fn)                                \
+    static void *ts__##plugin_name##_load(void *self, void *env,               \
+                                           void *scratch) {                     \
+        const exprtk_module_t *module;                                          \
+        (void)self;                                                             \
+        (void)scratch;                                                          \
+        module = module_fn();                                                   \
+        if (env == NULL || module == NULL) return NULL;                         \
+        exprtk_env_add_module((exprtk_env_t *)env, module);                     \
+        return env;                                                             \
+    }                                                                           \
+    static void ts__##plugin_name##_unload(void *self, void *instance) {        \
+        (void)self;                                                             \
+        (void)instance;                                                         \
+    }                                                                           \
+    TS_PLUGIN_DETAIL_EXPORT(plugin_name, ts__##plugin_name##_load,              \
+                            ts__##plugin_name##_unload)
 
-/* Plugin entry points are always exported by the plugin binary itself. */
-#if defined(_WIN32) || defined(__CYGWIN__)
-#define TS_PLUGIN_API __declspec(dllexport)
-#elif defined(__GNUC__) && __GNUC__ >= 4
-#define TS_PLUGIN_API __attribute__((visibility("default")))
-#else
-#define TS_PLUGIN_API
-#endif
+/* Stateless module with context cleanup attached to the borrowed environment. */
+#define TS_PLUGIN_MODULE_WITH_UNLOAD(plugin_name, module_fn, unload_fn)         \
+    static void *ts__##plugin_name##_load(void *self, void *env,               \
+                                           void *scratch) {                     \
+        const exprtk_module_t *module;                                          \
+        (void)self;                                                             \
+        (void)scratch;                                                          \
+        module = module_fn();                                                   \
+        if (env == NULL || module == NULL) return NULL;                         \
+        exprtk_env_add_module((exprtk_env_t *)env, module);                     \
+        return env;                                                             \
+    }                                                                           \
+    static void ts__##plugin_name##_unload(void *self, void *instance) {        \
+        (void)self;                                                             \
+        if (instance != NULL) unload_fn((exprtk_env_t *)instance);              \
+    }                                                                           \
+    TS_PLUGIN_DETAIL_EXPORT(plugin_name, ts__##plugin_name##_load,              \
+                            ts__##plugin_name##_unload)
 
-#ifdef __cplusplus
-#define TS_PLUGIN_C_API extern "C" TS_PLUGIN_API
-#else
-#define TS_PLUGIN_C_API TS_PLUGIN_API
-#endif
-
-/* ── Stateless plugin: registers one exprtk_module_t, no instance ── */
-#define TS_PLUGIN_MODULE(plugin_name, module_fn)                                                   \
-  static void *ts__##plugin_name##_load(void *env, void *scratch) {                                \
-    (void)scratch;                                                                                 \
-    const exprtk_module_t *mod = module_fn();                                                      \
-    if (!env || !mod)                                                                              \
-      return NULL;                                                                                 \
-    exprtk_env_add_module((exprtk_env_t *)env, mod);                                               \
-    return env;                                                                                    \
-  }                                                                                                \
-  static void ts__##plugin_name##_unload(void *inst) { (void)inst; }                               \
-  static const ts_plugin_t g_##plugin_name = {                                                     \
-      .name = #plugin_name,                                                                        \
-      .version = TS_PLUGIN_ABI_VERSION,                                                            \
-      .load = ts__##plugin_name##_load,                                                            \
-      .unload = ts__##plugin_name##_unload,                                                        \
-  };                                                                                               \
-  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
-
-/* ── Stateful plugin: create ctx → register funcs → destroy ctx ──── */
-#define TS_PLUGIN_STATEFUL(plugin_name, create_fn, loader_fn, destroy_fn)                          \
-  static void *ts__##plugin_name##_load(void *env, void *scratch) {                                \
-    void *ctx = (void *)create_fn();                                                               \
-    if (!ctx)                                                                                      \
-      return NULL;                                                                                 \
-    loader_fn(ctx, env, scratch);                                                                  \
-    return ctx;                                                                                    \
-  }                                                                                                \
-  static void ts__##plugin_name##_unload(void *inst) {                                             \
-    if (inst)                                                                                      \
-      destroy_fn(inst);                                                                            \
-  }                                                                                                \
-  static const ts_plugin_t g_##plugin_name = {                                                     \
-      .name = #plugin_name,                                                                        \
-      .version = TS_PLUGIN_ABI_VERSION,                                                            \
-      .load = ts__##plugin_name##_load,                                                            \
-      .unload = ts__##plugin_name##_unload,                                                        \
-  };                                                                                               \
-  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
+/* Stateful module: create one context per TurboScript script context. */
+#define TS_PLUGIN_STATEFUL(plugin_name, create_fn, loader_fn, destroy_fn)       \
+    static void *ts__##plugin_name##_load(void *self, void *env,               \
+                                           void *scratch) {                     \
+        void *ctx;                                                              \
+        (void)self;                                                             \
+        ctx = (void *)create_fn();                                              \
+        if (ctx == NULL) return NULL;                                           \
+        loader_fn(ctx, env, scratch);                                           \
+        return ctx;                                                             \
+    }                                                                           \
+    static void ts__##plugin_name##_unload(void *self, void *instance) {        \
+        (void)self;                                                             \
+        if (instance != NULL) destroy_fn(instance);                             \
+    }                                                                           \
+    TS_PLUGIN_DETAIL_EXPORT(plugin_name, ts__##plugin_name##_load,              \
+                            ts__##plugin_name##_unload)
 
 #ifdef __cplusplus
 }

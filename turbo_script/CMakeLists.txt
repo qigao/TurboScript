@@ -12,7 +12,7 @@ target_include_directories(
   ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PRIVATE Salts::Core)
+target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PUBLIC Salts::Plugin)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
