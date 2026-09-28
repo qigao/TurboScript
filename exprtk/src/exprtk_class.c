@@ -1182,7 +1182,9 @@ exprtk_class_t *exprtk_class_clone_to_arena(exprtk_class_t *klass, mem_pool_t *a
     copy->is_final = klass->is_final;
     copy->type_id = klass->type_id;
 
-    if (!exprtk_class_finalize_cmeta(copy)) return NULL;
+    if (!exprtk_class_finalize_cmeta(copy) ||
+        !exprtk_class_finalize_cmeta_data(copy))
+        return NULL;
     return copy;
 }
 
