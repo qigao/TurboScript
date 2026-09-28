@@ -5,6 +5,7 @@
 #include "mapper.h"
 #include "exprtk_class.h"
 #include "exprtk_module.h"
+#include "mapper_databind.h"
 #include "json_parser.h"
 #include <cyaml/cyaml.h>
 #include <cyaml/cyaml_json_adapter.h>
@@ -380,6 +381,18 @@ static exprtk_value_t fn_read_json(size_t argc, exprtk_value_t *args,
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_json expects (Class, string)");
     klass = args[0].data.class_val.klass;
+    {
+        char typed_error[512] = {0};
+        int typed = mapper_databind_decode(
+            ctx, klass, DATA_BIND_FORMAT_JSON,
+            args[1].data.string.data, args[1].data.string.len,
+            &result, typed_error, sizeof(typed_error));
+        if (typed > 0) return result;
+        if (typed == 0)
+            return mapper_error(env, "%s",
+                                typed_error[0] ? typed_error
+                                               : "mapper.read_json: typed decode failed");
+    }
     doc = json_parse(args[1].data.string.data, args[1].data.string.len);
     if (!doc)
         return mapper_error(env, "mapper.read_json: invalid JSON");
@@ -402,6 +415,18 @@ static exprtk_value_t fn_read_yaml(size_t argc, exprtk_value_t *args,
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_yaml expects (Class, string)");
     klass = args[0].data.class_val.klass;
+    {
+        char typed_error[512] = {0};
+        int typed = mapper_databind_decode(
+            ctx, klass, DATA_BIND_FORMAT_YAML,
+            args[1].data.string.data, args[1].data.string.len,
+            &result, typed_error, sizeof(typed_error));
+        if (typed > 0) return result;
+        if (typed == 0)
+            return mapper_error(env, "%s",
+                                typed_error[0] ? typed_error
+                                               : "mapper.read_yaml: typed decode failed");
+    }
     yaml = cyaml_parse(args[1].data.string.data, args[1].data.string.len, NULL, NULL);
     if (!yaml)
         return mapper_error(env, "mapper.read_yaml: invalid YAML");
@@ -523,6 +548,18 @@ static exprtk_value_t fn_read_xml(size_t argc, exprtk_value_t *args,
         args[1].type != EXPRTK_VAL_STRING || !args[0].data.class_val.klass)
         return mapper_error(env, "mapper.read_xml expects (Class, string)");
     klass = args[0].data.class_val.klass;
+    {
+        char typed_error[512] = {0};
+        int typed = mapper_databind_decode(
+            ctx, klass, DATA_BIND_FORMAT_XML,
+            args[1].data.string.data, args[1].data.string.len,
+            &result, typed_error, sizeof(typed_error));
+        if (typed > 0) return result;
+        if (typed == 0)
+            return mapper_error(env, "%s",
+                                typed_error[0] ? typed_error
+                                               : "mapper.read_xml: typed decode failed");
+    }
     if (salts_xml_parse(&doc, args[1].data.string.data, args[1].data.string.len,
                         NULL, NULL) != SALTS_XML_OK)
         return mapper_error(env, "mapper.read_xml: invalid XML");
@@ -556,21 +593,49 @@ static exprtk_value_t mapper_write_json_value(exprtk_value_t value, exprtk_env_t
 
 static exprtk_value_t fn_write_json(size_t argc, exprtk_value_t *args,
                                     exprtk_env_t *env, void *user_data) {
-    (void)user_data;
-    if (!env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE)
+    mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
+    char *text = NULL;
+    size_t len = 0u;
+    char typed_error[512] = {0};
+    int typed;
+    if (!ctx || !env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE ||
+        !args[0].data.instance_val.instance)
         return mapper_error(env, "mapper.write_json expects (instance)");
+    typed = mapper_databind_encode(
+        ctx, args[0].data.instance_val.instance, DATA_BIND_FORMAT_JSON,
+        &text, &len, typed_error, sizeof(typed_error));
+    if (typed > 0)
+        return mapper_return_text(env, text, len, mapper_free_text);
+    free(text);
+    if (typed == 0)
+        return mapper_error(env, "%s",
+                            typed_error[0] ? typed_error
+                                           : "mapper.write_json: typed encode failed");
     return mapper_write_json_value(args[0], env);
 }
 
 static exprtk_value_t fn_write_yaml(size_t argc, exprtk_value_t *args,
                                     exprtk_env_t *env, void *user_data) {
+    mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
     json_value_t *json = NULL;
     cyaml_doc_t *yaml;
     char *text;
     size_t len = 0;
-    (void)user_data;
-    if (!env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE)
+    char typed_error[512] = {0};
+    int typed;
+    if (!ctx || !env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE ||
+        !args[0].data.instance_val.instance)
         return mapper_error(env, "mapper.write_yaml expects (instance)");
+    typed = mapper_databind_encode(
+        ctx, args[0].data.instance_val.instance, DATA_BIND_FORMAT_YAML,
+        &text, &len, typed_error, sizeof(typed_error));
+    if (typed > 0)
+        return mapper_return_text(env, text, len, mapper_free_text);
+    free(text);
+    if (typed == 0)
+        return mapper_error(env, "%s",
+                            typed_error[0] ? typed_error
+                                           : "mapper.write_yaml: typed encode failed");
     if (!mapper_json_from_value(&args[0], &json))
         return mapper_error(env, "mapper.write_yaml: unsupported value");
     yaml = cyaml_doc_from_json_value(json);
@@ -626,15 +691,27 @@ static int mapper_xml_add_instance(salts_xml_node parent,
 
 static exprtk_value_t fn_write_xml(size_t argc, exprtk_value_t *args,
                                    exprtk_env_t *env, void *user_data) {
+    mapper_ctx_t *ctx = (mapper_ctx_t *)user_data;
     salts_xml_document doc = {0};
     salts_xml_node root;
     char *text;
     size_t len = 0;
-    (void)user_data;
-    if (!env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE ||
+    char typed_error[512] = {0};
+    int typed;
+    if (!ctx || !env || argc != 1 || args[0].type != EXPRTK_VAL_INSTANCE ||
         !args[0].data.instance_val.instance ||
         !args[0].data.instance_val.instance->klass)
         return mapper_error(env, "mapper.write_xml expects (instance)");
+    typed = mapper_databind_encode(
+        ctx, args[0].data.instance_val.instance, DATA_BIND_FORMAT_XML,
+        &text, &len, typed_error, sizeof(typed_error));
+    if (typed > 0)
+        return mapper_return_text(env, text, len, mapper_free_text);
+    free(text);
+    if (typed == 0)
+        return mapper_error(env, "%s",
+                            typed_error[0] ? typed_error
+                                           : "mapper.write_xml: typed encode failed");
     if (salts_xml_document_create(
             &doc, args[0].data.instance_val.instance->klass->name) != SALTS_XML_OK)
         return mapper_error(env, "mapper.write_xml: allocation failed");
@@ -653,7 +730,10 @@ void *mapper_ctx_create(void) {
 }
 
 void mapper_ctx_destroy(void *ctx) {
-    free(ctx);
+    mapper_ctx_t *mapper = (mapper_ctx_t *)ctx;
+    if (!mapper) return;
+    mapper_databind_clear(mapper);
+    free(mapper);
 }
 
 void mapper_load(void *ctx_value, void *env_value, void *scratch) {

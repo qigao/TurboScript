@@ -2097,9 +2097,10 @@ exprtk_value_t eval_class_def_node(const exprtk_node_t *node, exprtk_env_t *env)
     }
     exprtk_class_finalize_abstract_methods(klass);
     exprtk_class_set_final(klass, node->data.class_def.is_final);
-    if (!exprtk_class_finalize_cmeta(klass)) {
+    if (!exprtk_class_finalize_cmeta(klass) ||
+        !exprtk_class_finalize_cmeta_data(klass)) {
         return throw_error(env, node,
-                           "Failed to finalize CMeta identity for class '%s'",
+                           "Failed to finalize CMeta reflection for class '%s'",
                            class_name);
     }
 

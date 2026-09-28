@@ -36,7 +36,10 @@ typedef struct {
 static uint64_t next_class_type_id = 1;
 
 static void class_invalidate_cmeta(exprtk_class_t *klass) {
-    if (klass) klass->cmeta_ready = 0;
+    if (klass) {
+        klass->cmeta_ready = 0;
+        klass->cmeta_data_ready = 0;
+    }
 }
 
 static uint64_t class_cmeta_hash_byte(uint64_t hash, unsigned char byte) {
@@ -923,13 +926,35 @@ static int instance_ensure_slot_capacity(exprtk_instance_t *instance, size_t nee
         return 0;
     }
 
+    bool *new_bools =
+        (bool *)realloc(instance->cmeta_bool_slots, new_capacity * sizeof(*new_bools));
+    if (!new_bools) {
+        instance->field_slots = new_slots;
+        instance->field_slot_used = new_used;
+        return 0;
+    }
+
+    exprtk_cmeta_string_slot_t *new_strings =
+        (exprtk_cmeta_string_slot_t *)realloc(
+            instance->cmeta_string_slots, new_capacity * sizeof(*new_strings));
+    if (!new_strings) {
+        instance->field_slots = new_slots;
+        instance->field_slot_used = new_used;
+        instance->cmeta_bool_slots = new_bools;
+        return 0;
+    }
+
     for (size_t i = instance->field_slot_capacity; i < new_capacity; ++i) {
         memset(&new_slots[i], 0, sizeof(new_slots[i]));
         new_used[i] = 0;
+        new_bools[i] = false;
+        memset(&new_strings[i], 0, sizeof(new_strings[i]));
     }
 
     instance->field_slots = new_slots;
     instance->field_slot_used = new_used;
+    instance->cmeta_bool_slots = new_bools;
+    instance->cmeta_string_slots = new_strings;
     instance->field_slot_capacity = new_capacity;
     return 1;
 }
@@ -1103,6 +1128,13 @@ exprtk_class_t *exprtk_class_create(
     memset(&klass->cmeta_identity, 0, sizeof(klass->cmeta_identity));
     memset(&klass->cmeta_type, 0, sizeof(klass->cmeta_type));
     klass->cmeta_ready = 0;
+    klass->cmeta_layout_fields = NULL;
+    klass->cmeta_data_fields = NULL;
+    memset(&klass->cmeta_struct, 0, sizeof(klass->cmeta_struct));
+    memset(&klass->cmeta_shape, 0, sizeof(klass->cmeta_shape));
+    memset(&klass->cmeta_data, 0, sizeof(klass->cmeta_data));
+    memset(&klass->cmeta_field_provider, 0, sizeof(klass->cmeta_field_provider));
+    klass->cmeta_data_ready = 0;
     klass->arena = arena;
 
     return klass;
@@ -1162,7 +1194,9 @@ exprtk_class_t *exprtk_class_clone_to_arena(exprtk_class_t *klass, mem_pool_t *a
     copy->is_final = klass->is_final;
     copy->type_id = klass->type_id;
 
-    if (!exprtk_class_finalize_cmeta(copy)) return NULL;
+    if (!exprtk_class_finalize_cmeta(copy) ||
+        !exprtk_class_finalize_cmeta_data(copy))
+        return NULL;
     return copy;
 }
 
@@ -2195,6 +2229,8 @@ exprtk_instance_t *exprtk_instance_create(
     instance->arena = arena;
     instance->field_slots = NULL;
     instance->field_slot_used = NULL;
+    instance->cmeta_bool_slots = NULL;
+    instance->cmeta_string_slots = NULL;
     instance->field_slot_count = 0;
     instance->field_slot_capacity = 0;
     instance->field_version = 1;
@@ -2301,6 +2337,31 @@ void exprtk_instance_set_field(
         if (was_used) instance_release_stored_value(instance->field_slots[slot_index]);
         instance->field_slots[slot_index] = stored;
         instance->field_slot_used[slot_index] = 1;
+        {
+            const char *slot_type = instance->klass->instance_field_types
+                ? instance->klass->instance_field_types[slot_index]
+                : NULL;
+            if (instance->cmeta_bool_slots) {
+                instance->cmeta_bool_slots[slot_index] =
+                    slot_type &&
+                    (strcmp(slot_type, "bool") == 0 ||
+                     strcmp(slot_type, "boolean") == 0) &&
+                    stored.type == EXPRTK_VAL_BOOL &&
+                    stored.data.boolean != 0;
+            }
+            if (instance->cmeta_string_slots) {
+                exprtk_cmeta_string_slot_t *projection =
+                    &instance->cmeta_string_slots[slot_index];
+                projection->data = NULL;
+                projection->length = 0u;
+                projection->owned = 0u;
+                if (slot_type && strcmp(slot_type, "string") == 0 &&
+                    stored.type == EXPRTK_VAL_STRING) {
+                    projection->data = (char *)stored.data.string.data;
+                    projection->length = stored.data.string.len;
+                }
+            }
+        }
         if (slot_index + 1 > instance->field_slot_count) {
             instance->field_slot_count = slot_index + 1;
         }
@@ -2509,10 +2570,20 @@ void exprtk_instance_destroy(exprtk_instance_t *instance) {
         }
         HTAB_OP(field_entry_t, destroy)(&fields_htab);
     }
+    if (instance->cmeta_string_slots) {
+        for (size_t i = 0; i < instance->field_slot_capacity; ++i) {
+            if (instance->cmeta_string_slots[i].owned)
+                free(instance->cmeta_string_slots[i].data);
+        }
+    }
     free(instance->field_slots);
     free(instance->field_slot_used);
+    free(instance->cmeta_bool_slots);
+    free(instance->cmeta_string_slots);
     instance->field_slots = NULL;
     instance->field_slot_used = NULL;
+    instance->cmeta_bool_slots = NULL;
+    instance->cmeta_string_slots = NULL;
     instance->field_slot_count = 0;
     instance->field_slot_capacity = 0;
 

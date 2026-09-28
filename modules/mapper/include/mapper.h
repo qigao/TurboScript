@@ -13,6 +13,7 @@ extern "C" {
 
 typedef struct mapper_ctx_s {
     exprtk_env_t *env;
+    void *plans; /* private immutable DataBind MessagePlan cache */
 } mapper_ctx_t;
 
 void *mapper_ctx_create(void);

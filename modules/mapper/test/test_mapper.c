@@ -36,6 +36,7 @@ spec("mapper_module") {
         args[1] = exprtk_val_str(vstr_from_cstr(
             "{\"name\":\"Ada\",\"age\":37,\"active\":true}"));
         object = exprtk_call_internal("mapper.read_json", 2, args, &env);
+        check_equal(env.error_msg, "");
         check((object.type) == (EXPRTK_VAL_INSTANCE));
         args[0] = object;
         text = exprtk_call_internal("mapper.write_json", 1, args, &env);
@@ -66,7 +67,7 @@ spec("mapper_module") {
         args[1] = exprtk_val_str(vstr_from_cstr("{\"age\":\"bad\"}"));
         result = exprtk_call_internal("mapper.read_json", 2, args, &env);
         check((result.type) == (EXPRTK_VAL_NULL));
-        check_contains(env.error_msg, "received string");
+        check_contains(env.error_msg, "Expected signed integer value");
         mapper_ctx_destroy(module);
         exprtk_env_free(&env);
     }
@@ -94,6 +95,7 @@ spec("mapper_module") {
         args[1] = exprtk_val_str(vstr_from_cstr(
             "name: Ada\nage: 37\nactive: true\n"));
         object = exprtk_call_internal("mapper.read_yaml", 2, args, &env);
+        check_equal(env.error_msg, "");
         check((object.type) == (EXPRTK_VAL_INSTANCE));
         args[0] = object;
         text = exprtk_call_internal("mapper.write_xml", 1, args, &env);
@@ -107,6 +109,7 @@ spec("mapper_module") {
         args[1] = exprtk_val_str(vstr_from_cstr(
             "<User><name>Ada</name><age>37</age><active>true</active></User>"));
         object = exprtk_call_internal("mapper.read_xml", 2, args, &env);
+        check_equal(env.error_msg, "");
         check((object.type) == (EXPRTK_VAL_INSTANCE));
         exprtk_value_destroy(&object);
         mapper_ctx_destroy(module);
