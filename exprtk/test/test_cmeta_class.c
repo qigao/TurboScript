@@ -129,8 +129,16 @@ spec("CMeta class reflection") {
         check_equal(cmeta_object_field_read(&object, "name", &data, &value),
                     CMETA_OK);
         check_equal(data->kind, CMETA_DATA_STRING);
-        check_equal(((const exprtk_value_t *)value)->type, EXPRTK_VAL_STRING);
-        check_equal(((const exprtk_value_t *)value)->data.string.data, "Ada");
+        {
+            const unsigned char *bytes = NULL;
+            size_t length = 0u;
+            check_equal(cmeta_data_buffer_read(
+                            data, value, SIZE_MAX, &bytes, &length),
+                        CMETA_OK);
+            check_equal(length, 3u);
+            check_true(bytes != NULL);
+            check_equal(memcmp(bytes, "Ada", 3u), 0);
+        }
 
         cmeta_object_release(&object);
         exprtk_instance_destroy(instance);
