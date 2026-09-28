@@ -161,6 +161,65 @@ static int ts_mir_ensure_oop_ptr_capacity(ts_mir_compiler_t *c, int needed) {
   return 1;
 }
 
+static int ts_mir_ensure_builtin_admission_capacity(
+    ts_mir_compiler_t *c, int needed) {
+  ts_mir_builtin_admission_t *grown = NULL;
+  int capacity;
+
+  if (!c) return 0;
+  if (needed <= c->builtin_admission_capacity) return 1;
+
+  capacity = c->builtin_admission_capacity > 0
+                 ? c->builtin_admission_capacity * 2
+                 : 16;
+  if (capacity < needed) capacity = needed;
+  grown = (ts_mir_builtin_admission_t *)realloc(
+      c->builtin_admissions, (size_t)capacity * sizeof(*grown));
+  if (!grown) {
+    ts_mir_fail(c, "JIT compile error: out of memory growing CMeta builtin admission cache");
+    return 0;
+  }
+  c->builtin_admissions = grown;
+  c->builtin_admission_capacity = capacity;
+  return 1;
+}
+
+const exprtk_function_reflection_t *ts_mir_admit_builtin(
+    ts_mir_compiler_t *c, const char *name) {
+  exprtk_function_reflection_t reflected;
+  ts_mir_builtin_admission_t *entry;
+
+  if (!c || !name || name[0] == '\0') return NULL;
+  for (int i = 0; i < c->builtin_admission_count; ++i) {
+    if (c->builtin_admissions[i].name &&
+        strcmp(c->builtin_admissions[i].name, name) == 0)
+      return &c->builtin_admissions[i].reflection;
+  }
+
+  memset(&reflected, 0, sizeof(reflected));
+  if (!exprtk_find_builtin_reflection(name, &c->ts_ctx->env, &reflected) ||
+      !cmeta_function_desc_valid(&reflected.function) ||
+      reflected.invoke == NULL)
+    return NULL;
+
+  if (!ts_mir_ensure_builtin_admission_capacity(
+          c, c->builtin_admission_count + 1))
+    return NULL;
+
+  entry = &c->builtin_admissions[c->builtin_admission_count];
+  memset(entry, 0, sizeof(*entry));
+  entry->name = strdup(name);
+  if (!entry->name) {
+    ts_mir_fail(c, "JIT compile error: out of memory retaining admitted builtin '%s'", name);
+    return NULL;
+  }
+  entry->reflection = reflected;
+  /* Rebase the copied descriptor onto the copied embedded parameter array. */
+  entry->reflection.function.params = entry->reflection.params;
+  ++c->builtin_admission_count;
+  return &entry->reflection;
+}
+
 MIR_reg_t ts_mir_get_or_create_reg(ts_mir_compiler_t *c, const char *name) {
   ts_mir_var_entry_t *entry = NULL;
 
@@ -552,6 +611,18 @@ static void ts_mir_destroy_pointer_caches(ts_mir_compiler_t *c) {
   c->oop_ptr_capacity = 0;
 }
 
+static void ts_mir_destroy_builtin_admissions(ts_mir_compiler_t *c) {
+  if (!c) return;
+  for (int i = 0; i < c->builtin_admission_count; ++i) {
+    free(c->builtin_admissions[i].name);
+    c->builtin_admissions[i].name = NULL;
+  }
+  free(c->builtin_admissions);
+  c->builtin_admissions = NULL;
+  c->builtin_admission_count = 0;
+  c->builtin_admission_capacity = 0;
+}
+
 static void ts_mir_destroy_class_names(ts_mir_compiler_t *c) {
   if (!c) return;
   for (int i = 0; i < c->class_name_count; ++i) free(c->class_names[i]);
@@ -583,6 +654,7 @@ void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
   ts_mir_discard_current_vars(c);
   ts_mir_destroy_compiled_funcs(c);
   ts_mir_destroy_pointer_caches(c);
+  ts_mir_destroy_builtin_admissions(c);
   ts_mir_destroy_class_names(c);
   ts_mir_discard_class_types(c);
 }
