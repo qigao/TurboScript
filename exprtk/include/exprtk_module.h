@@ -11,6 +11,7 @@
 
 #include "exprtk_types.h"
 #include "salts_buffer.h"
+#include <cmeta/function.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,6 +29,35 @@ typedef struct {
     const char *name;
     exprtk_builtin_fn fn;
 } exprtk_func_entry_t;
+
+/*
+ * Admission-time CMeta projection of the exact native ExprTk builtin adapter.
+ *
+ * The logical language remains dynamically typed. This descriptor therefore
+ * reflects the concrete VM adapter contract once, before execution:
+ *
+ *   exprtk_value_t fn(size_t argc,
+ *                     exprtk_value_t *args,
+ *                     exprtk_env_t *env,
+ *                     mem_pool_t *scratch)
+ *
+ * Consumers may retain the copied metadata only as long as this reflection
+ * storage remains alive. Invocation continues through the exact entry->fn
+ * pointer; reflection is not consulted on the hot call path.
+ */
+typedef struct exprtk_function_reflection {
+    cmeta_param_desc params[4];
+    cmeta_function_desc function;
+    exprtk_builtin_fn invoke;
+} exprtk_function_reflection_t;
+
+EXPRTK_C_API int exprtk_func_entry_reflect(
+    const exprtk_func_entry_t *entry,
+    exprtk_function_reflection_t *out);
+EXPRTK_C_API int exprtk_module_function_reflect(
+    const exprtk_module_t *module,
+    size_t index,
+    exprtk_function_reflection_t *out);
 
 struct exprtk_module_s {
     const char *module_name;
