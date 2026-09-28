@@ -1,6 +1,6 @@
 /**
  * @file ts_plugin_loader.h
- * @brief TurboScript host plugin loader (dlopen / LoadLibrary).
+ * @brief TurboScript adapter over the canonical Salts plugin registry.
  */
 #ifndef TS_PLUGIN_LOADER_H
 #define TS_PLUGIN_LOADER_H
@@ -12,9 +12,13 @@ extern "C" {
 #endif
 
 typedef struct ts_plugin_handle_s {
-    void              *dl_handle;   /* OS DLL handle */
-    const ts_plugin_t *plugin;      /* plugin descriptor */
-    void              *instance;    /* returned by load() */
+    salts_plugin_registry registry;          /* owns the loaded DSO */
+    salts_plugin_ref plugin_ref;             /* registry identity */
+    salts_plugin_lease lease;                /* keeps manifest/code alive */
+    const salts_plugin_manifest *manifest;   /* borrowed under lease */
+    const salts_plugin_export *module_export;/* canonical module capability */
+    ts_plugin_module *module;                /* borrowed interface handle */
+    void *instance;                          /* per-script-context instance */
 } ts_plugin_handle_t;
 
 #define TS_PLUGIN_ERROR_PATH_CAPACITY 1024U
@@ -60,13 +64,15 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
                       ts_plugin_handle_t **out, ts_plugin_error_t *error);
 
 /**
- * dlopen the plugin at @p path and resolve ts_api_create.
+ * Resolve the configured TurboScript plugin path and load it through
+ * Salts::Plugin. The DSO must export the canonical salts_plugin_query entry.
  * @return handle on success, NULL on failure.
  */
 ts_plugin_handle_t *ts_plugin_load(const char *path);
 
 /**
- * Call plugin->load(env, scratch, coro) and store the instance.
+ * Call the canonical TurboScript module interface load(env, scratch) method
+ * while the Salts plugin lease is held, and store the per-context instance.
  * @return 0 on success, -1 on failure.
  */
 int ts_plugin_init(ts_plugin_handle_t *h, void *env, void *scratch );
@@ -76,7 +82,8 @@ int ts_plugin_init_ex(ts_plugin_handle_t *h, void *env, void *scratch,
                       ts_plugin_error_t *error);
 
 /**
- * Call plugin->unload(instance), dlclose, free handle.
+ * Release the per-context module instance, then release the Salts plugin lease,
+ * quiesce and unload the DSO.
  */
 void ts_plugin_unload(ts_plugin_handle_t *h);
 
