@@ -60,14 +60,13 @@ target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
-  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
           ${CMAKE_SOURCE_DIR}/exprtk/src
           ${CMAKE_CURRENT_SOURCE_DIR}/src/host
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
 
 target_link_libraries(
   ${TARGET_NAME_LIB}
-  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk MIR::MIR Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core Salts::DataBind
   PRIVATE Salts::Cron Salts::Coroutine)
 
@@ -94,7 +93,6 @@ target_include_directories(
   ${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
          $<INSTALL_INTERFACE:include>
-  PRIVATE ${CMAKE_SOURCE_DIR}/vendor/mir
           ${CMAKE_SOURCE_DIR}/exprtk/src
           ${CMAKE_CURRENT_SOURCE_DIR}/src/host
           ${CMAKE_CURRENT_SOURCE_DIR}/src/mir)  # MIR backend internal headers
@@ -106,7 +104,7 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk mir_static Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk MIR::MIR Salts::CSTL ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core
   PRIVATE Salts::Cron Salts::Coroutine)
 
