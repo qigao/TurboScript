@@ -2340,7 +2340,8 @@ EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_numeric(
     if (class_value.type == EXPRTK_VAL_CLASS) expected_class = class_value.data.class_val.klass;
 
     if (object.type == EXPRTK_VAL_INSTANCE && expected_class &&
-        object.data.instance_val.instance->klass == expected_class) {
+        object.data.instance_val.instance->klass == expected_class &&
+        oop_admit_receiver_type(expected_class) != NULL) {
         exprtk_value_t *args = numeric_args_to_values(argc, argv);
         if (argc > 0 && !args) return zero;
 
@@ -2385,7 +2386,8 @@ EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_checked_value_nodes(
 
     exprtk_value_t result = zero;
     if (object.type == EXPRTK_VAL_INSTANCE && expected_class &&
-        object.data.instance_val.instance->klass == expected_class) {
+        object.data.instance_val.instance->klass == expected_class &&
+        oop_admit_receiver_type(expected_class) != NULL) {
         exprtk_func_t *method =
             exprtk_class_lookup_method_typed(expected_class, method_name, 0,
                                              actual_count, args);
@@ -2413,6 +2415,16 @@ EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_mono_numeric(const char *obje
                                                               exprtk_env_t *env) {
     return exprtk_oop_call_method_mono_checked_numeric(object_name, expected_class_name,
                                                        method_name, NULL, argc, argv, env);
+}
+
+static const cmeta_type_desc *oop_admit_receiver_type(
+    exprtk_class_t *klass) {
+    const cmeta_type_desc *type;
+
+    if (!klass || !exprtk_class_finalize_cmeta(klass))
+        return NULL;
+    type = exprtk_class_cmeta_type(klass);
+    return cmeta_type_desc_valid(type) ? type : NULL;
 }
 
 static uint64_t oop_method_arg_signature(size_t argc, const exprtk_value_t *args) {
@@ -2468,8 +2480,14 @@ EXPRTK_C_API exprtk_value_t exprtk_oop_call_method_cached_checked_numeric(
         method = cache->method;
     }
     if (!method) {
-        method = exprtk_class_lookup_method_typed(klass, method_name, is_static, argc, args);
-        if (cache) {
+        const cmeta_type_desc *receiver_type =
+            oop_admit_receiver_type(klass);
+        method = exprtk_class_lookup_method_typed(
+            klass, method_name, is_static, argc, args);
+        /* Cache only after the receiver class has a valid canonical CMeta
+         * identity. Cache hits remain pointer-monomorphic and perform no
+         * reflection or registry lookup. */
+        if (cache && receiver_type != NULL) {
             cache->last_class = klass;
             cache->method = method;
             cache->arg_signature = arg_signature;
