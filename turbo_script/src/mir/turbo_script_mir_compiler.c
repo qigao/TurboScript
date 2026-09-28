@@ -187,32 +187,45 @@ static int ts_mir_ensure_builtin_admission_capacity(
 
 static int ts_mir_ensure_owned_string_capacity(ts_mir_compiler_t *c,
                                                size_t needed) {
+  ts_mir_owned_string_block_t *block;
   char **grown;
   size_t capacity;
 
   if (!c) return 0;
-  if (needed <= c->owned_string_capacity) return 1;
+  block = c->owned_string_block;
+  if (!block) {
+    block = (ts_mir_owned_string_block_t *)calloc(1, sizeof(*block));
+    if (!block) {
+      ts_mir_fail(c, "JIT compile error: out of memory creating MIR string owner");
+      return 0;
+    }
+    c->owned_string_block = block;
+  }
+  if (needed <= block->capacity) return 1;
 
-  capacity = c->owned_string_capacity ? c->owned_string_capacity * 2u : 32u;
+  capacity = block->capacity ? block->capacity * 2u : 32u;
   if (capacity < needed) capacity = needed;
-  grown = (char **)realloc(c->owned_strings, capacity * sizeof(*grown));
+  grown = (char **)realloc(block->items, capacity * sizeof(*grown));
   if (!grown) {
     ts_mir_fail(c, "JIT compile error: out of memory growing MIR string ownership");
     return 0;
   }
-  c->owned_strings = grown;
-  c->owned_string_capacity = capacity;
+  block->items = grown;
+  block->capacity = capacity;
   return 1;
 }
 
 static const char *ts_mir_retain_string(ts_mir_compiler_t *c,
                                         const char *value) {
+  ts_mir_owned_string_block_t *block;
   char *copy;
 
   if (!c || !value) return NULL;
+  block = c->owned_string_block;
   if (!ts_mir_ensure_owned_string_capacity(
-          c, c->owned_string_count + 1u))
+          c, (block ? block->count : 0u) + 1u))
     return NULL;
+  block = c->owned_string_block;
 
   copy = strdup(value);
   if (!copy) {
@@ -220,7 +233,7 @@ static const char *ts_mir_retain_string(ts_mir_compiler_t *c,
                 value);
     return NULL;
   }
-  c->owned_strings[c->owned_string_count++] = copy;
+  block->items[block->count++] = copy;
   return copy;
 }
 
@@ -669,27 +682,23 @@ static void ts_mir_discard_class_types(ts_mir_compiler_t *c) {
   c->class_type_capacity = 0;
 }
 
-static void ts_mir_destroy_owned_strings(ts_mir_compiler_t *c) {
-  if (!c) return;
-  for (size_t i = 0; i < c->owned_string_count; ++i)
-    free(c->owned_strings[i]);
-  free(c->owned_strings);
-  c->owned_strings = NULL;
-  c->owned_string_count = 0u;
-  c->owned_string_capacity = 0u;
+void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block) {
+  while (block) {
+    ts_mir_owned_string_block_t *next = block->next;
+    for (size_t i = 0; i < block->count; ++i)
+      free(block->items[i]);
+    free(block->items);
+    free(block);
+    block = next;
+  }
 }
 
-void ts_mir_take_owned_strings(ts_mir_compiler_t *c, char ***out_strings,
-                               size_t *out_count) {
-  if (out_strings) *out_strings = NULL;
-  if (out_count) *out_count = 0u;
-  if (!c || !out_strings || !out_count) return;
-
-  *out_strings = c->owned_strings;
-  *out_count = c->owned_string_count;
-  c->owned_strings = NULL;
-  c->owned_string_count = 0u;
-  c->owned_string_capacity = 0u;
+ts_mir_owned_string_block_t *ts_mir_take_owned_strings(ts_mir_compiler_t *c) {
+  ts_mir_owned_string_block_t *block;
+  if (!c) return NULL;
+  block = c->owned_string_block;
+  c->owned_string_block = NULL;
+  return block;
 }
 
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
@@ -702,7 +711,8 @@ void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
   ts_mir_destroy_builtin_admissions(c);
   ts_mir_destroy_class_names(c);
   ts_mir_discard_class_types(c);
-  ts_mir_destroy_owned_strings(c);
+  ts_mir_owned_string_blocks_destroy(c->owned_string_block);
+  c->owned_string_block = NULL;
 }
 
 ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c) {
