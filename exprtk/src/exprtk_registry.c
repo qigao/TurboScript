@@ -15,6 +15,118 @@ static size_t g_registry_count = 0;
 static size_t g_registry_cap = 0;
 static int g_registry_ready = 0;
 
+static const cmeta_type_identity exprtk_value_cmeta_identity =
+    CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.value");
+static const cmeta_type_identity exprtk_env_cmeta_identity =
+    CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.env");
+static const cmeta_type_identity exprtk_scratch_cmeta_identity =
+    CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.scratch");
+
+static const cmeta_type_desc exprtk_value_cmeta_type = {
+    .name = "exprtk_value_t",
+    .size = sizeof(exprtk_value_t),
+    .align = _Alignof(exprtk_value_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = NULL,
+    .identity = &exprtk_value_cmeta_identity
+};
+static const cmeta_type_desc exprtk_env_cmeta_type = {
+    .name = "exprtk_env_t",
+    .size = sizeof(exprtk_env_t),
+    .align = _Alignof(exprtk_env_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = NULL,
+    .identity = &exprtk_env_cmeta_identity
+};
+static const cmeta_type_desc exprtk_scratch_cmeta_type = {
+    .name = "mem_pool_t",
+    .size = sizeof(mem_pool_t),
+    .align = _Alignof(mem_pool_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = NULL,
+    .identity = &exprtk_scratch_cmeta_identity
+};
+
+static const cmeta_type_identity exprtk_value_ptr_cmeta_identity =
+    CMETA_TYPE_ID_POINTER_INIT(&exprtk_value_cmeta_identity);
+static const cmeta_type_identity exprtk_env_ptr_cmeta_identity =
+    CMETA_TYPE_ID_POINTER_INIT(&exprtk_env_cmeta_identity);
+static const cmeta_type_identity exprtk_scratch_ptr_cmeta_identity =
+    CMETA_TYPE_ID_POINTER_INIT(&exprtk_scratch_cmeta_identity);
+
+static const cmeta_type_desc exprtk_value_ptr_cmeta_type = {
+    .name = "exprtk_value_t *",
+    .size = sizeof(exprtk_value_t *),
+    .align = _Alignof(exprtk_value_t *),
+    .kind = CMETA_T_POINTER,
+    .pointee = &exprtk_value_cmeta_type,
+    .traits = NULL,
+    .identity = &exprtk_value_ptr_cmeta_identity
+};
+static const cmeta_type_desc exprtk_env_ptr_cmeta_type = {
+    .name = "exprtk_env_t *",
+    .size = sizeof(exprtk_env_t *),
+    .align = _Alignof(exprtk_env_t *),
+    .kind = CMETA_T_POINTER,
+    .pointee = &exprtk_env_cmeta_type,
+    .traits = NULL,
+    .identity = &exprtk_env_ptr_cmeta_identity
+};
+static const cmeta_type_desc exprtk_scratch_ptr_cmeta_type = {
+    .name = "mem_pool_t *",
+    .size = sizeof(mem_pool_t *),
+    .align = _Alignof(mem_pool_t *),
+    .kind = CMETA_T_POINTER,
+    .pointee = &exprtk_scratch_cmeta_type,
+    .traits = NULL,
+    .identity = &exprtk_scratch_ptr_cmeta_identity
+};
+
+int exprtk_func_entry_reflect(
+    const exprtk_func_entry_t *entry,
+    exprtk_function_reflection_t *out) {
+    if (!entry || !entry->name || !entry->fn || !out) return 0;
+
+    memset(out, 0, sizeof(*out));
+    out->params[0] = (cmeta_param_desc){
+        sizeof(cmeta_param_desc), "argc", &cmeta_type_size, CMETA_PARAM_IN
+    };
+    out->params[1] = (cmeta_param_desc){
+        sizeof(cmeta_param_desc), "args", &exprtk_value_ptr_cmeta_type,
+        CMETA_PARAM_INOUT | CMETA_PARAM_BORROWED | CMETA_PARAM_NULLABLE
+    };
+    out->params[2] = (cmeta_param_desc){
+        sizeof(cmeta_param_desc), "env", &exprtk_env_ptr_cmeta_type,
+        CMETA_PARAM_INOUT | CMETA_PARAM_BORROWED
+    };
+    out->params[3] = (cmeta_param_desc){
+        sizeof(cmeta_param_desc), "scratch", &exprtk_scratch_ptr_cmeta_type,
+        CMETA_PARAM_INOUT | CMETA_PARAM_BORROWED
+    };
+    out->function = (cmeta_function_desc){
+        sizeof(cmeta_function_desc),
+        entry->name,
+        &exprtk_value_cmeta_type,
+        out->params,
+        4u,
+        CMETA_EFFECT_UNKNOWN,
+        CMETA_PROP_NONE
+    };
+    out->invoke = entry->fn;
+    return cmeta_function_desc_valid(&out->function);
+}
+
+int exprtk_module_function_reflect(
+    const exprtk_module_t *module,
+    size_t index,
+    exprtk_function_reflection_t *out) {
+    if (!module || !module->entries || index >= module->count) return 0;
+    return exprtk_func_entry_reflect(&module->entries[index], out);
+}
+
 static exprtk_value_t exprtk_call_undefined(exprtk_env_t *env, const char *name) {
     exprtk_value_t zero = { .type = EXPRTK_VAL_NUMBER, .data.number = 0.0 };
 
