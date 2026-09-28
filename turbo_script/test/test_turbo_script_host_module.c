@@ -282,6 +282,38 @@ spec("TurboScript immutable Host modules") {
     destroy_fixture(ctx, result, module);
   }
 
+  it("retains named MIR bindings across repeated interpreter and JIT lifetimes") {
+    const char *source =
+        "func named(input){let local_value=input+1;"
+        "local_value=local_value*2;return local_value;};export(\"named\");";
+
+    for (int lifetime = 0; lifetime < 4; ++lifetime) {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_result_t *result = NULL;
+      turbo_script_module_t *module = NULL;
+      turbo_script_module_options_t options;
+      double arg = (double)(lifetime + 1);
+      double interp = 0.0;
+      double jit = 0.0;
+
+      turbo_script_module_options_init(&options);
+      check_not_null(ctx);
+      check_equal(turbo_script_result_create(ctx, &result),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(compile_text(ctx, result, source, &options, &module),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_module_execute_numeric(
+                      module, 0, 0, &arg, 1, &interp),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(ts_host_module_execute_numeric(
+                      module, 0, 1, &arg, 1, &jit),
+                  TURBO_SCRIPT_STATUS_OK);
+      check_equal(interp, (arg + 1.0) * 2.0);
+      check_equal(jit, (arg + 1.0) * 2.0);
+      destroy_fixture(ctx, result, module);
+    }
+  }
+
   it("rejects under and over arity before touching MIR argument storage") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
     turbo_script_result_t *result = NULL;
