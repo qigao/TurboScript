@@ -127,21 +127,21 @@ cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
   FOLDER turbo_script)
 
 cmake_add_test(
   TARGET test_turbo_script_host_registry
   SOURCES test_turbo_script_host_registry.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
   FOLDER turbo_script)
 
 cmake_add_test(
   TARGET test_turbo_script_host_module
   SOURCES test_turbo_script_host_module.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 
@@ -149,7 +149,7 @@ cmake_add_test(
   TARGET test_turbo_script_host_instance
   SOURCES test_turbo_script_host_instance.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 
@@ -157,7 +157,7 @@ cmake_add_test(
   TARGET test_turbo_script_host_call
   SOURCES test_turbo_script_host_call.c
   LIBS turbo_script_lib Salts::TinyTest exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 
@@ -165,7 +165,7 @@ cmake_add_test(
   TARGET test_turbo_script_host_state
   SOURCES test_turbo_script_host_state.c
   LIBS turbo_script_lib Salts::TinyTest exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 
@@ -173,7 +173,7 @@ cmake_add_test(
   TARGET test_turbo_script_host_limits
   SOURCES test_turbo_script_host_limits.c
   LIBS turbo_script_lib Salts::TinyTest exprtk ta MIR::MIR
-           ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/host
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 
