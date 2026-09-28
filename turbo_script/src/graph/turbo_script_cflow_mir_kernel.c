@@ -17,6 +17,9 @@ struct ts_cflow_mir_kernel_s {
   int gen_initialized;
 };
 
+_Static_assert(sizeof(ts_cflow_mir_kernel_t *) <= CMETA_CAPTURE_INLINE,
+               "MIR kernel owner pointer must fit CMeta inline capture");
+
 static ts_compiled_func_t *ts_cflow_find_compiled_kernel(
     ts_mir_compiler_t *compiler, const char *name) {
   if (!compiler || !name) return NULL;
