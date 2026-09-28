@@ -109,7 +109,7 @@ target_compile_definitions(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk MIR::MIR Salts::CSTL Salts::CMeta ${TARGET_NAME_PLUGIN_LOADER}
+  PRIVATE exprtk MIR::MIR Salts::CSTL Salts::CMeta Salts::CFlow ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Core
   PRIVATE Salts::Cron Salts::Coroutine)
 
