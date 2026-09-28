@@ -43,6 +43,69 @@ jobs:
             echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
             echo "release=false" >> "$GITHUB_OUTPUT"
           fi
+  source-test:
+    name: Linux source / full CTest
+    needs: metadata
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+        with:
+          mode: read
+      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Prepare source-test toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config nasm
+      - name: Restore exact dependency SDK graph
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          config="$RUNNER_TEMP/sdk-nuget.config"
+          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
+          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
+            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
+          packages="$RUNNER_TEMP/native-dependencies"
+          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
+          echo "SALTS_ROOT=$packages/salts.native/1.8.0/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.0/sdk/linux-x64" >> "$GITHUB_ENV"
+          echo "CHTTP_ROOT=$packages/chttp.native/1.1.2/sdk/linux-x64" >> "$GITHUB_ENV"
+      - name: Configure full source test graph
+        shell: bash
+        run: |
+          set -euxo pipefail
+          cmake -S . -B build/source-test -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            "-DCMAKE_TOOLCHAIN_FILE=$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+            -DVCPKG_TARGET_TRIPLET=x64-linux \
+            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
+            -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
+            -DBUILD_EXAMPLES=OFF \
+            -DTURBOSCRIPT_BUILD_MODULES=ON \
+            -DTURBOSCRIPT_BUILD_CLI=OFF
+      - name: Build full source test graph
+        shell: bash
+        run: cmake --build build/source-test --parallel 2
+      - name: Run full CTest graph
+        shell: bash
+        run: ctest --test-dir build/source-test --no-tests=error --output-on-failure
+      - name: Verify exact head and clean tracked source
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
+          test -z "$(git status --porcelain --untracked-files=no)"
+
   build:
     needs: metadata
     strategy:
@@ -169,7 +232,7 @@ jobs:
           path: dist/*.tar.gz
           if-no-files-found: error
   pack:
-    needs: [metadata, build]
+    needs: [metadata, source-test, build]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
