@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.15)
 set(TARGET_NAME mapper)
 set(TARGET_NAME_PLUGIN mapper_tbs)
 
-set(MAPPER_SOURCES src/exprtk_mod_mapper.c)
+set(MAPPER_SOURCES src/exprtk_mod_mapper.c src/mapper_databind.c src/mapper_databind.h)
 set(MAPPER_PLUGIN_SOURCES src/mapper_plugin.c)
 set(MAPPER_HEADERS include/mapper.h)
 
