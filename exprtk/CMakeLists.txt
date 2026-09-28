@@ -65,6 +65,9 @@ target_include_directories(
           ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
 target_link_libraries(exprtk_syntax PUBLIC Salts::Core Salts::DataBind Salts::DateTimeParser)
+if(UNIX)
+  target_link_libraries(exprtk_syntax PRIVATE m)
+endif()
 
 add_library(
   ${TARGET_NAME} STATIC
