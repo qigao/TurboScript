@@ -29,6 +29,7 @@ bool ts_cflow_text_lines_source_init(ts_cflow_text_lines_source_t *source,
   ts_cflow_line_slice_t *items;
 
   if (!source || (!text && text_len != 0u)) return false;
+  if (!text) text = "";
   memset(source, 0, sizeof(*source));
 
   for (size_t i = 0u; i < text_len; ++i) {
@@ -66,6 +67,8 @@ bool ts_cflow_text_split_source_init(ts_cflow_text_lines_source_t *source,
   if (!source || (!text && text_len != 0u) ||
       (!separator && separator_len != 0u))
     return false;
+  if (!text) text = "";
+  if (!separator) separator = "";
   memset(source, 0, sizeof(*source));
 
   if (separator_len == 0u) {
