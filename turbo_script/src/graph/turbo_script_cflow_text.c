@@ -90,30 +90,43 @@ bool ts_cflow_text_lines_plan_compile(cflow_graph *graph, cflow_plan *plan,
   return true;
 }
 
+bool ts_cflow_text_lines_plan_eval(const cflow_plan *plan,
+                                   const ts_cflow_text_lines_source_t *source,
+                                   cflow_result *out, const char **error) {
+  if (error) *error = NULL;
+  if (out) memset(out, 0, sizeof(*out));
+  if (!plan || !source || !out ||
+      (source->count != 0u && !source->items)) {
+    if (error) *error = "text-line CFlow evaluation requires a valid source";
+    return false;
+  }
+
+  if (!cflow_plan_eval_array(plan, source->items, source->count, out)) {
+    if (error) *error = "text-line CFlow Plan execution failed";
+    return false;
+  }
+
+  if (!cmeta_type_equal(out->type, &ts_cflow_line_slice_desc) ||
+      out->count != source->count) {
+    if (error) *error = "text-line CFlow Plan produced an invalid result";
+    cflow_result_destroy(out);
+    return false;
+  }
+  return true;
+}
+
 bool ts_cflow_text_lines_plan_count(const cflow_plan *plan,
                                     const ts_cflow_text_lines_source_t *source,
                                     size_t *out_count, const char **error) {
   cflow_result result = {0};
 
-  if (error) *error = NULL;
   if (out_count) *out_count = 0u;
-  if (!plan || !source || !out_count ||
-      (source->count != 0u && !source->items)) {
-    if (error) *error = "text-line CFlow count requires a valid source";
+  if (!out_count) {
+    if (error) *error = "text-line CFlow count requires output storage";
     return false;
   }
-
-  if (!cflow_plan_eval_array(plan, source->items, source->count, &result)) {
-    if (error) *error = "text-line CFlow Plan execution failed";
+  if (!ts_cflow_text_lines_plan_eval(plan, source, &result, error))
     return false;
-  }
-
-  if (!cmeta_type_equal(result.type, &ts_cflow_line_slice_desc) ||
-      result.count != source->count) {
-    if (error) *error = "text-line CFlow Plan produced an invalid result";
-    cflow_result_destroy(&result);
-    return false;
-  }
 
   *out_count = result.count;
   cflow_result_destroy(&result);

@@ -196,6 +196,25 @@ spec("TurboScript CFlow pipeline lowering") {
     check_equal(sg->node_count, (size_t)1u);
     check_equal(sg->nodes[0].op, CFLOW_OP_INPUT);
 
+    {
+      cflow_result result = {0};
+      const ts_cflow_line_slice_t *lines;
+
+      check_true(ts_cflow_text_lines_plan_eval(
+          &plan, &source, &result, &error));
+      check_null(error);
+      check_equal(result.count, (size_t)3u);
+      check_true(cmeta_type_equal(result.type, ts_cflow_line_slice_type()));
+      lines = (const ts_cflow_line_slice_t *)result.data;
+      check_not_null(lines);
+      check_equal(lines[0].len, (size_t)1u);
+      check_equal(lines[1].len, (size_t)1u);
+      check_equal(lines[2].len, (size_t)0u);
+      check(memcmp(lines[0].data, "a", 1u) == 0);
+      check(memcmp(lines[1].data, "b", 1u) == 0);
+      cflow_result_destroy(&result);
+    }
+
     check_true(ts_cflow_text_lines_plan_count(
         &plan, &source, &count, &error));
     check_null(error);
@@ -284,6 +303,29 @@ spec("TurboScript CFlow pipeline lowering") {
       check((((double)list_result.data.number)) == (1.0));
       exprtk_value_destroy(&list_result);
       exprtk_free(list_root);
+    }
+
+    {
+      exprtk_node_t *text_root = NULL;
+      exprtk_node_t *text_expr = ts_test_single_expr(
+          "stream.text(\"a\\r\\nb\\n\").lines().toList()",
+          &text_root);
+      exprtk_value_t text_result = exprtk_val_num(-1.0);
+
+      check_not_null(text_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, text_expr, &text_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(text_result.type, EXPRTK_VAL_LIST);
+      check_equal(text_result.data.list.count, (size_t)3u);
+      check_equal(text_result.data.list.items[0].type, EXPRTK_VAL_STRING);
+      check_equal(text_result.data.list.items[0].data.string.len, (size_t)1u);
+      check(memcmp(text_result.data.list.items[0].data.string.data, "a", 1u) == 0);
+      check_equal(text_result.data.list.items[2].data.string.len, (size_t)0u);
+
+      exprtk_value_destroy(&text_result);
+      exprtk_free(text_root);
     }
 
     exprtk_value_destroy(&vector_result);
