@@ -1,6 +1,7 @@
 #include "turbo_script_cflow_runtime.h"
 
 #include "../turbo_script_internal.h"
+#include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
 #include "exprtk_grammar.h"
 
