@@ -146,6 +146,20 @@ static int ts_cflow_runtime_result_to_list(const cflow_result *result,
   return 1;
 }
 
+static int ts_cflow_runtime_value_to_double(
+    const exprtk_value_t *value, double *out) {
+  if (!value || !out) return 0;
+  if (value->type == EXPRTK_VAL_NUMBER) {
+    *out = value->data.number;
+    return 1;
+  }
+  if (value->type == EXPRTK_VAL_INTEGER) {
+    *out = (double)value->data.integer;
+    return 1;
+  }
+  return 0;
+}
+
 static int ts_cflow_runtime_source_array(turbo_script_ctx_t *ctx,
                                          const exprtk_node_t *source,
                                          double **data_out,
@@ -174,12 +188,29 @@ static int ts_cflow_runtime_source_array(turbo_script_ctx_t *ctx,
              source->data.variable.name) {
     exprtk_value_t value =
         exprtk_env_get(&ctx->env, source->data.variable.name);
-    if (value.type != EXPRTK_VAL_VECTOR) return 0;
-    count = value.data.vector.size;
-    if (count > 0u) {
-      data = (double *)malloc(count * sizeof(*data));
-      if (!data) return 0;
-      memcpy(data, value.data.vector.data, count * sizeof(*data));
+
+    if (value.type == EXPRTK_VAL_VECTOR) {
+      count = value.data.vector.size;
+      if (count > 0u) {
+        data = (double *)malloc(count * sizeof(*data));
+        if (!data) return 0;
+        memcpy(data, value.data.vector.data, count * sizeof(*data));
+      }
+    } else if (value.type == EXPRTK_VAL_LIST) {
+      count = value.data.list.count;
+      if (count > 0u) {
+        data = (double *)malloc(count * sizeof(*data));
+        if (!data) return 0;
+      }
+      for (size_t i = 0; i < count; ++i) {
+        if (!ts_cflow_runtime_value_to_double(
+                &value.data.list.items[i], &data[i])) {
+          free(data);
+          return 0;
+        }
+      }
+    } else {
+      return 0;
     }
   } else {
     return 0;

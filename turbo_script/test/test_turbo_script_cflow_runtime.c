@@ -97,6 +97,32 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("admits a numeric list source through runtime analysis") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *root = NULL;
+      exprtk_node_t *expr;
+      exprtk_value_t result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_equal(turbo_script_run(ctx, "values = list(-2, 0, 3);"), 0);
+      expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.of(values).filter(x => x > 0).map(x => x * 2).count();",
+          &root);
+      check_not_null(expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, expr, &result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(result.type, EXPRTK_VAL_NUMBER);
+      check(fabs(result.data.number - 1.0) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&result);
+      exprtk_free(root);
+      turbo_script_free(ctx);
+    }
+
     it("returns zero for an empty CFlow count terminal") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       exprtk_node_t *root = NULL;
@@ -342,9 +368,39 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(interp);
     }
 
-    it("keeps non-vector variables on the legacy stream facade") {
+    it("keeps numeric list sources aligned in interpreter and JIT") {
       const char *source =
-          "values = list(1, 2, 3);"
+          "values = list(-2, 0, 3);"
+          "counted = stream.of(values).filter(x => x > 0).map(x => x * 2).count();"
+          "vectorized = stream.of(values).map(x => x + 1).toVector();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_vector;
+      exprtk_value_t jit_vector;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "counted") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "counted") - 1.0) <= 1e-9);
+
+      interp_vector = exprtk_env_get(&interp->env, "vectorized");
+      jit_vector = exprtk_env_get(&jit->env, "vectorized");
+      check_equal(interp_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(jit_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(interp_vector.data.vector.size, (size_t)3u);
+      check_equal(jit_vector.data.vector.size, (size_t)3u);
+      check(fabs(interp_vector.data.vector.data[0] - (-1.0)) <= 1e-9);
+      check(fabs(jit_vector.data.vector.data[2] - 4.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+    it("keeps heterogeneous list variables on the legacy stream facade") {
+      const char *source =
+          "values = list(1, \"x\", 3);"
           "answer = stream.of(values).count();";
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 

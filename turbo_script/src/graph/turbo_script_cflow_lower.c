@@ -106,7 +106,13 @@ static bool ts_cflow_vector_source(const exprtk_node_t *node) {
   return true;
 }
 
-static bool ts_cflow_runtime_vector_source(
+static bool ts_cflow_runtime_numeric_value(const exprtk_value_t *value) {
+  return value &&
+         (value->type == EXPRTK_VAL_NUMBER ||
+          value->type == EXPRTK_VAL_INTEGER);
+}
+
+static bool ts_cflow_runtime_numeric_collection_source(
     turbo_script_ctx_t *runtime_ctx, const exprtk_node_t *node) {
   exprtk_value_t value;
 
@@ -115,7 +121,14 @@ static bool ts_cflow_runtime_vector_source(
     return false;
 
   value = exprtk_env_get(&runtime_ctx->env, node->data.variable.name);
-  return value.type == EXPRTK_VAL_VECTOR;
+  if (value.type == EXPRTK_VAL_VECTOR) return true;
+  if (value.type != EXPRTK_VAL_LIST) return false;
+
+  for (size_t i = 0; i < value.data.list.count; ++i) {
+    if (!ts_cflow_runtime_numeric_value(&value.data.list.items[i]))
+      return false;
+  }
+  return true;
 }
 
 static bool ts_cflow_append_callable(
@@ -192,7 +205,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
   }
 
   if (ts_cflow_vector_source(expr) ||
-      ts_cflow_runtime_vector_source(runtime_ctx, expr)) {
+      ts_cflow_runtime_numeric_collection_source(runtime_ctx, expr)) {
     cflow_graph_init(&out->graph, &cmeta_type_double);
     if (out->graph.error) {
       if (error) *error = out->graph.error;
@@ -278,7 +291,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
   if (expr->type != EXPRTK_NODE_FUNCTION_CALL ||
       !expr->data.function.name) {
     if (error) *error =
-        "graphable pipeline must start from a numeric vector source";
+        "graphable pipeline must start from a numeric in-memory source";
     return false;
   }
 
