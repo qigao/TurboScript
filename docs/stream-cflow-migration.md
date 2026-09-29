@@ -56,6 +56,8 @@ TurboScript syntax / source adapters / diagnostics
 | `stream.text(io.read_file(path)).lines().count/collect/toList` | File I/O remains TurboScript-owned; evaluated text feeds the same typed line Plan | **CFlow** | Verified Phase 2 file path |
 | `stream.text(text).split(sep).count/collect/toList` | Reuses typed borrowed text slices; empty separator is byte-oriented and leading/trailing/adjacent empty tokens are preserved | **CFlow** | Typed split terminals |
 | `stream.text(io.read_file(path)).split(sep).count/collect/toList` | File I/O remains TurboScript-owned; text + separator expressions are each evaluated once | **CFlow** | Verified Phase 2 file split path |
+| `stream.text(text).lines().map(line => line.length()).toVector/toList/collect` | Exact capture-free typed MAP: borrowed LineSlice -> double | **CFlow** | First typed text callable vertical slice |
+| `stream.text(io.read_file(path)).lines().map(line => line.length()).toVector` | File I/O stays TurboScript-owned; typed MAP runs in the same CFlow Plan | **CFlow** | Verified file-backed typed MAP |
 | `stream.lines(path)` | Listed in language guide, but no current core factory/test registration found | **Documented only** | Either implement as a canonical adapter or remove the stale surface |
 | `stream.csv(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
 | `stream.json(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
@@ -80,6 +82,7 @@ with `source_kind` may also dispatch member calls through the provider hook
 | `.filterExpr(expr)` / `.where(expr)` | **Provider hook / legacy adapter** | Generic core fallback does not define a CFlow expression compiler |
 | text `.lines()` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | CFlow uses borrowed line slices synchronously; collect/toList deep-copy strings into TurboScript-owned list storage |
 | text `.split(sep)` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | Empty separator splits by byte; non-string separator yields an empty stream; collect/toList deep-copy token strings |
+| text `.map(fn)` | **CFlow** only for exact `line => line.length()`; otherwise **Legacy adapter** | Uses explicit typed-adapter projection with logical `LineSlice -> double`; string->string MAP remains legacy |
 
 ## Phase 1 parity boundary
 
@@ -129,6 +132,26 @@ TurboScript-owned string storage before the CFlow result and source text are
 released. For `split`, source and separator expressions are each evaluated
 exactly once; empty separators remain byte-oriented and empty tokens are
 preserved.
+
+The first typed text callable slice is also live for the exact
+`line => line.length()` MAP. Its contract is deliberately separate from the
+numeric callable universe:
+
+```text
+logical CFlow type: TurboScript.LineSlice.v1 -> double
+CMeta callable:     sig = INVALID, dispatch = ADAPTER
+CFlow admission:    typed-adapter projection with explicit input/output descriptors
+MIR ABI:            double kernel(const char *data, int64_t len)
+```
+
+The callable is PURE + DETERMINISTIC + TOTAL + NO_ALIAS. The MIR adapter copies
+the LineSlice descriptor alignment-safely, passes pointer and length as their
+native ABI classes, and never coerces a pointer through `double`. The
+FunctionDesc/FunctionAbi pair is used as the control-plane semantic/ABI contract
+for the typed adapter, which keeps plugin/native functions on the same canonical
+CMeta admission route instead of creating a TurboScript-private function ABI.
+Only the exact capture-free `line.length()` shape is admitted in this slice;
+other string MAP/FILTER forms remain legacy.
 
 Before implementing `stream.lines/csv/json/xml`, reconcile each surface with
 actual factory/provider registration so the migration does not preserve a
