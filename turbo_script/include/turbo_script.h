@@ -97,6 +97,14 @@ typedef enum {
 } turbo_script_error_code_t;
 
 /**
+ * @brief Cooperative interruption callback for script execution.
+ *
+ * The callback is invoked synchronously from existing interpreter/JIT safe
+ * points on the context owner thread. Return non-zero to stop execution.
+ */
+typedef int (*turbo_script_interrupt_fn)(void *user_data);
+
+/**
  * @brief Initialize a new Turbo Script context.
  * @param flags TURBO_SCRIPT_INIT_DEFAULT for full init, TURBO_SCRIPT_INIT_BARE for plugin-based
  * init.
@@ -134,6 +142,23 @@ TURBO_SCRIPT_C_API int turbo_script_set_memory_policy(turbo_script_ctx_t *ctx,
 /** Return a point-in-time memory usage snapshot. */
 TURBO_SCRIPT_C_API int turbo_script_get_memory_stats(turbo_script_ctx_t *ctx,
                                             turbo_script_memory_stats_t *stats);
+
+/**
+ * @brief Install or clear a cooperative interrupt probe for legacy run APIs.
+ *
+ * The callback and borrowed user_data must remain valid until replaced,
+ * cleared, or the context is freed. Passing NULL clears the probe. The hook
+ * applies to turbo_script_run(), turbo_script_run_jit(), compiled execution,
+ * and child execution environments that inherit the context safe points.
+ *
+ * An interrupt maps to TURBO_SCRIPT_ERROR_CANCELLED and causes the active run
+ * to return failure without creating a polling thread.
+ *
+ * @return 0 on success, -1 for an invalid context state.
+ */
+TURBO_SCRIPT_C_API int turbo_script_set_interrupt(turbo_script_ctx_t *ctx,
+                                                  turbo_script_interrupt_fn interrupt,
+                                                  void *user_data);
 
 /**
  * @brief Get Turbo Script ABI/API version string.
@@ -495,8 +520,6 @@ typedef struct turbo_script_instance_options_s {
   size_t max_result_bytes;
   uint64_t reserved[4];
 } turbo_script_instance_options_t;
-
-typedef int (*turbo_script_interrupt_fn)(void *user_data);
 
 typedef struct turbo_script_call_options_s {
   uint32_t struct_size;
