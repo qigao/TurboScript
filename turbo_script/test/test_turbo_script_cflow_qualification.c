@@ -62,7 +62,7 @@ spec("TurboScript CFlow qualification") {
     cflow_plan_compile_stats compile_stats = {0};
     cflow_result direct = {0};
     cflow_result compiled = {0};
-    exprtk_value_t legacy = exprtk_val_null();
+    exprtk_value_t legacy = {.type = EXPRTK_VAL_NULL};
     const cflow_subgraph *surface_root;
     const cflow_subgraph *optimized_root;
     const cflow_node *fused_map;
