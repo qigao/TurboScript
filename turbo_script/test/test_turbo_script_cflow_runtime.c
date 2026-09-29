@@ -28,7 +28,7 @@ static exprtk_value_t ts_stream_test_counted_string(
       (ts_stream_test_string_source_t *)user_data;
   (void)args;
   (void)env;
-  if (!state || argc != 0u) return exprtk_val_null();
+  if (!state || argc != 0u) return exprtk_val_num(0.0);
   ++state->calls;
   return exprtk_val_str(vstr_from_cstr(state->value ? state->value : ""));
 }
