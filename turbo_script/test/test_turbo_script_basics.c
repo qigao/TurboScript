@@ -20,6 +20,18 @@ typedef struct {
   char last_name[32];
 } plugin_authorizer_probe_t;
 
+typedef struct {
+  size_t checks;
+  size_t request_after;
+} interrupt_probe_t;
+
+static int test_context_interrupt(void *user_data) {
+  interrupt_probe_t *probe = (interrupt_probe_t *)user_data;
+  if (!probe) return 0;
+  probe->checks++;
+  return probe->checks >= probe->request_after;
+}
+
 static bool test_plugin_authorizer(const char *plugin_name, void *user_data) {
   plugin_authorizer_probe_t *probe = (plugin_authorizer_probe_t *)user_data;
   if (!probe || !plugin_name) return false;
@@ -165,6 +177,46 @@ spec("turbo_script_basics") {
       check((turbo_script_get_memory_stats(ctx, &after)) == (0));
       check_true(after.context_bytes > before.context_bytes + 1024);
       turbo_script_free(ctx);
+    }
+  }
+
+  describe("Context interruption") {
+    it("should cooperatively interrupt legacy interpreter and JIT runs without breaking imports") {
+      const char *source =
+          "import(\"io\");"
+          "i = 0;"
+          "while (i < 1000000) { i = i + 1; };"
+          "answer = 42;";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      interrupt_probe_t interp_probe = {.request_after = 2};
+      interrupt_probe_t jit_probe = {.request_after = 2};
+
+      check_not_null(interp);
+      check_not_null(jit);
+
+      check_equal(turbo_script_set_interrupt(interp, test_context_interrupt, &interp_probe), 0);
+      check_equal(turbo_script_run(interp, source), -1);
+      check_equal(turbo_script_get_error_code(interp), TURBO_SCRIPT_ERROR_CANCELLED);
+      check_not_null(strstr(turbo_script_get_error(interp), "interrupted"));
+      check_true(interp_probe.checks >= interp_probe.request_after);
+
+      check_equal(turbo_script_set_interrupt(jit, test_context_interrupt, &jit_probe), 0);
+      check_equal(turbo_script_run_jit(jit, source), -1);
+      check_equal(turbo_script_get_error_code(jit), TURBO_SCRIPT_ERROR_CANCELLED);
+      check_not_null(strstr(turbo_script_get_error(jit), "interrupted"));
+      check_true(jit_probe.checks >= jit_probe.request_after);
+
+      check_equal(turbo_script_set_interrupt(interp, NULL, NULL), 0);
+      check_equal(turbo_script_run(interp, "import(\"io\"); answer = 6 * 7;"), 0);
+      check_equal(ts_get_num(interp, "answer"), 42.0);
+
+      check_equal(turbo_script_set_interrupt(jit, NULL, NULL), 0);
+      check_equal(turbo_script_run_jit(jit, "import(\"io\"); answer = 6 * 7;"), 0);
+      check_equal(ts_get_num(jit, "answer"), 42.0);
+
+      turbo_script_free(interp);
+      turbo_script_free(jit);
     }
   }
 

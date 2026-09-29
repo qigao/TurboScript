@@ -79,6 +79,9 @@ struct turbo_script_ctx_s {
   size_t host_export_function_count;
   /* Borrowed only while one synchronous Host export call is executing. */
   ts_host_call_budget_t *active_host_budget;
+  /* Optional context-wide cooperative interrupt used by legacy run APIs. */
+  turbo_script_interrupt_fn interrupt;
+  void *interrupt_user_data;
   exprtk_env_t env;
   exprtk_node_t *expr;
   char *expr_source;
