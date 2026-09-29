@@ -1280,9 +1280,13 @@ Current execution contract:
   borrowed CFlow slices into TurboScript-owned strings before source cleanup.
   `split` preserves byte-oriented empty-separator behavior and leading,
   trailing, or adjacent empty tokens; source and separator expressions are each
-  evaluated once. Bare `.lines()` / `.split(...)` streams and string
-  filter/map remain eager legacy adapters; none imply Reactive/backpressure
-  execution.
+  evaluated once.
+- The exact capture-free MAP `line => line.length()` is also CFlow-backed for
+  `.lines().map(...).toVector/toList/collect`. It uses the explicit typed
+  `LineSlice -> double` adapter ABI; other string MAP/FILTER forms remain on
+  the eager legacy adapter.
+- Bare `.lines()` / `.split(...)` streams and all other string transforms
+  remain eager; none imply Reactive/backpressure execution.
 - Older documentation listed `stream.lines(path)`, `stream.csv(...)`,
   `stream.json(...)`, and `stream.xml(...)` as core factories. The current
   core audit did not find those factory registrations/tests. Treat them as
