@@ -1,5 +1,6 @@
 #include "../src/turbo_script_internal.h"
 #include "../src/graph/turbo_script_cflow_runtime.h"
+#include "exprtk.h"
 #include "tinytest.h"
 
 #include <math.h>
