@@ -1096,32 +1096,48 @@ var result = sum(map(filter(data, x > 0), x => x * 2));
 
 ### 3.1 Java Stream 风格链式调用
 
-容器和文件源也可以使用点号链式 stream API：
+`stream.*` 是 TurboScript 的语言 facade。可图化的数值型内存 pipeline
+通过 **CMeta + CFlow + MIR kernels** 执行；尚未进入 CFlow admission 的 source
+形态或操作仍走现有 TurboScript / ExprTk eager adapter。
 
 ```javascript
-var total = stream.csv("trades.csv")
-    .filterExpr("price > 100")
-    .map(r => to_num(r.price) * to_num(r.qty))
-    .reduce(0, (acc, v) => acc + v);
+var total = stream.of([1, -2, 3])
+    .filter(x => x > 0)
+    .map(x => x * 10)
+    .reduce(0, (acc, x) => acc + x);
 
-var qty = stream.json("orders.json", "$.orders[*]")
-    .filter(r => r.price > 5)
-    .map(r => r.qty)
-    .reduce(0, (acc, v) => acc + v);
+var values = list(1, 2, 3);
+var doubled = stream.of(values)
+    .map(x => x * 2)
+    .toVector();
 
-var xml_total = stream.xml("orders.xml", "//price")
-    .filter(n => to_num(n.text) > 5)
-    .map(n => to_num(n.text))
-    .reduce(0, (acc, v) => acc + v);
+// 当前已验证的文件/文本路径：先 eager read，再 eager lines。
+var line_count = stream.text(io.read_file("data.txt"))
+    .lines()
+    .count();
 ```
 
-- `stream.of(x)`、`list.stream()`、`vector.stream()`、`map.stream()` 和 `string.stream()` 创建 stream 值。
-- 文件入口包括 `stream.lines(path)`、`stream.csv(path[, has_header])`、`stream.json(path[, jsonpath])` 和 `stream.xml(path, xpath)`。
-- 链式方法包括 `filter(fn)`、`filterExpr(expr)`、`where(expr)`、`map(fn)`、`reduce(init, fn)`、`collect()`、`toList()`、`toVector()`、`count()` 和 `forEach(fn)`。
-- `filterExpr` / `where` 使用 CSV filter expression 语法，主要用于 `stream.csv(...)`。
-- `stream.json` 在提供第二个参数时使用 JSONPath，例如 `$.orders[*]` 或 `$.orders[@.price > 5]`。
-- `stream.xml` 使用 XPath 1.0，产出包含 `type`、`name`、`text`、`xml` 字段的节点 map。
-- 当前文件 stream 会先物化为运行时值；还不是真正的增量 backpressure stream。
+当前执行约束：
+
+- core 当前直接注册的 factory 是 `stream.of(x)` 和
+  `stream.text(text)`。
+- 数值 vector literal、已绑定 vector，以及元素全部为 number/int64 的 list
+  可以进入 CFlow 路径。
+- 对已 admission 的数值 source，`filter`、`map`、numeric literal seed 的
+  `reduce`、`count`、`collect`、`toList`、`toVector` 由 CFlow 执行。
+- 捕获变量/有副作用 lambda、动态 reduce seed、异构 list、map/object stream
+  以及有副作用的 `forEach` 仍走 legacy adapter。
+- `stream.text(...).lines()` 和 `.split(...)` 当前仍是 eager 文本 adapter，
+  不是 Reactive/backpressure stream。
+- 旧文档曾把 `stream.lines(path)`、`stream.csv(...)`、
+  `stream.json(...)`、`stream.xml(...)` 列为 core factory；本次对当前
+  core 的审计没有找到相应 factory 注册/测试，因此它们应视为后续
+  migration/provider 设计输入，而不是已保证存在的 core API。
+- provider-backed stream 可以在 provider 注册
+  `stream.<source_kind>.<method>` 后走 provider member dispatch。
+
+完整 source/operator/terminal ownership 与 Phase 2/3 规则见
+**[stream.* → CFlow Migration Matrix](../stream-cflow-migration.md)**。
 
 ### 4. 显式处理错误
 
