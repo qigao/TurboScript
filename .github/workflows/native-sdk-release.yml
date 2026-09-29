@@ -1,5 +1,7 @@
 name: TurboScript native SDK release
 on:
+  pull_request:
+    branches: [master]
   push:
     tags:
       - "v*"
@@ -7,7 +9,7 @@ permissions:
   contents: read
   packages: read
 concurrency:
-  group: turboscript-sdk-${{ github.ref }}
+  group: turboscript-sdk-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 jobs:
   metadata:
@@ -31,14 +33,18 @@ jobs:
             echo "release version mismatch: CMake=$version vcpkg=$vcpkg_version" >&2
             exit 1
           fi
-          expected_tag="v$version"
-          test "$GITHUB_REF_TYPE" = "tag"
-          if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-            echo "release tag mismatch: pushed=$GITHUB_REF_NAME expected=$expected_tag" >&2
-            exit 1
+          if [[ "$GITHUB_REF" == refs/tags/* ]]; then
+            expected_tag="v$version"
+            if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
+              echo "release tag mismatch: pushed=$GITHUB_REF_NAME expected=$expected_tag" >&2
+              exit 1
+            fi
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "release=true" >> "$GITHUB_OUTPUT"
   source-test:
     name: Linux source / full CTest
     needs: metadata
