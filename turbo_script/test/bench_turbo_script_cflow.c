@@ -66,6 +66,15 @@ static double ts_bench_legacy(
   for (size_t i = 0u; i < iterations; ++i) {
     exprtk_value_t value = exprtk_eval(expr, &ctx->env);
     if (!ts_bench_number_equals(&value, (double)expected_count)) {
+      double observed = NAN;
+      if (value.type == EXPRTK_VAL_NUMBER)
+        observed = value.data.number;
+      else if (value.type == EXPRTK_VAL_INTEGER)
+        observed = (double)value.data.integer;
+      fprintf(stderr,
+              "legacy benchmark failed: iteration=%zu expected=%zu "
+              "type=%d observed=%.17g\n",
+              i, expected_count, (int)value.type, observed);
       exprtk_value_destroy(&value);
       return -1.0;
     }
@@ -108,9 +117,14 @@ static double ts_bench_cached_plan(
   const double start = ts_bench_now_us();
   for (size_t i = 0u; i < iterations; ++i) {
     cflow_result result = {0};
-    if (!cflow_plan_eval_array(plan, input, count, &result) ||
-        result.count != expected_count ||
-        !cmeta_type_equal(result.type, &cmeta_type_double)) {
+    const int eval_ok = cflow_plan_eval_array(plan, input, count, &result);
+    const int type_ok =
+        eval_ok && cmeta_type_equal(result.type, &cmeta_type_double);
+    if (!eval_ok || result.count != expected_count || !type_ok) {
+      fprintf(stderr,
+              "cached benchmark failed: iteration=%zu input=%zu "
+              "eval_ok=%d result_count=%zu expected=%zu type_ok=%d\n",
+              i, count, eval_ok, result.count, expected_count, type_ok);
       cflow_result_destroy(&result);
       return -1.0;
     }
