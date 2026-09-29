@@ -1,5 +1,7 @@
 #include "turbo_script_cflow_lower.h"
 #include "turbo_script_cmeta_bridge.h"
+#include "../turbo_script_internal.h"
+#include "exprtk.h"
 #include "exprtk_grammar.h"
 
 #include <stdlib.h>
@@ -104,6 +106,18 @@ static bool ts_cflow_vector_source(const exprtk_node_t *node) {
   return true;
 }
 
+static bool ts_cflow_runtime_vector_source(
+    turbo_script_ctx_t *runtime_ctx, const exprtk_node_t *node) {
+  exprtk_value_t value;
+
+  if (!runtime_ctx || !node || node->type != EXPRTK_NODE_VARIABLE ||
+      !node->data.variable.name)
+    return false;
+
+  value = exprtk_env_get(&runtime_ctx->env, node->data.variable.name);
+  return value.type == EXPRTK_VAL_VECTOR;
+}
+
 static bool ts_cflow_append_callable(
     turbo_script_ctx_t *runtime_ctx, bool executable_mode,
     ts_cflow_lowered_pipeline_t *out, const exprtk_node_t *lambda,
@@ -177,7 +191,8 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return false;
   }
 
-  if (ts_cflow_vector_source(expr)) {
+  if (ts_cflow_vector_source(expr) ||
+      ts_cflow_runtime_vector_source(runtime_ctx, expr)) {
     cflow_graph_init(&out->graph, &cmeta_type_double);
     if (out->graph.error) {
       if (error) *error = out->graph.error;
@@ -353,6 +368,16 @@ bool ts_cflow_lower_pipeline(const exprtk_node_t *expr,
                              ts_cflow_lowered_pipeline_t *out,
                              const char **error) {
   return ts_cflow_lower_pipeline_impl(NULL, false, expr, out, error);
+}
+
+bool ts_cflow_lower_pipeline_runtime_analysis(
+    turbo_script_ctx_t *runtime_ctx, const exprtk_node_t *expr,
+    ts_cflow_lowered_pipeline_t *out, const char **error) {
+  if (!runtime_ctx) {
+    if (error) *error = "runtime CFlow analysis requires a context";
+    return false;
+  }
+  return ts_cflow_lower_pipeline_impl(runtime_ctx, false, expr, out, error);
 }
 
 bool ts_cflow_lower_pipeline_executable(turbo_script_ctx_t *runtime_ctx,
