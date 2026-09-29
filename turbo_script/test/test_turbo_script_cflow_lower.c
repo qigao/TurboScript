@@ -203,14 +203,13 @@ spec("TurboScript CFlow pipeline lowering") {
     check_equal(runtime_error[0], '\0');
 
     {
-      const double bound_values[] = {-2.0, 0.0, 3.0};
       exprtk_node_t *bound_root = NULL;
       exprtk_node_t *bound_expr;
       exprtk_value_t bound_result = exprtk_val_num(-1.0);
 
-      exprtk_env_set(&ctx->env, "bound_values",
-                     exprtk_val_vec((double *)bound_values,
-                                    sizeof(bound_values) / sizeof(bound_values[0])));
+      check_equal(turbo_script_run(
+                      ctx, "bound_values = [-2, 0, 3];"),
+                  0);
       bound_expr = ts_test_single_expr(
           "stream.of(bound_values).filter(x => x > 0).count()",
           &bound_root);
