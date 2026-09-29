@@ -163,6 +163,78 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("executes text split terminals through CFlow") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *count_root = NULL;
+      exprtk_node_t *collect_root = NULL;
+      exprtk_node_t *chars_root = NULL;
+      exprtk_node_t *bad_sep_root = NULL;
+      exprtk_node_t *count_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\",a,,b,\").split(\",\").count();",
+          &count_root);
+      exprtk_node_t *collect_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\",a,,b,\").split(\",\").collect();",
+          &collect_root);
+      exprtk_node_t *chars_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\"ABC\").split(\"\").toList();",
+          &chars_root);
+      exprtk_node_t *bad_sep_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\"abc\").split(42).count();",
+          &bad_sep_root);
+      exprtk_value_t count_result = exprtk_val_num(-1.0);
+      exprtk_value_t collect_result = exprtk_val_num(-1.0);
+      exprtk_value_t chars_result = exprtk_val_num(-1.0);
+      exprtk_value_t bad_sep_result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(count_expr);
+      check_not_null(collect_expr);
+      check_not_null(chars_expr);
+      check_not_null(bad_sep_expr);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, count_expr, &count_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check(fabs(count_result.data.number - 5.0) <= 1e-9);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, collect_expr, &collect_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(collect_result.type, EXPRTK_VAL_LIST);
+      check_equal(collect_result.data.list.count, (size_t)5u);
+      check_equal(collect_result.data.list.items[0].data.string.len, (size_t)0u);
+      check(memcmp(collect_result.data.list.items[1].data.string.data, "a", 1u) == 0);
+      check_equal(collect_result.data.list.items[2].data.string.len, (size_t)0u);
+      check(memcmp(collect_result.data.list.items[3].data.string.data, "b", 1u) == 0);
+      check_equal(collect_result.data.list.items[4].data.string.len, (size_t)0u);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, chars_expr, &chars_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(chars_result.type, EXPRTK_VAL_LIST);
+      check_equal(chars_result.data.list.count, (size_t)3u);
+      check(memcmp(chars_result.data.list.items[0].data.string.data, "A", 1u) == 0);
+      check(memcmp(chars_result.data.list.items[2].data.string.data, "C", 1u) == 0);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, bad_sep_expr, &bad_sep_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(bad_sep_result.type, EXPRTK_VAL_NUMBER);
+      check(fabs(bad_sep_result.data.number) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&bad_sep_result);
+      exprtk_value_destroy(&chars_result);
+      exprtk_value_destroy(&collect_result);
+      exprtk_value_destroy(&count_result);
+      exprtk_free(bad_sep_root);
+      exprtk_free(chars_root);
+      exprtk_free(collect_root);
+      exprtk_free(count_root);
+      turbo_script_free(ctx);
+    }
+
     it("admits a bound vector source through runtime analysis") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       const double values[] = {-2.0, 0.0, 3.0};
@@ -491,6 +563,51 @@ spec("TurboScript CFlow stream runtime") {
       check_equal(jit_list.data.list.count, (size_t)2u);
       check(memcmp(interp_list.data.list.items[0].data.string.data, "x", 1u) == 0);
       check(memcmp(jit_list.data.list.items[1].data.string.data, "y", 1u) == 0);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+    it("keeps text split terminals aligned in interpreter and JIT") {
+      const char *source =
+          "split_count = stream.text(\",a,,b,\").split(\",\").count();"
+          "tokens = stream.text(\",a,,b,\").split(\",\").toList();"
+          "chars = stream.text(\"ABC\").split(\"\").collect();"
+          "bad_sep_count = stream.text(\"abc\").split(42).count();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_tokens;
+      exprtk_value_t jit_tokens;
+      exprtk_value_t interp_chars;
+      exprtk_value_t jit_chars;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "split_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "split_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "bad_sep_count")) <= 1e-9);
+      check(fabs(ts_get_num(jit, "bad_sep_count")) <= 1e-9);
+
+      interp_tokens = exprtk_env_get(&interp->env, "tokens");
+      jit_tokens = exprtk_env_get(&jit->env, "tokens");
+      check_equal(interp_tokens.type, EXPRTK_VAL_LIST);
+      check_equal(jit_tokens.type, EXPRTK_VAL_LIST);
+      check_equal(interp_tokens.data.list.count, (size_t)5u);
+      check_equal(jit_tokens.data.list.count, (size_t)5u);
+      check_equal(interp_tokens.data.list.items[0].data.string.len, (size_t)0u);
+      check(memcmp(jit_tokens.data.list.items[3].data.string.data, "b", 1u) == 0);
+      check_equal(jit_tokens.data.list.items[4].data.string.len, (size_t)0u);
+
+      interp_chars = exprtk_env_get(&interp->env, "chars");
+      jit_chars = exprtk_env_get(&jit->env, "chars");
+      check_equal(interp_chars.type, EXPRTK_VAL_LIST);
+      check_equal(jit_chars.type, EXPRTK_VAL_LIST);
+      check_equal(interp_chars.data.list.count, (size_t)3u);
+      check_equal(jit_chars.data.list.count, (size_t)3u);
+      check(memcmp(interp_chars.data.list.items[0].data.string.data, "A", 1u) == 0);
+      check(memcmp(jit_chars.data.list.items[2].data.string.data, "C", 1u) == 0);
 
       turbo_script_free(jit);
       turbo_script_free(interp);
