@@ -150,6 +150,21 @@ cmake_add_test(
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
 cmake_add_test(
+  TARGET test_turbo_script_cflow_qualification
+  SOURCES test_turbo_script_cflow_qualification.c
+  LIBS turbo_script_lib Salts::TinyTest Salts::CMeta Salts::CFlow MIR::MIR exprtk
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+
+cmake_add_benchmark(
+  TARGET bench_turbo_script_cflow
+  SOURCES bench_turbo_script_cflow.c
+  LIBS turbo_script_lib Salts::CMeta Salts::CFlow MIR::MIR exprtk
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
+           ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk ta MIR::MIR

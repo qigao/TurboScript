@@ -109,6 +109,13 @@ jobs:
           set -euo pipefail
           export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           ctest --test-dir build/source-test --no-tests=error --output-on-failure
+      - name: Run CFlow qualification benchmark
+        shell: bash
+        run: |
+          set -euo pipefail
+          export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          "$GITHUB_WORKSPACE/build/source-test/bin/bench_turbo_script_cflow" |
+            tee "$GITHUB_WORKSPACE/build/source-test/cflow-qualification-benchmark.txt"
       - name: Verify exact head and clean tracked source
         shell: bash
         run: |
@@ -171,6 +178,7 @@ jobs:
             --target test_turbo_script_host_module \
                      test_turbo_script_cflow_mir_kernel \
                      test_turbo_script_cflow_lower \
+                     test_turbo_script_cflow_qualification \
             --parallel 2
       - name: Run Host and CFlow suites under sanitizers
         shell: bash
@@ -181,7 +189,7 @@ jobs:
           export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
           unset LSAN_OPTIONS
           ctest --test-dir build/host-sanitizer \
-            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower)$' \
+            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower|test_turbo_script_cflow_qualification)$' \
             --no-tests=error --verbose --output-on-failure \
             --output-junit host-cflow-sanitizer-results.xml
       - uses: actions/upload-artifact@v4

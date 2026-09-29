@@ -762,55 +762,120 @@ static exprtk_value_t stream_filter_value(exprtk_value_t stream, exprtk_value_t 
         size_t n = source.data.vector.size;
         double *out = MEM_ALLOC_ARRAY(arena, double, n);
         size_t kept = 0;
-        if (!out && n > 0) return exprtk_val_num(0);
+        exprtk_value_t result;
+        if (!out && n > 0) {
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
+        }
         for (size_t i = 0; i < n; ++i) {
             exprtk_value_t arg = exprtk_val_num(source.data.vector.data[i]);
             exprtk_value_t pred = exprtk_call_callable(predicate, 1, &arg, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
+            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+                exprtk_value_destroy(&pred);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
             if (exprtk_value_truthy(pred)) out[kept++] = source.data.vector.data[i];
+            exprtk_value_destroy(&pred);
         }
-        return stream_make(exprtk_val_vec(out, kept));
+        result = stream_make(exprtk_val_vec(out, kept));
+        exprtk_value_destroy(&stream);
+        return result;
     }
 
     if (source.type == EXPRTK_VAL_LIST) {
         exprtk_value_t out = exprtk_val_list_empty();
+        exprtk_value_t result;
         for (size_t i = 0; i < source.data.list.count; ++i) {
             exprtk_value_t item = source.data.list.items[i];
             exprtk_value_t pred = exprtk_call_callable(predicate, 1, &item, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
-            if (exprtk_value_truthy(pred)) exprtk_list_push(&out, item);
+            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+                exprtk_value_destroy(&pred);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            if (exprtk_value_truthy(pred) && exprtk_list_push(&out, item) != 0) {
+                exprtk_value_destroy(&pred);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            exprtk_value_destroy(&pred);
         }
-        return stream_make(out);
+        result = stream_make(out);
+        exprtk_value_destroy(&out);
+        exprtk_value_destroy(&stream);
+        return result;
     }
 
-    return stream_make(exprtk_val_list_empty());
+    {
+        exprtk_value_t empty = exprtk_val_list_empty();
+        exprtk_value_t result = stream_make(empty);
+        exprtk_value_destroy(&empty);
+        exprtk_value_destroy(&stream);
+        return result;
+    }
 }
 
 static exprtk_value_t stream_map_value(exprtk_value_t stream, exprtk_value_t mapper,
                                        exprtk_env_t *env, mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
     exprtk_value_t out = exprtk_val_list_empty();
+    exprtk_value_t result;
 
     if (source.type == EXPRTK_VAL_VECTOR) {
         for (size_t i = 0; i < source.data.vector.size; ++i) {
             exprtk_value_t item = exprtk_val_num(source.data.vector.data[i]);
             exprtk_value_t mapped = exprtk_call_callable(mapper, 1, &item, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
-            exprtk_list_push(&out, mapped);
+            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+                exprtk_value_destroy(&mapped);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            if (exprtk_list_push(&out, mapped) != 0) {
+                exprtk_value_destroy(&mapped);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            exprtk_value_destroy(&mapped);
         }
-        return stream_make(out);
+        result = stream_make(out);
+        exprtk_value_destroy(&out);
+        exprtk_value_destroy(&stream);
+        return result;
     }
 
     if (source.type == EXPRTK_VAL_LIST) {
         for (size_t i = 0; i < source.data.list.count; ++i) {
-            exprtk_value_t mapped = exprtk_call_callable(mapper, 1, &source.data.list.items[i], env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
-            exprtk_list_push(&out, mapped);
+            exprtk_value_t mapped = exprtk_call_callable(
+                mapper, 1, &source.data.list.items[i], env, arena);
+            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+                exprtk_value_destroy(&mapped);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            if (exprtk_list_push(&out, mapped) != 0) {
+                exprtk_value_destroy(&mapped);
+                exprtk_value_destroy(&out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+            exprtk_value_destroy(&mapped);
         }
-        return stream_make(out);
+        result = stream_make(out);
+        exprtk_value_destroy(&out);
+        exprtk_value_destroy(&stream);
+        return result;
     }
 
-    return stream_make(out);
+    result = stream_make(out);
+    exprtk_value_destroy(&out);
+    exprtk_value_destroy(&stream);
+    return result;
 }
 
 static exprtk_value_t stream_reduce_value(exprtk_value_t stream, exprtk_value_t init,
@@ -907,8 +972,11 @@ exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const char *meth
     if (strcmp(method, "toVector") == 0)
         return stream_to_vector_value(stream, arena);
     if (strcmp(method, "count") == 0) {
+        double count;
         source = stream_collect_value(stream);
-        return exprtk_val_num((double)stream_count_source(source));
+        count = (double)stream_count_source(source);
+        exprtk_value_destroy(&stream);
+        return exprtk_val_num(count);
     }
     if (strcmp(method, "forEach") == 0 && argc == 1) {
         source = stream_collect_value(stream);
