@@ -7,6 +7,7 @@
 #include "exprtk_grammar.h"
 #include "exprtk_module.h"
 #include "turbo_script_mir_internal.h"
+#include "../graph/turbo_script_cflow_runtime.h"
 #include "tstr.h"
 #include <cstl.h>
 #include <math.h>
@@ -2167,10 +2168,25 @@ double ts_mir_value_expr_assign(void *ctx_ptr, const char *target_name, void *no
   exprtk_value_t result;
 
   if (!ctx || !target_name || !node) return 0.0;
-  if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
-    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0') ts_mir_value_arg_error(&ctx->env, node);
-    ts_mir_promote_env_error(ctx);
-    return 0.0;
+  {
+    char cflow_error[256] = {0};
+    ts_cflow_runtime_status_t cflow_status =
+        ts_cflow_runtime_try_scalar_terminal(ctx, node, &result,
+                                             cflow_error, sizeof(cflow_error));
+    if (cflow_status == TS_CFLOW_RUNTIME_ERROR) {
+      ctx->env.aborted = 1;
+      snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s",
+               cflow_error[0] ? cflow_error : "CFlow stream execution failed");
+      ts_mir_promote_env_error(ctx);
+      return 0.0;
+    }
+    if (cflow_status != TS_CFLOW_RUNTIME_HANDLED &&
+        !ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
+      if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+        ts_mir_value_arg_error(&ctx->env, node);
+      ts_mir_promote_env_error(ctx);
+      return 0.0;
+    }
   }
 
   exprtk_env_set(&ctx->env, target_name, result);
@@ -2185,10 +2201,25 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
   double numeric_result;
 
   if (!ctx || !node) return 0.0;
-  if (!ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
-    if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0') ts_mir_value_arg_error(&ctx->env, node);
-    ts_mir_promote_env_error(ctx);
-    return 0.0;
+  {
+    char cflow_error[256] = {0};
+    ts_cflow_runtime_status_t cflow_status =
+        ts_cflow_runtime_try_scalar_terminal(ctx, node, &result,
+                                             cflow_error, sizeof(cflow_error));
+    if (cflow_status == TS_CFLOW_RUNTIME_ERROR) {
+      ctx->env.aborted = 1;
+      snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s",
+               cflow_error[0] ? cflow_error : "CFlow stream execution failed");
+      ts_mir_promote_env_error(ctx);
+      return 0.0;
+    }
+    if (cflow_status != TS_CFLOW_RUNTIME_HANDLED &&
+        !ts_mir_runtime_value_arg(node, &ctx->env, &result)) {
+      if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
+        ts_mir_value_arg_error(&ctx->env, node);
+      ts_mir_promote_env_error(ctx);
+      return 0.0;
+    }
   }
 
   if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted) ts_mir_promote_env_error(ctx);
