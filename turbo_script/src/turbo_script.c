@@ -231,6 +231,39 @@ static void clear_error(turbo_script_ctx_t *ctx) {
   set_error_msg(ctx, NULL);
 }
 
+static int ts_context_interrupt_safe_point(void *user_data,
+                                           exprtk_safe_point_kind_t kind,
+                                           size_t cost) {
+  turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)user_data;
+  (void)kind;
+  (void)cost;
+  if (!ctx || !ctx->interrupt || !ctx->interrupt(ctx->interrupt_user_data)) return 0;
+
+  set_error(ctx, TURBO_SCRIPT_ERROR_CANCELLED, "script execution interrupted");
+  ctx->env.aborted = 1;
+  snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s",
+           "script execution interrupted");
+  return 1;
+}
+
+int turbo_script_set_interrupt(turbo_script_ctx_t *ctx,
+                               turbo_script_interrupt_fn interrupt,
+                               void *user_data) {
+  if (!ctx || atomic_load_explicit(&ctx->closing, memory_order_acquire)) return -1;
+
+  ctx->interrupt = interrupt;
+  ctx->interrupt_user_data = interrupt ? user_data : NULL;
+  if (interrupt) {
+    ctx->env.safe_point = ts_context_interrupt_safe_point;
+    ctx->env.safe_point_user_data = ctx;
+  } else if (ctx->env.safe_point == ts_context_interrupt_safe_point &&
+             ctx->env.safe_point_user_data == ctx) {
+    ctx->env.safe_point = NULL;
+    ctx->env.safe_point_user_data = NULL;
+  }
+  return 0;
+}
+
 static int ts_memory_policy_valid(const turbo_script_memory_policy_t *policy) {
   return policy && policy->profile >= TURBO_SCRIPT_MEMORY_BATCH &&
          policy->profile <= TURBO_SCRIPT_MEMORY_SANDBOX &&
