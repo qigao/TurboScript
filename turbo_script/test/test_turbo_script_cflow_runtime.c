@@ -67,6 +67,28 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("returns zero for an empty CFlow count terminal") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *root = NULL;
+      exprtk_node_t *expr = ts_stream_test_single_expr(
+          ctx, "stream.of([]).map(x => x * 2).count();", &root);
+      exprtk_value_t result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, expr, &result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(result.type, EXPRTK_VAL_NUMBER);
+      check(fabs(result.data.number) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&result);
+      exprtk_free(root);
+      turbo_script_free(ctx);
+    }
+
     it("leaves dynamic-seed reduce on the existing facade during this slice") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       exprtk_node_t *root = NULL;
