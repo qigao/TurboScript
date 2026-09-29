@@ -1,6 +1,7 @@
 #include "tinytest.h"
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
+#include "turbo_script_cflow_runtime.h"
 
 #include <cflow/graph.h>
 #include <cflow/plan.h>
@@ -161,6 +162,29 @@ spec("TurboScript CFlow pipeline lowering") {
     cflow_result_destroy(&result);
     cflow_plan_destroy(&plan);
     ts_cflow_lowered_pipeline_destroy(&lowered);
+    exprtk_free(root);
+    turbo_script_free(ctx);
+  }
+
+  it("sanitizes the runtime scalar-terminal CFlow seam") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *expr = ts_test_single_expr(
+        "stream.of([-2, 0, 3]).filter(x => x > 0).map(x => x * 2).count()",
+        &root);
+    exprtk_value_t result = exprtk_val_num(-1.0);
+    char runtime_error[256] = {0};
+
+    check_not_null(ctx);
+    check_not_null(expr);
+    check_equal(ts_cflow_runtime_try_scalar_terminal(
+                    ctx, expr, &result, runtime_error, sizeof(runtime_error)),
+                TS_CFLOW_RUNTIME_HANDLED);
+    check_equal(result.type, EXPRTK_VAL_NUMBER);
+    check((((double)result.data.number)) == (1.0));
+    check_equal(runtime_error[0], '\0');
+
+    exprtk_value_destroy(&result);
     exprtk_free(root);
     turbo_script_free(ctx);
   }
