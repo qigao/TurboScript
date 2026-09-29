@@ -463,7 +463,7 @@ int main(void) {
   const ts_cflow_bench_case cases[] = {
       {16u, 300u, 12u, 2000u},
       {4096u, 30u, 6u, 160u},
-      {65536u, 6u, 2u, 24u},
+      {16384u, 10u, 4u, 80u},
   };
 
   printf("TurboScript CFlow qualification telemetry\n");
