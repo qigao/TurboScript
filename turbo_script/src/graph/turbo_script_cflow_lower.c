@@ -279,7 +279,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return ts_cflow_append_callable(
         runtime_ctx, executable_mode, out,
         expr->data.function.args[1], TS_CMETA_LAMBDA_FILTER,
-        CFLOW_OP_FILTER, error);
+        CFLOW_OP_FILTER, NULL, error);
   }
 
   if (strcmp(name, "map") == 0) {
@@ -292,7 +292,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return ts_cflow_append_callable(
         runtime_ctx, executable_mode, out,
         expr->data.function.args[1], TS_CMETA_LAMBDA_MAP,
-        CFLOW_OP_MAP, error);
+        CFLOW_OP_MAP, NULL, error);
   }
 
   if (strcmp(name, "reduce") == 0) {
