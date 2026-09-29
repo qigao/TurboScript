@@ -754,7 +754,15 @@ static size_t stream_count_source(exprtk_value_t source) {
     return 0;
 }
 
-static exprtk_value_t stream_filter_value(exprtk_value_t stream, exprtk_value_t predicate,
+/*
+ * Legacy barrier-only execution.
+ *
+ * CFlow-admitted stream pipelines are intercepted by the TurboScript MIR
+ * runtime before exprtk_stream_member_call is reached. These helpers remain
+ * only for pre-admission barriers (capturing/effectful callables, dynamic
+ * seeds, heterogeneous values, and other unsupported shapes).
+ */
+static exprtk_value_t stream_legacy_filter_value(exprtk_value_t stream, exprtk_value_t predicate,
                                           exprtk_env_t *env, mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
 
@@ -818,7 +826,7 @@ static exprtk_value_t stream_filter_value(exprtk_value_t stream, exprtk_value_t 
     }
 }
 
-static exprtk_value_t stream_map_value(exprtk_value_t stream, exprtk_value_t mapper,
+static exprtk_value_t stream_legacy_map_value(exprtk_value_t stream, exprtk_value_t mapper,
                                        exprtk_env_t *env, mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
     exprtk_value_t out = exprtk_val_list_empty();
@@ -878,7 +886,7 @@ static exprtk_value_t stream_map_value(exprtk_value_t stream, exprtk_value_t map
     return result;
 }
 
-static exprtk_value_t stream_reduce_value(exprtk_value_t stream, exprtk_value_t init,
+static exprtk_value_t stream_legacy_reduce_value(exprtk_value_t stream, exprtk_value_t init,
                                           exprtk_value_t reducer, exprtk_env_t *env,
                                           mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
@@ -958,13 +966,13 @@ exprtk_value_t exprtk_stream_member_call(exprtk_value_t stream, const char *meth
         return stream_make(stream_split_string(text, args[0], arena));
     }
     if (strcmp(method, "filter") == 0 && argc == 1)
-        return stream_filter_value(stream, args[0], env, arena);
+        return stream_legacy_filter_value(stream, args[0], env, arena);
     if ((strcmp(method, "filterExpr") == 0 || strcmp(method, "where") == 0) && argc == 1)
         return stream_make(exprtk_val_list_empty());
     if (strcmp(method, "map") == 0 && argc == 1)
-        return stream_map_value(stream, args[0], env, arena);
+        return stream_legacy_map_value(stream, args[0], env, arena);
     if (strcmp(method, "reduce") == 0 && argc == 2)
-        return stream_reduce_value(stream, args[0], args[1], env, arena);
+        return stream_legacy_reduce_value(stream, args[0], args[1], env, arena);
     if (strcmp(method, "collect") == 0)
         return stream_collect_value(stream);
     if (strcmp(method, "toList") == 0)
