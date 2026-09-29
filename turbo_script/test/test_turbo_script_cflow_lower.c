@@ -166,26 +166,46 @@ spec("TurboScript CFlow pipeline lowering") {
     turbo_script_free(ctx);
   }
 
-  it("sanitizes the runtime scalar-terminal CFlow seam") {
+  it("sanitizes the runtime CFlow terminal seam") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-    exprtk_node_t *root = NULL;
-    exprtk_node_t *expr = ts_test_single_expr(
+    exprtk_node_t *count_root = NULL;
+    exprtk_node_t *vector_root = NULL;
+    exprtk_node_t *count_expr = ts_test_single_expr(
         "stream.of([-2, 0, 3]).filter(x => x > 0).map(x => x * 2).count()",
-        &root);
-    exprtk_value_t result = exprtk_val_num(-1.0);
+        &count_root);
+    exprtk_node_t *vector_expr = ts_test_single_expr(
+        "stream.of([1, 2, 3]).filter(x => x > 1).toVector()",
+        &vector_root);
+    exprtk_value_t count_result = exprtk_val_num(-1.0);
+    exprtk_value_t vector_result = exprtk_val_num(-1.0);
     char runtime_error[256] = {0};
 
     check_not_null(ctx);
-    check_not_null(expr);
+    check_not_null(count_expr);
+    check_not_null(vector_expr);
+
     check_equal(ts_cflow_runtime_try_scalar_terminal(
-                    ctx, expr, &result, runtime_error, sizeof(runtime_error)),
+                    ctx, count_expr, &count_result,
+                    runtime_error, sizeof(runtime_error)),
                 TS_CFLOW_RUNTIME_HANDLED);
-    check_equal(result.type, EXPRTK_VAL_NUMBER);
-    check((((double)result.data.number)) == (1.0));
+    check_equal(count_result.type, EXPRTK_VAL_NUMBER);
+    check((((double)count_result.data.number)) == (1.0));
     check_equal(runtime_error[0], '\0');
 
-    exprtk_value_destroy(&result);
-    exprtk_free(root);
+    check_equal(ts_cflow_runtime_try_scalar_terminal(
+                    ctx, vector_expr, &vector_result,
+                    runtime_error, sizeof(runtime_error)),
+                TS_CFLOW_RUNTIME_HANDLED);
+    check_equal(vector_result.type, EXPRTK_VAL_VECTOR);
+    check_equal(vector_result.data.vector.size, (size_t)2u);
+    check((((double)vector_result.data.vector.data[0])) == (2.0));
+    check((((double)vector_result.data.vector.data[1])) == (3.0));
+    check_equal(runtime_error[0], '\0');
+
+    exprtk_value_destroy(&vector_result);
+    exprtk_value_destroy(&count_result);
+    exprtk_free(vector_root);
+    exprtk_free(count_root);
     turbo_script_free(ctx);
   }
 
