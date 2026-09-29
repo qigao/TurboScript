@@ -35,6 +35,13 @@ typedef enum ts_cflow_runtime_status_e {
  * TurboScript-owned storage before the CFlow result/source text are released.
  * Legacy newline/CRLF/trailing-empty-line and split empty-token semantics are
  * preserved.
+ *
+ * The first typed text callable seam additionally admits
+ * stream.text(expr).lines().map(line => line.length()).toVector()/toList()/
+ * collect(). Its logical Graph contract is LineSlice -> double. CMeta uses the
+ * explicit typed-adapter projection (sig remains INVALID); MIR receives
+ * pointer + int64 length in native ABI classes. Other string MAP/FILTER shapes
+ * remain legacy.
  */
 ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
