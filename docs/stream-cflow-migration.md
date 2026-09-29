@@ -26,13 +26,17 @@ TurboScript syntax / source adapters / diagnostics
 - MIR owns executable scalar kernels inside admitted CFlow nodes.
 - Once a pipeline is admitted to the CFlow runtime path, execution failure is
   an error; it does not silently retry through the legacy ExprTk stream loop.
+- The ExprTk `filter/map/reduce` loops are barrier-only fallback code for
+  shapes rejected before admission. Admitted numeric/text terminals must never
+  reach those loops.
 
 ## Status labels
 
 - **CFlow** — execution is routed through the TurboScript → CMeta → CFlow →
   MIR-kernel path.
-- **Legacy adapter** — the language surface exists, but execution remains in
-  the existing ExprTk/TurboScript eager stream implementation.
+- **Legacy barrier** — the shape is rejected before CFlow admission and remains
+  in the existing ExprTk/TurboScript eager implementation. This is a migration
+  barrier, not a peer runtime; new graphable stream semantics must not be added here.
 - **Provider hook** — dispatch is delegated to
   `stream.<source_kind>.<method>` when such a function is registered.
 - **Documented only** — present in language documentation, but this audit found
@@ -47,10 +51,10 @@ TurboScript syntax / source adapters / diagnostics
 | `[1,2,3].stream()` | Numeric vector literal facade | **CFlow** | Complete Phase 1 source |
 | `stream.of(vectorVar)` / `vectorVar.stream()` | Runtime binding must be a vector | **CFlow** | Complete Phase 1 source |
 | `stream.of(listVar)` / numeric `listVar.stream()` | Runtime list is admitted only when every element is number/int64; empty list is allowed | **CFlow** | Complete Phase 1 numeric-list source |
-| heterogeneous list | No coercion to `double` | **Legacy adapter** | Intentionally outside numeric CFlow slice |
-| map/object `.stream()` | Existing runtime projects map values into a list-like stream | **Legacy adapter** | Requires typed record/container design before CFlow admission |
-| string `.stream()` | Existing runtime materializes string lines | **Legacy adapter** | Fold into text/file adapter work in Phase 2 |
-| `stream.text(text)` | Core factory; preserves text metadata and supports `.lines()` / `.split()` | **Legacy adapter** | Factory and bare line-stream materialization stay eager; selected terminals use typed CFlow |
+| heterogeneous list | No coercion to `double` | **Legacy barrier** | Intentionally outside numeric CFlow slice |
+| map/object `.stream()` | Existing runtime projects map values into a list-like stream | **Legacy barrier** | Requires typed record/container design before CFlow admission |
+| string `.stream()` | Existing runtime materializes string lines | **Legacy barrier** | Fold into text/file adapter work in Phase 2 |
+| `stream.text(text)` | Core factory; preserves text metadata and supports `.lines()` / `.split()` | **Legacy barrier** | Factory and bare line-stream materialization stay eager; selected terminals use typed CFlow |
 | `stream.text(text).lines().count()` | Borrowed line slices preserve legacy newline/CRLF/trailing-empty-line semantics | **CFlow** | Typed scalar Phase 2 terminal |
 | `stream.text(text).lines().collect()` / `.toList()` | CFlow result slices are copied into a TurboScript-owned string list before source/result cleanup | **CFlow** | Typed owned materialization terminal |
 | `stream.text(io.read_file(path)).lines().count/collect/toList` | File I/O remains TurboScript-owned; evaluated text feeds the same typed line Plan | **CFlow** | Verified Phase 2 file path |
@@ -80,12 +84,12 @@ with `source_kind` may also dispatch member calls through the provider hook
 | `.collect()` | **CFlow** | Preserves legacy result shape: map-free vector pipeline → vector; pipeline containing map → list |
 | `.toList()` | **CFlow** | CFlow result copied into TurboScript-owned list before result destruction |
 | `.toVector()` | **CFlow** | CFlow result copied into TurboScript-owned vector before result destruction |
-| `.forEach(fn)` | **Legacy adapter** | Effectful terminal; keep as an explicit execution barrier until semantics are specified |
-| `.filterExpr(expr)` / `.where(expr)` | **Provider hook / legacy adapter** | Generic core fallback does not define a CFlow expression compiler |
-| text `.lines()` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | CFlow uses borrowed line slices synchronously; collect/toList deep-copy strings into TurboScript-owned list storage |
-| text `.split(sep)` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | Empty separator splits by byte; non-string separator yields an empty stream; collect/toList deep-copy token strings |
-| text `.map(fn)` | **CFlow** only for exact `line => line.length()`; otherwise **Legacy adapter** | Uses explicit typed-adapter projection with logical `LineSlice -> double`; string->string MAP remains legacy |
-| text `.filter(fn)` | **CFlow** only for exact `line => line.length() > 0`; otherwise **Legacy adapter** | Uses explicit typed FILTER projection with logical `LineSlice -> bool`; Graph output remains `LineSlice` |
+| `.forEach(fn)` | **Legacy barrier** | Effectful terminal; keep as an explicit execution barrier until semantics are specified |
+| `.filterExpr(expr)` / `.where(expr)` | **Provider hook / legacy barrier** | Generic core fallback does not define a CFlow expression compiler |
+| text `.lines()` | **Legacy barrier** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | CFlow uses borrowed line slices synchronously; collect/toList deep-copy strings into TurboScript-owned list storage |
+| text `.split(sep)` | **Legacy barrier** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | Empty separator splits by byte; non-string separator yields an empty stream; collect/toList deep-copy token strings |
+| text `.map(fn)` | **CFlow** only for exact `line => line.length()`; otherwise **Legacy barrier** | Uses explicit typed-adapter projection with logical `LineSlice -> double`; string->string MAP remains legacy |
+| text `.filter(fn)` | **CFlow** only for exact `line => line.length() > 0`; otherwise **Legacy barrier** | Uses explicit typed FILTER projection with logical `LineSlice -> bool`; Graph output remains `LineSlice` |
 
 ## Phase 1 parity boundary
 
