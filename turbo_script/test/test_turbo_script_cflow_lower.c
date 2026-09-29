@@ -202,6 +202,29 @@ spec("TurboScript CFlow pipeline lowering") {
     check((((double)vector_result.data.vector.data[1])) == (3.0));
     check_equal(runtime_error[0], '\0');
 
+    {
+      const double bound_values[] = {-2.0, 0.0, 3.0};
+      exprtk_node_t *bound_root = NULL;
+      exprtk_node_t *bound_expr;
+      exprtk_value_t bound_result = exprtk_val_num(-1.0);
+
+      exprtk_env_set(&ctx->env, "bound_values",
+                     exprtk_val_vec((double *)bound_values,
+                                    sizeof(bound_values) / sizeof(bound_values[0])));
+      bound_expr = ts_test_single_expr(
+          "stream.of(bound_values).filter(x => x > 0).count()",
+          &bound_root);
+      check_not_null(bound_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, bound_expr, &bound_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(bound_result.type, EXPRTK_VAL_NUMBER);
+      check((((double)bound_result.data.number)) == (1.0));
+      exprtk_value_destroy(&bound_result);
+      exprtk_free(bound_root);
+    }
+
     exprtk_value_destroy(&vector_result);
     exprtk_value_destroy(&count_result);
     exprtk_free(vector_root);
