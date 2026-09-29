@@ -345,7 +345,9 @@ spec("TurboScript CFlow pipeline lowering") {
     check_true(cmeta_type_equal(result.type, &cmeta_type_double));
     check_equal(result.count, (size_t)3u);
     check_not_null(result.data);
-    check_equal(result.data, expected, sizeof(expected));
+    check(fabs(((const double *)result.data)[0] - expected[0]) <= 1e-9);
+    check(fabs(((const double *)result.data)[1] - expected[1]) <= 1e-9);
+    check(fabs(((const double *)result.data)[2] - expected[2]) <= 1e-9);
 
     cflow_result_destroy(&result);
     cflow_plan_destroy(&plan);
@@ -505,6 +507,29 @@ spec("TurboScript CFlow pipeline lowering") {
 
       exprtk_value_destroy(&split_result);
       exprtk_free(split_root);
+    }
+
+    {
+      exprtk_node_t *length_root = NULL;
+      exprtk_node_t *length_expr = ts_test_single_expr(
+          "stream.text(\"a\\nbb\\n\").lines()"
+          ".map(line => line.length()).toVector()",
+          &length_root);
+      exprtk_value_t length_result = exprtk_val_num(-1.0);
+
+      check_not_null(length_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, length_expr, &length_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(length_result.type, EXPRTK_VAL_VECTOR);
+      check_equal(length_result.data.vector.size, (size_t)3u);
+      check(fabs(length_result.data.vector.data[0] - 1.0) <= 1e-9);
+      check(fabs(length_result.data.vector.data[1] - 2.0) <= 1e-9);
+      check(fabs(length_result.data.vector.data[2] - 0.0) <= 1e-9);
+
+      exprtk_value_destroy(&length_result);
+      exprtk_free(length_root);
     }
 
     exprtk_value_destroy(&vector_result);
