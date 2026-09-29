@@ -606,10 +606,14 @@ spec("turbo_script_io") {
       check(fabs(ts_get_num(jit, "list_count") - 3.0) <= 1e-9);
       check(fabs(ts_get_num(interp, "collect_count") - 3.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "collect_count") - 3.0) <= 1e-9);
-      check_str_equal(ts_get_str(interp, "first_line"), "a");
-      check_str_equal(ts_get_str(jit, "first_line"), "a");
-      check_str_equal(ts_get_str(interp, "last_line"), "");
-      check_str_equal(ts_get_str(jit, "last_line"), "");
+      check_not_null(ts_get_str(interp, "first_line"));
+      check_not_null(ts_get_str(jit, "first_line"));
+      check_not_null(ts_get_str(interp, "last_line"));
+      check_not_null(ts_get_str(jit, "last_line"));
+      check(strcmp(ts_get_str(interp, "first_line"), "a") == 0);
+      check(strcmp(ts_get_str(jit, "first_line"), "a") == 0);
+      check(strcmp(ts_get_str(interp, "last_line"), "") == 0);
+      check(strcmp(ts_get_str(jit, "last_line"), "") == 0);
 
       salts_fs_unlink(line_path);
       turbo_script_free(jit);
