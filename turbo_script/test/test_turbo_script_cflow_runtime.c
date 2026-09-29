@@ -1,5 +1,6 @@
 #include "../src/turbo_script_internal.h"
 #include "../src/graph/turbo_script_cflow_runtime.h"
+#include "exprtk.h"
 #include "tinytest.h"
 
 #include <math.h>
@@ -17,7 +18,7 @@ static exprtk_node_t *ts_stream_test_single_expr(turbo_script_ctx_t *ctx,
 }
 
 spec("TurboScript CFlow stream runtime") {
-  describe("scalar terminal admission") {
+  describe("terminal admission") {
     it("executes a numeric stream reduce through CFlow") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       exprtk_node_t *root = NULL;
@@ -89,6 +90,112 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("materializes toVector and toList through CFlow") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *vector_root = NULL;
+      exprtk_node_t *list_root = NULL;
+      exprtk_node_t *vector_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.of([-2, 0, 3]).filter(x => x > 0).map(x => x * 2).toVector();",
+          &vector_root);
+      exprtk_node_t *list_expr = ts_stream_test_single_expr(
+          ctx,
+          "[1, 2, 3].stream().filter(x => x > 1).toList();",
+          &list_root);
+      exprtk_value_t vector_result = exprtk_val_num(0.0);
+      exprtk_value_t list_result = exprtk_val_num(0.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(vector_expr);
+      check_not_null(list_expr);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, vector_expr, &vector_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(vector_result.type, EXPRTK_VAL_VECTOR);
+      check_equal(vector_result.data.vector.size, (size_t)1u);
+      check(fabs(vector_result.data.vector.data[0] - 6.0) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, list_expr, &list_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(list_result.type, EXPRTK_VAL_LIST);
+      check_equal(list_result.data.list.count, (size_t)2u);
+      check(fabs(list_result.data.list.items[0].data.number - 2.0) <= 1e-9);
+      check(fabs(list_result.data.list.items[1].data.number - 3.0) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&list_result);
+      exprtk_value_destroy(&vector_result);
+      exprtk_free(list_root);
+      exprtk_free(vector_root);
+      turbo_script_free(ctx);
+    }
+
+    it("preserves legacy collect vector-vs-list shape") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *filter_root = NULL;
+      exprtk_node_t *map_root = NULL;
+      exprtk_node_t *filter_expr = ts_stream_test_single_expr(
+          ctx, "[1, 2, 3].stream().filter(x => x > 1).collect();",
+          &filter_root);
+      exprtk_node_t *map_expr = ts_stream_test_single_expr(
+          ctx, "[1, 2, 3].stream().map(x => x * 2).collect();",
+          &map_root);
+      exprtk_value_t filter_result = exprtk_val_num(0.0);
+      exprtk_value_t map_result = exprtk_val_num(0.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(filter_expr);
+      check_not_null(map_expr);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, filter_expr, &filter_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(filter_result.type, EXPRTK_VAL_VECTOR);
+      check_equal(filter_result.data.vector.size, (size_t)2u);
+      check(fabs(filter_result.data.vector.data[0] - 2.0) <= 1e-9);
+      check(fabs(filter_result.data.vector.data[1] - 3.0) <= 1e-9);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, map_expr, &map_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(map_result.type, EXPRTK_VAL_LIST);
+      check_equal(map_result.data.list.count, (size_t)3u);
+      check(fabs(map_result.data.list.items[0].data.number - 2.0) <= 1e-9);
+      check(fabs(map_result.data.list.items[2].data.number - 6.0) <= 1e-9);
+
+      exprtk_value_destroy(&map_result);
+      exprtk_value_destroy(&filter_result);
+      exprtk_free(map_root);
+      exprtk_free(filter_root);
+      turbo_script_free(ctx);
+    }
+
+    it("does not reinterpret reduce output as a countable stream") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *root = NULL;
+      exprtk_node_t *expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.of([1, 2, 3]).reduce(0, (acc, x) => acc + x).count();",
+          &root);
+      exprtk_value_t result = exprtk_val_num(0.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, expr, &result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_NOT_APPLICABLE);
+      check_equal(error[0], '\0');
+
+      exprtk_free(root);
+      turbo_script_free(ctx);
+    }
+
     it("leaves dynamic-seed reduce on the existing facade during this slice") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       exprtk_node_t *root = NULL;
@@ -110,14 +217,26 @@ spec("TurboScript CFlow stream runtime") {
   }
 
   describe("legacy public run integration") {
-    it("keeps interpreter and JIT parity for CFlow reduce and count terminals") {
+    it("keeps interpreter and JIT parity for CFlow terminals") {
       const char *source =
           "reduced = [1, 2, 3].stream().filter(x => x > 1).map(x => x * 2)"
           ".reduce(10, (acc, x) => acc + x);"
           "counted = stream.of([-2, 0, 3]).filter(x => x > 0)"
-          ".map(x => x * 2).count();";
+          ".map(x => x * 2).count();"
+          "vectorized = stream.of([1, 2, 3]).map(x => x * 3).toVector();"
+          "listed = stream.of([1, 2, 3]).filter(x => x > 1).toList();"
+          "collected_filter = stream.of([1, 2, 3]).filter(x => x > 1).collect();"
+          "collected_map = stream.of([1, 2, 3]).map(x => x * 2).collect();";
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_vector;
+      exprtk_value_t jit_vector;
+      exprtk_value_t interp_list;
+      exprtk_value_t jit_list;
+      exprtk_value_t interp_filter_collect;
+      exprtk_value_t jit_filter_collect;
+      exprtk_value_t interp_map_collect;
+      exprtk_value_t jit_map_collect;
 
       check_not_null(interp);
       check_not_null(jit);
@@ -127,6 +246,38 @@ spec("TurboScript CFlow stream runtime") {
       check(fabs(ts_get_num(jit, "reduced") - 20.0) <= 1e-9);
       check(fabs(ts_get_num(interp, "counted") - 1.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "counted") - 1.0) <= 1e-9);
+
+      interp_vector = exprtk_env_get(&interp->env, "vectorized");
+      jit_vector = exprtk_env_get(&jit->env, "vectorized");
+      check_equal(interp_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(jit_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(interp_vector.data.vector.size, (size_t)3u);
+      check_equal(jit_vector.data.vector.size, (size_t)3u);
+      check(fabs(interp_vector.data.vector.data[2] - 9.0) <= 1e-9);
+      check(fabs(jit_vector.data.vector.data[2] - 9.0) <= 1e-9);
+
+      interp_list = exprtk_env_get(&interp->env, "listed");
+      jit_list = exprtk_env_get(&jit->env, "listed");
+      check_equal(interp_list.type, EXPRTK_VAL_LIST);
+      check_equal(jit_list.type, EXPRTK_VAL_LIST);
+      check_equal(interp_list.data.list.count, (size_t)2u);
+      check_equal(jit_list.data.list.count, (size_t)2u);
+
+      interp_filter_collect = exprtk_env_get(&interp->env, "collected_filter");
+      jit_filter_collect = exprtk_env_get(&jit->env, "collected_filter");
+      check_equal(interp_filter_collect.type, EXPRTK_VAL_VECTOR);
+      check_equal(jit_filter_collect.type, EXPRTK_VAL_VECTOR);
+      check_equal(interp_filter_collect.data.vector.size, (size_t)2u);
+      check_equal(jit_filter_collect.data.vector.size, (size_t)2u);
+
+      interp_map_collect = exprtk_env_get(&interp->env, "collected_map");
+      jit_map_collect = exprtk_env_get(&jit->env, "collected_map");
+      check_equal(interp_map_collect.type, EXPRTK_VAL_LIST);
+      check_equal(jit_map_collect.type, EXPRTK_VAL_LIST);
+      check_equal(interp_map_collect.data.list.count, (size_t)3u);
+      check_equal(jit_map_collect.data.list.count, (size_t)3u);
+      check(fabs(interp_map_collect.data.list.items[2].data.number - 6.0) <= 1e-9);
+      check(fabs(jit_map_collect.data.list.items[2].data.number - 6.0) <= 1e-9);
 
       turbo_script_free(jit);
       turbo_script_free(interp);

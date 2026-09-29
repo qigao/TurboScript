@@ -16,12 +16,15 @@ typedef enum ts_cflow_runtime_status_e {
 } ts_cflow_runtime_status_t;
 
 /*
- * Execute the first runtime-owned CFlow stream facade slice.
+ * Execute the runtime-owned CFlow stream facade slice.
  *
  * Eligible expressions are numeric literal in-memory pipelines that terminate
- * in reduce(...) or count(). Unsupported stream shapes remain owned by the
- * legacy facade until their migration slice lands. Once an expression is
- * admitted as graphable, execution errors are reported and never fall back.
+ * in reduce/count/collect/toList/toVector. collect preserves the legacy vector
+ * vs list result shape: map-free vector pipelines collect as vector, while a
+ * pipeline containing map collects as list. Unsupported stream shapes remain
+ * owned by the legacy facade until their migration slice lands. Once an
+ * expression is admitted as graphable, execution errors are reported and
+ * never fall back.
  */
 ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
