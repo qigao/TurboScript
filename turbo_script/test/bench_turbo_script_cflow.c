@@ -24,6 +24,15 @@ static double ts_bench_now_us(void) {
   return ((double)clock() * 1000000.0) / (double)CLOCKS_PER_SEC;
 }
 
+static void ts_bench_begin_eval(turbo_script_ctx_t *ctx) {
+  if (!ctx) return;
+  ctx->env.aborted = 0;
+  ctx->env.curr_nodes = 0;
+  ctx->env.curr_loop_iterations = 0;
+  ctx->env.curr_recursion = 0;
+}
+
+
 static exprtk_node_t *ts_bench_single_expr(
     turbo_script_ctx_t *ctx,
     const char *source,
@@ -64,6 +73,7 @@ static double ts_bench_legacy(
     size_t iterations) {
   const double start = ts_bench_now_us();
   for (size_t i = 0u; i < iterations; ++i) {
+    ts_bench_begin_eval(ctx);
     exprtk_value_t value = exprtk_eval(expr, &ctx->env);
     if (!ts_bench_number_equals(&value, (double)expected_count)) {
       double observed = NAN;
@@ -90,6 +100,7 @@ static double ts_bench_runtime(
     size_t iterations) {
   const double start = ts_bench_now_us();
   for (size_t i = 0u; i < iterations; ++i) {
+    ts_bench_begin_eval(ctx);
     exprtk_value_t value = exprtk_val_num(-1.0);
     char error[256] = {0};
     const ts_cflow_runtime_status_t status =
@@ -286,6 +297,7 @@ static int ts_bench_reduce_case(void) {
   /* Legacy eager reduce. */
   start = ts_bench_now_us();
   for (size_t i = 0u; i < legacy_iterations; ++i) {
+    ts_bench_begin_eval(ctx);
     exprtk_value_t value = exprtk_eval(expr, &ctx->env);
     if (!ts_bench_number_equals(&value, expected)) {
       exprtk_value_destroy(&value);
@@ -299,6 +311,7 @@ static int ts_bench_reduce_case(void) {
   /* Current runtime cutover: lower/bind/compile each call. */
   start = ts_bench_now_us();
   for (size_t i = 0u; i < runtime_iterations; ++i) {
+    ts_bench_begin_eval(ctx);
     exprtk_value_t value = exprtk_val_num(-1.0);
     char runtime_error[256] = {0};
     if (ts_cflow_runtime_try_scalar_terminal(
