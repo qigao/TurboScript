@@ -224,6 +224,28 @@ spec("TurboScript CFlow pipeline lowering") {
       exprtk_free(bound_root);
     }
 
+    {
+      exprtk_node_t *list_root = NULL;
+      exprtk_node_t *list_expr;
+      exprtk_value_t list_result = exprtk_val_num(-1.0);
+
+      check_equal(turbo_script_run(
+                      ctx, "bound_list = list(-2, 0, 3);"),
+                  0);
+      list_expr = ts_test_single_expr(
+          "stream.of(bound_list).filter(x => x > 0).count()",
+          &list_root);
+      check_not_null(list_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, list_expr, &list_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(list_result.type, EXPRTK_VAL_NUMBER);
+      check((((double)list_result.data.number)) == (1.0));
+      exprtk_value_destroy(&list_result);
+      exprtk_free(list_root);
+    }
+
     exprtk_value_destroy(&vector_result);
     exprtk_value_destroy(&count_result);
     exprtk_free(vector_root);
