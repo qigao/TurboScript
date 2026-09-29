@@ -1241,32 +1241,50 @@ var prev = lag([10, 20, 30], 1, -1); // [-1, 10, 20]
 
 ### 3.2 Java Stream-Style Chains
 
-Containers and file sources can also use dot-chain stream calls:
+`stream.*` is a TurboScript language facade. Graphable numeric in-memory
+pipelines execute through **CMeta + CFlow + MIR kernels**; source shapes or
+operations that are not yet admitted stay on the existing eager TurboScript /
+ExprTk adapter path.
 
 ```javascript
-var total = stream.csv("trades.csv")
-    .filterExpr("price > 100")
-    .map(r => to_num(r.price) * to_num(r.qty))
-    .reduce(0, (acc, v) => acc + v);
+var total = stream.of([1, -2, 3])
+    .filter(x => x > 0)
+    .map(x => x * 10)
+    .reduce(0, (acc, x) => acc + x);
 
-var qty = stream.json("orders.json", "$.orders[*]")
-    .filter(r => r.price > 5)
-    .map(r => r.qty)
-    .reduce(0, (acc, v) => acc + v);
+var values = list(1, 2, 3);
+var doubled = stream.of(values)
+    .map(x => x * 2)
+    .toVector();
 
-var xml_total = stream.xml("orders.xml", "//price")
-    .filter(n => to_num(n.text) > 5)
-    .map(n => to_num(n.text))
-    .reduce(0, (acc, v) => acc + v);
+// Verified file/text path today: eager read -> text stream -> eager lines.
+var line_count = stream.text(io.read_file("data.txt"))
+    .lines()
+    .count();
 ```
 
-- `stream.of(x)`, `list.stream()`, `vector.stream()`, `map.stream()`, and `string.stream()` create stream values.
-- File helpers are `stream.lines(path)`, `stream.csv(path[, has_header])`, `stream.json(path[, jsonpath])`, and `stream.xml(path, xpath)`.
-- Chain methods include `filter(fn)`, `filterExpr(expr)`, `where(expr)`, `map(fn)`, `reduce(init, fn)`, `collect()`, `toList()`, `toVector()`, `count()`, and `forEach(fn)`.
-- `filterExpr` / `where` use the CSV filter expression syntax and are intended for `stream.csv(...)`.
-- `stream.json` uses JSONPath when its second argument is provided, for example `$.orders[*]` or `$.orders[@.price > 5]`.
-- `stream.xml` uses XPath 1.0 and yields node maps with `type`, `name`, `text`, and `xml` fields.
-- Current file streams are eagerly materialized into runtime values; they are not incremental backpressure streams yet.
+Current execution contract:
+
+- The core factories currently registered are `stream.of(x)` and
+  `stream.text(text)`.
+- Numeric vector literals, bound vectors, and homogeneous number/int64 lists
+  can enter the CFlow path.
+- On admitted numeric sources, `filter`, `map`, numeric-literal seeded
+  `reduce`, `count`, `collect`, `toList`, and `toVector` are CFlow-backed.
+- Capturing/effectful lambdas, dynamic reduce seeds, heterogeneous lists,
+  map/object streams, and effectful `forEach` remain on the legacy adapter
+  path.
+- `stream.text(...).lines()` and `.split(...)` are currently eager text
+  adapters; they are not Reactive/backpressure streams.
+- Older documentation listed `stream.lines(path)`, `stream.csv(...)`,
+  `stream.json(...)`, and `stream.xml(...)` as core factories. The current
+  core audit did not find those factory registrations/tests. Treat them as
+  migration/provider design input, not as guaranteed core APIs.
+- Provider-backed streams may dispatch members through
+  `stream.<source_kind>.<method>` when a provider registers that function.
+
+See **[stream.* → CFlow Migration Matrix](stream-cflow-migration.md)** for the
+source/operator/terminal ownership matrix and Phase 2/3 migration rules.
 
 ### 4. Handle Errors Explicitly
 
