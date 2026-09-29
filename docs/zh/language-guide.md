@@ -1132,9 +1132,13 @@ var line_count = stream.text(io.read_file("data.txt"))
   synchronous CFlow Plan 执行，并保留 eager 文本求值语义。`collect/toList`
   会在 source 清理前把 borrowed CFlow slice 深拷贝成 TurboScript 自有字符串。
   `split` 保留空 separator 按 byte 切分以及首尾/连续空 token 的行为，source
-  与 separator 表达式各只求值一次。裸 `.lines()` / `.split(...)` stream
-  以及 string filter/map 仍走 eager legacy adapter，也都不隐含
-  Reactive/backpressure 执行。
+  与 separator 表达式各只求值一次。
+- 精确的 capture-free MAP `line => line.length()` 也已经通过显式 typed
+  `LineSlice -> double` adapter 进入 CFlow，可用于
+  `.lines().map(...).toVector/toList/collect`；其它 string MAP/FILTER 仍走
+  eager legacy adapter。
+- 裸 `.lines()` / `.split(...)` stream 和其它 string transform 仍是
+  eager 语义，也都不隐含 Reactive/backpressure 执行。
 - 旧文档曾把 `stream.lines(path)`、`stream.csv(...)`、
   `stream.json(...)`、`stream.xml(...)` 列为 core factory；本次对当前
   core 的审计没有找到相应 factory 注册/测试，因此它们应视为后续
