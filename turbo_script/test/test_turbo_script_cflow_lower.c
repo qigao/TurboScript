@@ -274,6 +274,19 @@ spec("TurboScript CFlow pipeline lowering") {
     check_equal(empty_chars.count, (size_t)0u);
     check_null(empty_chars.items);
     ts_cflow_text_lines_source_destroy(&empty_chars);
+
+    {
+      ts_cflow_text_lines_source_t multi = {0};
+      check_true(ts_cflow_text_split_source_init(
+          &multi, "a<>b<>", strlen("a<>b<>"), "<>", 2u));
+      check_equal(multi.count, (size_t)3u);
+      check_equal(multi.items[0].len, (size_t)1u);
+      check_equal(multi.items[1].len, (size_t)1u);
+      check_equal(multi.items[2].len, (size_t)0u);
+      check(memcmp(multi.items[0].data, "a", 1u) == 0);
+      check(memcmp(multi.items[1].data, "b", 1u) == 0);
+      ts_cflow_text_lines_source_destroy(&multi);
+    }
   }
 
   it("sanitizes the runtime CFlow terminal seam") {
