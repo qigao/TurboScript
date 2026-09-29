@@ -24,7 +24,8 @@ typedef struct ts_cflow_mir_kernel_binding {
 
 /*
  * Compile one PURE, capture-free TurboScript lambda into a MIR-backed CMeta
- * callable. The first executable slice intentionally supports MAP and FILTER.
+ * callable. MAP/FILTER use one numeric argument; REDUCE uses the canonical
+ * homogeneous (accumulator, value) -> accumulator contract.
  */
 bool ts_cflow_mir_kernel_bind(turbo_script_ctx_t *runtime_ctx,
                               const exprtk_node_t *lambda,
