@@ -3,6 +3,7 @@
 #include "../turbo_script_internal.h"
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
+#include "turbo_script_cflow_text.h"
 #include "exprtk_grammar.h"
 
 #include <cflow/plan.h>
@@ -23,6 +24,114 @@ static void ts_cflow_runtime_error(char *error, size_t error_size,
                                    const char *message) {
   if (!error || error_size == 0u) return;
   snprintf(error, error_size, "%s", message ? message : "CFlow stream execution failed");
+}
+
+static const exprtk_node_t *ts_cflow_runtime_text_lines_count_source(
+    const exprtk_node_t *expr) {
+  const exprtk_node_t *lines;
+  const exprtk_node_t *text_call;
+  const exprtk_node_t *stream_ns;
+
+  if (!expr || expr->type != EXPRTK_NODE_MEMBER_CALL ||
+      !expr->data.member_call.method ||
+      strcmp(expr->data.member_call.method, "count") != 0 ||
+      expr->data.member_call.arg_count != 0u)
+    return NULL;
+
+  lines = expr->data.member_call.object;
+  if (!lines || lines->type != EXPRTK_NODE_MEMBER_CALL ||
+      !lines->data.member_call.method ||
+      strcmp(lines->data.member_call.method, "lines") != 0 ||
+      lines->data.member_call.arg_count != 0u)
+    return NULL;
+
+  text_call = lines->data.member_call.object;
+  if (!text_call || text_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !text_call->data.member_call.method ||
+      strcmp(text_call->data.member_call.method, "text") != 0 ||
+      text_call->data.member_call.arg_count != 1u)
+    return NULL;
+
+  stream_ns = text_call->data.member_call.object;
+  if (!stream_ns || stream_ns->type != EXPRTK_NODE_VARIABLE ||
+      !stream_ns->data.variable.name ||
+      strcmp(stream_ns->data.variable.name, "stream") != 0)
+    return NULL;
+
+  return text_call->data.member_call.args[0];
+}
+
+static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_lines_count(
+    turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
+    char *error, size_t error_size) {
+  const exprtk_node_t *text_expr =
+      ts_cflow_runtime_text_lines_count_source(expr);
+  exprtk_value_t text_value = {.type = EXPRTK_VAL_NULL};
+  ts_cflow_text_lines_source_t source = {0};
+  cflow_graph graph = {0};
+  cflow_plan plan = {0};
+  const char *cflow_error = NULL;
+  const char *text_data = NULL;
+  size_t text_len = 0u;
+  size_t count = 0u;
+  bool plan_ready = false;
+  bool source_ready = false;
+  ts_cflow_runtime_status_t status = TS_CFLOW_RUNTIME_ERROR;
+
+  graph.root = CMETA_INVALID_ID;
+  if (!text_expr) return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  text_value = turbo_script_mir_eval_node(text_expr, &ctx->env);
+  if (ctx->env.aborted || ctx->env.flow == exprtk_FLOW_THROW) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        ctx->env.error_msg[0] ? ctx->env.error_msg
+                              : "TurboScript text source evaluation failed");
+    goto done;
+  }
+
+  /* Match stream.text(non-string): the legacy factory substitutes empty text. */
+  if (text_value.type == EXPRTK_VAL_STRING) {
+    text_data = text_value.data.string.data;
+    text_len = text_value.data.string.len;
+  } else {
+    text_data = "";
+    text_len = 0u;
+  }
+
+  if (!ts_cflow_text_lines_source_init(&source, text_data, text_len)) {
+    ts_cflow_runtime_error(error, error_size,
+                           "CFlow text-line source materialization failed");
+    goto done;
+  }
+  source_ready = true;
+
+  if (!ts_cflow_text_lines_plan_compile(&graph, &plan, &cflow_error)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        cflow_error ? cflow_error : "CFlow text-line Plan compilation failed");
+    goto done;
+  }
+  plan_ready = true;
+
+  if (!ts_cflow_text_lines_plan_count(&plan, &source, &count, &cflow_error)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        cflow_error ? cflow_error : "CFlow text-line Plan execution failed");
+    goto done;
+  }
+
+  *out = exprtk_val_num((double)count);
+  status = TS_CFLOW_RUNTIME_HANDLED;
+
+done:
+  if (plan_ready) {
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+  }
+  if (source_ready) ts_cflow_text_lines_source_destroy(&source);
+  exprtk_value_destroy(&text_value);
+  return status;
 }
 
 static int ts_cflow_runtime_numeric_literal(const exprtk_node_t *node,
@@ -238,6 +347,14 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
 
   if (error && error_size > 0u) error[0] = '\0';
   if (!ctx || !expr || !out) return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  {
+    ts_cflow_runtime_status_t text_status =
+        ts_cflow_runtime_try_text_lines_count(
+            ctx, expr, out, error, error_size);
+    if (text_status != TS_CFLOW_RUNTIME_NOT_APPLICABLE)
+      return text_status;
+  }
 
   terminal = ts_cflow_runtime_terminal(expr, &pipeline_expr);
   if (terminal == TS_CFLOW_TERMINAL_NONE || !pipeline_expr)

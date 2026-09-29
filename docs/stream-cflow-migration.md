@@ -50,8 +50,9 @@ TurboScript syntax / source adapters / diagnostics
 | heterogeneous list | No coercion to `double` | **Legacy adapter** | Intentionally outside numeric CFlow slice |
 | map/object `.stream()` | Existing runtime projects map values into a list-like stream | **Legacy adapter** | Requires typed record/container design before CFlow admission |
 | string `.stream()` | Existing runtime materializes string lines | **Legacy adapter** | Fold into text/file adapter work in Phase 2 |
-| `stream.text(text)` | Core factory; preserves text metadata and supports `.lines()` / `.split()` | **Legacy adapter** | Phase 2: typed text/range adapter, preserving eager behavior first |
-| `stream.text(io.read_file(path)).lines()` | Verified by IO tests; eager file read then text-line materialization | **Legacy adapter** | First concrete Phase 2 file path |
+| `stream.text(text)` | Core factory; preserves text metadata and supports `.lines()` / `.split()` | **Legacy adapter** | Factory/materialization stays eager; exact `.lines().count()` terminal now has a typed CFlow seam |
+| `stream.text(text).lines().count()` | Line slices preserve legacy newline/CRLF/trailing-empty-line semantics and borrow source text only for synchronous Plan evaluation | **CFlow** | First Phase 2 typed text terminal |
+| `stream.text(io.read_file(path)).lines().count()` | File I/O remains TurboScript-owned; evaluated text feeds the same typed line Plan | **CFlow** | First Phase 2 verified file path |
 | `stream.lines(path)` | Listed in language guide, but no current core factory/test registration found | **Documented only** | Either implement as a canonical adapter or remove the stale surface |
 | `stream.csv(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
 | `stream.json(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
@@ -74,7 +75,7 @@ with `source_kind` may also dispatch member calls through the provider hook
 | `.toVector()` | **CFlow** | CFlow result copied into TurboScript-owned vector before result destruction |
 | `.forEach(fn)` | **Legacy adapter** | Effectful terminal; keep as an explicit execution barrier until semantics are specified |
 | `.filterExpr(expr)` / `.where(expr)` | **Provider hook / legacy adapter** | Generic core fallback does not define a CFlow expression compiler |
-| text `.lines()` | **Legacy adapter** | Eager string → list materialization |
+| text `.lines()` | **Legacy adapter** except exact `.lines().count()` | Materializing lines remains eager; count-only uses typed borrowed line slices through CFlow |
 | text `.split(sep)` | **Legacy adapter** | Eager string → list materialization |
 
 ## Phase 1 parity boundary
@@ -115,10 +116,13 @@ CFlow Graph / Plan
 CFlow stays format-neutral. CSV/JSON/XML parsing, JSONPath/XPath, DataBind
 BindingPlan/ValidationPlan, and file I/O remain outside CFlow.
 
-The first verified Phase 2 candidate is
-`stream.text(io.read_file(path)).lines()`. Before implementing
-`stream.lines/csv/json/xml`, reconcile the language guide with actual
-factory/provider registration so the migration does not preserve a
+The first Phase 2 slice is now `stream.text(...).lines().count()`, including
+`stream.text(io.read_file(path)).lines().count()`. It preserves eager source
+evaluation and legacy line splitting while routing typed borrowed line slices
+through a synchronous CFlow Plan.
+
+Before implementing `stream.lines/csv/json/xml`, reconcile each surface with
+actual factory/provider registration so the migration does not preserve a
 documentation-only API by accident.
 
 ## Phase 3 Reactive rule

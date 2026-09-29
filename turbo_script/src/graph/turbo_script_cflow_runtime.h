@@ -26,6 +26,11 @@ typedef enum ts_cflow_runtime_status_e {
  * owned by the legacy facade until their migration slice lands. Once an
  * expression is admitted as graphable, execution errors are reported and
  * never fall back.
+ *
+ * The first Phase 2 seam additionally admits the exact terminal shape
+ * stream.text(expr).lines().count(). The text expression is evaluated once,
+ * line slices borrow that string only for synchronous Plan evaluation, and the
+ * legacy newline/CRLF/trailing-empty-line semantics are preserved.
  */
 ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,

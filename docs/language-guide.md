@@ -1274,8 +1274,10 @@ Current execution contract:
 - Capturing/effectful lambdas, dynamic reduce seeds, heterogeneous lists,
   map/object streams, and effectful `forEach` remain on the legacy adapter
   path.
-- `stream.text(...).lines()` and `.split(...)` are currently eager text
-  adapters; they are not Reactive/backpressure streams.
+- `stream.text(...).lines().count()` uses a typed synchronous CFlow Plan
+  while preserving the current eager text evaluation and line-splitting
+  semantics. Materializing `.lines()` itself and `.split(...)` remain eager
+  text adapters; none of these imply Reactive/backpressure execution.
 - Older documentation listed `stream.lines(path)`, `stream.csv(...)`,
   `stream.json(...)`, and `stream.xml(...)` as core factories. The current
   core audit did not find those factory registrations/tests. Treat them as
