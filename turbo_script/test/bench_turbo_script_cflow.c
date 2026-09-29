@@ -3,6 +3,7 @@
 #include "../src/graph/turbo_script_cflow_runtime.h"
 
 #include "exprtk.h"
+#include "salts_fs.h"
 
 #include <cflow/plan.h>
 
@@ -354,6 +355,83 @@ fail:
   return 1;
 }
 
+static int ts_bench_file_text_case(void) {
+  static const char *path =
+      "turboscript_cflow_qualification_bench.txt";
+  static const char *script =
+      "stream.text(io.read_file("
+      "\"turboscript_cflow_qualification_bench.txt\"))"
+      ".lines().count();";
+  const size_t source_lines = 4096u;
+  const size_t expected_count = source_lines + 1u;
+  const size_t legacy_iterations = 8u;
+  const size_t runtime_iterations = 8u;
+  const char line[] = "value\n";
+  const size_t line_len = sizeof(line) - 1u;
+  const size_t bytes = source_lines * line_len;
+  turbo_script_ctx_t *ctx =
+      turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+  char *text = NULL;
+  exprtk_node_t *root = NULL;
+  exprtk_node_t *expr;
+  salts_fs_buf_t file_buf;
+  double legacy_us;
+  double runtime_us;
+
+  if (!ctx) goto fail;
+  text = (char *)malloc(bytes + 1u);
+  if (!text) goto fail;
+  for (size_t i = 0u; i < source_lines; ++i)
+    memcpy(text + i * line_len, line, line_len);
+  text[bytes] = '\0';
+
+  file_buf = salts_fs_buf_init(text, bytes);
+  if (salts_fs_write_file(path, &file_buf) != 0)
+    goto fail;
+
+  expr = ts_bench_single_expr(ctx, script, &root);
+  if (!expr) goto fail;
+
+  if (ts_bench_legacy(
+          ctx, expr, expected_count, 1u) < 0.0 ||
+      ts_bench_runtime(
+          ctx, expr, expected_count, 1u) < 0.0)
+    goto fail;
+
+  legacy_us = ts_bench_legacy(
+      ctx, expr, expected_count, legacy_iterations);
+  runtime_us = ts_bench_runtime(
+      ctx, expr, expected_count, runtime_iterations);
+  if (legacy_us <= 0.0 || runtime_us <= 0.0)
+    goto fail;
+
+  printf(
+      "CFLOW_FILE_BASELINE scenario=read_file_lines_count "
+      "source_lines=%zu path=legacy_eager "
+      "us_per_eval=%.3f iterations=%zu\n",
+      source_lines, legacy_us, legacy_iterations);
+  printf(
+      "CFLOW_FILE_BASELINE scenario=read_file_lines_count "
+      "source_lines=%zu path=current_runtime "
+      "us_per_eval=%.3f iterations=%zu "
+      "runtime_over_legacy=%.3f\n",
+      source_lines, runtime_us, runtime_iterations,
+      runtime_us / legacy_us);
+
+  exprtk_free(root);
+  salts_fs_unlink(path);
+  free(text);
+  turbo_script_free(ctx);
+  return 0;
+
+fail:
+  if (root) exprtk_free(root);
+  (void)salts_fs_unlink(path);
+  free(text);
+  turbo_script_free(ctx);
+  return 1;
+}
+
 int main(void) {
   const ts_cflow_bench_case cases[] = {
       {16u, 300u, 12u, 2000u},
@@ -368,5 +446,6 @@ int main(void) {
     if (ts_bench_count_case(cases[i]) != 0) return 1;
   }
   if (ts_bench_reduce_case() != 0) return 1;
+  if (ts_bench_file_text_case() != 0) return 1;
   return 0;
 }
