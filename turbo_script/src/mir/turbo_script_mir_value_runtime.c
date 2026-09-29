@@ -2173,6 +2173,13 @@ double ts_mir_value_expr_assign(void *ctx_ptr, const char *target_name, void *no
     ts_cflow_runtime_status_t cflow_status =
         ts_cflow_runtime_try_scalar_terminal(ctx, node, &result,
                                              cflow_error, sizeof(cflow_error));
+
+    if (cflow_status == TS_CFLOW_RUNTIME_NOT_APPLICABLE) {
+      cflow_status =
+          ts_cflow_runtime_try_materialized_stream(
+              ctx, node, &result, cflow_error, sizeof(cflow_error));
+    }
+
     if (cflow_status == TS_CFLOW_RUNTIME_ERROR) {
       ctx->env.aborted = 1;
       snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s",
