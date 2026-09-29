@@ -1,5 +1,6 @@
 #include "turbo_script_cflow_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -90,7 +91,8 @@ bool ts_cflow_text_split_source_init(ts_cflow_text_lines_source_t *source,
   cursor = 0u;
   while (cursor <= text_len) {
     size_t found = SIZE_MAX;
-    for (size_t i = cursor; i + separator_len <= text_len; ++i) {
+    for (size_t i = cursor;
+         i <= text_len && separator_len <= text_len - i; ++i) {
       if (memcmp(text + i, separator, separator_len) == 0) {
         found = i;
         break;
@@ -107,7 +109,8 @@ bool ts_cflow_text_split_source_init(ts_cflow_text_lines_source_t *source,
   cursor = 0u;
   while (cursor <= text_len && index < count) {
     size_t found = SIZE_MAX;
-    for (size_t i = cursor; i + separator_len <= text_len; ++i) {
+    for (size_t i = cursor;
+         i <= text_len && separator_len <= text_len - i; ++i) {
       if (memcmp(text + i, separator, separator_len) == 0) {
         found = i;
         break;
