@@ -3,6 +3,7 @@ on:
   pull_request:
     branches: [master]
   push:
+    branches: [master]
     tags:
       - "v*"
 permissions:
@@ -23,6 +24,8 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - id: version
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -33,14 +36,23 @@ jobs:
             echo "release version mismatch: CMake=$version vcpkg=$vcpkg_version" >&2
             exit 1
           fi
+
+          tag="v$version"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
-            expected_tag="v$version"
-            if [[ "$GITHUB_REF_NAME" != "$expected_tag" ]]; then
-              echo "release tag mismatch: pushed=$GITHUB_REF_NAME expected=$expected_tag" >&2
+            if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
+              echo "release tag mismatch: pushed=$GITHUB_REF_NAME expected=$tag" >&2
               exit 1
             fi
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/master ]]; then
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+              echo "release=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "version=$version" >> "$GITHUB_OUTPUT"
+              echo "release=true" >> "$GITHUB_OUTPUT"
+            fi
           else
             echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -48,6 +60,7 @@ jobs:
   source-test:
     name: Linux source / full CTest
     needs: metadata
+    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -109,6 +122,7 @@ jobs:
   host-sanitizer:
     name: Linux Host MIR / ASan+UBSan+LSan
     needs: metadata
+    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -180,6 +194,7 @@ jobs:
   host-abi:
     name: Linux installed Host ABI v1
     needs: metadata
+    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -255,6 +270,7 @@ jobs:
 
   build:
     needs: metadata
+    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
     strategy:
       fail-fast: false
       matrix:
@@ -372,6 +388,7 @@ jobs:
           if-no-files-found: error
   pack:
     needs: [metadata, source-test, host-sanitizer, host-abi, build]
+    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -415,7 +432,7 @@ jobs:
   publish:
     name: Publish package and GitHub Release
     needs: [metadata, pack]
-    if: startsWith(github.ref, 'refs/tags/v') && github.event_name == 'push'
+    if: needs.metadata.outputs.release == 'true' && github.event_name == 'push'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
