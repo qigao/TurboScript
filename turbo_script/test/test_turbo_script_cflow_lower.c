@@ -165,13 +165,90 @@ spec("TurboScript CFlow pipeline lowering") {
     turbo_script_free(ctx);
   }
 
-  it("fails executable reduce explicitly without analysis fallback") {
+  it("executes seeded reduce through a MIR kernel and CFlow plan") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
     exprtk_node_t *root = NULL;
     exprtk_node_t *expr = ts_test_single_expr(
         "[1, 2, 3] |> map(x => x * 2) "
-        "|> reduce(0, (acc, x) => acc + x)",
+        "|> reduce(10, (acc, x) => acc + x)",
         &root);
+    ts_cflow_lowered_pipeline_t lowered;
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    const cflow_subgraph *sg;
+    const void *seed;
+    const char *error = NULL;
+    const double input[] = {1.0, 2.0, 3.0};
+
+    check_not_null(ctx);
+    check_not_null(expr);
+    check_true(ts_cflow_lower_pipeline_executable(
+        ctx, expr, &lowered, &error));
+    check_null(error);
+    check_true(lowered.executable);
+    check_true(lowered.has_reduce_seed);
+    check((lowered.kernel_binding_count) == ((size_t)2u));
+
+    sg = cflow_graph_subgraph(&lowered.graph, lowered.graph.root);
+    check_not_null(sg);
+    check((sg->node_count) == ((size_t)3u));
+    check((sg->nodes[0].op) == (CFLOW_OP_INPUT));
+    check((sg->nodes[1].op) == (CFLOW_OP_MAP));
+    check((sg->nodes[2].op) == (CFLOW_OP_REDUCE));
+    check_true(cmeta_callable_same(
+        sg->nodes[2].fn, lowered.kernel_bindings[1].callable));
+    seed = cflow_node_reduce_seed(&sg->nodes[2]);
+    check_not_null(seed);
+    check((((const double *)seed)[0]) == (10.0));
+
+    check_true(cflow_plan_compile_surface(&plan, &lowered.graph, NULL));
+    check_true(cflow_plan_eval_array(
+        &plan, input, sizeof(input) / sizeof(input[0]), &result));
+    check_true(cmeta_type_equal(result.type, &cmeta_type_double));
+    check((result.count) == ((size_t)1u));
+    check_not_null(result.data);
+    check((((const double *)result.data)[0]) == (22.0));
+
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    ts_cflow_lowered_pipeline_destroy(&lowered);
+    exprtk_free(root);
+    turbo_script_free(ctx);
+  }
+
+  it("returns the owned seed for an empty executable reduce input") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *expr = ts_test_single_expr(
+        "[1] |> reduce(-7, (acc, x) => acc + x)", &root);
+    ts_cflow_lowered_pipeline_t lowered;
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    const char *error = NULL;
+
+    check_not_null(ctx);
+    check_not_null(expr);
+    check_true(ts_cflow_lower_pipeline_executable(
+        ctx, expr, &lowered, &error));
+    check_null(error);
+    check_true(cflow_plan_compile_surface(&plan, &lowered.graph, NULL));
+    check_true(cflow_plan_eval_array(&plan, NULL, 0u, &result));
+    check((result.count) == ((size_t)1u));
+    check_not_null(result.data);
+    check((((const double *)result.data)[0]) == (-7.0));
+
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    ts_cflow_lowered_pipeline_destroy(&lowered);
+    exprtk_free(root);
+    turbo_script_free(ctx);
+  }
+
+  it("rejects dynamic reduce seeds without legacy fallback") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *expr = ts_test_single_expr(
+        "[1, 2, 3] |> reduce(seed, (acc, x) => acc + x)", &root);
     ts_cflow_lowered_pipeline_t lowered;
     const char *error = NULL;
 
@@ -190,7 +267,7 @@ spec("TurboScript CFlow pipeline lowering") {
     turbo_script_free(ctx);
   }
 
-  it("retains the TurboScript reduce seed outside the unseeded CFlow fold") {
+  it("retains the TurboScript reduce seed AST for analysis lowering") {
     exprtk_node_t *root = NULL;
     exprtk_node_t *expr = ts_test_single_expr(
         "[1, 2, 3] |> reduce(100, (acc, x) => acc + x)", &root);
