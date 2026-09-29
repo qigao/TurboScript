@@ -4,6 +4,7 @@
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
 #include "turbo_script_cflow_text.h"
+#include "turbo_script_cflow_text_kernel.h"
 #include "exprtk_grammar.h"
 
 #include <cflow/plan.h>
@@ -238,6 +239,68 @@ done:
   return status;
 }
 
+typedef struct ts_cflow_text_length_map_match_s {
+  ts_cflow_terminal_t terminal;
+  const exprtk_node_t *text_expr;
+  const exprtk_node_t *lambda;
+} ts_cflow_text_length_map_match_t;
+
+static bool ts_cflow_runtime_text_length_map_match(
+    const exprtk_node_t *expr,
+    ts_cflow_text_length_map_match_t *out) {
+  const exprtk_node_t *map_call;
+  const exprtk_node_t *lines_call;
+  const exprtk_node_t *text_call;
+  const exprtk_node_t *stream_ns;
+  ts_cflow_text_length_map_match_t match = {0};
+
+  if (!expr || !out || expr->type != EXPRTK_NODE_MEMBER_CALL ||
+      !expr->data.member_call.method ||
+      expr->data.member_call.arg_count != 0u)
+    return false;
+
+  if (strcmp(expr->data.member_call.method, "toVector") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_TO_VECTOR;
+  else if (strcmp(expr->data.member_call.method, "toList") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_TO_LIST;
+  else if (strcmp(expr->data.member_call.method, "collect") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_COLLECT;
+  else
+    return false;
+
+  map_call = expr->data.member_call.object;
+  if (!map_call || map_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !map_call->data.member_call.method ||
+      strcmp(map_call->data.member_call.method, "map") != 0 ||
+      map_call->data.member_call.arg_count != 1u)
+    return false;
+
+  lines_call = map_call->data.member_call.object;
+  if (!lines_call || lines_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !lines_call->data.member_call.method ||
+      strcmp(lines_call->data.member_call.method, "lines") != 0 ||
+      lines_call->data.member_call.arg_count != 0u)
+    return false;
+
+  text_call = lines_call->data.member_call.object;
+  if (!text_call || text_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !text_call->data.member_call.method ||
+      strcmp(text_call->data.member_call.method, "text") != 0 ||
+      text_call->data.member_call.arg_count != 1u)
+    return false;
+
+  stream_ns = text_call->data.member_call.object;
+  if (!stream_ns || stream_ns->type != EXPRTK_NODE_VARIABLE ||
+      !stream_ns->data.variable.name ||
+      strcmp(stream_ns->data.variable.name, "stream") != 0)
+    return false;
+
+  match.text_expr = text_call->data.member_call.args[0];
+  match.lambda = map_call->data.member_call.args[0];
+  *out = match;
+  return true;
+}
+
 static int ts_cflow_runtime_numeric_literal(const exprtk_node_t *node,
                                             double *out) {
   double value;
@@ -359,6 +422,136 @@ static int ts_cflow_runtime_result_to_list(const cflow_result *result,
   return 1;
 }
 
+static ts_cflow_runtime_status_t
+ts_cflow_runtime_try_text_length_map_terminal(
+    turbo_script_ctx_t *ctx,
+    const exprtk_node_t *expr,
+    exprtk_value_t *out,
+    char *error,
+    size_t error_size) {
+  ts_cflow_text_length_map_match_t match = {0};
+  ts_cflow_text_kernel_binding_t binding = {0};
+  exprtk_value_t text_value = {.type = EXPRTK_VAL_NULL};
+  ts_cflow_text_lines_source_t source = {0};
+  cflow_graph graph = {0};
+  cflow_plan plan = {0};
+  cflow_result result = {0};
+  const char *kernel_error = NULL;
+  const char *text_data = "";
+  size_t text_len = 0u;
+  bool binding_ready = false;
+  bool source_ready = false;
+  bool graph_ready = false;
+  bool plan_ready = false;
+  bool result_ready = false;
+  ts_cflow_runtime_status_t status = TS_CFLOW_RUNTIME_ERROR;
+
+  graph.root = CMETA_INVALID_ID;
+  if (!ts_cflow_runtime_text_length_map_match(expr, &match))
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  /*
+   * Lambda binding is the admission boundary. Unsupported string MAP shapes
+   * remain on the legacy facade without evaluating the source expression.
+   */
+  if (!ts_cflow_text_length_map_bind(
+          match.lambda, &binding, &kernel_error))
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+  binding_ready = true;
+
+  text_value = turbo_script_mir_eval_node(match.text_expr, &ctx->env);
+  if (ctx->env.aborted || ctx->env.flow == exprtk_FLOW_THROW) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        ctx->env.error_msg[0] ? ctx->env.error_msg
+                              : "TurboScript text MAP source evaluation failed");
+    goto done;
+  }
+
+  if (text_value.type == EXPRTK_VAL_STRING) {
+    text_data = text_value.data.string.data;
+    text_len = text_value.data.string.len;
+  }
+
+  if (!ts_cflow_text_lines_source_init(
+          &source, text_data, text_len)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow text MAP source materialization failed");
+    goto done;
+  }
+  source_ready = true;
+
+  cflow_graph_init(&graph, ts_cflow_line_slice_type());
+  if (graph.error) {
+    ts_cflow_runtime_error(
+        error, error_size, graph.error);
+    goto done;
+  }
+  graph_ready = true;
+
+  if (!ts_cflow_text_length_map_graph_add(
+          &graph, &binding, &kernel_error)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        kernel_error ? kernel_error
+                     : "CFlow typed text MAP admission failed");
+    goto done;
+  }
+
+  if (!cflow_plan_compile_surface(&plan, &graph, NULL)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text MAP Plan compilation failed");
+    goto done;
+  }
+  plan_ready = true;
+
+  if (!cflow_plan_eval_array(
+          &plan, source.items, source.count, &result)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text MAP Plan execution failed");
+    goto done;
+  }
+  result_ready = true;
+
+  if (!ts_cflow_runtime_result_is_double(&result)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text MAP produced an invalid result");
+    goto done;
+  }
+
+  if (match.terminal == TS_CFLOW_TERMINAL_TO_VECTOR) {
+    if (!ts_cflow_runtime_result_to_vector(ctx, &result, out)) {
+      ts_cflow_runtime_error(
+          error, error_size,
+          "CFlow typed text MAP vector materialization failed");
+      goto done;
+    }
+  } else {
+    if (!ts_cflow_runtime_result_to_list(&result, out)) {
+      ts_cflow_runtime_error(
+          error, error_size,
+          "CFlow typed text MAP list materialization failed");
+      goto done;
+    }
+  }
+
+  status = TS_CFLOW_RUNTIME_HANDLED;
+
+done:
+  if (result_ready) cflow_result_destroy(&result);
+  if (plan_ready) cflow_plan_destroy(&plan);
+  if (graph_ready) cflow_graph_destroy(&graph);
+  if (source_ready) ts_cflow_text_lines_source_destroy(&source);
+  exprtk_value_destroy(&text_value);
+  if (binding_ready)
+    ts_cflow_text_kernel_binding_destroy(&binding);
+  return status;
+}
+
 static int ts_cflow_runtime_value_to_double(
     const exprtk_value_t *value, double *out) {
   if (!value || !out) return 0;
@@ -451,6 +644,14 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
 
   if (error && error_size > 0u) error[0] = '\0';
   if (!ctx || !expr || !out) return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  {
+    ts_cflow_runtime_status_t text_map_status =
+        ts_cflow_runtime_try_text_length_map_terminal(
+            ctx, expr, out, error, error_size);
+    if (text_map_status != TS_CFLOW_RUNTIME_NOT_APPLICABLE)
+      return text_map_status;
+  }
 
   {
     ts_cflow_runtime_status_t text_status =

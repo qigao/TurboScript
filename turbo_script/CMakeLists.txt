@@ -24,6 +24,8 @@ set(SOURCE_FILES
   src/graph/turbo_script_cflow_runtime.h
   src/graph/turbo_script_cflow_text.c
   src/graph/turbo_script_cflow_text.h
+  src/graph/turbo_script_cflow_text_kernel.c
+  src/graph/turbo_script_cflow_text_kernel.h
   src/graph/turbo_script_cmeta_bridge.c
   src/graph/turbo_script_cmeta_bridge.h
   src/host/turbo_script_host_instance.c
