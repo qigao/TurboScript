@@ -60,7 +60,7 @@ jobs:
   source-test:
     name: Linux source / full CTest
     needs: metadata
-    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -122,7 +122,7 @@ jobs:
   host-sanitizer:
     name: Linux Host MIR / ASan+UBSan+LSan
     needs: metadata
-    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -194,7 +194,7 @@ jobs:
   host-abi:
     name: Linux installed Host ABI v1
     needs: metadata
-    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
+    if: github.event_name == 'pull_request' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
