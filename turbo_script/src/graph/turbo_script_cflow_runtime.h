@@ -1,7 +1,9 @@
 #ifndef TURBO_SCRIPT_CFLOW_RUNTIME_H
 #define TURBO_SCRIPT_CFLOW_RUNTIME_H
 
-#include "../turbo_script_internal.h"
+#include "exprtk_types.h"
+#include "turbo_script.h"
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
