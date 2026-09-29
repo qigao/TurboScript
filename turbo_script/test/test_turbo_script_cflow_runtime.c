@@ -613,6 +613,31 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(interp);
     }
 
+    it("evaluates text split source and separator exactly once") {
+      const char *source =
+          "text_calls = 0;"
+          "sep_calls = 0;"
+          "func make_text() { text_calls += 1; return \"a,b\"; }"
+          "func make_sep() { sep_calls += 1; return \",\"; }"
+          "split_count = stream.text(make_text()).split(make_sep()).count();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "split_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "split_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "text_calls") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "text_calls") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "sep_calls") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "sep_calls") - 1.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
     it("keeps bound vector sources aligned in interpreter and JIT") {
       const char *source =
           "values = [-2, 0, 3];"
