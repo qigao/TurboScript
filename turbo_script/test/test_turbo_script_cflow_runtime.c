@@ -68,6 +68,53 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("executes text lines count through a typed CFlow plan") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *lines_root = NULL;
+      exprtk_node_t *empty_root = NULL;
+      exprtk_node_t *number_root = NULL;
+      exprtk_node_t *lines_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\"a\\r\\nb\\n\").lines().count();", &lines_root);
+      exprtk_node_t *empty_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(\"\").lines().count();", &empty_root);
+      exprtk_node_t *number_expr = ts_stream_test_single_expr(
+          ctx, "stream.text(42).lines().count();", &number_root);
+      exprtk_value_t lines_result = exprtk_val_num(-1.0);
+      exprtk_value_t empty_result = exprtk_val_num(-1.0);
+      exprtk_value_t number_result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(lines_expr);
+      check_not_null(empty_expr);
+      check_not_null(number_expr);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, lines_expr, &lines_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(lines_result.type, EXPRTK_VAL_NUMBER);
+      check(fabs(lines_result.data.number - 3.0) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, empty_expr, &empty_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check(fabs(empty_result.data.number - 1.0) <= 1e-9);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, number_expr, &number_result, error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check(fabs(number_result.data.number - 1.0) <= 1e-9);
+
+      exprtk_value_destroy(&number_result);
+      exprtk_value_destroy(&empty_result);
+      exprtk_value_destroy(&lines_result);
+      exprtk_free(number_root);
+      exprtk_free(empty_root);
+      exprtk_free(lines_root);
+      turbo_script_free(ctx);
+    }
+
     it("admits a bound vector source through runtime analysis") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       const double values[] = {-2.0, 0.0, 3.0};
@@ -333,6 +380,29 @@ spec("TurboScript CFlow stream runtime") {
       check_equal(jit_map_collect.data.list.count, (size_t)3u);
       check(fabs(interp_map_collect.data.list.items[2].data.number - 6.0) <= 1e-9);
       check(fabs(jit_map_collect.data.list.items[2].data.number - 6.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+    it("keeps text lines count aligned in interpreter and JIT") {
+      const char *source =
+          "line_count = stream.text(\"a\\r\\nb\\n\").lines().count();"
+          "empty_count = stream.text(\"\").lines().count();"
+          "coerced_empty_count = stream.text(42).lines().count();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "line_count") - 3.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "line_count") - 3.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "empty_count") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "empty_count") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "coerced_empty_count") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "coerced_empty_count") - 1.0) <= 1e-9);
 
       turbo_script_free(jit);
       turbo_script_free(interp);
