@@ -423,6 +423,56 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("admits typed text FILTER before evaluating the source") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      ts_stream_test_string_source_t source_state = {0u, "a\n\n"};
+      exprtk_node_t *supported_root = NULL;
+      exprtk_node_t *legacy_root = NULL;
+      exprtk_node_t *supported_expr;
+      exprtk_node_t *legacy_expr;
+      exprtk_value_t supported_result = exprtk_val_num(-1.0);
+      exprtk_value_t legacy_result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      exprtk_env_register_func(
+          &ctx->env, "make_text",
+          ts_stream_test_counted_string, &source_state);
+
+      supported_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(make_text()).lines()"
+          ".filter(line => line.length() > 0).count();",
+          &supported_root);
+      check_not_null(supported_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, supported_expr, &supported_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(source_state.calls, (size_t)1u);
+      check(fabs(supported_result.data.number - 1.0) <= 1e-9);
+
+      source_state.calls = 0u;
+      legacy_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(make_text()).lines()"
+          ".filter(line => line.length() >= 0).count();",
+          &legacy_root);
+      check_not_null(legacy_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, legacy_expr, &legacy_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_NOT_APPLICABLE);
+      check_equal(source_state.calls, (size_t)0u);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&legacy_result);
+      exprtk_value_destroy(&supported_result);
+      exprtk_free(legacy_root);
+      exprtk_free(supported_root);
+      turbo_script_free(ctx);
+    }
+
     it("admits a bound vector source through runtime analysis") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       const double values[] = {-2.0, 0.0, 3.0};
