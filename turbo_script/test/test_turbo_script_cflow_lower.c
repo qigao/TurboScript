@@ -384,6 +384,103 @@ spec("TurboScript CFlow pipeline lowering") {
     exprtk_free(trim_root);
   }
 
+  it("executes typed LineSlice nonempty FILTER through MIR and CFlow") {
+    exprtk_node_t *lambda_root = NULL;
+    exprtk_node_t *lambda =
+        ts_test_single_expr("line => line.length() > 0", &lambda_root);
+    ts_cflow_text_kernel_binding_t binding = {0};
+    ts_cflow_text_lines_source_t source = {0};
+    cflow_graph graph = {0};
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    const cflow_subgraph *sg;
+    const ts_cflow_line_slice_t *lines;
+    const char *error = NULL;
+
+    graph.root = CMETA_INVALID_ID;
+    check_not_null(lambda);
+    check_true(ts_cflow_text_nonempty_filter_bind(
+        lambda, &binding, &error));
+    check_null(error);
+    check_equal(binding.callable.meta.sig, CMETA_SIG_INVALID);
+    check_equal(binding.callable.dispatch,
+                CMETA_CALLABLE_DISPATCH_ADAPTER);
+    check_equal(binding.callable.meta.effects,
+                (cmeta_effects)CMETA_EFFECT_PURE);
+
+    check_true(ts_cflow_text_lines_source_init(
+        &source, "a\n\nbb\n", strlen("a\n\nbb\n")));
+    check_equal(source.count, (size_t)4u);
+
+    cflow_graph_init(&graph, ts_cflow_line_slice_type());
+    check_null(graph.error);
+    check_true(ts_cflow_text_nonempty_filter_graph_add(
+        &graph, &binding, &error));
+    check_null(error);
+
+    sg = cflow_graph_subgraph(&graph, graph.root);
+    check_not_null(sg);
+    check_equal(sg->node_count, (size_t)2u);
+    check_equal(sg->nodes[0].op, CFLOW_OP_INPUT);
+    check_equal(sg->nodes[1].op, CFLOW_OP_FILTER);
+    check_equal(sg->nodes[1].param_kind,
+                CFLOW_NODE_PARAM_TYPED_ADAPTER);
+    check_true(cmeta_type_equal(
+        sg->nodes[1].input_type, ts_cflow_line_slice_type()));
+    check_true(cmeta_type_equal(
+        sg->nodes[1].output_type, ts_cflow_line_slice_type()));
+
+    check_true(cflow_plan_compile_surface(
+        &plan, &graph, NULL));
+    check_true(cflow_plan_eval_array(
+        &plan, source.items, source.count, &result));
+    check_true(cmeta_type_equal(
+        result.type, ts_cflow_line_slice_type()));
+    check_equal(result.count, (size_t)2u);
+    lines = (const ts_cflow_line_slice_t *)result.data;
+    check_not_null(lines);
+    check_equal(lines[0].len, (size_t)1u);
+    check_equal(lines[1].len, (size_t)2u);
+    check(memcmp(lines[0].data, "a", 1u) == 0);
+    check(memcmp(lines[1].data, "bb", 2u) == 0);
+
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+    ts_cflow_text_lines_source_destroy(&source);
+    ts_cflow_text_kernel_binding_destroy(&binding);
+    exprtk_free(lambda_root);
+  }
+
+  it("rejects text FILTER shapes outside the first typed ABI slice") {
+    exprtk_node_t *ge_root = NULL;
+    exprtk_node_t *trim_root = NULL;
+    exprtk_node_t *ge_lambda =
+        ts_test_single_expr("line => line.length() >= 0", &ge_root);
+    exprtk_node_t *trim_lambda =
+        ts_test_single_expr(
+            "line => line.trim().length() > 0", &trim_root);
+    ts_cflow_text_kernel_binding_t binding = {0};
+    const char *error = NULL;
+
+    check_not_null(ge_lambda);
+    check_not_null(trim_lambda);
+
+    check_false(ts_cflow_text_nonempty_filter_bind(
+        ge_lambda, &binding, &error));
+    check_not_null(error);
+    check_null(binding.owner);
+
+    error = NULL;
+    check_false(ts_cflow_text_nonempty_filter_bind(
+        trim_lambda, &binding, &error));
+    check_not_null(error);
+    check_null(binding.owner);
+
+    exprtk_free(trim_root);
+    exprtk_free(ge_root);
+  }
+
   it("sanitizes the runtime CFlow terminal seam") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
     exprtk_node_t *count_root = NULL;
@@ -530,6 +627,33 @@ spec("TurboScript CFlow pipeline lowering") {
 
       exprtk_value_destroy(&length_result);
       exprtk_free(length_root);
+    }
+
+    {
+      exprtk_node_t *filter_root = NULL;
+      exprtk_node_t *filter_expr = ts_test_single_expr(
+          "stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).toList()",
+          &filter_root);
+      exprtk_value_t filter_result = exprtk_val_num(-1.0);
+
+      check_not_null(filter_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, filter_expr, &filter_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(filter_result.type, EXPRTK_VAL_LIST);
+      check_equal(filter_result.data.list.count, (size_t)2u);
+      check_equal(filter_result.data.list.items[0].type, EXPRTK_VAL_STRING);
+      check_equal(filter_result.data.list.items[0].data.string.len, (size_t)1u);
+      check_equal(filter_result.data.list.items[1].data.string.len, (size_t)2u);
+      check(memcmp(
+          filter_result.data.list.items[0].data.string.data, "a", 1u) == 0);
+      check(memcmp(
+          filter_result.data.list.items[1].data.string.data, "bb", 2u) == 0);
+
+      exprtk_value_destroy(&filter_result);
+      exprtk_free(filter_root);
     }
 
     exprtk_value_destroy(&vector_result);
