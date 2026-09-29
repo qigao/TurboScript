@@ -145,27 +145,45 @@ static int ts_cflow_runtime_result_to_list(const cflow_result *result,
   return 1;
 }
 
-static int ts_cflow_runtime_source_array(const exprtk_node_t *source,
+static int ts_cflow_runtime_source_array(turbo_script_ctx_t *ctx,
+                                         const exprtk_node_t *source,
                                          double **data_out,
                                          size_t *count_out) {
   double *data = NULL;
-  size_t count;
+  size_t count = 0u;
+
   if (data_out) *data_out = NULL;
   if (count_out) *count_out = 0u;
-  if (!source || source->type != EXPRTK_NODE_VECTOR || !data_out || !count_out)
-    return 0;
+  if (!ctx || !source || !data_out || !count_out) return 0;
 
-  count = source->data.vector.count;
-  if (count > 0u) {
-    data = (double *)malloc(count * sizeof(*data));
-    if (!data) return 0;
-  }
-  for (size_t i = 0; i < count; ++i) {
-    if (!ts_cflow_runtime_numeric_literal(source->data.vector.elements[i], &data[i])) {
-      free(data);
-      return 0;
+  if (source->type == EXPRTK_NODE_VECTOR) {
+    count = source->data.vector.count;
+    if (count > 0u) {
+      data = (double *)malloc(count * sizeof(*data));
+      if (!data) return 0;
     }
+    for (size_t i = 0; i < count; ++i) {
+      if (!ts_cflow_runtime_numeric_literal(source->data.vector.elements[i],
+                                            &data[i])) {
+        free(data);
+        return 0;
+      }
+    }
+  } else if (source->type == EXPRTK_NODE_VARIABLE &&
+             source->data.variable.name) {
+    exprtk_value_t value =
+        exprtk_env_get(&ctx->env, source->data.variable.name);
+    if (value.type != EXPRTK_VAL_VECTOR) return 0;
+    count = value.data.vector.size;
+    if (count > 0u) {
+      data = (double *)malloc(count * sizeof(*data));
+      if (!data) return 0;
+      memcpy(data, value.data.vector.data, count * sizeof(*data));
+    }
+  } else {
+    return 0;
   }
+
   *data_out = data;
   *count_out = count;
   return 1;
@@ -198,7 +216,8 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
    * and non-numeric sources stay on the existing facade for now. After this
    * succeeds, executable failures are real CFlow errors and must not fallback.
    */
-  if (!ts_cflow_lower_pipeline(pipeline_expr, &analysis, &lower_error))
+  if (!ts_cflow_lower_pipeline_runtime_analysis(
+          ctx, pipeline_expr, &analysis, &lower_error))
     return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
 
   if (terminal != TS_CFLOW_TERMINAL_REDUCE &&
@@ -219,7 +238,8 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     goto done;
   }
 
-  if (!ts_cflow_runtime_source_array(lowered.source_expr, &input, &input_count)) {
+  if (!ts_cflow_runtime_source_array(
+          ctx, lowered.source_expr, &input, &input_count)) {
     ts_cflow_runtime_error(error, error_size,
                            "CFlow stream source materialization failed");
     goto done;
