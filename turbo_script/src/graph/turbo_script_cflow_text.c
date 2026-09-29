@@ -1,0 +1,120 @@
+#include "turbo_script_cflow_text.h"
+
+#include <stdlib.h>
+#include <string.h>
+
+static const cmeta_type_traits ts_cflow_line_slice_traits = {
+    .flags = CMETA_TRAIT_TRIVIAL_COPY | CMETA_TRAIT_TRIVIAL_DESTROY
+};
+
+static const cmeta_type_desc ts_cflow_line_slice_desc = {
+    .name = "TurboScript.LineSlice.v1",
+    .size = sizeof(ts_cflow_line_slice_t),
+    .align = _Alignof(ts_cflow_line_slice_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = &ts_cflow_line_slice_traits,
+    .identity = NULL
+};
+
+const cmeta_type_desc *ts_cflow_line_slice_type(void) {
+  return &ts_cflow_line_slice_desc;
+}
+
+bool ts_cflow_text_lines_source_init(ts_cflow_text_lines_source_t *source,
+                                     const char *text, size_t text_len) {
+  size_t count = 1u;
+  size_t line_index = 0u;
+  size_t start = 0u;
+  ts_cflow_line_slice_t *items;
+
+  if (!source || (!text && text_len != 0u)) return false;
+  memset(source, 0, sizeof(*source));
+
+  for (size_t i = 0u; i < text_len; ++i) {
+    if (text[i] == '\n') ++count;
+  }
+
+  items = (ts_cflow_line_slice_t *)calloc(count, sizeof(*items));
+  if (!items) return false;
+
+  for (size_t i = 0u; i <= text_len; ++i) {
+    if (i == text_len || text[i] == '\n') {
+      size_t end = i;
+      if (end > start && text && text[end - 1u] == '\r') --end;
+      items[line_index].data = text ? text + start : NULL;
+      items[line_index].len = end - start;
+      ++line_index;
+      start = i + 1u;
+    }
+  }
+
+  source->items = items;
+  source->count = line_index;
+  return true;
+}
+
+void ts_cflow_text_lines_source_destroy(ts_cflow_text_lines_source_t *source) {
+  if (!source) return;
+  free(source->items);
+  source->items = NULL;
+  source->count = 0u;
+}
+
+bool ts_cflow_text_lines_plan_compile(cflow_graph *graph, cflow_plan *plan,
+                                      const char **error) {
+  if (error) *error = NULL;
+  if (!graph || !plan) {
+    if (error) *error = "text-line CFlow Plan requires graph and plan";
+    return false;
+  }
+
+  memset(graph, 0, sizeof(*graph));
+  memset(plan, 0, sizeof(*plan));
+  graph->root = CMETA_INVALID_ID;
+  cflow_graph_init(graph, &ts_cflow_line_slice_desc);
+  if (graph->error) {
+    if (error) *error = graph->error;
+    cflow_graph_destroy(graph);
+    graph->root = CMETA_INVALID_ID;
+    return false;
+  }
+
+  if (!cflow_plan_compile_surface(plan, graph, NULL)) {
+    if (error) *error = "text-line CFlow Plan compilation failed";
+    cflow_graph_destroy(graph);
+    graph->root = CMETA_INVALID_ID;
+    return false;
+  }
+  return true;
+}
+
+bool ts_cflow_text_lines_plan_count(const cflow_plan *plan,
+                                    const ts_cflow_text_lines_source_t *source,
+                                    size_t *out_count, const char **error) {
+  cflow_result result = {0};
+
+  if (error) *error = NULL;
+  if (out_count) *out_count = 0u;
+  if (!plan || !source || !out_count ||
+      (source->count != 0u && !source->items)) {
+    if (error) *error = "text-line CFlow count requires a valid source";
+    return false;
+  }
+
+  if (!cflow_plan_eval_array(plan, source->items, source->count, &result)) {
+    if (error) *error = "text-line CFlow Plan execution failed";
+    return false;
+  }
+
+  if (!cmeta_type_equal(result.type, &ts_cflow_line_slice_desc) ||
+      result.count != source->count) {
+    if (error) *error = "text-line CFlow Plan produced an invalid result";
+    cflow_result_destroy(&result);
+    return false;
+  }
+
+  *out_count = result.count;
+  cflow_result_destroy(&result);
+  return true;
+}
