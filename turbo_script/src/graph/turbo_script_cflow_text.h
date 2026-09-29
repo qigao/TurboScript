@@ -44,6 +44,19 @@ const cmeta_type_desc *ts_cflow_line_slice_type(void);
  */
 bool ts_cflow_text_lines_source_init(ts_cflow_text_lines_source_t *source,
                                      const char *text, size_t text_len);
+
+/*
+ * Split text with the same eager byte-oriented semantics as legacy
+ * stream.text(...).split(separator):
+ * - empty separator yields one-byte slices and zero slices for empty text;
+ * - non-empty separator preserves leading, trailing, and adjacent empties;
+ * - separator matches are non-overlapping and advance by separator length.
+ */
+bool ts_cflow_text_split_source_init(ts_cflow_text_lines_source_t *source,
+                                     const char *text, size_t text_len,
+                                     const char *separator,
+                                     size_t separator_len);
+
 void ts_cflow_text_lines_source_destroy(ts_cflow_text_lines_source_t *source);
 
 /*
