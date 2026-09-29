@@ -19,7 +19,7 @@ typedef enum ts_cflow_runtime_status_e {
  * Execute the runtime-owned CFlow stream facade slice.
  *
  * Eligible expressions are numeric in-memory pipelines sourced from vector
- * literals or currently bound vector variables and terminating in
+ * literals, bound vectors, or homogeneous numeric lists and terminating in
  * reduce/count/collect/toList/toVector. collect preserves the legacy vector
  * vs list result shape: map-free vector pipelines collect as vector, while a
  * pipeline containing map collects as list. Unsupported stream shapes remain
