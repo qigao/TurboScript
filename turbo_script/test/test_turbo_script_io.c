@@ -572,6 +572,36 @@ spec("turbo_script_io") {
       turbo_script_free(ctx);
     }
 
+    it("should count file text lines through CFlow in interpreter and JIT") {
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *line_text = "a\r\nb\n";
+      char line_path[96];
+      char script[512];
+      salts_fs_buf_t buf;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      ts_test_make_name(line_path, sizeof(line_path),
+                        "_test_cflow_text_line_count", ".txt");
+      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(salts_fs_write_file(line_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+               "line_count = stream.text(io.read_file(\"%s\"))"
+               ".lines().count();",
+               line_path);
+
+      check_equal(turbo_script_run(interp, script), 0);
+      check_equal(turbo_script_run_jit(jit, script), 0);
+      check(fabs(ts_get_num(interp, "line_count") - 3.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "line_count") - 3.0) <= 1e-9);
+
+      salts_fs_unlink(line_path);
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
   }
 
   describe("Print") {
