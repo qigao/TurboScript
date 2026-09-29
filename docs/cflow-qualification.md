@@ -114,20 +114,39 @@ baseline.
 
 ## Performance baseline
 
-The first green CI run containing this benchmark is the baseline source. Exact
-runner measurements are committed here before this qualification PR is merged.
+The first green qualification telemetry is GitHub Actions run #169 on
+2026-09-29 (Ubuntu 24.04 hosted runner). These measurements are machine-specific
+and remain non-gating; correctness and graph structure are the stable gates.
 
-Expected qualitative properties:
+```text
+CFLOW_BENCH scenario=filter_map_count elements=16 path=legacy_eager us_per_eval=62.927 iterations=300
+CFLOW_BENCH scenario=filter_map_count elements=16 path=current_runtime us_per_eval=1481.500 iterations=12
+CFLOW_BENCH scenario=filter_map_count elements=16 path=cached_plan us_per_eval=0.415 iterations=2000
+CFLOW_PLAN scenario=filter_map_count elements=16 graph_nodes=3 instructions=2 map_callbacks=1 inference_queries=2 runtime_over_cached=3565.584 legacy_over_cached=151.448
 
-- `current_runtime` should expose the cost of rebuilding admission/MIR/Plan
-  state on every call;
-- `cached_plan` should demonstrate the benefit of reusing already-bound MIR
-  kernels and a pre-decoded Plan;
-- small pipelines may prefer legacy eager execution when one-shot lowering
-  overhead dominates;
-- medium/large repeated pipelines are the primary target for Plan caching;
-- MAP + REDUCE must be measured separately because reduction changes
-  cardinality and state semantics.
+CFLOW_BENCH scenario=filter_map_count elements=4096 path=legacy_eager us_per_eval=12279.033 iterations=30
+CFLOW_BENCH scenario=filter_map_count elements=4096 path=current_runtime us_per_eval=1613.167 iterations=6
+CFLOW_BENCH scenario=filter_map_count elements=4096 path=cached_plan us_per_eval=76.644 iterations=160
+CFLOW_PLAN scenario=filter_map_count elements=4096 graph_nodes=3 instructions=2 map_callbacks=1 inference_queries=2 runtime_over_cached=21.048 legacy_over_cached=160.209
+
+CFLOW_BENCH scenario=filter_map_count elements=8192 path=legacy_eager us_per_eval=24993.188 iterations=16
+CFLOW_BENCH scenario=filter_map_count elements=8192 path=current_runtime us_per_eval=1730.750 iterations=4
+CFLOW_BENCH scenario=filter_map_count elements=8192 path=cached_plan us_per_eval=153.483 iterations=120
+CFLOW_PLAN scenario=filter_map_count elements=8192 graph_nodes=3 instructions=2 map_callbacks=1 inference_queries=2 runtime_over_cached=11.276 legacy_over_cached=162.840
+
+CFLOW_BENCH scenario=map_reduce elements=4096 path=legacy_eager us_per_eval=18845.650 iterations=20
+CFLOW_BENCH scenario=map_reduce elements=4096 path=current_runtime us_per_eval=1581.000 iterations=6
+CFLOW_BENCH scenario=map_reduce elements=4096 path=cached_plan us_per_eval=111.850 iterations=120
+CFLOW_PLAN scenario=map_reduce elements=4096 graph_nodes=3 instructions=2 map_callbacks=1 runtime_over_cached=14.135 legacy_over_cached=168.490
+
+CFLOW_FILE_BASELINE scenario=read_file_lines_count source_lines=4096 path=legacy_eager us_per_eval=1786.375 iterations=8
+CFLOW_FILE_BASELINE scenario=read_file_lines_count source_lines=4096 path=current_runtime us_per_eval=97.875 iterations=8 runtime_over_legacy=0.055
+```
+
+The baseline demonstrates the intended separation: one-shot runtime cutover
+includes lowering/binding/Plan construction, while cached Plan execution
+measures reuse of already-bound kernels. The file/text case remains an eager
+ordering baseline and is not evidence for reactive/backpressure semantics.
 
 ## Rollout and fallback policy
 
