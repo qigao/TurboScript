@@ -62,21 +62,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore exact dependency SDK graph
+      - name: Restore current dependency SDK graph
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: |
-          set -euo pipefail
-          config="$RUNNER_TEMP/sdk-nuget.config"
-          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
-          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
-            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
-          packages="$RUNNER_TEMP/native-dependencies"
-          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/linux-x64" >> "$GITHUB_ENV"
+        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
       - name: Configure full source test graph
         shell: bash
         run: |
@@ -133,21 +123,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore exact dependency SDK graph
+      - name: Restore current dependency SDK graph
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: |
-          set -euo pipefail
-          config="$RUNNER_TEMP/sdk-nuget.config"
-          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
-          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
-            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
-          packages="$RUNNER_TEMP/native-dependencies"
-          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/linux-x64" >> "$GITHUB_ENV"
+        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
       - name: Configure sanitized Host graph
         shell: bash
         run: |
@@ -214,20 +194,11 @@ jobs:
           set -euo pipefail
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore exact dependency SDK graph
+      - name: Restore current dependency SDK graph
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: |
-          set -euo pipefail
-          config="$RUNNER_TEMP/sdk-nuget.config"
-          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
-          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
-            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
-          packages="$RUNNER_TEMP/native-dependencies"
-          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/linux-x64" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/linux-x64" >> "$GITHUB_ENV"
+        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
       - name: Build modules-off Host contracts and install SDK
         shell: bash
         run: |
@@ -314,21 +285,11 @@ jobs:
             brew install ninja nasm
           fi
           if [[ "$RID" == macos-arm64 ]]; then test "$(uname -m)" = arm64; fi
-      - name: Restore dependency SDKs
+      - name: Restore current dependency SDKs
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
-        run: |
-          set -euo pipefail
-          config="$RUNNER_TEMP/sdk-nuget.config"
-          printf '<configuration><packageSources><clear /></packageSources></configuration>\n' > "$config"
-          dotnet nuget add source https://nuget.pkg.github.com/qigao/index.json --name github \
-            --username qigao --password "$GITHUB_TOKEN" --store-password-in-clear-text --configfile "$config"
-          packages="$RUNNER_TEMP/native-dependencies"
-          dotnet restore packaging/nuget/TurboScript.Native.csproj --configfile "$config" --packages "$packages"
-          echo "SALTS_ROOT=$packages/salts.native/1.8.3/sdk/$RID" >> "$GITHUB_ENV"
-          echo "SALTS_UTILS_ROOT=$packages/saltsutils.native/4.1.3/sdk/$RID" >> "$GITHUB_ENV"
-          echo "CHTTP_ROOT=$packages/chttp.native/1.1.4/sdk/$RID" >> "$GITHUB_ENV"
+        run: bash cmake/ci/restore-current-native-sdks.sh "$RID"
       - name: Configure, build and install SDK with native modules
         shell: bash
         run: |
@@ -360,9 +321,9 @@ jobs:
           jit=MIR
           modules=ON
           cli=OFF
-          salts=1.8.3
-          salts_utils=4.1.3
-          chttp=1.1.4
+          salts_release=$SALTS_SDK_RELEASE
+          salts_utils_release=$SALTS_UTILS_SDK_RELEASE
+          chttp_release=$CHTTP_SDK_RELEASE
           EOF
           mkdir -p dist
           tar -chzf "dist/turboscript-$RID.tar.gz" -C stage "$RID"
