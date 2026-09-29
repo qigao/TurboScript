@@ -336,6 +336,143 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(ctx);
     }
 
+    it("executes typed text nonempty FILTER terminals through CFlow") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *count_root = NULL;
+      exprtk_node_t *list_root = NULL;
+      exprtk_node_t *collect_root = NULL;
+      exprtk_node_t *legacy_root = NULL;
+      exprtk_node_t *count_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).count();",
+          &count_root);
+      exprtk_node_t *list_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).toList();",
+          &list_root);
+      exprtk_node_t *collect_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).collect();",
+          &collect_root);
+      exprtk_node_t *legacy_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(\"a\\n\").lines()"
+          ".filter(line => line.length() >= 0).count();",
+          &legacy_root);
+      exprtk_value_t count_result = exprtk_val_num(-1.0);
+      exprtk_value_t list_result = exprtk_val_num(-1.0);
+      exprtk_value_t collect_result = exprtk_val_num(-1.0);
+      exprtk_value_t legacy_result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_not_null(count_expr);
+      check_not_null(list_expr);
+      check_not_null(collect_expr);
+      check_not_null(legacy_expr);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, count_expr, &count_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(count_result.type, EXPRTK_VAL_NUMBER);
+      check(fabs(count_result.data.number - 2.0) <= 1e-9);
+      check_equal(error[0], '\0');
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, list_expr, &list_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(list_result.type, EXPRTK_VAL_LIST);
+      check_equal(list_result.data.list.count, (size_t)2u);
+      check_equal(list_result.data.list.items[0].type, EXPRTK_VAL_STRING);
+      check_equal(list_result.data.list.items[0].data.string.len, (size_t)1u);
+      check_equal(list_result.data.list.items[1].data.string.len, (size_t)2u);
+      check(memcmp(
+          list_result.data.list.items[0].data.string.data, "a", 1u) == 0);
+      check(memcmp(
+          list_result.data.list.items[1].data.string.data, "bb", 2u) == 0);
+
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, collect_expr, &collect_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(collect_result.type, EXPRTK_VAL_LIST);
+      check_equal(collect_result.data.list.count, (size_t)2u);
+      check(memcmp(
+          collect_result.data.list.items[1].data.string.data, "bb", 2u) == 0);
+
+      error[0] = '\0';
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, legacy_expr, &legacy_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_NOT_APPLICABLE);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&legacy_result);
+      exprtk_value_destroy(&collect_result);
+      exprtk_value_destroy(&list_result);
+      exprtk_value_destroy(&count_result);
+      exprtk_free(legacy_root);
+      exprtk_free(collect_root);
+      exprtk_free(list_root);
+      exprtk_free(count_root);
+      turbo_script_free(ctx);
+    }
+
+    it("admits typed text FILTER before evaluating the source") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      ts_stream_test_string_source_t source_state = {0u, "a\n\n"};
+      exprtk_node_t *supported_root = NULL;
+      exprtk_node_t *legacy_root = NULL;
+      exprtk_node_t *supported_expr;
+      exprtk_node_t *legacy_expr;
+      exprtk_value_t supported_result = exprtk_val_num(-1.0);
+      exprtk_value_t legacy_result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      exprtk_env_register_func(
+          &ctx->env, "make_text",
+          ts_stream_test_counted_string, &source_state);
+
+      supported_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(make_text()).lines()"
+          ".filter(line => line.length() > 0).count();",
+          &supported_root);
+      check_not_null(supported_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, supported_expr, &supported_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(source_state.calls, (size_t)1u);
+      check(fabs(supported_result.data.number - 1.0) <= 1e-9);
+
+      source_state.calls = 0u;
+      legacy_expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.text(make_text()).lines()"
+          ".filter(line => line.length() >= 0).count();",
+          &legacy_root);
+      check_not_null(legacy_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, legacy_expr, &legacy_result,
+                      error, sizeof(error)),
+                  TS_CFLOW_RUNTIME_NOT_APPLICABLE);
+      check_equal(source_state.calls, (size_t)0u);
+      check_equal(error[0], '\0');
+
+      exprtk_value_destroy(&legacy_result);
+      exprtk_value_destroy(&supported_result);
+      exprtk_free(legacy_root);
+      exprtk_free(supported_root);
+      turbo_script_free(ctx);
+    }
+
     it("admits a bound vector source through runtime analysis") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       const double values[] = {-2.0, 0.0, 3.0};
@@ -801,6 +938,55 @@ spec("TurboScript CFlow stream runtime") {
       check_equal(jit_trim.data.list.items[0].data.string.len, (size_t)1u);
       check(memcmp(interp_trim.data.list.items[0].data.string.data, "a", 1u) == 0);
       check(memcmp(jit_trim.data.list.items[0].data.string.data, "a", 1u) == 0);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+    it("keeps typed text nonempty FILTER aligned in interpreter and JIT") {
+      const char *source =
+          "nonempty_count = stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).count();"
+          "nonempty_lines = stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).toList();"
+          "collected = stream.text(\"a\\n\\nbb\\n\").lines()"
+          ".filter(line => line.length() > 0).collect();"
+          "legacy_count = stream.text(\"a\\n\").lines()"
+          ".filter(line => line.length() >= 0).count();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_lines;
+      exprtk_value_t jit_lines;
+      exprtk_value_t interp_collect;
+      exprtk_value_t jit_collect;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+
+      check(fabs(ts_get_num(interp, "nonempty_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "nonempty_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "legacy_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "legacy_count") - 2.0) <= 1e-9);
+
+      interp_lines = exprtk_env_get(&interp->env, "nonempty_lines");
+      jit_lines = exprtk_env_get(&jit->env, "nonempty_lines");
+      check_equal(interp_lines.type, EXPRTK_VAL_LIST);
+      check_equal(jit_lines.type, EXPRTK_VAL_LIST);
+      check_equal(interp_lines.data.list.count, (size_t)2u);
+      check_equal(jit_lines.data.list.count, (size_t)2u);
+      check(memcmp(
+          interp_lines.data.list.items[0].data.string.data, "a", 1u) == 0);
+      check(memcmp(
+          jit_lines.data.list.items[1].data.string.data, "bb", 2u) == 0);
+
+      interp_collect = exprtk_env_get(&interp->env, "collected");
+      jit_collect = exprtk_env_get(&jit->env, "collected");
+      check_equal(interp_collect.type, EXPRTK_VAL_LIST);
+      check_equal(jit_collect.type, EXPRTK_VAL_LIST);
+      check_equal(interp_collect.data.list.count, (size_t)2u);
+      check_equal(jit_collect.data.list.count, (size_t)2u);
 
       turbo_script_free(jit);
       turbo_script_free(interp);

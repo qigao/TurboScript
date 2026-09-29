@@ -301,6 +301,71 @@ static bool ts_cflow_runtime_text_length_map_match(
   return true;
 }
 
+typedef struct ts_cflow_text_nonempty_filter_match_s {
+  ts_cflow_terminal_t terminal;
+  const exprtk_node_t *text_expr;
+  const exprtk_node_t *lambda;
+} ts_cflow_text_nonempty_filter_match_t;
+
+static bool ts_cflow_runtime_text_nonempty_filter_match(
+    const exprtk_node_t *expr,
+    ts_cflow_text_nonempty_filter_match_t *out) {
+  const exprtk_node_t *filter_call;
+  const exprtk_node_t *lines_call;
+  const exprtk_node_t *text_call;
+  const exprtk_node_t *stream_ns;
+  ts_cflow_text_nonempty_filter_match_t match = {0};
+
+  if (!expr || !out || expr->type != EXPRTK_NODE_MEMBER_CALL ||
+      !expr->data.member_call.method ||
+      expr->data.member_call.arg_count != 0u)
+    return false;
+
+  if (strcmp(expr->data.member_call.method, "count") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_COUNT;
+  else if (strcmp(expr->data.member_call.method, "collect") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_COLLECT;
+  else if (strcmp(expr->data.member_call.method, "toList") == 0)
+    match.terminal = TS_CFLOW_TERMINAL_TO_LIST;
+  else
+    return false;
+
+  filter_call = expr->data.member_call.object;
+  if (!filter_call ||
+      filter_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !filter_call->data.member_call.method ||
+      strcmp(filter_call->data.member_call.method, "filter") != 0 ||
+      filter_call->data.member_call.arg_count != 1u)
+    return false;
+
+  lines_call = filter_call->data.member_call.object;
+  if (!lines_call ||
+      lines_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !lines_call->data.member_call.method ||
+      strcmp(lines_call->data.member_call.method, "lines") != 0 ||
+      lines_call->data.member_call.arg_count != 0u)
+    return false;
+
+  text_call = lines_call->data.member_call.object;
+  if (!text_call ||
+      text_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !text_call->data.member_call.method ||
+      strcmp(text_call->data.member_call.method, "text") != 0 ||
+      text_call->data.member_call.arg_count != 1u)
+    return false;
+
+  stream_ns = text_call->data.member_call.object;
+  if (!stream_ns || stream_ns->type != EXPRTK_NODE_VARIABLE ||
+      !stream_ns->data.variable.name ||
+      strcmp(stream_ns->data.variable.name, "stream") != 0)
+    return false;
+
+  match.text_expr = text_call->data.member_call.args[0];
+  match.lambda = filter_call->data.member_call.args[0];
+  *out = match;
+  return true;
+}
+
 static int ts_cflow_runtime_numeric_literal(const exprtk_node_t *node,
                                             double *out) {
   double value;
@@ -552,6 +617,130 @@ done:
   return status;
 }
 
+static ts_cflow_runtime_status_t
+ts_cflow_runtime_try_text_nonempty_filter_terminal(
+    turbo_script_ctx_t *ctx,
+    const exprtk_node_t *expr,
+    exprtk_value_t *out,
+    char *error,
+    size_t error_size) {
+  ts_cflow_text_nonempty_filter_match_t match = {0};
+  ts_cflow_text_kernel_binding_t binding = {0};
+  exprtk_value_t text_value = {.type = EXPRTK_VAL_NULL};
+  ts_cflow_text_lines_source_t source = {0};
+  cflow_graph graph = {0};
+  cflow_plan plan = {0};
+  cflow_result result = {0};
+  const char *kernel_error = NULL;
+  const char *text_data = "";
+  size_t text_len = 0u;
+  bool binding_ready = false;
+  bool source_ready = false;
+  bool graph_ready = false;
+  bool plan_ready = false;
+  bool result_ready = false;
+  ts_cflow_runtime_status_t status = TS_CFLOW_RUNTIME_ERROR;
+
+  graph.root = CMETA_INVALID_ID;
+  if (!ts_cflow_runtime_text_nonempty_filter_match(expr, &match))
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  /*
+   * Predicate binding is the admission boundary. Unsupported string FILTER
+   * shapes stay on the legacy facade without evaluating the source expression.
+   */
+  if (!ts_cflow_text_nonempty_filter_bind(
+          match.lambda, &binding, &kernel_error))
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+  binding_ready = true;
+
+  text_value = turbo_script_mir_eval_node(match.text_expr, &ctx->env);
+  if (ctx->env.aborted || ctx->env.flow == exprtk_FLOW_THROW) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        ctx->env.error_msg[0] ? ctx->env.error_msg
+                              : "TurboScript text FILTER source evaluation failed");
+    goto done;
+  }
+
+  if (text_value.type == EXPRTK_VAL_STRING) {
+    text_data = text_value.data.string.data;
+    text_len = text_value.data.string.len;
+  }
+
+  if (!ts_cflow_text_lines_source_init(
+          &source, text_data, text_len)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow text FILTER source materialization failed");
+    goto done;
+  }
+  source_ready = true;
+
+  cflow_graph_init(&graph, ts_cflow_line_slice_type());
+  if (graph.error) {
+    ts_cflow_runtime_error(error, error_size, graph.error);
+    goto done;
+  }
+  graph_ready = true;
+
+  if (!ts_cflow_text_nonempty_filter_graph_add(
+          &graph, &binding, &kernel_error)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        kernel_error ? kernel_error
+                     : "CFlow typed text FILTER admission failed");
+    goto done;
+  }
+
+  if (!cflow_plan_compile_surface(&plan, &graph, NULL)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text FILTER Plan compilation failed");
+    goto done;
+  }
+  plan_ready = true;
+
+  if (!cflow_plan_eval_array(
+          &plan, source.items, source.count, &result)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text FILTER Plan execution failed");
+    goto done;
+  }
+  result_ready = true;
+
+  if (!cmeta_type_equal(
+          result.type, ts_cflow_line_slice_type()) ||
+      (result.count != 0u && !result.data)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text FILTER produced an invalid result");
+    goto done;
+  }
+
+  if (match.terminal == TS_CFLOW_TERMINAL_COUNT) {
+    *out = exprtk_val_num((double)result.count);
+  } else if (!ts_cflow_runtime_text_result_to_list(&result, out)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow typed text FILTER list materialization failed");
+    goto done;
+  }
+
+  status = TS_CFLOW_RUNTIME_HANDLED;
+
+done:
+  if (result_ready) cflow_result_destroy(&result);
+  if (plan_ready) cflow_plan_destroy(&plan);
+  if (graph_ready) cflow_graph_destroy(&graph);
+  if (source_ready) ts_cflow_text_lines_source_destroy(&source);
+  exprtk_value_destroy(&text_value);
+  if (binding_ready)
+    ts_cflow_text_kernel_binding_destroy(&binding);
+  return status;
+}
+
 static int ts_cflow_runtime_value_to_double(
     const exprtk_value_t *value, double *out) {
   if (!value || !out) return 0;
@@ -644,6 +833,14 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
 
   if (error && error_size > 0u) error[0] = '\0';
   if (!ctx || !expr || !out) return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  {
+    ts_cflow_runtime_status_t text_filter_status =
+        ts_cflow_runtime_try_text_nonempty_filter_terminal(
+            ctx, expr, out, error, error_size);
+    if (text_filter_status != TS_CFLOW_RUNTIME_NOT_APPLICABLE)
+      return text_filter_status;
+  }
 
   {
     ts_cflow_runtime_status_t text_map_status =

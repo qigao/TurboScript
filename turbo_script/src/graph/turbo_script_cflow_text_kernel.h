@@ -49,6 +49,30 @@ bool ts_cflow_text_length_map_graph_add(
     const ts_cflow_text_kernel_binding_t *binding,
     const char **error);
 
+/*
+ * First typed text FILTER slice:
+ *
+ *   line => line.length() > 0
+ *
+ * Logical CFlow type:
+ *   TurboScript.LineSlice.v1 -> bool
+ *
+ * MIR ABI uses an integer predicate carrier:
+ *   int64_t kernel(const char *data, int64_t len)
+ *
+ * The erased CMeta adapter converts nonzero to canonical _Bool. CFlow's typed
+ * FILTER projection preserves LineSlice as the Graph output element type.
+ */
+bool ts_cflow_text_nonempty_filter_bind(
+    const exprtk_node_t *lambda,
+    ts_cflow_text_kernel_binding_t *out,
+    const char **error);
+
+bool ts_cflow_text_nonempty_filter_graph_add(
+    cflow_graph *graph,
+    const ts_cflow_text_kernel_binding_t *binding,
+    const char **error);
+
 void ts_cflow_text_kernel_binding_destroy(
     ts_cflow_text_kernel_binding_t *binding);
 

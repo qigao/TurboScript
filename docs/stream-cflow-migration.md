@@ -58,6 +58,8 @@ TurboScript syntax / source adapters / diagnostics
 | `stream.text(io.read_file(path)).split(sep).count/collect/toList` | File I/O remains TurboScript-owned; text + separator expressions are each evaluated once | **CFlow** | Verified Phase 2 file split path |
 | `stream.text(text).lines().map(line => line.length()).toVector/toList/collect` | Exact capture-free typed MAP: borrowed LineSlice -> double | **CFlow** | First typed text callable vertical slice |
 | `stream.text(io.read_file(path)).lines().map(line => line.length()).toVector` | File I/O stays TurboScript-owned; typed MAP runs in the same CFlow Plan | **CFlow** | Verified file-backed typed MAP |
+| `stream.text(text).lines().filter(line => line.length() > 0).count/collect/toList` | Exact capture-free typed predicate: borrowed LineSlice -> bool; FILTER preserves LineSlice output type | **CFlow** | First typed text FILTER vertical slice |
+| `stream.text(io.read_file(path)).lines().filter(line => line.length() > 0).count/toList` | File I/O stays TurboScript-owned; predicate runs in the same typed CFlow Plan | **CFlow** | Verified file-backed typed FILTER |
 | `stream.lines(path)` | Listed in language guide, but no current core factory/test registration found | **Documented only** | Either implement as a canonical adapter or remove the stale surface |
 | `stream.csv(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
 | `stream.json(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
@@ -83,6 +85,7 @@ with `source_kind` may also dispatch member calls through the provider hook
 | text `.lines()` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | CFlow uses borrowed line slices synchronously; collect/toList deep-copy strings into TurboScript-owned list storage |
 | text `.split(sep)` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | Empty separator splits by byte; non-string separator yields an empty stream; collect/toList deep-copy token strings |
 | text `.map(fn)` | **CFlow** only for exact `line => line.length()`; otherwise **Legacy adapter** | Uses explicit typed-adapter projection with logical `LineSlice -> double`; string->string MAP remains legacy |
+| text `.filter(fn)` | **CFlow** only for exact `line => line.length() > 0`; otherwise **Legacy adapter** | Uses explicit typed FILTER projection with logical `LineSlice -> bool`; Graph output remains `LineSlice` |
 
 ## Phase 1 parity boundary
 
@@ -150,8 +153,24 @@ native ABI classes, and never coerces a pointer through `double`. The
 FunctionDesc/FunctionAbi pair is used as the control-plane semantic/ABI contract
 for the typed adapter, which keeps plugin/native functions on the same canonical
 CMeta admission route instead of creating a TurboScript-private function ABI.
-Only the exact capture-free `line.length()` shape is admitted in this slice;
-other string MAP/FILTER forms remain legacy.
+Only the exact capture-free `line.length()` MAP shape is admitted in that slice.
+
+The first typed text FILTER slice admits only
+`line => line.length() > 0`:
+
+```text
+logical CFlow type: TurboScript.LineSlice.v1 -> bool
+CMeta callable:     sig = INVALID, dispatch = ADAPTER
+CFlow admission:    typed FILTER projection with explicit input descriptor
+Graph output type:  TurboScript.LineSlice.v1
+MIR ABI:            int64_t predicate(const char *data, int64_t len)
+```
+
+The erased adapter converts the nonzero integer predicate carrier to canonical
+`_Bool`. CFlow retains FILTER cardinality and preserves the LineSlice element
+type through direct execution, normalization/optimization, and compiled Plan
+execution. Unsupported string predicate shapes remain legacy and are rejected
+before the text source expression is evaluated.
 
 Before implementing `stream.lines/csv/json/xml`, reconcile each surface with
 actual factory/provider registration so the migration does not preserve a

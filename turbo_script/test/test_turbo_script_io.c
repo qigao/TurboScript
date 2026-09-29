@@ -661,6 +661,52 @@ spec("turbo_script_io") {
       turbo_script_free(interp);
     }
 
+    it("should filter nonempty file text lines through typed CFlow") {
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *line_text = "a\n\nbb\n";
+      char line_path[96];
+      char script[1400];
+      salts_fs_buf_t buf;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      ts_test_make_name(line_path, sizeof(line_path),
+                        "_test_cflow_text_nonempty_filter", ".txt");
+      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(salts_fs_write_file(line_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+               "nonempty_count = stream.text(io.read_file(\"%s\")).lines()"
+               ".filter(line => line.length() > 0).count();"
+               "nonempty_lines = stream.text(io.read_file(\"%s\")).lines()"
+               ".filter(line => line.length() > 0).toList();"
+               "line_count = nonempty_lines.length();"
+               "first_line = nonempty_lines[0];"
+               "second_line = nonempty_lines[1];",
+               line_path, line_path);
+
+      check_equal(turbo_script_run(interp, script), 0);
+      check_equal(turbo_script_run_jit(jit, script), 0);
+
+      check(fabs(ts_get_num(interp, "nonempty_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "nonempty_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "line_count") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "line_count") - 2.0) <= 1e-9);
+      check_not_null(ts_get_str(interp, "first_line"));
+      check_not_null(ts_get_str(jit, "first_line"));
+      check_not_null(ts_get_str(interp, "second_line"));
+      check_not_null(ts_get_str(jit, "second_line"));
+      check(strcmp(ts_get_str(interp, "first_line"), "a") == 0);
+      check(strcmp(ts_get_str(jit, "first_line"), "a") == 0);
+      check(strcmp(ts_get_str(interp, "second_line"), "bb") == 0);
+      check(strcmp(ts_get_str(jit, "second_line"), "bb") == 0);
+
+      salts_fs_unlink(line_path);
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
     it("should split file text through CFlow in interpreter and JIT") {
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
