@@ -388,7 +388,19 @@ jobs:
           if-no-files-found: error
   pack:
     needs: [metadata, source-test, host-sanitizer, host-abi, build]
-    if: github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true'
+    if: >-
+      always() &&
+      (github.event_name == 'pull_request' || needs.metadata.outputs.release == 'true') &&
+      needs.metadata.result == 'success' &&
+      needs.build.result == 'success' &&
+      (
+        (github.event_name == 'push' && github.ref == 'refs/heads/master') ||
+        (
+          needs.source-test.result == 'success' &&
+          needs.host-sanitizer.result == 'success' &&
+          needs.host-abi.result == 'success'
+        )
+      )
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
