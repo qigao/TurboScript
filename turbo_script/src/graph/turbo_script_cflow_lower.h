@@ -31,9 +31,9 @@ typedef struct ts_cflow_lowered_pipeline {
  *   map(previous, fn)
  *   reduce(previous, seed, fn)
  *
- * The produced graph is analysis-only until #17 supplies MIR-backed callable
- * invoke adapters. TurboScript's explicit reduce seed is retained separately
- * because current CFlow REDUCE is an unseeded fold.
+ * The analysis path retains TurboScript's explicit reduce seed AST for
+ * diagnostics. Executable lowering binds MIR callables and materializes a
+ * literal numeric reduce seed through CFlow's canonical seeded fold.
  */
 bool ts_cflow_lower_pipeline(const exprtk_node_t *expr,
                              ts_cflow_lowered_pipeline_t *out,
@@ -41,9 +41,11 @@ bool ts_cflow_lower_pipeline(const exprtk_node_t *expr,
 
 /*
  * Lower the same graphable slice while binding every supported script lambda
- * to a TurboScript-owned MIR kernel. The first executable slice supports
- * map/filter only. Encountering reduce or another unbound operator is an
- * explicit failure; this API never falls back to analysis-only callables.
+ * to a TurboScript-owned MIR kernel. MAP/FILTER are unary kernels; REDUCE is a
+ * binary kernel and uses CFlow's owned typed seed. The first executable reduce
+ * slice accepts numeric literal seeds (including unary +/-) and rejects dynamic
+ * seed expressions explicitly. This API never falls back to analysis-only
+ * callables.
  */
 bool ts_cflow_lower_pipeline_executable(turbo_script_ctx_t *runtime_ctx,
                                         const exprtk_node_t *expr,
