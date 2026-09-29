@@ -2,6 +2,7 @@
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
 #include "turbo_script_cflow_runtime.h"
+#include "turbo_script_cflow_text.h"
 
 #include <cflow/graph.h>
 #include <cflow/plan.h>
@@ -164,6 +165,45 @@ spec("TurboScript CFlow pipeline lowering") {
     ts_cflow_lowered_pipeline_destroy(&lowered);
     exprtk_free(root);
     turbo_script_free(ctx);
+  }
+
+  it("builds an inspectable typed text-line CFlow plan") {
+    ts_cflow_text_lines_source_t source = {0};
+    cflow_graph graph = {0};
+    cflow_plan plan = {0};
+    const cflow_subgraph *sg;
+    const char *error = NULL;
+    size_t count = 0u;
+
+    graph.root = CMETA_INVALID_ID;
+    check_true(ts_cflow_text_lines_source_init(
+        &source, "a\r\nb\n", strlen("a\r\nb\n")));
+    check_equal(source.count, (size_t)3u);
+    check_equal(source.items[0].len, (size_t)1u);
+    check_equal(source.items[1].len, (size_t)1u);
+    check_equal(source.items[2].len, (size_t)0u);
+    check(memcmp(source.items[0].data, "a", 1u) == 0);
+    check(memcmp(source.items[1].data, "b", 1u) == 0);
+
+    check_true(ts_cflow_text_lines_plan_compile(&graph, &plan, &error));
+    check_null(error);
+    check_true(cmeta_type_equal(cflow_graph_input_type(&graph),
+                                ts_cflow_line_slice_type()));
+    check_true(cmeta_type_equal(cflow_graph_output_type(&graph),
+                                ts_cflow_line_slice_type()));
+    sg = cflow_graph_subgraph(&graph, graph.root);
+    check_not_null(sg);
+    check_equal(sg->node_count, (size_t)1u);
+    check_equal(sg->nodes[0].op, CFLOW_OP_INPUT);
+
+    check_true(ts_cflow_text_lines_plan_count(
+        &plan, &source, &count, &error));
+    check_null(error);
+    check_equal(count, (size_t)3u);
+
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+    ts_cflow_text_lines_source_destroy(&source);
   }
 
   it("sanitizes the runtime CFlow terminal seam") {
