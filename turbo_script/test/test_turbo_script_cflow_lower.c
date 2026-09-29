@@ -1,3 +1,4 @@
+#include "../src/turbo_script_internal.h"
 #include "tinytest.h"
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
