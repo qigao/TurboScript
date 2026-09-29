@@ -620,6 +620,47 @@ spec("turbo_script_io") {
       turbo_script_free(interp);
     }
 
+    it("should map file text line lengths through typed CFlow") {
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *line_text = "a\nbb\n";
+      char line_path[96];
+      char script[1024];
+      salts_fs_buf_t buf;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      ts_test_make_name(line_path, sizeof(line_path),
+                        "_test_cflow_text_line_lengths", ".txt");
+      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(salts_fs_write_file(line_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+               "lengths = stream.text(io.read_file(\"%s\")).lines()"
+               ".map(line => line.length()).toVector();"
+               "length_count = lengths.length();"
+               "first_length = lengths[0];"
+               "second_length = lengths[1];"
+               "last_length = lengths[2];",
+               line_path);
+
+      check_equal(turbo_script_run(interp, script), 0);
+      check_equal(turbo_script_run_jit(jit, script), 0);
+
+      check(fabs(ts_get_num(interp, "length_count") - 3.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "length_count") - 3.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "first_length") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "first_length") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "second_length") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "second_length") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "last_length") - 0.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "last_length") - 0.0) <= 1e-9);
+
+      salts_fs_unlink(line_path);
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
     it("should split file text through CFlow in interpreter and JIT") {
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
