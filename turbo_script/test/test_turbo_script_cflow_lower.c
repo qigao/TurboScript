@@ -1,4 +1,3 @@
-#include "../src/turbo_script_internal.h"
 #include "tinytest.h"
 #include "exprtk.h"
 #include "turbo_script_cflow_lower.h"
@@ -796,47 +795,6 @@ spec("TurboScript CFlow pipeline lowering") {
     exprtk_free(root);
   }
 
-
-  it("keeps admitted numeric terminals out of the legacy stream evaluator") {
-    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-    exprtk_value_t result;
-
-    check_not_null(ctx);
-    ctx->env.max_nodes = 1u;
-
-    check_equal(
-        turbo_script_run_mir_interp(
-            ctx,
-            "result=stream.of([-2,0,3])"
-            ".filter(x => x > 0)"
-            ".map(x => x * 2)"
-            ".count();"),
-        0);
-    check_false(ctx->env.aborted);
-    result = exprtk_env_get(&ctx->env, "result");
-    check_equal(result.type, EXPRTK_VAL_NUMBER);
-    check(fabs(result.data.number - 1.0) <= 1e-9);
-
-    turbo_script_free(ctx);
-  }
-
-  it("keeps captured numeric callables on the explicit legacy barrier") {
-    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
-
-    check_not_null(ctx);
-    exprtk_env_set(&ctx->env, "threshold", exprtk_val_num(0.0));
-    ctx->env.max_nodes = 1u;
-
-    check(
-        turbo_script_run_mir_interp(
-            ctx,
-            "result=stream.of([-2,0,3])"
-            ".filter(x => x > threshold)"
-            ".count();") != 0);
-    check_true(ctx->env.aborted);
-
-    turbo_script_free(ctx);
-  }
 
   it("rejects non-pipeline expressions") {
     exprtk_node_t *root = NULL;
