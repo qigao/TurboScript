@@ -97,7 +97,7 @@ The benchmark covers:
 
 - 16 elements — fixed lowering/compilation overhead dominates;
 - 4,096 elements — medium in-memory pipeline;
-- 65,536 elements — large in-memory pipeline;
+- 16,384 elements — large in-memory pipeline within the default ExprTk 100,000-node execution budget;
 - 4,096-element MAP + seeded REDUCE.
 
 Each run emits machine-readable lines:
