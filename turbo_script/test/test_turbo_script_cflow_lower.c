@@ -3,6 +3,7 @@
 #include "turbo_script_cflow_lower.h"
 #include "turbo_script_cflow_runtime.h"
 #include "turbo_script_cflow_text.h"
+#include "turbo_script_cflow_text_kernel.h"
 
 #include <cflow/graph.h>
 #include <cflow/plan.h>
@@ -287,6 +288,98 @@ spec("TurboScript CFlow pipeline lowering") {
       check(memcmp(multi.items[1].data, "b", 1u) == 0);
       ts_cflow_text_lines_source_destroy(&multi);
     }
+  }
+
+  it("executes typed LineSlice length MAP through MIR and CFlow") {
+    exprtk_node_t *lambda_root = NULL;
+    exprtk_node_t *lambda =
+        ts_test_single_expr("line => line.length()", &lambda_root);
+    ts_cflow_text_kernel_binding_t binding = {0};
+    ts_cflow_text_lines_source_t source = {0};
+    cflow_graph graph = {0};
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    const cflow_subgraph *sg;
+    const char *error = NULL;
+    const double expected[] = {1.0, 2.0, 0.0};
+
+    graph.root = CMETA_INVALID_ID;
+    check_not_null(lambda);
+    check_true(ts_cflow_text_length_map_bind(
+        lambda, &binding, &error));
+    check_null(error);
+    check_equal(binding.callable.meta.sig, CMETA_SIG_INVALID);
+    check_equal(binding.callable.dispatch,
+                CMETA_CALLABLE_DISPATCH_ADAPTER);
+    check_equal(binding.callable.meta.effects,
+                (cmeta_effects)CMETA_EFFECT_PURE);
+    check_true((binding.callable.meta.properties &
+                CMETA_PROP_DETERMINISTIC) != 0u);
+    check_true((binding.callable.meta.properties &
+                CMETA_PROP_TOTAL) != 0u);
+
+    check_true(ts_cflow_text_lines_source_init(
+        &source, "a\nbb\n", strlen("a\nbb\n")));
+    cflow_graph_init(&graph, ts_cflow_line_slice_type());
+    check_null(graph.error);
+    check_true(ts_cflow_text_length_map_graph_add(
+        &graph, &binding, &error));
+    check_null(error);
+
+    sg = cflow_graph_subgraph(&graph, graph.root);
+    check_not_null(sg);
+    check_equal(sg->node_count, (size_t)2u);
+    check_equal(sg->nodes[0].op, CFLOW_OP_INPUT);
+    check_equal(sg->nodes[1].op, CFLOW_OP_MAP);
+    check_equal(sg->nodes[1].param_kind,
+                CFLOW_NODE_PARAM_TYPED_ADAPTER);
+    check_true(cmeta_type_equal(
+        sg->nodes[1].input_type, ts_cflow_line_slice_type()));
+    check_true(cmeta_type_equal(
+        sg->nodes[1].output_type, &cmeta_type_double));
+
+    check_true(cflow_plan_compile_surface(
+        &plan, &graph, NULL));
+    check_true(cflow_plan_eval_array(
+        &plan, source.items, source.count, &result));
+    check_true(cmeta_type_equal(result.type, &cmeta_type_double));
+    check_equal(result.count, (size_t)3u);
+    check_not_null(result.data);
+    check_equal(result.data, expected, sizeof(expected));
+
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+    ts_cflow_text_lines_source_destroy(&source);
+    ts_cflow_text_kernel_binding_destroy(&binding);
+    exprtk_free(lambda_root);
+  }
+
+  it("rejects text MAP shapes outside the first typed ABI slice") {
+    exprtk_node_t *trim_root = NULL;
+    exprtk_node_t *capture_root = NULL;
+    exprtk_node_t *trim_lambda =
+        ts_test_single_expr("line => line.trim()", &trim_root);
+    exprtk_node_t *capture_lambda =
+        ts_test_single_expr("line => line.length() + extra", &capture_root);
+    ts_cflow_text_kernel_binding_t binding = {0};
+    const char *error = NULL;
+
+    check_not_null(trim_lambda);
+    check_not_null(capture_lambda);
+    check_false(ts_cflow_text_length_map_bind(
+        trim_lambda, &binding, &error));
+    check_not_null(error);
+    check_null(binding.owner);
+
+    error = NULL;
+    check_false(ts_cflow_text_length_map_bind(
+        capture_lambda, &binding, &error));
+    check_not_null(error);
+    check_null(binding.owner);
+
+    exprtk_free(capture_root);
+    exprtk_free(trim_root);
   }
 
   it("sanitizes the runtime CFlow terminal seam") {
