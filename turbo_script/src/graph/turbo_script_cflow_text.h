@@ -53,7 +53,17 @@ void ts_cflow_text_lines_source_destroy(ts_cflow_text_lines_source_t *source);
 bool ts_cflow_text_lines_plan_compile(cflow_graph *graph, cflow_plan *plan,
                                       const char **error);
 
-/* Evaluate one line source through the compiled Plan and return result count. */
+/*
+ * Evaluate one line source through the compiled Plan.
+ * The returned result owns only copied line-slice descriptors; their data
+ * pointers still borrow the originating text and must be consumed before that
+ * TurboScript string value is released.
+ */
+bool ts_cflow_text_lines_plan_eval(const cflow_plan *plan,
+                                   const ts_cflow_text_lines_source_t *source,
+                                   cflow_result *out, const char **error);
+
+/* Convenience scalar terminal over the same Plan/result path. */
 bool ts_cflow_text_lines_plan_count(const cflow_plan *plan,
                                     const ts_cflow_text_lines_source_t *source,
                                     size_t *out_count, const char **error);
