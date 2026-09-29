@@ -1,6 +1,7 @@
 #include "turbo_script_cflow_text_kernel.h"
 
 #include "turbo_script_mir_internal.h"
+#include "exprtk_grammar.h"
 
 #include <cflow/function_projection.h>
 #include <cmeta/function.h>
