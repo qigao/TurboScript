@@ -16,6 +16,8 @@ Android 使用 NDK API 26、c++_shared，验证 ELF 架构及 C/C++ 消费端交
 Git tag 和 NuGet package 使用同一个版本。当前正式版本为 `3.0.3`，只有
 `v3.0.3` tag 可以发布 `TurboScript.Native 3.0.3`。
 
+3.0.3 增加 legacy `turbo_script_run()` / `turbo_script_run_jit()` 的 cooperative context interrupt hook，同时保持现有 import/plugin/.tbs 语义。
+
 PR/master qualification 仍使用唯一的 `3.0.3-ci.<run>.<attempt>` 构建版本，但只作为
 CI artifact，不推送到 GitHub Packages。每个 SDK 内的 manifest 记录实际源码提交、
 依赖版本和构建配置。
