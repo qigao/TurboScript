@@ -51,6 +51,20 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
     char *error, size_t error_size);
 
+/*
+ * Execute an admitted numeric non-terminal stream pipeline eagerly through
+ * CFlow and return a TurboScript-owned Stream.v1 envelope whose source is the
+ * typed materialized result. This is the cross-statement bridge: it carries no
+ * AST, MIR kernel, Graph, or Plan pointers in the script-visible value.
+ *
+ * Terminal expressions and pipelines containing REDUCE are not applicable.
+ * As with terminal admission, rejection before admission may remain on the
+ * legacy barrier; failures after admission are errors and never fall back.
+ */
+ts_cflow_runtime_status_t ts_cflow_runtime_try_materialized_stream(
+    turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
+    char *error, size_t error_size);
+
 #ifdef __cplusplus
 }
 #endif
