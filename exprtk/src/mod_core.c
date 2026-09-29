@@ -762,151 +762,152 @@ static size_t stream_count_source(exprtk_value_t source) {
  * only for pre-admission barriers (capturing/effectful callables, dynamic
  * seeds, heterogeneous values, and other unsupported shapes).
  */
-static exprtk_value_t stream_legacy_filter_value(exprtk_value_t stream, exprtk_value_t predicate,
-                                          exprtk_env_t *env, mem_pool_t *arena) {
-    exprtk_value_t source = stream_collect_value(stream);
+static size_t stream_legacy_sequence_count(exprtk_value_t source) {
+    if (source.type == EXPRTK_VAL_VECTOR) return source.data.vector.size;
+    if (source.type == EXPRTK_VAL_LIST) return source.data.list.count;
+    return 0;
+}
 
+static int stream_legacy_sequence_item(exprtk_value_t source, size_t index,
+                                       exprtk_value_t *out) {
+    if (!out) return 0;
     if (source.type == EXPRTK_VAL_VECTOR) {
-        size_t n = source.data.vector.size;
-        double *out = MEM_ALLOC_ARRAY(arena, double, n);
-        size_t kept = 0;
-        exprtk_value_t result;
-        if (!out && n > 0) {
-            exprtk_value_destroy(&stream);
-            return exprtk_val_num(0);
-        }
-        for (size_t i = 0; i < n; ++i) {
-            exprtk_value_t arg = exprtk_val_num(source.data.vector.data[i]);
-            exprtk_value_t pred = exprtk_call_callable(predicate, 1, &arg, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
-                exprtk_value_destroy(&pred);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            if (exprtk_value_truthy(pred)) out[kept++] = source.data.vector.data[i];
-            exprtk_value_destroy(&pred);
-        }
-        result = stream_make(exprtk_val_vec(out, kept));
+        if (index >= source.data.vector.size) return 0;
+        *out = exprtk_val_num(source.data.vector.data[index]);
+        return 1;
+    }
+    if (source.type == EXPRTK_VAL_LIST) {
+        if (index >= source.data.list.count) return 0;
+        *out = source.data.list.items[index];
+        return 1;
+    }
+    return 0;
+}
+
+static exprtk_value_t stream_legacy_filter_value(exprtk_value_t stream, exprtk_value_t predicate,
+                                                  exprtk_env_t *env, mem_pool_t *arena) {
+    exprtk_value_t source = stream_collect_value(stream);
+    const size_t count = stream_legacy_sequence_count(source);
+    const int vector_source = source.type == EXPRTK_VAL_VECTOR;
+    const int list_source = source.type == EXPRTK_VAL_LIST;
+    double *vector_out = NULL;
+    exprtk_value_t list_out = exprtk_val_list_empty();
+    size_t kept = 0;
+
+    if (!vector_source && !list_source) {
+        exprtk_value_t result = stream_make(list_out);
+        exprtk_value_destroy(&list_out);
         exprtk_value_destroy(&stream);
         return result;
     }
 
-    if (source.type == EXPRTK_VAL_LIST) {
-        exprtk_value_t out = exprtk_val_list_empty();
-        exprtk_value_t result;
-        for (size_t i = 0; i < source.data.list.count; ++i) {
-            exprtk_value_t item = source.data.list.items[i];
-            exprtk_value_t pred = exprtk_call_callable(predicate, 1, &item, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
-                exprtk_value_destroy(&pred);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            if (exprtk_value_truthy(pred) && exprtk_list_push(&out, item) != 0) {
-                exprtk_value_destroy(&pred);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            exprtk_value_destroy(&pred);
+    if (vector_source && count > 0u) {
+        vector_out = MEM_ALLOC_ARRAY(arena, double, count);
+        if (!vector_out) {
+            exprtk_value_destroy(&list_out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
         }
-        result = stream_make(out);
-        exprtk_value_destroy(&out);
+    }
+
+    for (size_t i = 0; i < count; ++i) {
+        exprtk_value_t item;
+        exprtk_value_t pred;
+        if (!stream_legacy_sequence_item(source, i, &item)) {
+            exprtk_value_destroy(&list_out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
+        }
+        pred = exprtk_call_callable(predicate, 1, &item, env, arena);
+        if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+            exprtk_value_destroy(&pred);
+            exprtk_value_destroy(&list_out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
+        }
+        if (exprtk_value_truthy(pred)) {
+            if (vector_source) {
+                vector_out[kept++] = source.data.vector.data[i];
+            } else if (exprtk_list_push(&list_out, item) != 0) {
+                exprtk_value_destroy(&pred);
+                exprtk_value_destroy(&list_out);
+                exprtk_value_destroy(&stream);
+                return exprtk_val_num(0);
+            }
+        }
+        exprtk_value_destroy(&pred);
+    }
+
+    if (vector_source) {
+        exprtk_value_t result = stream_make(exprtk_val_vec(vector_out, kept));
+        exprtk_value_destroy(&list_out);
         exprtk_value_destroy(&stream);
         return result;
     }
 
     {
-        exprtk_value_t empty = exprtk_val_list_empty();
-        exprtk_value_t result = stream_make(empty);
-        exprtk_value_destroy(&empty);
+        exprtk_value_t result = stream_make(list_out);
+        exprtk_value_destroy(&list_out);
         exprtk_value_destroy(&stream);
         return result;
     }
 }
 
 static exprtk_value_t stream_legacy_map_value(exprtk_value_t stream, exprtk_value_t mapper,
-                                       exprtk_env_t *env, mem_pool_t *arena) {
+                                               exprtk_env_t *env, mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
     exprtk_value_t out = exprtk_val_list_empty();
-    exprtk_value_t result;
+    const size_t count = stream_legacy_sequence_count(source);
 
-    if (source.type == EXPRTK_VAL_VECTOR) {
-        for (size_t i = 0; i < source.data.vector.size; ++i) {
-            exprtk_value_t item = exprtk_val_num(source.data.vector.data[i]);
-            exprtk_value_t mapped = exprtk_call_callable(mapper, 1, &item, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
-                exprtk_value_destroy(&mapped);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            if (exprtk_list_push(&out, mapped) != 0) {
-                exprtk_value_destroy(&mapped);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            exprtk_value_destroy(&mapped);
+    for (size_t i = 0; i < count; ++i) {
+        exprtk_value_t item;
+        exprtk_value_t mapped;
+        if (!stream_legacy_sequence_item(source, i, &item)) {
+            exprtk_value_destroy(&out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
         }
-        result = stream_make(out);
+        mapped = exprtk_call_callable(mapper, 1, &item, env, arena);
+        if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
+            exprtk_value_destroy(&mapped);
+            exprtk_value_destroy(&out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
+        }
+        if (exprtk_list_push(&out, mapped) != 0) {
+            exprtk_value_destroy(&mapped);
+            exprtk_value_destroy(&out);
+            exprtk_value_destroy(&stream);
+            return exprtk_val_num(0);
+        }
+        exprtk_value_destroy(&mapped);
+    }
+
+    {
+        exprtk_value_t result = stream_make(out);
         exprtk_value_destroy(&out);
         exprtk_value_destroy(&stream);
         return result;
     }
-
-    if (source.type == EXPRTK_VAL_LIST) {
-        for (size_t i = 0; i < source.data.list.count; ++i) {
-            exprtk_value_t mapped = exprtk_call_callable(
-                mapper, 1, &source.data.list.items[i], env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) {
-                exprtk_value_destroy(&mapped);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            if (exprtk_list_push(&out, mapped) != 0) {
-                exprtk_value_destroy(&mapped);
-                exprtk_value_destroy(&out);
-                exprtk_value_destroy(&stream);
-                return exprtk_val_num(0);
-            }
-            exprtk_value_destroy(&mapped);
-        }
-        result = stream_make(out);
-        exprtk_value_destroy(&out);
-        exprtk_value_destroy(&stream);
-        return result;
-    }
-
-    result = stream_make(out);
-    exprtk_value_destroy(&out);
-    exprtk_value_destroy(&stream);
-    return result;
 }
 
 static exprtk_value_t stream_legacy_reduce_value(exprtk_value_t stream, exprtk_value_t init,
-                                          exprtk_value_t reducer, exprtk_env_t *env,
-                                          mem_pool_t *arena) {
+                                                  exprtk_value_t reducer, exprtk_env_t *env,
+                                                  mem_pool_t *arena) {
     exprtk_value_t source = stream_collect_value(stream);
     exprtk_value_t acc = init;
     exprtk_value_t call_args[2];
+    const size_t count = stream_legacy_sequence_count(source);
 
-    if (source.type == EXPRTK_VAL_VECTOR) {
-        for (size_t i = 0; i < source.data.vector.size; ++i) {
-            call_args[0] = acc;
-            call_args[1] = exprtk_val_num(source.data.vector.data[i]);
-            acc = exprtk_call_callable(reducer, 2, call_args, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
-        }
-    } else if (source.type == EXPRTK_VAL_LIST) {
-        for (size_t i = 0; i < source.data.list.count; ++i) {
-            call_args[0] = acc;
-            call_args[1] = source.data.list.items[i];
-            acc = exprtk_call_callable(reducer, 2, call_args, env, arena);
-            if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL)) return exprtk_val_num(0);
-        }
+    for (size_t i = 0; i < count; ++i) {
+        exprtk_value_t item;
+        if (!stream_legacy_sequence_item(source, i, &item))
+            return exprtk_val_num(0);
+        call_args[0] = acc;
+        call_args[1] = item;
+        acc = exprtk_call_callable(reducer, 2, call_args, env, arena);
+        if (env && (env->aborted || env->flow != exprtk_FLOW_NORMAL))
+            return exprtk_val_num(0);
     }
     return acc;
 }
