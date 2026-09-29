@@ -33,56 +33,78 @@ typedef enum ts_cflow_text_terminal_e {
   TS_CFLOW_TEXT_TERMINAL_TO_LIST
 } ts_cflow_text_terminal_t;
 
-static ts_cflow_text_terminal_t ts_cflow_runtime_text_lines_terminal(
-    const exprtk_node_t *expr, const exprtk_node_t **text_source) {
-  const exprtk_node_t *lines;
+typedef enum ts_cflow_text_source_kind_e {
+  TS_CFLOW_TEXT_SOURCE_NONE = 0,
+  TS_CFLOW_TEXT_SOURCE_LINES,
+  TS_CFLOW_TEXT_SOURCE_SPLIT
+} ts_cflow_text_source_kind_t;
+
+typedef struct ts_cflow_text_match_s {
+  ts_cflow_text_terminal_t terminal;
+  ts_cflow_text_source_kind_t source_kind;
+  const exprtk_node_t *text_expr;
+  const exprtk_node_t *separator_expr;
+} ts_cflow_text_match_t;
+
+static bool ts_cflow_runtime_text_terminal_match(
+    const exprtk_node_t *expr, ts_cflow_text_match_t *out) {
+  const exprtk_node_t *source_call;
   const exprtk_node_t *text_call;
   const exprtk_node_t *stream_ns;
-  ts_cflow_text_terminal_t terminal = TS_CFLOW_TEXT_TERMINAL_NONE;
+  ts_cflow_text_match_t match = {0};
 
-  if (text_source) *text_source = NULL;
-  if (!expr || expr->type != EXPRTK_NODE_MEMBER_CALL ||
+  if (!expr || !out || expr->type != EXPRTK_NODE_MEMBER_CALL ||
       !expr->data.member_call.method ||
       expr->data.member_call.arg_count != 0u)
-    return TS_CFLOW_TEXT_TERMINAL_NONE;
+    return false;
 
   if (strcmp(expr->data.member_call.method, "count") == 0)
-    terminal = TS_CFLOW_TEXT_TERMINAL_COUNT;
+    match.terminal = TS_CFLOW_TEXT_TERMINAL_COUNT;
   else if (strcmp(expr->data.member_call.method, "collect") == 0)
-    terminal = TS_CFLOW_TEXT_TERMINAL_COLLECT;
+    match.terminal = TS_CFLOW_TEXT_TERMINAL_COLLECT;
   else if (strcmp(expr->data.member_call.method, "toList") == 0)
-    terminal = TS_CFLOW_TEXT_TERMINAL_TO_LIST;
+    match.terminal = TS_CFLOW_TEXT_TERMINAL_TO_LIST;
   else
-    return TS_CFLOW_TEXT_TERMINAL_NONE;
+    return false;
 
-  lines = expr->data.member_call.object;
-  if (!lines || lines->type != EXPRTK_NODE_MEMBER_CALL ||
-      !lines->data.member_call.method ||
-      strcmp(lines->data.member_call.method, "lines") != 0 ||
-      lines->data.member_call.arg_count != 0u)
-    return TS_CFLOW_TEXT_TERMINAL_NONE;
+  source_call = expr->data.member_call.object;
+  if (!source_call || source_call->type != EXPRTK_NODE_MEMBER_CALL ||
+      !source_call->data.member_call.method)
+    return false;
 
-  text_call = lines->data.member_call.object;
+  if (strcmp(source_call->data.member_call.method, "lines") == 0 &&
+      source_call->data.member_call.arg_count == 0u) {
+    match.source_kind = TS_CFLOW_TEXT_SOURCE_LINES;
+  } else if (strcmp(source_call->data.member_call.method, "split") == 0 &&
+             source_call->data.member_call.arg_count == 1u) {
+    match.source_kind = TS_CFLOW_TEXT_SOURCE_SPLIT;
+    match.separator_expr = source_call->data.member_call.args[0];
+  } else {
+    return false;
+  }
+
+  text_call = source_call->data.member_call.object;
   if (!text_call || text_call->type != EXPRTK_NODE_MEMBER_CALL ||
       !text_call->data.member_call.method ||
       strcmp(text_call->data.member_call.method, "text") != 0 ||
       text_call->data.member_call.arg_count != 1u)
-    return TS_CFLOW_TEXT_TERMINAL_NONE;
+    return false;
 
   stream_ns = text_call->data.member_call.object;
   if (!stream_ns || stream_ns->type != EXPRTK_NODE_VARIABLE ||
       !stream_ns->data.variable.name ||
       strcmp(stream_ns->data.variable.name, "stream") != 0)
-    return TS_CFLOW_TEXT_TERMINAL_NONE;
+    return false;
 
-  if (text_source) *text_source = text_call->data.member_call.args[0];
-  return terminal;
+  match.text_expr = text_call->data.member_call.args[0];
+  *out = match;
+  return true;
 }
 
 static bool ts_cflow_runtime_text_result_to_list(const cflow_result *result,
                                                  exprtk_value_t *out) {
   exprtk_value_t list;
-  const ts_cflow_line_slice_t *lines;
+  const ts_cflow_line_slice_t *slices;
 
   if (!result || !out ||
       !cmeta_type_equal(result->type, ts_cflow_line_slice_type()) ||
@@ -90,11 +112,11 @@ static bool ts_cflow_runtime_text_result_to_list(const cflow_result *result,
     return false;
 
   list = exprtk_val_list_empty();
-  lines = (const ts_cflow_line_slice_t *)result->data;
+  slices = (const ts_cflow_line_slice_t *)result->data;
   for (size_t i = 0u; i < result->count; ++i) {
-    exprtk_value_t line = exprtk_val_str(
-        vstr_from_buf((char *)lines[i].data, lines[i].len));
-    if (exprtk_list_push(&list, line) != 0) {
+    exprtk_value_t item = exprtk_val_str(
+        vstr_from_buf((char *)slices[i].data, slices[i].len));
+    if (exprtk_list_push(&list, item) != 0) {
       exprtk_value_destroy(&list);
       return false;
     }
@@ -103,30 +125,31 @@ static bool ts_cflow_runtime_text_result_to_list(const cflow_result *result,
   return true;
 }
 
-static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_lines_terminal(
+static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
     char *error, size_t error_size) {
-  const exprtk_node_t *text_expr = NULL;
-  const ts_cflow_text_terminal_t terminal =
-      ts_cflow_runtime_text_lines_terminal(expr, &text_expr);
+  ts_cflow_text_match_t match = {0};
   exprtk_value_t text_value = {.type = EXPRTK_VAL_NULL};
+  exprtk_value_t separator_value = {.type = EXPRTK_VAL_NULL};
   ts_cflow_text_lines_source_t source = {0};
   cflow_graph graph = {0};
   cflow_plan plan = {0};
   cflow_result result = {0};
   const char *cflow_error = NULL;
   const char *text_data = NULL;
+  const char *separator_data = NULL;
   size_t text_len = 0u;
+  size_t separator_len = 0u;
   bool plan_ready = false;
   bool source_ready = false;
   bool result_ready = false;
   ts_cflow_runtime_status_t status = TS_CFLOW_RUNTIME_ERROR;
 
   graph.root = CMETA_INVALID_ID;
-  if (terminal == TS_CFLOW_TEXT_TERMINAL_NONE || !text_expr)
+  if (!ts_cflow_runtime_text_terminal_match(expr, &match))
     return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
 
-  text_value = turbo_script_mir_eval_node(text_expr, &ctx->env);
+  text_value = turbo_script_mir_eval_node(match.text_expr, &ctx->env);
   if (ctx->env.aborted || ctx->env.flow == exprtk_FLOW_THROW) {
     ts_cflow_runtime_error(
         error, error_size,
@@ -144,7 +167,33 @@ static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_lines_terminal(
     text_len = 0u;
   }
 
-  if (!ts_cflow_text_lines_source_init(&source, text_data, text_len)) {
+  if (match.source_kind == TS_CFLOW_TEXT_SOURCE_SPLIT) {
+    separator_value =
+        turbo_script_mir_eval_node(match.separator_expr, &ctx->env);
+    if (ctx->env.aborted || ctx->env.flow == exprtk_FLOW_THROW) {
+      ts_cflow_runtime_error(
+          error, error_size,
+          ctx->env.error_msg[0] ? ctx->env.error_msg
+                                : "TurboScript split separator evaluation failed");
+      goto done;
+    }
+
+    if (separator_value.type == EXPRTK_VAL_STRING) {
+      separator_data = separator_value.data.string.data;
+      separator_len = separator_value.data.string.len;
+      if (!ts_cflow_text_split_source_init(
+              &source, text_data, text_len,
+              separator_data, separator_len)) {
+        ts_cflow_runtime_error(
+            error, error_size,
+            "CFlow text split source materialization failed");
+        goto done;
+      }
+    } else {
+      /* Legacy split(non-string) returns an empty list/stream. */
+      memset(&source, 0, sizeof(source));
+    }
+  } else if (!ts_cflow_text_lines_source_init(&source, text_data, text_len)) {
     ts_cflow_runtime_error(error, error_size,
                            "CFlow text-line source materialization failed");
     goto done;
@@ -154,7 +203,7 @@ static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_lines_terminal(
   if (!ts_cflow_text_lines_plan_compile(&graph, &plan, &cflow_error)) {
     ts_cflow_runtime_error(
         error, error_size,
-        cflow_error ? cflow_error : "CFlow text-line Plan compilation failed");
+        cflow_error ? cflow_error : "CFlow text-slice Plan compilation failed");
     goto done;
   }
   plan_ready = true;
@@ -162,16 +211,16 @@ static ts_cflow_runtime_status_t ts_cflow_runtime_try_text_lines_terminal(
   if (!ts_cflow_text_lines_plan_eval(&plan, &source, &result, &cflow_error)) {
     ts_cflow_runtime_error(
         error, error_size,
-        cflow_error ? cflow_error : "CFlow text-line Plan execution failed");
+        cflow_error ? cflow_error : "CFlow text-slice Plan execution failed");
     goto done;
   }
   result_ready = true;
 
-  if (terminal == TS_CFLOW_TEXT_TERMINAL_COUNT) {
+  if (match.terminal == TS_CFLOW_TEXT_TERMINAL_COUNT) {
     *out = exprtk_val_num((double)result.count);
   } else if (!ts_cflow_runtime_text_result_to_list(&result, out)) {
     ts_cflow_runtime_error(error, error_size,
-                           "CFlow text-line list materialization failed");
+                           "CFlow text-slice list materialization failed");
     goto done;
   }
 
@@ -184,6 +233,7 @@ done:
     cflow_graph_destroy(&graph);
   }
   if (source_ready) ts_cflow_text_lines_source_destroy(&source);
+  exprtk_value_destroy(&separator_value);
   exprtk_value_destroy(&text_value);
   return status;
 }
@@ -404,7 +454,7 @@ ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
 
   {
     ts_cflow_runtime_status_t text_status =
-        ts_cflow_runtime_try_text_lines_terminal(
+        ts_cflow_runtime_try_text_terminal(
             ctx, expr, out, error, error_size);
     if (text_status != TS_CFLOW_RUNTIME_NOT_APPLICABLE)
       return text_status;

@@ -1274,12 +1274,15 @@ Current execution contract:
 - Capturing/effectful lambdas, dynamic reduce seeds, heterogeneous lists,
   map/object streams, and effectful `forEach` remain on the legacy adapter
   path.
-- `stream.text(...).lines().count()`, `.collect()`, and `.toList()`
-  use a typed synchronous CFlow Plan while preserving current eager text
-  evaluation and line-splitting semantics. `collect/toList` copy CFlow line
-  slices into TurboScript-owned strings before source cleanup. Bare
-  `.lines()`, `.split(...)`, and string filter/map remain eager legacy
-  adapters; none imply Reactive/backpressure execution.
+- `stream.text(...).lines().count/collect/toList` and
+  `stream.text(...).split(sep).count/collect/toList` use a typed synchronous
+  CFlow Plan while preserving eager text evaluation. `collect/toList` copy
+  borrowed CFlow slices into TurboScript-owned strings before source cleanup.
+  `split` preserves byte-oriented empty-separator behavior and leading,
+  trailing, or adjacent empty tokens; source and separator expressions are each
+  evaluated once. Bare `.lines()` / `.split(...)` streams and string
+  filter/map remain eager legacy adapters; none imply Reactive/backpressure
+  execution.
 - Older documentation listed `stream.lines(path)`, `stream.csv(...)`,
   `stream.json(...)`, and `stream.xml(...)` as core factories. The current
   core audit did not find those factory registrations/tests. Treat them as

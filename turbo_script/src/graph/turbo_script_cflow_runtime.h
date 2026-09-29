@@ -28,11 +28,13 @@ typedef enum ts_cflow_runtime_status_e {
  * never fall back.
  *
  * The Phase 2 text seam additionally admits the exact terminal shapes
- * stream.text(expr).lines().count()/collect()/toList(). The text expression is
- * evaluated once, line slices borrow that string only for synchronous Plan
- * evaluation, and list terminals copy strings into TurboScript-owned storage
- * before the CFlow result/source text are released. Legacy newline/CRLF/
- * trailing-empty-line semantics are preserved.
+ * stream.text(expr).lines().count()/collect()/toList() and
+ * stream.text(expr).split(sep).count()/collect()/toList(). Source and split
+ * separator expressions are evaluated once. Slice descriptors borrow text
+ * only for synchronous Plan evaluation, and list terminals copy strings into
+ * TurboScript-owned storage before the CFlow result/source text are released.
+ * Legacy newline/CRLF/trailing-empty-line and split empty-token semantics are
+ * preserved.
  */
 ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,

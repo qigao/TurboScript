@@ -1,5 +1,6 @@
 #include "turbo_script_cflow_text.h"
 
+#include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -29,6 +30,7 @@ bool ts_cflow_text_lines_source_init(ts_cflow_text_lines_source_t *source,
   ts_cflow_line_slice_t *items;
 
   if (!source || (!text && text_len != 0u)) return false;
+  if (!text) text = "";
   memset(source, 0, sizeof(*source));
 
   for (size_t i = 0u; i < text_len; ++i) {
@@ -51,6 +53,85 @@ bool ts_cflow_text_lines_source_init(ts_cflow_text_lines_source_t *source,
 
   source->items = items;
   source->count = line_index;
+  return true;
+}
+
+bool ts_cflow_text_split_source_init(ts_cflow_text_lines_source_t *source,
+                                     const char *text, size_t text_len,
+                                     const char *separator,
+                                     size_t separator_len) {
+  ts_cflow_line_slice_t *items = NULL;
+  size_t count = 0u;
+  size_t cursor = 0u;
+  size_t index = 0u;
+
+  if (!source || (!text && text_len != 0u) ||
+      (!separator && separator_len != 0u))
+    return false;
+  if (!text) text = "";
+  if (!separator) separator = "";
+  memset(source, 0, sizeof(*source));
+
+  if (separator_len == 0u) {
+    count = text_len;
+    if (count != 0u) {
+      items = (ts_cflow_line_slice_t *)calloc(count, sizeof(*items));
+      if (!items) return false;
+      for (size_t i = 0u; i < text_len; ++i) {
+        items[i].data = text + i;
+        items[i].len = 1u;
+      }
+    }
+    source->items = items;
+    source->count = count;
+    return true;
+  }
+
+  count = 1u;
+  cursor = 0u;
+  while (cursor <= text_len) {
+    size_t found = SIZE_MAX;
+    for (size_t i = cursor;
+         i <= text_len && separator_len <= text_len - i; ++i) {
+      if (memcmp(text + i, separator, separator_len) == 0) {
+        found = i;
+        break;
+      }
+    }
+    if (found == SIZE_MAX) break;
+    ++count;
+    cursor = found + separator_len;
+  }
+
+  items = (ts_cflow_line_slice_t *)calloc(count, sizeof(*items));
+  if (!items) return false;
+
+  cursor = 0u;
+  while (cursor <= text_len && index < count) {
+    size_t found = SIZE_MAX;
+    for (size_t i = cursor;
+         i <= text_len && separator_len <= text_len - i; ++i) {
+      if (memcmp(text + i, separator, separator_len) == 0) {
+        found = i;
+        break;
+      }
+    }
+
+    if (found == SIZE_MAX) {
+      items[index].data = text ? text + cursor : NULL;
+      items[index].len = text_len - cursor;
+      ++index;
+      break;
+    }
+
+    items[index].data = text ? text + cursor : NULL;
+    items[index].len = found - cursor;
+    ++index;
+    cursor = found + separator_len;
+  }
+
+  source->items = items;
+  source->count = index;
   return true;
 }
 

@@ -225,6 +225,70 @@ spec("TurboScript CFlow pipeline lowering") {
     ts_cflow_text_lines_source_destroy(&source);
   }
 
+  it("preserves legacy text split slices through the typed CFlow plan") {
+    ts_cflow_text_lines_source_t source = {0};
+    ts_cflow_text_lines_source_t chars = {0};
+    ts_cflow_text_lines_source_t empty_chars = {0};
+    cflow_graph graph = {0};
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    const ts_cflow_line_slice_t *tokens;
+    const char *error = NULL;
+
+    graph.root = CMETA_INVALID_ID;
+    check_true(ts_cflow_text_split_source_init(
+        &source, ",a,,b,", strlen(",a,,b,"), ",", 1u));
+    check_equal(source.count, (size_t)5u);
+    check_equal(source.items[0].len, (size_t)0u);
+    check_equal(source.items[1].len, (size_t)1u);
+    check(memcmp(source.items[1].data, "a", 1u) == 0);
+    check_equal(source.items[2].len, (size_t)0u);
+    check_equal(source.items[3].len, (size_t)1u);
+    check(memcmp(source.items[3].data, "b", 1u) == 0);
+    check_equal(source.items[4].len, (size_t)0u);
+
+    check_true(ts_cflow_text_lines_plan_compile(&graph, &plan, &error));
+    check_true(ts_cflow_text_lines_plan_eval(
+        &plan, &source, &result, &error));
+    check_null(error);
+    check_equal(result.count, (size_t)5u);
+    tokens = (const ts_cflow_line_slice_t *)result.data;
+    check_not_null(tokens);
+    check_equal(tokens[0].len, (size_t)0u);
+    check_equal(tokens[4].len, (size_t)0u);
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+    ts_cflow_text_lines_source_destroy(&source);
+
+    check_true(ts_cflow_text_split_source_init(
+        &chars, "ABC", 3u, "", 0u));
+    check_equal(chars.count, (size_t)3u);
+    check_equal(chars.items[0].len, (size_t)1u);
+    check(memcmp(chars.items[0].data, "A", 1u) == 0);
+    check(memcmp(chars.items[2].data, "C", 1u) == 0);
+    ts_cflow_text_lines_source_destroy(&chars);
+
+    check_true(ts_cflow_text_split_source_init(
+        &empty_chars, "", 0u, "", 0u));
+    check_equal(empty_chars.count, (size_t)0u);
+    check_null(empty_chars.items);
+    ts_cflow_text_lines_source_destroy(&empty_chars);
+
+    {
+      ts_cflow_text_lines_source_t multi = {0};
+      check_true(ts_cflow_text_split_source_init(
+          &multi, "a<>b<>", strlen("a<>b<>"), "<>", 2u));
+      check_equal(multi.count, (size_t)3u);
+      check_equal(multi.items[0].len, (size_t)1u);
+      check_equal(multi.items[1].len, (size_t)1u);
+      check_equal(multi.items[2].len, (size_t)0u);
+      check(memcmp(multi.items[0].data, "a", 1u) == 0);
+      check(memcmp(multi.items[1].data, "b", 1u) == 0);
+      ts_cflow_text_lines_source_destroy(&multi);
+    }
+  }
+
   it("sanitizes the runtime CFlow terminal seam") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
     exprtk_node_t *count_root = NULL;
@@ -326,6 +390,28 @@ spec("TurboScript CFlow pipeline lowering") {
 
       exprtk_value_destroy(&text_result);
       exprtk_free(text_root);
+    }
+
+    {
+      exprtk_node_t *split_root = NULL;
+      exprtk_node_t *split_expr = ts_test_single_expr(
+          "stream.text(\"a,,b,\").split(\",\").toList()",
+          &split_root);
+      exprtk_value_t split_result = exprtk_val_num(-1.0);
+
+      check_not_null(split_expr);
+      check_equal(ts_cflow_runtime_try_scalar_terminal(
+                      ctx, split_expr, &split_result,
+                      runtime_error, sizeof(runtime_error)),
+                  TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(split_result.type, EXPRTK_VAL_LIST);
+      check_equal(split_result.data.list.count, (size_t)4u);
+      check_equal(split_result.data.list.items[1].data.string.len, (size_t)0u);
+      check(memcmp(split_result.data.list.items[2].data.string.data, "b", 1u) == 0);
+      check_equal(split_result.data.list.items[3].data.string.len, (size_t)0u);
+
+      exprtk_value_destroy(&split_result);
+      exprtk_free(split_root);
     }
 
     exprtk_value_destroy(&vector_result);

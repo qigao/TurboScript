@@ -1127,11 +1127,13 @@ var line_count = stream.text(io.read_file("data.txt"))
   `reduce`、`count`、`collect`、`toList`、`toVector` 由 CFlow 执行。
 - 捕获变量/有副作用 lambda、动态 reduce seed、异构 list、map/object stream
   以及有副作用的 `forEach` 仍走 legacy adapter。
-- `stream.text(...).lines().count()`、`.collect()`、`.toList()`
-  现在通过 typed synchronous CFlow Plan 执行，同时保留当前 eager 文本求值与
-  line split 语义；`collect/toList` 会在 source 清理前把 CFlow line slice
-  深拷贝成 TurboScript 自有字符串。裸 `.lines()`、`.split(...)` 以及
-  string filter/map 仍走 eager legacy adapter，也都不隐含
+- `stream.text(...).lines().count/collect/toList` 与
+  `stream.text(...).split(sep).count/collect/toList` 现在都通过 typed
+  synchronous CFlow Plan 执行，并保留 eager 文本求值语义。`collect/toList`
+  会在 source 清理前把 borrowed CFlow slice 深拷贝成 TurboScript 自有字符串。
+  `split` 保留空 separator 按 byte 切分以及首尾/连续空 token 的行为，source
+  与 separator 表达式各只求值一次。裸 `.lines()` / `.split(...)` stream
+  以及 string filter/map 仍走 eager legacy adapter，也都不隐含
   Reactive/backpressure 执行。
 - 旧文档曾把 `stream.lines(path)`、`stream.csv(...)`、
   `stream.json(...)`、`stream.xml(...)` 列为 core factory；本次对当前

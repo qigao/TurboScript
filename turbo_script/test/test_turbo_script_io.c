@@ -620,6 +620,59 @@ spec("turbo_script_io") {
       turbo_script_free(interp);
     }
 
+    it("should split file text through CFlow in interpreter and JIT") {
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *token_text = ",A,,B,";
+      char token_path[96];
+      char script[1280];
+      salts_fs_buf_t buf;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      ts_test_make_name(token_path, sizeof(token_path),
+                        "_test_cflow_text_split", ".txt");
+      buf = salts_fs_buf_init((char *)token_text, strlen(token_text));
+      check_equal(salts_fs_write_file(token_path, &buf), 0);
+
+      snprintf(script, sizeof(script),
+               "token_count = stream.text(io.read_file(\"%s\")).split(\",\").count();"
+               "tokens = stream.text(io.read_file(\"%s\")).split(\",\").toList();"
+               "collected = stream.text(io.read_file(\"%s\")).split(\",\").collect();"
+               "tokens_count = tokens.length();"
+               "collect_count = collected.length();"
+               "second_token = tokens[1];"
+               "fourth_token = collected[3];"
+               "last_token = collected[4];",
+               token_path, token_path, token_path);
+
+      check_equal(turbo_script_run(interp, script), 0);
+      check_equal(turbo_script_run_jit(jit, script), 0);
+
+      check(fabs(ts_get_num(interp, "token_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "token_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "tokens_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "tokens_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "collect_count") - 5.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "collect_count") - 5.0) <= 1e-9);
+      check_not_null(ts_get_str(interp, "second_token"));
+      check_not_null(ts_get_str(jit, "second_token"));
+      check_not_null(ts_get_str(interp, "fourth_token"));
+      check_not_null(ts_get_str(jit, "fourth_token"));
+      check_not_null(ts_get_str(interp, "last_token"));
+      check_not_null(ts_get_str(jit, "last_token"));
+      check(strcmp(ts_get_str(interp, "second_token"), "A") == 0);
+      check(strcmp(ts_get_str(jit, "second_token"), "A") == 0);
+      check(strcmp(ts_get_str(interp, "fourth_token"), "B") == 0);
+      check(strcmp(ts_get_str(jit, "fourth_token"), "B") == 0);
+      check(strcmp(ts_get_str(interp, "last_token"), "") == 0);
+      check(strcmp(ts_get_str(jit, "last_token"), "") == 0);
+
+      salts_fs_unlink(token_path);
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
   }
 
   describe("Print") {
