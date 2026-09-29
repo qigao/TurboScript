@@ -40,6 +40,16 @@ bool ts_cflow_lower_pipeline(const exprtk_node_t *expr,
                              const char **error);
 
 /*
+ * Runtime graphability analysis uses the current TurboScript context only to
+ * resolve a variable source's concrete collection shape. It does not bind MIR
+ * kernels or execute the graph. This keeps runtime type admission explicit
+ * without treating exprtk_node_t.inferred_type as semantic authority.
+ */
+bool ts_cflow_lower_pipeline_runtime_analysis(
+    turbo_script_ctx_t *runtime_ctx, const exprtk_node_t *expr,
+    ts_cflow_lowered_pipeline_t *out, const char **error);
+
+/*
  * Lower the same graphable slice while binding every supported script lambda
  * to a TurboScript-owned MIR kernel. MAP/FILTER are unary kernels; REDUCE is a
  * binary kernel and uses CFlow's owned typed seed. The first executable reduce
