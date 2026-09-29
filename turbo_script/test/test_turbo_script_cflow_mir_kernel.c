@@ -103,6 +103,53 @@ spec("TurboScript CFlow MIR kernels") {
     turbo_script_free(ctx);
   }
 
+  it("executes a seeded reduce MIR kernel through a reusable CFlow plan") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    exprtk_node_t *root = NULL;
+    exprtk_node_t *lambda =
+        ts_kernel_test_lambda("(acc, x) => acc + x", &root);
+    ts_cflow_mir_kernel_binding_t binding = {0};
+    cflow_graph graph = {0};
+    cflow_plan plan = {0};
+    cflow_result result = {0};
+    cflow_result empty = {0};
+    const char *error = NULL;
+    const double seed = 10.0;
+    const double input[] = {1.0, 2.0, 3.0};
+
+    graph.root = CMETA_INVALID_ID;
+    check_not_null(ctx);
+    check_not_null(lambda);
+    check_true(ts_cflow_mir_kernel_bind(
+        ctx, lambda, TS_CMETA_LAMBDA_REDUCE, &binding, &error));
+    check_null(error);
+    check_true(cmeta_callable_contract_valid(binding.callable));
+
+    cflow_graph_init(&graph, &cmeta_type_double);
+    check_null(graph.error);
+    check_true(cflow_graph_reduce_seeded(&graph, binding.callable, &seed));
+    check_true(cflow_plan_compile_surface(&plan, &graph, NULL));
+
+    check_true(cflow_plan_eval_array(
+        &plan, input, sizeof(input) / sizeof(input[0]), &result));
+    check((result.count) == ((size_t)1u));
+    check_not_null(result.data);
+    check((((const double *)result.data)[0]) == (16.0));
+
+    check_true(cflow_plan_eval_array(&plan, NULL, 0u, &empty));
+    check((empty.count) == ((size_t)1u));
+    check_not_null(empty.data);
+    check((((const double *)empty.data)[0]) == (10.0));
+
+    cflow_result_destroy(&empty);
+    cflow_result_destroy(&result);
+    cflow_plan_destroy(&plan);
+    cflow_graph_destroy(&graph);
+    ts_cflow_mir_kernel_binding_destroy(&binding);
+    exprtk_free(root);
+    turbo_script_free(ctx);
+  }
+
   it("rejects captured lambdas before MIR kernel compilation") {
     turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
     exprtk_node_t *root = NULL;

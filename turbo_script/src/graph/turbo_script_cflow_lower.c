@@ -61,19 +61,37 @@ static bool ts_cflow_reserve_kernel_binding(
   return true;
 }
 
-static bool ts_cflow_numeric_source_literal(const exprtk_node_t *node) {
-  if (!node) return false;
-  if (node->type == EXPRTK_NODE_NUMBER || node->type == EXPRTK_NODE_INTEGER)
+static bool ts_cflow_numeric_literal_value(const exprtk_node_t *node,
+                                           double *out) {
+  double value;
+
+  if (!node || !out) return false;
+  if (node->type == EXPRTK_NODE_NUMBER) {
+    *out = node->data.number;
     return true;
+  }
+  if (node->type == EXPRTK_NODE_INTEGER) {
+    *out = (double)node->data.integer;
+    return true;
+  }
 
   /* TurboScript represents unary +/- as a BINARY_OP with a NULL left operand.
-   * Match the canonical AST/MIR contract instead of rejecting negative numeric
-   * literals such as -2 as a non-numeric vector source. */
-  return node->type == EXPRTK_NODE_BINARY_OP &&
-         node->data.binary.left == NULL &&
-         (node->data.binary.op == exprtk_TOKEN_PLUS ||
-          node->data.binary.op == exprtk_TOKEN_MINUS) &&
-         ts_cflow_numeric_source_literal(node->data.binary.right);
+   * Keep executable seed admission deliberately narrower than general constant
+   * folding so dynamic seed evaluation remains a language-runtime concern. */
+  if (node->type != EXPRTK_NODE_BINARY_OP ||
+      node->data.binary.left != NULL ||
+      (node->data.binary.op != exprtk_TOKEN_PLUS &&
+       node->data.binary.op != exprtk_TOKEN_MINUS) ||
+      !ts_cflow_numeric_literal_value(node->data.binary.right, &value))
+    return false;
+
+  *out = node->data.binary.op == exprtk_TOKEN_MINUS ? -value : value;
+  return true;
+}
+
+static bool ts_cflow_numeric_source_literal(const exprtk_node_t *node) {
+  double value;
+  return ts_cflow_numeric_literal_value(node, &value);
 }
 
 static bool ts_cflow_vector_source(const exprtk_node_t *node) {
@@ -89,12 +107,14 @@ static bool ts_cflow_vector_source(const exprtk_node_t *node) {
 static bool ts_cflow_append_callable(
     turbo_script_ctx_t *runtime_ctx, bool executable_mode,
     ts_cflow_lowered_pipeline_t *out, const exprtk_node_t *lambda,
-    ts_cmeta_lambda_role_t role, cflow_op op, const char **error) {
+    ts_cmeta_lambda_role_t role, cflow_op op,
+    const exprtk_node_t *reduce_seed_expr, const char **error) {
   ts_cmeta_lambda_contract_t contract;
   ts_cflow_mir_kernel_binding_t binding = {0};
   const char *analysis_error = NULL;
   const char *kernel_error = NULL;
   cmeta_callable callable;
+  double reduce_seed = 0.0;
 
   if (!ts_cmeta_analyze_lambda(lambda, role, &contract, &analysis_error)) {
     if (error) *error = analysis_error ? analysis_error
@@ -110,10 +130,11 @@ static bool ts_cflow_append_callable(
 
   callable = contract.callable;
   if (executable_mode) {
-    if (role == TS_CMETA_LAMBDA_REDUCE) {
+    if (role == TS_CMETA_LAMBDA_REDUCE &&
+        !ts_cflow_numeric_literal_value(reduce_seed_expr, &reduce_seed)) {
       if (error)
         *error =
-            "executable CFlow lowering does not yet support seeded reduce";
+            "executable CFlow reduce requires a numeric literal seed";
       return false;
     }
     if (!runtime_ctx) {
@@ -130,7 +151,9 @@ static bool ts_cflow_append_callable(
     callable = binding.callable;
   }
 
-  if (!cflow_graph_add(&out->graph, op, callable, NULL)) {
+  if ((executable_mode && role == TS_CMETA_LAMBDA_REDUCE)
+          ? !cflow_graph_reduce_seeded(&out->graph, callable, &reduce_seed)
+          : !cflow_graph_add(&out->graph, op, callable, NULL)) {
     if (executable_mode) ts_cflow_mir_kernel_binding_destroy(&binding);
     if (error) *error = out->graph.error ? out->graph.error
                                          : "CFlow graph operator admission failed";
@@ -201,7 +224,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
       return ts_cflow_append_callable(
           runtime_ctx, executable_mode, out,
           expr->data.member_call.args[0], TS_CMETA_LAMBDA_FILTER,
-          CFLOW_OP_FILTER, error);
+          CFLOW_OP_FILTER, NULL, error);
     }
 
     if (strcmp(name, "map") == 0) {
@@ -214,7 +237,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
       return ts_cflow_append_callable(
           runtime_ctx, executable_mode, out,
           expr->data.member_call.args[0], TS_CMETA_LAMBDA_MAP,
-          CFLOW_OP_MAP, error);
+          CFLOW_OP_MAP, NULL, error);
     }
 
     if (strcmp(name, "reduce") == 0) {
@@ -229,7 +252,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
       return ts_cflow_append_callable(
           runtime_ctx, executable_mode, out,
           expr->data.member_call.args[1], TS_CMETA_LAMBDA_REDUCE,
-          CFLOW_OP_REDUCE, error);
+          CFLOW_OP_REDUCE, expr->data.member_call.args[0], error);
     }
 
     if (error) *error =
@@ -256,7 +279,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return ts_cflow_append_callable(
         runtime_ctx, executable_mode, out,
         expr->data.function.args[1], TS_CMETA_LAMBDA_FILTER,
-        CFLOW_OP_FILTER, error);
+        CFLOW_OP_FILTER, NULL, error);
   }
 
   if (strcmp(name, "map") == 0) {
@@ -269,7 +292,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return ts_cflow_append_callable(
         runtime_ctx, executable_mode, out,
         expr->data.function.args[1], TS_CMETA_LAMBDA_MAP,
-        CFLOW_OP_MAP, error);
+        CFLOW_OP_MAP, NULL, error);
   }
 
   if (strcmp(name, "reduce") == 0) {
@@ -285,7 +308,7 @@ static bool ts_cflow_lower_node(turbo_script_ctx_t *runtime_ctx,
     return ts_cflow_append_callable(
         runtime_ctx, executable_mode, out,
         expr->data.function.args[2], TS_CMETA_LAMBDA_REDUCE,
-        CFLOW_OP_REDUCE, error);
+        CFLOW_OP_REDUCE, expr->data.function.args[1], error);
   }
 
   if (error) *error = "function is not part of the first CFlow pipeline slice";

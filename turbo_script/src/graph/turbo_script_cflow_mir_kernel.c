@@ -35,6 +35,7 @@ static bool ts_cflow_mir_kernel_invoke(const cmeta_callable *self,
                                        const void *const *args) {
   ts_cflow_mir_kernel_t *kernel = NULL;
   double input;
+  double right = 0.0;
   double numeric_result;
   bool predicate_result;
 
@@ -49,9 +50,17 @@ static bool ts_cflow_mir_kernel_invoke(const cmeta_callable *self,
   kernel->runtime_ctx->env.flow = exprtk_FLOW_NORMAL;
   kernel->runtime_ctx->env.error_msg[0] = '\0';
 
-  numeric_result =
-      ((double (*)(void *, void *, double))kernel->address)(
-          kernel->runtime_ctx, &kernel->runtime_ctx->env, input);
+  if (kernel->role == TS_CMETA_LAMBDA_REDUCE) {
+    if (!args[1]) return false;
+    memcpy(&right, args[1], sizeof(right));
+    numeric_result =
+        ((double (*)(void *, void *, double, double))kernel->address)(
+            kernel->runtime_ctx, &kernel->runtime_ctx->env, input, right);
+  } else {
+    numeric_result =
+        ((double (*)(void *, void *, double))kernel->address)(
+            kernel->runtime_ctx, &kernel->runtime_ctx->env, input);
+  }
   if (kernel->runtime_ctx->env.aborted ||
       kernel->runtime_ctx->env.flow == exprtk_FLOW_THROW)
     return false;
@@ -61,7 +70,8 @@ static bool ts_cflow_mir_kernel_invoke(const cmeta_callable *self,
     memcpy(out, &predicate_result, sizeof(predicate_result));
     return true;
   }
-  if (kernel->role == TS_CMETA_LAMBDA_MAP) {
+  if (kernel->role == TS_CMETA_LAMBDA_MAP ||
+      kernel->role == TS_CMETA_LAMBDA_REDUCE) {
     memcpy(out, &numeric_result, sizeof(numeric_result));
     return true;
   }
@@ -98,8 +108,9 @@ bool ts_cflow_mir_kernel_bind(turbo_script_ctx_t *runtime_ctx,
     if (error) *error = "MIR kernel binding requires context, lambda and output";
     return false;
   }
-  if (role != TS_CMETA_LAMBDA_MAP && role != TS_CMETA_LAMBDA_FILTER) {
-    if (error) *error = "first MIR kernel slice supports map/filter only";
+  if (role != TS_CMETA_LAMBDA_MAP && role != TS_CMETA_LAMBDA_FILTER &&
+      role != TS_CMETA_LAMBDA_REDUCE) {
+    if (error) *error = "MIR CFlow kernel role is unsupported";
     return false;
   }
   if (!ts_cmeta_analyze_lambda(lambda, role, &contract, &analysis_error)) {
@@ -145,7 +156,9 @@ bool ts_cflow_mir_kernel_bind(turbo_script_ctx_t *runtime_ctx,
                          lambda->data.func_def.arg_count,
                          lambda->data.func_def.body);
   compiled = ts_cflow_find_compiled_kernel(&compiler, kernel_name);
-  if (compiler.failed || !compiled || compiled->arg_count != 1u ||
+  if (compiler.failed || !compiled ||
+      compiled->arg_count !=
+          (role == TS_CMETA_LAMBDA_REDUCE ? (size_t)2u : (size_t)1u) ||
       !compiled->mir_func) {
     if (error) *error = "TurboScript lambda is not eligible for MIR kernel compilation";
     goto compiler_done;
