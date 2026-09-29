@@ -54,6 +54,8 @@ TurboScript syntax / source adapters / diagnostics
 | `stream.text(text).lines().count()` | Borrowed line slices preserve legacy newline/CRLF/trailing-empty-line semantics | **CFlow** | Typed scalar Phase 2 terminal |
 | `stream.text(text).lines().collect()` / `.toList()` | CFlow result slices are copied into a TurboScript-owned string list before source/result cleanup | **CFlow** | Typed owned materialization terminal |
 | `stream.text(io.read_file(path)).lines().count/collect/toList` | File I/O remains TurboScript-owned; evaluated text feeds the same typed line Plan | **CFlow** | Verified Phase 2 file path |
+| `stream.text(text).split(sep).count/collect/toList` | Reuses typed borrowed text slices; empty separator is byte-oriented and leading/trailing/adjacent empty tokens are preserved | **CFlow** | Typed split terminals |
+| `stream.text(io.read_file(path)).split(sep).count/collect/toList` | File I/O remains TurboScript-owned; text + separator expressions are each evaluated once | **CFlow** | Verified Phase 2 file split path |
 | `stream.lines(path)` | Listed in language guide, but no current core factory/test registration found | **Documented only** | Either implement as a canonical adapter or remove the stale surface |
 | `stream.csv(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
 | `stream.json(...)` | Listed in language guide; no current core factory/test registration found in this audit | **Documented only** | Establish provider/factory contract before CFlow migration |
@@ -77,7 +79,7 @@ with `source_kind` may also dispatch member calls through the provider hook
 | `.forEach(fn)` | **Legacy adapter** | Effectful terminal; keep as an explicit execution barrier until semantics are specified |
 | `.filterExpr(expr)` / `.where(expr)` | **Provider hook / legacy adapter** | Generic core fallback does not define a CFlow expression compiler |
 | text `.lines()` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | CFlow uses borrowed line slices synchronously; collect/toList deep-copy strings into TurboScript-owned list storage |
-| text `.split(sep)` | **Legacy adapter** | Eager string → list materialization |
+| text `.split(sep)` | **Legacy adapter** when used as an intermediate stream; **CFlow** for exact `count/collect/toList` terminals | Empty separator splits by byte; non-string separator yields an empty stream; collect/toList deep-copy token strings |
 
 ## Phase 1 parity boundary
 
@@ -117,13 +119,16 @@ CFlow Graph / Plan
 CFlow stays format-neutral. CSV/JSON/XML parsing, JSONPath/XPath, DataBind
 BindingPlan/ValidationPlan, and file I/O remain outside CFlow.
 
-The first Phase 2 text slice now covers
-`stream.text(...).lines().count/collect/toList`, including the same terminals
-when the text expression is `io.read_file(path)`. It preserves eager source
-evaluation and legacy line splitting while routing typed borrowed line slices
-through a synchronous CFlow Plan. `collect/toList` copy each line into
+The Phase 2 text slice now covers both
+`stream.text(...).lines().count/collect/toList` and
+`stream.text(...).split(sep).count/collect/toList`, including the same
+terminals when the text expression is `io.read_file(path)`. It preserves eager
+source evaluation and legacy line/token splitting while routing typed borrowed
+slices through a synchronous CFlow Plan. `collect/toList` copy each slice into
 TurboScript-owned string storage before the CFlow result and source text are
-released.
+released. For `split`, source and separator expressions are each evaluated
+exactly once; empty separators remain byte-oriented and empty tokens are
+preserved.
 
 Before implementing `stream.lines/csv/json/xml`, reconcile each surface with
 actual factory/provider registration so the migration does not preserve a
