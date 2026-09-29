@@ -82,6 +82,7 @@ bool ts_cflow_text_lines_plan_compile(cflow_graph *graph, cflow_plan *plan,
 
   if (!cflow_plan_compile_surface(plan, graph, NULL)) {
     if (error) *error = "text-line CFlow Plan compilation failed";
+    cflow_plan_destroy(plan);
     cflow_graph_destroy(graph);
     graph->root = CMETA_INVALID_ID;
     return false;
