@@ -17,6 +17,22 @@ static exprtk_node_t *ts_stream_test_single_expr(turbo_script_ctx_t *ctx,
   return root;
 }
 
+typedef struct ts_stream_test_string_source_s {
+  size_t calls;
+  const char *value;
+} ts_stream_test_string_source_t;
+
+static exprtk_value_t ts_stream_test_counted_string(
+    size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+  ts_stream_test_string_source_t *state =
+      (ts_stream_test_string_source_t *)user_data;
+  (void)args;
+  (void)env;
+  if (!state || argc != 0u) return exprtk_val_null();
+  ++state->calls;
+  return exprtk_val_str(vstr_from_cstr(state->value ? state->value : ""));
+}
+
 spec("TurboScript CFlow stream runtime") {
   describe("terminal admission") {
     it("executes a numeric stream reduce through CFlow") {
@@ -615,24 +631,33 @@ spec("TurboScript CFlow stream runtime") {
 
     it("evaluates text split source and separator exactly once") {
       const char *source =
-          "text_calls = 0;"
-          "sep_calls = 0;"
-          "func make_text() { text_calls += 1; return \"a,b\"; }"
-          "func make_sep() { sep_calls += 1; return \",\"; }"
           "split_count = stream.text(make_text()).split(make_sep()).count();";
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      ts_stream_test_string_source_t interp_text = {0u, "a,b"};
+      ts_stream_test_string_source_t interp_sep = {0u, ","};
+      ts_stream_test_string_source_t jit_text = {0u, "a,b"};
+      ts_stream_test_string_source_t jit_sep = {0u, ","};
 
       check_not_null(interp);
       check_not_null(jit);
+      exprtk_env_register_func(
+          &interp->env, "make_text", ts_stream_test_counted_string, &interp_text);
+      exprtk_env_register_func(
+          &interp->env, "make_sep", ts_stream_test_counted_string, &interp_sep);
+      exprtk_env_register_func(
+          &jit->env, "make_text", ts_stream_test_counted_string, &jit_text);
+      exprtk_env_register_func(
+          &jit->env, "make_sep", ts_stream_test_counted_string, &jit_sep);
+
       check_equal(turbo_script_run(interp, source), 0);
       check_equal(turbo_script_run_jit(jit, source), 0);
       check(fabs(ts_get_num(interp, "split_count") - 2.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "split_count") - 2.0) <= 1e-9);
-      check(fabs(ts_get_num(interp, "text_calls") - 1.0) <= 1e-9);
-      check(fabs(ts_get_num(jit, "text_calls") - 1.0) <= 1e-9);
-      check(fabs(ts_get_num(interp, "sep_calls") - 1.0) <= 1e-9);
-      check(fabs(ts_get_num(jit, "sep_calls") - 1.0) <= 1e-9);
+      check_equal(interp_text.calls, (size_t)1u);
+      check_equal(jit_text.calls, (size_t)1u);
+      check_equal(interp_sep.calls, (size_t)1u);
+      check_equal(jit_sep.calls, (size_t)1u);
 
       turbo_script_free(jit);
       turbo_script_free(interp);
