@@ -3,6 +3,7 @@
  * @brief TurboScript host adapter over the canonical Salts plugin registry.
  */
 #include "ts_plugin_loader.h"
+#include "ts_plugin_service_binding.h"
 #include "exprtk_runtime_internal.h"
 
 #include <float.h>
@@ -333,7 +334,8 @@ static int plugin_bind_function_exports(
   ts_plugin_function_binding_t *bindings = NULL;
   exprtk_native_registration_t *registrations = NULL;
   size_t function_count = 0u;
-  size_t index = 0u;
+  size_t registration_index = 0u;
+  size_t scalar_index = 0u;
   exprtk_registration_status_t registration_status;
 
   if (!handle || !handle->manifest || !env)
@@ -361,28 +363,60 @@ static int plugin_bind_function_exports(
 
   for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
     const salts_plugin_export *entry = &handle->manifest->exports[i];
+    exprtk_native_fn service_fn = NULL;
+    void *service_user_data = NULL;
     salts_plugin_status status;
+
     if (entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION) continue;
 
     status = salts_plugin_export_require_function(
         entry, entry->contract_id, entry->contract_version, 0u);
-    if (status != SALTS_PLUGIN_OK ||
-        !plugin_function_scalar_binding(entry, &bindings[index])) {
+    if (status != SALTS_PLUGIN_OK) {
       free(registrations);
       free(bindings);
       return plugin_error_set(
           error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_INITIALIZE,
           (uint32_t)status, NULL,
-          "plugin function '%s' is outside the canonical finite scalar binding ABI",
+          "plugin function '%s' failed canonical Function admission",
           entry->export_id ? entry->export_id : "<unnamed>");
     }
 
-    registrations[index].name = entry->export_id;
-    registrations[index].fn = plugin_function_scalar_call;
-    registrations[index].user_data = &bindings[index];
-    registrations[index].flags =
+    registrations[registration_index].name = entry->export_id;
+    registrations[registration_index].flags =
         EXPRTK_NATIVE_PRESERVE_VALUE_TYPES;
-    ++index;
+
+    if (ts_plugin_service_binding_get(
+            handle, entry->export_id,
+            &service_fn, &service_user_data)) {
+      registrations[registration_index].fn = service_fn;
+      registrations[registration_index].user_data = service_user_data;
+      ++registration_index;
+      continue;
+    }
+
+    if (!plugin_function_scalar_binding(entry, &bindings[scalar_index])) {
+      free(registrations);
+      free(bindings);
+      return plugin_error_set(
+          error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_INITIALIZE,
+          0u, NULL,
+          "plugin function '%s' is neither a catalog-backed generated Service "
+          "operation nor inside the canonical finite scalar binding ABI",
+          entry->export_id ? entry->export_id : "<unnamed>");
+    }
+
+    registrations[registration_index].fn = plugin_function_scalar_call;
+    registrations[registration_index].user_data = &bindings[scalar_index];
+    ++registration_index;
+    ++scalar_index;
+  }
+
+  if (registration_index != function_count) {
+    free(registrations);
+    free(bindings);
+    return plugin_error_set(
+        error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_INITIALIZE,
+        0u, NULL, "plugin Function registration count is inconsistent");
   }
 
   registration_status = exprtk_env_register_funcs_checked(
@@ -401,8 +435,12 @@ static int plugin_bind_function_exports(
             : "failed to register canonical plugin function bindings");
   }
 
+  if (scalar_index == 0u) {
+    free(bindings);
+    bindings = NULL;
+  }
   handle->function_bindings = bindings;
-  handle->function_binding_count = function_count;
+  handle->function_binding_count = scalar_index;
   return TS_PLUGIN_ERROR_NONE;
 }
 
@@ -899,6 +937,8 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   handle->instance = NULL;
   handle->function_bindings = NULL;
   handle->function_binding_count = 0u;
+  handle->service_bindings = NULL;
+  handle->service_binding_count = 0u;
   handle->initialized = 0;
   registry.impl = NULL;
   free(resolved);
@@ -962,9 +1002,29 @@ int ts_plugin_init_ex(ts_plugin_handle_t *handle, void *env, void *scratch,
                               "plugin module initialization returned no instance");
   }
 
+  {
+    char service_error[TS_PLUGIN_ERROR_MESSAGE_CAPACITY] = {0};
+    if (ts_plugin_service_bindings_prepare(
+            handle, (exprtk_env_t *)env,
+            service_error, sizeof(service_error)) != 0) {
+      if (handle->instance && handle->module &&
+          ts_plugin_module_valid(handle->module)) {
+        ts_plugin_module_unload(handle->module, handle->instance);
+        handle->instance = NULL;
+      }
+      ts_plugin_service_bindings_destroy(handle);
+      return plugin_error_set(
+          error, TS_PLUGIN_ERROR_DESCRIPTOR,
+          TS_PLUGIN_STAGE_INITIALIZE, 0u, NULL,
+          "generated DataBind Service catalog admission failed: %s",
+          service_error[0] ? service_error : "invalid catalog");
+    }
+  }
+
   bind_status = plugin_bind_function_exports(
       handle, (exprtk_env_t *)env, error);
   if (bind_status != TS_PLUGIN_ERROR_NONE) {
+    ts_plugin_service_bindings_destroy(handle);
     if (handle->instance && handle->module &&
         ts_plugin_module_valid(handle->module)) {
       ts_plugin_module_unload(handle->module, handle->instance);
@@ -998,6 +1058,7 @@ void ts_plugin_unload(ts_plugin_handle_t *handle) {
   free(handle->function_bindings);
   handle->function_bindings = NULL;
   handle->function_binding_count = 0u;
+  ts_plugin_service_bindings_destroy(handle);
   handle->initialized = 0;
 
   if (salts_plugin_lease_valid(handle->lease))
