@@ -3,6 +3,7 @@
  * @brief TurboScript host adapter over the canonical Salts plugin registry.
  */
 #include "ts_plugin_loader.h"
+#include "ts_plugin_databind.h"
 #include "exprtk_runtime_internal.h"
 
 #include <float.h>
@@ -342,7 +343,9 @@ static int plugin_bind_function_exports(
                             "plugin function binding requires a manifest and environment");
 
   for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
-    if (handle->manifest->exports[i].kind == SALTS_PLUGIN_EXPORT_FUNCTION)
+    const salts_plugin_export *entry = &handle->manifest->exports[i];
+    if (entry->kind == SALTS_PLUGIN_EXPORT_FUNCTION &&
+        !ts_plugin_databind_covers(handle, entry->export_id))
       ++function_count;
   }
   if (function_count == 0u) return TS_PLUGIN_ERROR_NONE;
@@ -362,7 +365,9 @@ static int plugin_bind_function_exports(
   for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
     const salts_plugin_export *entry = &handle->manifest->exports[i];
     salts_plugin_status status;
-    if (entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION) continue;
+    if (entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION ||
+        ts_plugin_databind_covers(handle, entry->export_id))
+      continue;
 
     status = salts_plugin_export_require_function(
         entry, entry->contract_id, entry->contract_version, 0u);
@@ -899,6 +904,9 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   handle->instance = NULL;
   handle->function_bindings = NULL;
   handle->function_binding_count = 0u;
+  handle->databind_bindings = NULL;
+  handle->databind_binding_count = 0u;
+  handle->databind_codec = NULL;
   handle->initialized = 0;
   registry.impl = NULL;
   free(resolved);
@@ -962,9 +970,16 @@ int ts_plugin_init_ex(ts_plugin_handle_t *handle, void *env, void *scratch,
                               "plugin module initialization returned no instance");
   }
 
-  bind_status = plugin_bind_function_exports(
+  bind_status = ts_plugin_databind_bind(
       handle, (exprtk_env_t *)env, error);
+  if (bind_status == TS_PLUGIN_ERROR_NONE)
+    bind_status = plugin_bind_function_exports(
+        handle, (exprtk_env_t *)env, error);
   if (bind_status != TS_PLUGIN_ERROR_NONE) {
+    ts_plugin_databind_clear(handle);
+    free(handle->function_bindings);
+    handle->function_bindings = NULL;
+    handle->function_binding_count = 0u;
     if (handle->instance && handle->module &&
         ts_plugin_module_valid(handle->module)) {
       ts_plugin_module_unload(handle->module, handle->instance);
@@ -998,6 +1013,7 @@ void ts_plugin_unload(ts_plugin_handle_t *handle) {
   free(handle->function_bindings);
   handle->function_bindings = NULL;
   handle->function_binding_count = 0u;
+  ts_plugin_databind_clear(handle);
   handle->initialized = 0;
 
   if (salts_plugin_lease_valid(handle->lease))
