@@ -75,7 +75,7 @@ Important module groups:
 - `core`, `math`, `stats`, `string`, `regex`, `io`
 - `mapper`: class-first JSON/YAML/XML mapping through Salts DataBind parser APIs
 - `ts`, `ta`, `fin`: time-series, technical analysis, and finance helpers
-- `net`, `sqlite`, and other plugin modules
+- `net`, `db`, and other plugin modules
 
 The mapper is the canonical path for structured JSON/YAML/XML values. TurboScript
 class field declarations are the type metadata and Salts DataBind parser APIs
