@@ -194,6 +194,23 @@ spec("turbo_script_basics") {
       check_not_null(strstr(turbo_script_get_error(ctx), "invalid plugin name"));
       turbo_script_free(ctx);
     }
+
+    it("should reject malformed qualified native plugin names") {
+      const char *invalid[] = {
+          ".Image", "Image.", "Image..Processor", "Image.9Processor",
+          "Image./Processor", "Image\\Processor"};
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(ctx);
+      for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+        check_equal(turbo_script_load_plugin(ctx, invalid[i]), -1);
+        check_equal(
+            turbo_script_get_error_code(ctx), TURBO_SCRIPT_ERROR_ARGUMENT);
+        check_not_null(strstr(
+            turbo_script_get_error(ctx), "invalid plugin name"));
+      }
+      turbo_script_free(ctx);
+    }
   }
 
   describe("Memory policy") {
