@@ -6,7 +6,10 @@ set(TARGET_NAME_PLUGIN_LOADER ${TARGET_NAME}_plugin_loader)
 
 # Host-only native module loader. It is deliberately separate from the JIT
 # runtime so the ABI boundary can be tested without admitting task/timer code.
-add_library(${TARGET_NAME_PLUGIN_LOADER} STATIC src/host/ts_plugin_loader.c)
+add_library(${TARGET_NAME_PLUGIN_LOADER} STATIC
+  src/host/ts_plugin_loader.c
+  src/host/ts_plugin_databind.c
+  src/host/ts_plugin_databind.h)
 cmake_config_target(${TARGET_NAME_PLUGIN_LOADER} FOLDER turbo_script)
 target_include_directories(
   ${TARGET_NAME_PLUGIN_LOADER}
@@ -16,7 +19,7 @@ target_include_directories(
 target_link_libraries(
   ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC Salts::Plugin
-  PRIVATE exprtk)
+  PRIVATE exprtk Salts::DataBind)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES
