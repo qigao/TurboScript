@@ -53,6 +53,13 @@ static bool SALTS_PLUGIN_CALL fin_kelly_invoke(
   return true;
 }
 
+/*
+ * Migration state under one Salts Plugin ABI:
+ * - turboscript.module keeps the remaining legacy language facade mounted;
+ * - strategy.kelly is already a canonical Function export.
+ * Both are protected by the same manifest lease; this is not a dual loader or
+ * a parallel Plugin ABI.
+ */
 static salts_plugin_export fin_exports[2];
 static salts_once_t fin_exports_once = SALTS_ONCE_INIT;
 
