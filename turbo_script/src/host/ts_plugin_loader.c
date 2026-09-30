@@ -149,7 +149,8 @@ static int plugin_scalar_from_exprtk(
       return 1;
 
     case TS_PLUGIN_SCALAR_INT:
-      if (number < (double)INT_MIN || number > (double)INT_MAX ||
+      if (number < (double)INT_MIN ||
+          number >= (double)INT_MAX + 1.0 ||
           trunc(number) != number)
         return 0;
       storage->int_value = (int)number;
@@ -157,7 +158,8 @@ static int plugin_scalar_from_exprtk(
       return 1;
 
     case TS_PLUGIN_SCALAR_LONG:
-      if (number < (double)LONG_MIN || number > (double)LONG_MAX ||
+      if (number < (double)LONG_MIN ||
+          number >= (double)LONG_MAX + 1.0 ||
           trunc(number) != number)
         return 0;
       storage->long_value = (long)number;
