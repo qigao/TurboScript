@@ -426,6 +426,9 @@ EXPRTK_C_API const cmeta_data_desc *exprtk_class_cmeta_data(
 EXPRTK_C_API cmeta_status exprtk_instance_borrow_cmeta_object(
     exprtk_instance_t *instance, cmeta_object_ref *out);
 
+/** @brief Canonical CMeta carrier type for one exprtk_value_t. */
+EXPRTK_C_API const cmeta_type_desc *exprtk_value_cmeta_type(void);
+
 /**
  * @brief Free class resources
  * @param klass Class to free
