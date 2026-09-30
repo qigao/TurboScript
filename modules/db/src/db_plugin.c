@@ -1,5 +1,6 @@
 #include "ts_plugin.h"
 #include "exprtk.h"
+#include "turbo_script_class_databind.h"
 
 #include <orm.h>
 #include <orm_runtime.h>
@@ -21,6 +22,13 @@ typedef struct db_driver_binding_s {
   size_t module_path_len;
 } db_driver_binding_t;
 
+typedef struct db_row_plan_entry_s {
+  char *stable_id;
+  DataBind *codec;
+  DataBindMessagePlan *plan;
+  struct db_row_plan_entry_s *next;
+} db_row_plan_entry_t;
+
 typedef struct db_ctx_s {
   orm_runtime_t *runtime;
   exprtk_env_t *env;
@@ -28,6 +36,7 @@ typedef struct db_ctx_s {
   db_driver_binding_t drivers[DB_MAX_DRIVERS];
   size_t driver_count;
   orm_connection_t *connections[DB_MAX_CONNECTIONS];
+  db_row_plan_entry_t *row_plans;
 } db_ctx_t;
 
 typedef struct db_connect_request_s {
@@ -220,6 +229,166 @@ static int db_ensure_driver(db_ctx_t *ctx,
   return 1;
 }
 
+static db_row_plan_entry_t *db_row_plan_find(
+    db_ctx_t *ctx, const cmeta_data_desc *data) {
+  db_row_plan_entry_t *entry = ctx ? ctx->row_plans : NULL;
+  while (entry) {
+    if (entry->stable_id && entry->plan && entry->codec &&
+        data && data->stable_id &&
+        strcmp(entry->stable_id, data->stable_id) == 0 &&
+        cmeta_data_desc_equal(
+            data_bind_message_plan_object_data(entry->plan), data))
+      return entry;
+    entry = entry->next;
+  }
+  return NULL;
+}
+
+static int db_row_plan_get(
+    db_ctx_t *ctx, exprtk_class_t *klass,
+    db_row_plan_entry_t **out) {
+  const cmeta_data_desc *data;
+  db_row_plan_entry_t *entry;
+  char error[256] = {0};
+  int compile_status;
+
+  if (out) *out = NULL;
+  if (!ctx || !klass || !out ||
+      !exprtk_class_finalize_cmeta_data(klass)) {
+    db_fail(ctx, "db.query requires a reflected typed RowClass", NULL);
+    return 0;
+  }
+
+  data = exprtk_class_cmeta_data(klass);
+  if (!data || data->kind != CMETA_DATA_STRUCT || !data->stable_id) {
+    db_fail(ctx, "db.query RowClass has no canonical CMeta data shape", NULL);
+    return 0;
+  }
+
+  entry = db_row_plan_find(ctx, data);
+  if (entry) {
+    *out = entry;
+    return 1;
+  }
+
+  entry = (db_row_plan_entry_t *)calloc(1u, sizeof(*entry));
+  if (!entry) {
+    db_fail(ctx, "db.query could not allocate RowClass plan cache", NULL);
+    return 0;
+  }
+
+  compile_status = turbo_script_class_databind_compile(
+      klass, &entry->codec, &entry->plan, error, sizeof(error));
+  if (compile_status <= 0) {
+    free(entry);
+    db_fail(
+        ctx,
+        compile_status < 0
+            ? "db.query RowClass contains an unsupported typed field"
+            : (error[0] ? error : "db.query RowClass DataBind compile failed"),
+        NULL);
+    return 0;
+  }
+
+  {
+    const size_t n = strlen(data->stable_id);
+    entry->stable_id = (char *)malloc(n + 1u);
+    if (entry->stable_id) memcpy(entry->stable_id, data->stable_id, n + 1u);
+  }
+  if (!entry->stable_id) {
+    data_bind_message_plan_free(entry->plan);
+    data_bind_free(entry->codec);
+    free(entry);
+    db_fail(ctx, "db.query could not cache RowClass identity", NULL);
+    return 0;
+  }
+
+  entry->next = ctx->row_plans;
+  ctx->row_plans = entry;
+  *out = entry;
+  return 1;
+}
+
+static const cmeta_type_identity db_exprtk_value_identity =
+    CMETA_TYPE_ID_ATOM_INIT("TurboScript.exprtk_value");
+static const cmeta_type_desc db_exprtk_value_type = {
+    .name = "exprtk_value_t",
+    .size = sizeof(exprtk_value_t),
+    .align = _Alignof(exprtk_value_t),
+    .kind = CMETA_T_OBJECT,
+    .pointee = NULL,
+    .traits = NULL,
+    .identity = &db_exprtk_value_identity
+};
+
+typedef struct db_row_factory_context_s {
+  db_ctx_t *ctx;
+  exprtk_class_t *klass;
+} db_row_factory_context_t;
+
+static orm_status_t db_row_factory_create(
+    void *context, void *out_value, cmeta_object_ref *out_object,
+    orm_error_t *error) {
+  db_row_factory_context_t *factory =
+      (db_row_factory_context_t *)context;
+  exprtk_value_t *carrier = (exprtk_value_t *)out_value;
+  exprtk_value_t instance;
+  cmeta_status status;
+
+  if (!factory || !factory->ctx || !factory->ctx->env ||
+      !factory->klass || !carrier || !out_object)
+    return ORM_STATUS_INVALID_ARGUMENT;
+
+  memset(carrier, 0, sizeof(*carrier));
+  carrier->type = EXPRTK_VAL_NULL;
+
+  instance = exprtk_oop_instantiate_class_value(
+      exprtk_val_class(factory->klass), factory->klass->name,
+      0u, NULL, factory->ctx->env);
+  if (instance.type != EXPRTK_VAL_INSTANCE ||
+      !instance.data.instance_val.instance) {
+    if (error) {
+      orm_error_init(error);
+      error->status = ORM_STATUS_OUT_OF_MEMORY;
+      snprintf(
+          error->message, sizeof(error->message), "%s",
+          factory->ctx->env->error_msg[0]
+              ? factory->ctx->env->error_msg
+              : "instantiate TurboScript RowClass");
+    }
+    return ORM_STATUS_OUT_OF_MEMORY;
+  }
+
+  *carrier = instance;
+  status = exprtk_instance_borrow_cmeta_object(
+      instance.data.instance_val.instance, out_object);
+  if (status != CMETA_OK) {
+    exprtk_instance_destroy(instance.data.instance_val.instance);
+    memset(carrier, 0, sizeof(*carrier));
+    carrier->type = EXPRTK_VAL_NULL;
+    if (error) {
+      orm_error_init(error);
+      error->status = ORM_STATUS_TYPE_ERROR;
+      snprintf(error->message, sizeof(error->message),
+               "borrow TurboScript RowClass CMeta object");
+    }
+    return ORM_STATUS_TYPE_ERROR;
+  }
+  return ORM_STATUS_OK;
+}
+
+static void db_row_factory_destroy(void *context, void *value) {
+  exprtk_value_t *carrier = (exprtk_value_t *)value;
+  (void)context;
+  if (!carrier) return;
+  if (carrier->type == EXPRTK_VAL_INSTANCE &&
+      carrier->data.instance_val.instance) {
+    exprtk_instance_destroy(carrier->data.instance_val.instance);
+  }
+  memset(carrier, 0, sizeof(*carrier));
+  carrier->type = EXPRTK_VAL_NULL;
+}
+
 static int db_connection_slot(db_ctx_t *ctx) {
   for (size_t i = 0u; i < DB_MAX_CONNECTIONS; ++i) {
     if (!ctx->connections[i]) return (int)i;
@@ -410,6 +579,161 @@ static exprtk_value_t db_exec(size_t argc, exprtk_value_t *args,
   return result;
 }
 
+static exprtk_value_t db_query(size_t argc, exprtk_value_t *args,
+                               exprtk_env_t *env, void *user_data) {
+  db_ctx_t *ctx = (db_ctx_t *)user_data;
+  size_t slot;
+  orm_connection_t *connection;
+  exprtk_class_t *klass;
+  db_row_plan_entry_t *entry = NULL;
+  orm_query_t *query = NULL;
+  cflow_publisher publisher = {0};
+  orm_object_flow_config_t flow;
+  db_row_factory_context_t factory_context;
+  orm_object_row_factory_t factory = {0};
+  orm_error_t error;
+  orm_status_t status;
+  exprtk_value_t rows = exprtk_val_list_empty();
+  cflow_step step;
+  char publisher_error[256] = {0};
+  size_t scratch_bytes;
+  (void)env;
+
+  if (!ctx || (argc != 3u && argc != 4u) ||
+      !db_handle_value(args[0], &slot) ||
+      !(connection = ctx->connections[slot]) ||
+      args[1].type != EXPRTK_VAL_STRING ||
+      args[2].type != EXPRTK_VAL_CLASS ||
+      !(klass = args[2].data.class_val.klass)) {
+    return db_fail(
+        ctx,
+        "db.query requires (connection, sql, RowClass [, scalar_params_list])",
+        NULL);
+  }
+
+  if (!db_row_plan_get(ctx, klass, &entry)) return exprtk_val_num(0.0);
+
+  orm_error_init(&error);
+  status = orm_raw(connection, args[1].data.string, &query, &error);
+  if (status != ORM_STATUS_OK || !query)
+    return db_fail(ctx, "db.query query creation failed", &error);
+
+  if (argc == 4u && !db_bind_params(query, &args[3], &error)) {
+    orm_query_destroy(query);
+    return db_fail(
+        ctx,
+        error.status != ORM_STATUS_OK
+            ? "db.query parameter binding failed"
+            : "db.query params must be a list of null/bool/int/number/string/bytes",
+        error.status != ORM_STATUS_OK ? &error : NULL);
+  }
+
+  factory_context.ctx = ctx;
+  factory_context.klass = klass;
+  factory.struct_size = sizeof(factory);
+  factory.abi_version = ORM_C_ABI_VERSION;
+  factory.output_type = &db_exprtk_value_type;
+  factory.context = &factory_context;
+  factory.create = db_row_factory_create;
+  factory.destroy = db_row_factory_destroy;
+
+  orm_object_flow_config(
+      &flow, exprtk_class_cmeta_data(klass), entry->plan, &factory);
+
+  if (data_bind_message_plan_field_count(entry->plan) >
+      (SIZE_MAX - 8192u) / 256u) {
+    orm_query_destroy(query);
+    return db_fail(ctx, "db.query RowClass workspace overflow", NULL);
+  }
+  scratch_bytes =
+      8192u + data_bind_message_plan_field_count(entry->plan) * 256u;
+  if (scratch_bytes > flow.scratch_bytes) flow.scratch_bytes = scratch_bytes;
+  if (ctx->env->max_external_value_bytes != 0u)
+    flow.max_buffer_bytes = ctx->env->max_external_value_bytes;
+
+  orm_error_init(&error);
+  status = orm_query_open_object_flow(query, &flow, &publisher, &error);
+  if (status != ORM_STATUS_OK || !cflow_publisher_valid(&publisher)) {
+    orm_query_destroy(query);
+    return db_fail(ctx, "db.query object Publisher open failed", &error);
+  }
+
+  for (;;) {
+    exprtk_value_t row = {0};
+    row.type = EXPRTK_VAL_NULL;
+    step = cflow_publisher_resume(&publisher, NULL, &row);
+
+    if (step.kind == CFLOW_STEP_VALUE ||
+        step.kind == CFLOW_STEP_VALUE_AND_DONE) {
+      if (row.type != EXPRTK_VAL_INSTANCE ||
+          !row.data.instance_val.instance) {
+        db_row_factory_destroy(&factory_context, &row);
+        exprtk_value_destroy(&rows);
+        cflow_publisher_destroy(&publisher);
+        orm_query_destroy(query);
+        return db_fail(
+            ctx, "db.query object Publisher emitted a non-instance row", NULL);
+      }
+
+      if (exprtk_list_push(&rows, row) != 0) {
+        db_row_factory_destroy(&factory_context, &row);
+        exprtk_value_destroy(&rows);
+        cflow_publisher_destroy(&publisher);
+        orm_query_destroy(query);
+        return db_fail(ctx, "db.query could not collect typed row", NULL);
+      }
+
+      /* Publisher ownership transferred to the caller. The list now owns the
+       * script-visible carrier reference; the instance itself remains arena-
+       * backed for the TurboScript context lifetime. */
+      memset(&row, 0, sizeof(row));
+      row.type = EXPRTK_VAL_NULL;
+
+      if (step.kind == CFLOW_STEP_VALUE_AND_DONE) break;
+      continue;
+    }
+
+    if (step.kind == CFLOW_STEP_DONE) break;
+
+    if (step.kind == CFLOW_STEP_WAIT) {
+      exprtk_value_destroy(&rows);
+      cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      return db_fail(
+          ctx,
+          "db.query synchronous collection does not admit asynchronous WAIT",
+          NULL);
+    }
+
+    if (step.kind == CFLOW_STEP_ERROR) {
+      snprintf(
+          publisher_error, sizeof(publisher_error), "%s",
+          step.error && step.error[0]
+              ? step.error
+              : "typed row Publisher failed");
+      exprtk_value_destroy(&rows);
+      cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      if (ctx->env) {
+        ctx->env->aborted = 1;
+        snprintf(ctx->env->error_msg, sizeof(ctx->env->error_msg),
+                 "db.query failed: %s", publisher_error);
+      }
+      return exprtk_val_num(0.0);
+    }
+
+    exprtk_value_destroy(&rows);
+    cflow_publisher_destroy(&publisher);
+    orm_query_destroy(query);
+    return db_fail(
+        ctx, "db.query received an invalid CFlow Publisher step", NULL);
+  }
+
+  cflow_publisher_destroy(&publisher);
+  orm_query_destroy(query);
+  return rows;
+}
+
 static exprtk_value_t db_close(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, void *user_data) {
   db_ctx_t *ctx = (db_ctx_t *)user_data;
@@ -458,6 +782,15 @@ static void db_ctx_destroy(db_ctx_t *ctx) {
     free(ctx->drivers[i].id);
     free(ctx->drivers[i].module_path);
   }
+
+  while (ctx->row_plans) {
+    db_row_plan_entry_t *next = ctx->row_plans->next;
+    free(ctx->row_plans->stable_id);
+    data_bind_message_plan_free(ctx->row_plans->plan);
+    data_bind_free(ctx->row_plans->codec);
+    free(ctx->row_plans);
+    ctx->row_plans = next;
+  }
   free(ctx);
 }
 
@@ -487,6 +820,7 @@ static void *db_module_load(void *self, void *env_ptr, void *scratch_ptr) {
 
   exprtk_env_register_func(env, "db.connect", db_connect, ctx);
   exprtk_env_register_func(env, "db.exec", db_exec, ctx);
+  exprtk_env_register_func(env, "db.query", db_query, ctx);
   exprtk_env_register_func(env, "db.close", db_close, ctx);
   return ctx;
 }
