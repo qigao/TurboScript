@@ -1,4 +1,5 @@
 #include "exprtk.h"
+#include "exprtk_class.h"
 #include "exprtk_module.h"
 #include "tinytest.h"
 
@@ -7,6 +8,29 @@
 extern const exprtk_module_t *exprtk_module_math(void);
 
 spec("CMeta builtin function reflection") {
+    it("uses one canonical exprtk value descriptor across reflection") {
+        const cmeta_type_desc *value_type = exprtk_value_cmeta_type();
+        const cmeta_type_desc *value_ptr_type = exprtk_value_ptr_cmeta_type();
+        const exprtk_module_t *module = exprtk_module_math();
+        exprtk_function_reflection_t reflected = {0};
+
+        check_not_null(value_type);
+        check_not_null(value_ptr_type);
+        check(cmeta_type_desc_valid(value_type));
+        check(cmeta_type_desc_valid(value_ptr_type));
+        check_equal(value_type->name, "exprtk_value_t");
+        check_equal(
+            value_type->identity->stable_atom_id,
+            "turboscript.exprtk.value");
+        check(value_ptr_type->pointee == value_type);
+
+        check_not_null(module);
+        check(module->count > 0u);
+        check(exprtk_module_function_reflect(module, 0u, &reflected));
+        check(reflected.function.return_type == value_type);
+        check(reflected.function.params[1].type == value_ptr_type);
+    }
+
     it("projects the exact native VM adapter as a canonical FunctionDesc") {
         const exprtk_module_t *module = exprtk_module_math();
         exprtk_function_reflection_t reflected = {0};
