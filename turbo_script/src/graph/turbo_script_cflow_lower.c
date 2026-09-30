@@ -6,6 +6,7 @@
 
 #include <cflow/function_projection.h>
 
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
