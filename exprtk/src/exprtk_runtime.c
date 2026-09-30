@@ -1199,7 +1199,8 @@ exprtk_registration_status_t exprtk_env_register_funcs_checked_with_fault(
     if (!env || (registration_count != 0 && !registrations))
         return EXPRTK_REGISTRATION_INVALID_ARGUMENT;
     for (size_t i = 0; i < registration_count; ++i) {
-        if (!registrations[i].name || !registrations[i].fn)
+        if (!registrations[i].name || !registrations[i].fn ||
+            (registrations[i].flags & ~EXPRTK_NATIVE_FLAG_MASK) != 0u)
             return EXPRTK_REGISTRATION_INVALID_ARGUMENT;
         if (exprtk_env_has_func(env, registrations[i].name))
             return EXPRTK_REGISTRATION_CONFLICT;
@@ -1243,6 +1244,7 @@ exprtk_registration_status_t exprtk_env_register_funcs_checked_with_fault(
         new_func->access_level = EXPRTK_ACCESS_PUBLIC;
         new_func->data.native.fn = registrations[i].fn;
         new_func->data.native.user_data = registrations[i].user_data;
+        new_func->data.native.flags = registrations[i].flags;
         new_func->next = pending_head;
         pending_head = new_func;
         if (!pending_tail) pending_tail = new_func;
@@ -1270,6 +1272,7 @@ void exprtk_env_register_func(exprtk_env_t *env, const char *name, exprtk_native
     new_func->access_level = EXPRTK_ACCESS_PUBLIC;
     new_func->data.native.fn = fn;
     new_func->data.native.user_data = user_data;
+    new_func->data.native.flags = EXPRTK_NATIVE_FLAG_NONE;
     new_func->next = env->funcs;
     env->funcs = new_func;
 }
