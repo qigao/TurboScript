@@ -160,6 +160,194 @@ static int sqlite_exec_sql(sqlite_handle_t *h, const char *sql) {
   return rc;
 }
 
+/* == Canonical provider Interface ========================================== */
+
+static void *sqlite_provider_create_impl(void *self) {
+  (void)self;
+  return sqlite_ctx_create();
+}
+
+static void sqlite_provider_destroy_impl(void *self, void *session) {
+  (void)self;
+  sqlite_ctx_destroy(session);
+}
+
+static int sqlite_provider_open_impl(void *self, void *session,
+                                     const char *path) {
+  sqlite_ctx_t *ctx = (sqlite_ctx_t *)session;
+  sqlite3 *db = NULL;
+  int rc;
+  int handle;
+  (void)self;
+
+  if (!ctx || !path) return -1;
+  rc = sqlite3_open(path, &db);
+  if (rc != SQLITE_OK) {
+    if (db) sqlite3_close(db);
+    return -1;
+  }
+
+  handle = sqlite_handle_alloc(ctx, db);
+  if (handle < 0) {
+    sqlite3_close(db);
+    return -1;
+  }
+  return handle;
+}
+
+static void sqlite_provider_close_impl(void *self, void *session,
+                                       int handle) {
+  (void)self;
+  sqlite_handle_free((sqlite_ctx_t *)session, handle);
+}
+
+static int sqlite_provider_exec_impl(void *self, void *session, int handle,
+                                     const char *sql) {
+  sqlite_handle_t *h;
+  int rc;
+  (void)self;
+
+  h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
+  if (!h || !h->db || !sql) return -1;
+  rc = sqlite_exec_sql(h, sql);
+  if (rc != SQLITE_OK) return -1;
+  return sqlite3_changes(h->db);
+}
+
+static bool sqlite_provider_query_scalar_impl(void *self, void *session,
+                                              int handle, const char *sql,
+                                              double *out_value) {
+  sqlite_handle_t *h;
+  sqlite3_stmt *stmt = NULL;
+  int rc;
+  double result = 0.0;
+  (void)self;
+
+  if (!out_value || !sql) return false;
+  h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
+  if (!h || !h->db) return false;
+
+  rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    sqlite_set_error(h, sqlite3_errmsg(h->db));
+    return false;
+  }
+
+  rc = sqlite3_step(stmt);
+  if (rc == SQLITE_ROW) {
+    result = sqlite3_column_double(stmt, 0);
+    rc = SQLITE_DONE;
+  }
+  sqlite3_finalize(stmt);
+
+  if (rc != SQLITE_DONE) {
+    sqlite_set_error(h, sqlite3_errmsg(h->db));
+    return false;
+  }
+
+  *out_value = result;
+  return true;
+}
+
+static bool sqlite_provider_query_column_impl(
+    void *self, void *session, int handle, const char *sql,
+    sqlite_provider_f64_column *out_column) {
+  sqlite_handle_t *h;
+  sqlite3_stmt *stmt = NULL;
+  double *data = NULL;
+  size_t count = 0u;
+  size_t capacity = 0u;
+  int rc;
+  (void)self;
+
+  if (!out_column || !sql) return false;
+  out_column->data = NULL;
+  out_column->count = 0u;
+
+  h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
+  if (!h || !h->db) return false;
+
+  rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
+  if (rc != SQLITE_OK) {
+    sqlite_set_error(h, sqlite3_errmsg(h->db));
+    return false;
+  }
+
+  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
+    double *grown;
+    if (count == capacity) {
+      size_t next = capacity ? capacity * 2u : 16u;
+      if (next < capacity || next > SIZE_MAX / sizeof(*data)) {
+        sqlite3_finalize(stmt);
+        free(data);
+        sqlite_set_error(h, "sqlite.query_col: result too large");
+        return false;
+      }
+      grown = (double *)realloc(data, next * sizeof(*data));
+      if (!grown) {
+        sqlite3_finalize(stmt);
+        free(data);
+        sqlite_set_error(h, "sqlite.query_col: out of memory");
+        return false;
+      }
+      data = grown;
+      capacity = next;
+    }
+    data[count++] = sqlite3_column_double(stmt, 0);
+  }
+
+  sqlite3_finalize(stmt);
+  if (rc != SQLITE_DONE) {
+    sqlite_set_error(h, sqlite3_errmsg(h->db));
+    free(data);
+    return false;
+  }
+
+  out_column->data = data;
+  out_column->count = count;
+  return true;
+}
+
+static void sqlite_provider_release_column_impl(
+    void *self, void *session, sqlite_provider_f64_column *column) {
+  (void)self;
+  (void)session;
+  if (!column) return;
+  free(column->data);
+  column->data = NULL;
+  column->count = 0u;
+}
+
+static const char *sqlite_provider_error_impl(void *self, void *session,
+                                              int handle) {
+  sqlite_handle_t *h;
+  (void)self;
+  h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
+  return h ? h->error_msg : "";
+}
+
+CMETA_IMPLEMENTS(sqlite_provider, sqlite_provider_impl, 0u,
+    .create = sqlite_provider_create_impl,
+    .destroy = sqlite_provider_destroy_impl,
+    .open = sqlite_provider_open_impl,
+    .close = sqlite_provider_close_impl,
+    .exec = sqlite_provider_exec_impl,
+    .query_scalar = sqlite_provider_query_scalar_impl,
+    .query_column = sqlite_provider_query_column_impl,
+    .release_column = sqlite_provider_release_column_impl,
+    .error = sqlite_provider_error_impl
+);
+
+static char sqlite_provider_token;
+static sqlite_provider sqlite_provider_value = {
+    &sqlite_provider_token,
+    &sqlite_provider_impl_vtable
+};
+
+sqlite_provider *sqlite_provider_export(void) {
+  return &sqlite_provider_value;
+}
+
 static int sqlite_value_as_vector(exprtk_value_t value, const double **out, size_t *out_count) {
   if (!out || !out_count) return 0;
   if (value.type == EXPRTK_VAL_VECTOR) {
