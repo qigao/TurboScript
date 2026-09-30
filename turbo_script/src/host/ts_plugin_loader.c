@@ -137,43 +137,74 @@ static int plugin_scalar_from_exprtk(
     const exprtk_value_t *arg, ts_plugin_scalar_kind_t kind,
     ts_plugin_scalar_storage_t *storage, void **address) {
   double number;
-  if (!arg || !storage || !address ||
-      !plugin_numeric_value(arg, &number) || !isfinite(number))
-    return 0;
+
+  if (!arg || !storage || !address) return 0;
 
   switch (kind) {
     case TS_PLUGIN_SCALAR_BOOL:
-      if (number != 0.0 && number != 1.0) return 0;
-      storage->boolean_value = number != 0.0;
+      if (arg->type == EXPRTK_VAL_BOOL) {
+        storage->boolean_value = arg->data.boolean != 0;
+      } else if (arg->type == EXPRTK_VAL_INTEGER) {
+        if (arg->data.integer != 0 && arg->data.integer != 1) return 0;
+        storage->boolean_value = arg->data.integer != 0;
+      } else if (arg->type == EXPRTK_VAL_NUMBER) {
+        if (!isfinite(arg->data.number) ||
+            (arg->data.number != 0.0 && arg->data.number != 1.0))
+          return 0;
+        storage->boolean_value = arg->data.number != 0.0;
+      } else {
+        return 0;
+      }
       *address = &storage->boolean_value;
       return 1;
 
     case TS_PLUGIN_SCALAR_INT:
-      if (number < (double)INT_MIN ||
-          number >= (double)INT_MAX + 1.0 ||
-          trunc(number) != number)
-        return 0;
-      storage->int_value = (int)number;
+      if (arg->type == EXPRTK_VAL_INTEGER) {
+        if (arg->data.integer < (int64_t)INT_MIN ||
+            arg->data.integer > (int64_t)INT_MAX)
+          return 0;
+        storage->int_value = (int)arg->data.integer;
+      } else {
+        if (!plugin_numeric_value(arg, &number) || !isfinite(number) ||
+            number < (double)INT_MIN ||
+            number >= (double)INT_MAX + 1.0 ||
+            trunc(number) != number)
+          return 0;
+        storage->int_value = (int)number;
+      }
       *address = &storage->int_value;
       return 1;
 
     case TS_PLUGIN_SCALAR_LONG:
-      if (number < (double)LONG_MIN ||
-          number >= (double)LONG_MAX + 1.0 ||
-          trunc(number) != number)
-        return 0;
-      storage->long_value = (long)number;
+      if (arg->type == EXPRTK_VAL_INTEGER) {
+#if LONG_MAX < INT64_MAX
+        if (arg->data.integer < (int64_t)LONG_MIN ||
+            arg->data.integer > (int64_t)LONG_MAX)
+          return 0;
+#endif
+        storage->long_value = (long)arg->data.integer;
+      } else {
+        if (!plugin_numeric_value(arg, &number) || !isfinite(number) ||
+            number < (double)LONG_MIN ||
+            number >= (double)LONG_MAX + 1.0 ||
+            trunc(number) != number)
+          return 0;
+        storage->long_value = (long)number;
+      }
       *address = &storage->long_value;
       return 1;
 
     case TS_PLUGIN_SCALAR_FLOAT:
-      if (number < -(double)FLT_MAX || number > (double)FLT_MAX)
+      if (!plugin_numeric_value(arg, &number) || !isfinite(number) ||
+          number < -(double)FLT_MAX || number > (double)FLT_MAX)
         return 0;
       storage->float_value = (float)number;
       *address = &storage->float_value;
       return 1;
 
     case TS_PLUGIN_SCALAR_DOUBLE:
+      if (!plugin_numeric_value(arg, &number) || !isfinite(number))
+        return 0;
       storage->double_value = number;
       *address = &storage->double_value;
       return 1;
@@ -349,6 +380,8 @@ static int plugin_bind_function_exports(
     registrations[index].name = entry->export_id;
     registrations[index].fn = plugin_function_scalar_call;
     registrations[index].user_data = &bindings[index];
+    registrations[index].flags =
+        EXPRTK_NATIVE_PRESERVE_VALUE_TYPES;
     ++index;
   }
 
