@@ -4,6 +4,7 @@
  */
 
 #include "exprtk_internal.h"
+#include "exprtk_class.h"
 
 #include <string.h>
 #include <stdlib.h>
@@ -15,22 +16,11 @@ static size_t g_registry_count = 0;
 static size_t g_registry_cap = 0;
 static int g_registry_ready = 0;
 
-static const cmeta_type_identity exprtk_value_cmeta_identity =
-    CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.value");
 static const cmeta_type_identity exprtk_env_cmeta_identity =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.env");
 static const cmeta_type_identity exprtk_scratch_cmeta_identity =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.scratch");
 
-static const cmeta_type_desc exprtk_value_cmeta_type = {
-    .name = "exprtk_value_t",
-    .size = sizeof(exprtk_value_t),
-    .align = _Alignof(exprtk_value_t),
-    .kind = CMETA_T_OBJECT,
-    .pointee = NULL,
-    .traits = NULL,
-    .identity = &exprtk_value_cmeta_identity
-};
 static const cmeta_type_desc exprtk_env_cmeta_type = {
     .name = "exprtk_env_t",
     .size = sizeof(exprtk_env_t),
@@ -50,22 +40,11 @@ static const cmeta_type_desc exprtk_scratch_cmeta_type = {
     .identity = &exprtk_scratch_cmeta_identity
 };
 
-static const cmeta_type_identity exprtk_value_ptr_cmeta_identity =
-    CMETA_TYPE_ID_POINTER_INIT(&exprtk_value_cmeta_identity);
 static const cmeta_type_identity exprtk_env_ptr_cmeta_identity =
     CMETA_TYPE_ID_POINTER_INIT(&exprtk_env_cmeta_identity);
 static const cmeta_type_identity exprtk_scratch_ptr_cmeta_identity =
     CMETA_TYPE_ID_POINTER_INIT(&exprtk_scratch_cmeta_identity);
 
-static const cmeta_type_desc exprtk_value_ptr_cmeta_type = {
-    .name = "exprtk_value_t *",
-    .size = sizeof(exprtk_value_t *),
-    .align = _Alignof(exprtk_value_t *),
-    .kind = CMETA_T_POINTER,
-    .pointee = &exprtk_value_cmeta_type,
-    .traits = NULL,
-    .identity = &exprtk_value_ptr_cmeta_identity
-};
 static const cmeta_type_desc exprtk_env_ptr_cmeta_type = {
     .name = "exprtk_env_t *",
     .size = sizeof(exprtk_env_t *),
@@ -95,7 +74,7 @@ int exprtk_func_entry_reflect(
         sizeof(cmeta_param_desc), "argc", &cmeta_type_size, CMETA_PARAM_IN
     };
     out->params[1] = (cmeta_param_desc){
-        sizeof(cmeta_param_desc), "args", &exprtk_value_ptr_cmeta_type,
+        sizeof(cmeta_param_desc), "args", exprtk_value_ptr_cmeta_type(),
         CMETA_PARAM_INOUT | CMETA_PARAM_BORROWED | CMETA_PARAM_NULLABLE
     };
     out->params[2] = (cmeta_param_desc){
@@ -109,7 +88,7 @@ int exprtk_func_entry_reflect(
     out->function = (cmeta_function_desc){
         sizeof(cmeta_function_desc),
         entry->name,
-        &exprtk_value_cmeta_type,
+        exprtk_value_cmeta_type(),
         out->params,
         4u,
         CMETA_EFFECT_UNKNOWN,

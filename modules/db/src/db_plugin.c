@@ -309,18 +309,6 @@ static int db_row_plan_get(
   return 1;
 }
 
-static const cmeta_type_identity db_exprtk_value_identity =
-    CMETA_TYPE_ID_ATOM_INIT("TurboScript.exprtk_value");
-static const cmeta_type_desc db_exprtk_value_type = {
-    .name = "exprtk_value_t",
-    .size = sizeof(exprtk_value_t),
-    .align = _Alignof(exprtk_value_t),
-    .kind = CMETA_T_OBJECT,
-    .pointee = NULL,
-    .traits = NULL,
-    .identity = &db_exprtk_value_identity
-};
-
 typedef struct db_row_factory_context_s {
   db_ctx_t *ctx;
   exprtk_class_t *klass;
@@ -632,7 +620,7 @@ static exprtk_value_t db_query(size_t argc, exprtk_value_t *args,
   factory_context.klass = klass;
   factory.struct_size = sizeof(factory);
   factory.abi_version = ORM_C_ABI_VERSION;
-  factory.output_type = &db_exprtk_value_type;
+  factory.output_type = exprtk_value_cmeta_type();
   factory.context = &factory_context;
   factory.create = db_row_factory_create;
   factory.destroy = db_row_factory_destroy;
