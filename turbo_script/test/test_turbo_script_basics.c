@@ -116,7 +116,11 @@ spec("turbo_script_basics") {
     it("should call a canonical Function-only plugin in interpreter and JIT") {
       const char *source =
           "import(\"loader_function\");"
-          "answer=loader_function.double(3.5);";
+          "answer=loader_function.double(3.5);"
+          "mixed=loader_function.increment(4)"
+          "+loader_function.add(1.25,2.5)"
+          "+loader_function.long_to_double(7)"
+          "+loader_function.float_to_double(1.5);";
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 
@@ -126,6 +130,8 @@ spec("turbo_script_basics") {
       check_equal(turbo_script_run_jit(jit, source), 0);
       check(fabs(ts_get_num(interp, "answer") - 7.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "answer") - 7.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "mixed") - 18.0) <= 1e-6);
+      check(fabs(ts_get_num(jit, "mixed") - 18.0) <= 1e-6);
 
       turbo_script_free(jit);
       turbo_script_free(interp);
