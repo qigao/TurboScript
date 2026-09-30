@@ -220,6 +220,125 @@ spec("TurboScript TurboDB ORM configuration") {
     turbo_script_free(ctx);
   }
 
+  it("decodes typed RowClass instances through TurboDB object CFlow") {
+    char path[2048];
+    char script[16384];
+    turbo_script_ctx_t *interp = new_db_ctx();
+    turbo_script_ctx_t *jit = new_db_ctx();
+
+    check_not_null(interp);
+    check_not_null(jit);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class Person {"
+              " id: int64;"
+              " name: string;"
+              " score: number;"
+              "};"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "db.exec(dbx,"
+              "\"CREATE TABLE person(id INTEGER,name TEXT,score REAL);\");"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[7,\"Alice\",1.5]);"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[8,\"Bob\",2.5]);"
+              "rows=db.query(dbx,"
+              "\"SELECT id,name,score FROM person ORDER BY id;\","
+              "Person);"
+              "id0=rows[0].id;"
+              "id1=rows[1].id;"
+              "name_ok=(rows[0].name==\"Alice\")"
+              "&&(rows[1].name==\"Bob\");"
+              "score_sum=rows[0].score+rows[1].score;"
+              "typed=(typeof(rows[0].id)==\"int64\");"
+              "filtered=db.query(dbx,"
+              "\"SELECT id,name,score FROM person WHERE id>?1 ORDER BY id;\","
+              "Person,[7]);"
+              "filtered_id=filtered[0].id;"
+              "db.close(dbx);",
+              path) > 0);
+
+    check_equal(turbo_script_run(interp, script), 0);
+    check_equal(turbo_script_run_jit(jit, script), 0);
+
+    check(fabs(ts_get_num(interp, "id0") - 7.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "id0") - 7.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "id1") - 8.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "id1") - 8.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "name_ok") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "name_ok") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "score_sum") - 4.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "score_sum") - 4.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "typed") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "typed") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "filtered_id") - 8.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "filtered_id") - 8.0) <= 1e-9);
+
+    turbo_script_free(jit);
+    turbo_script_free(interp);
+  }
+
+  it("surfaces typed row DataBind field diagnostics") {
+    char path[2048];
+    char script[12288];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class PersonWithRequiredTag {"
+              " id: int64;"
+              " name: string;"
+              " tag: string;"
+              "};"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "db.exec(dbx,\"CREATE TABLE person(id INTEGER,name TEXT);\");"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name) VALUES(?1,?2);\","
+              "[7,\"Alice\"]);"
+              "rows=db.query(dbx,"
+              "\"SELECT id,name FROM person;\","
+              "PersonWithRequiredTag);",
+              path) > 0);
+
+    check(turbo_script_run(ctx, script) != 0);
+    check_not_null(strstr(turbo_script_get_error(ctx), "db.query failed"));
+    check_not_null(strstr(turbo_script_get_error(ctx), "tag"));
+
+    turbo_script_free(ctx);
+  }
+
+  it("rejects non-typed RowClass domains before opening a row Publisher") {
+    char path[2048];
+    char script[8192];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class DynamicRow { value: list; };"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "rows=db.query(dbx,\"SELECT 1 AS value;\",DynamicRow);",
+              path) > 0);
+
+    check(turbo_script_run(ctx, script) != 0);
+    check_not_null(strstr(
+        turbo_script_get_error(ctx), "outside the typed DataBind domain"));
+
+    turbo_script_free(ctx);
+  }
+
   it("rejects changing module_path for an already loaded driver ID") {
     char path[2048];
     char script[8192];
