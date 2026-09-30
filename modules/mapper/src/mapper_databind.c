@@ -5,6 +5,7 @@
 #include "mapper_databind.h"
 
 #include "exprtk_module.h"
+#include "turbo_script_class_databind.h"
 
 #include <data_bind_format_provider.h>
 #include <data_bind_json_provider.h>
@@ -34,12 +35,6 @@ typedef struct mapper_plan_entry_s {
     struct mapper_plan_entry_s *next;
 } mapper_plan_entry_t;
 
-typedef struct mapper_text_builder_s {
-    char *data;
-    size_t length;
-    size_t capacity;
-} mapper_text_builder_t;
-
 typedef struct mapper_json_frame_s {
     json_value_t *container;
     int is_map;
@@ -62,218 +57,6 @@ static void mapper_set_error(char *error, size_t error_len, const char *fmt, ...
     va_end(args);
 }
 
-static int mapper_builder_reserve(mapper_text_builder_t *builder, size_t extra) {
-    size_t needed;
-    size_t capacity;
-    char *grown;
-    if (!builder || extra > SIZE_MAX - builder->length - 1u) return 0;
-    needed = builder->length + extra + 1u;
-    if (needed <= builder->capacity) return 1;
-    capacity = builder->capacity ? builder->capacity : 256u;
-    while (capacity < needed) {
-        if (capacity > SIZE_MAX / 2u) return 0;
-        capacity *= 2u;
-    }
-    grown = (char *)realloc(builder->data, capacity);
-    if (!grown) return 0;
-    builder->data = grown;
-    builder->capacity = capacity;
-    return 1;
-}
-
-static int mapper_builder_append_n(
-    mapper_text_builder_t *builder, const char *text, size_t length) {
-    if (!builder || (!text && length != 0u) ||
-        !mapper_builder_reserve(builder, length))
-        return 0;
-    if (length != 0u) memcpy(builder->data + builder->length, text, length);
-    builder->length += length;
-    builder->data[builder->length] = '\0';
-    return 1;
-}
-
-static int mapper_builder_append(mapper_text_builder_t *builder, const char *text) {
-    return text ? mapper_builder_append_n(builder, text, strlen(text)) : 0;
-}
-
-static int mapper_builder_printf(mapper_text_builder_t *builder,
-                                 const char *format, ...) {
-    va_list args;
-    va_list copy;
-    int needed;
-    if (!builder || !format) return 0;
-    va_start(args, format);
-    va_copy(copy, args);
-    needed = vsnprintf(NULL, 0, format, copy);
-    va_end(copy);
-    if (needed < 0 || !mapper_builder_reserve(builder, (size_t)needed)) {
-        va_end(args);
-        return 0;
-    }
-    vsnprintf(builder->data + builder->length,
-              builder->capacity - builder->length, format, args);
-    va_end(args);
-    builder->length += (size_t)needed;
-    return 1;
-}
-
-static int mapper_builder_quoted(mapper_text_builder_t *builder, vstr value) {
-    if (!mapper_builder_append(builder, "\"")) return 0;
-    for (size_t i = 0; i < value.len; ++i) {
-        const unsigned char ch = (unsigned char)value.data[i];
-        switch (ch) {
-        case '\\':
-            if (!mapper_builder_append(builder, "\\\\")) return 0;
-            break;
-        case '"':
-            if (!mapper_builder_append(builder, "\\\"")) return 0;
-            break;
-        case '\n':
-            if (!mapper_builder_append(builder, "\\n")) return 0;
-            break;
-        case '\r':
-            if (!mapper_builder_append(builder, "\\r")) return 0;
-            break;
-        case '\t':
-            if (!mapper_builder_append(builder, "\\t")) return 0;
-            break;
-        default:
-            if (ch < 0x20u) return 0;
-            if (!mapper_builder_append_n(builder, (const char *)&value.data[i], 1u))
-                return 0;
-            break;
-        }
-    }
-    return mapper_builder_append(builder, "\"");
-}
-
-static const char *mapper_databind_type(const cmeta_data_desc *data) {
-    if (!cmeta_data_desc_valid(data)) return NULL;
-    if (cmeta_data_desc_equal(data, &cmeta_data_int64)) return "int64";
-    if (cmeta_data_desc_equal(data, &cmeta_data_double)) return "double";
-    if (cmeta_data_desc_equal(data, &cmeta_data_bool)) return "bool";
-    if (data->kind == CMETA_DATA_STRING && data->storage_type != NULL)
-        return "string";
-    return NULL;
-}
-
-static int mapper_schema_default(
-    mapper_text_builder_t *builder, const cmeta_data_desc *data,
-    const exprtk_value_t *value) {
-    if (!builder || !data || !value) return 0;
-    if (cmeta_data_desc_equal(data, &cmeta_data_int64) &&
-        value->type == EXPRTK_VAL_INTEGER)
-        return mapper_builder_printf(builder, " default %lld",
-                                     (long long)value->data.integer);
-    if (cmeta_data_desc_equal(data, &cmeta_data_double) &&
-        value->type == EXPRTK_VAL_NUMBER)
-        return mapper_builder_printf(builder, " default %.17g",
-                                     value->data.number);
-    if (cmeta_data_desc_equal(data, &cmeta_data_bool) &&
-        value->type == EXPRTK_VAL_BOOL)
-        return mapper_builder_append(
-            builder, value->data.boolean ? " default true" : " default false");
-    if (data->kind == CMETA_DATA_STRING &&
-        value->type == EXPRTK_VAL_STRING) {
-        if (!mapper_builder_append(builder, " default ")) return 0;
-        return mapper_builder_quoted(builder, value->data.string);
-    }
-    return 0;
-}
-
-static int mapper_build_schema(
-    exprtk_class_t *klass, char **out_schema, size_t *out_length,
-    char *error, size_t error_len) {
-    mapper_text_builder_t builder = {0};
-    const cmeta_data_desc *object_data;
-
-    if (out_schema) *out_schema = NULL;
-    if (out_length) *out_length = 0u;
-    if (!klass || !out_schema || !out_length ||
-        !exprtk_class_finalize_cmeta_data(klass)) {
-        mapper_set_error(error, error_len, "mapper: class reflection is unavailable");
-        return 0;
-    }
-
-    object_data = exprtk_class_cmeta_data(klass);
-    if (!object_data || object_data->kind != CMETA_DATA_STRUCT) {
-        mapper_set_error(error, error_len, "mapper: invalid class CMeta data surface");
-        return 0;
-    }
-
-    if (!mapper_builder_append(
-            &builder, "schema TurboScriptMapper [version(1)]; message ") ||
-        !mapper_builder_append(&builder, klass->name) ||
-        !mapper_builder_append(&builder, " {")) {
-        free(builder.data);
-        mapper_set_error(error, error_len, "mapper: out of memory building DataBind contract");
-        return 0;
-    }
-
-    /* DataBind/TBE requires canonical record ordering: fixed-width scalar
-     * fields precede variable data. MessagePlan binds object fields by name, so
-     * this projection order never changes TurboScript class/slot semantics. */
-    for (size_t i = 0; i < klass->instance_field_count; ++i) {
-        const cmeta_data_desc *data =
-            klass->cmeta_data_fields ? klass->cmeta_data_fields[i].value : NULL;
-        if (!mapper_databind_type(data) || !klass->instance_field_names[i]) {
-            free(builder.data);
-            return -1; /* TurboScript dynamic-value domain, not a typed plan. */
-        }
-    }
-
-    for (unsigned pass = 0u; pass < 2u; ++pass) {
-        for (size_t i = 0; i < klass->instance_field_count; ++i) {
-            const cmeta_data_desc *data = klass->cmeta_data_fields[i].value;
-            const char *type = mapper_databind_type(data);
-            const char *name = klass->instance_field_names[i];
-            const unsigned variable = data->kind == CMETA_DATA_STRING ? 1u : 0u;
-
-            if (variable != pass) continue;
-            if (!mapper_builder_append(&builder, " ") ||
-                !mapper_builder_append(&builder, type) ||
-                !mapper_builder_append(&builder, " ") ||
-                !mapper_builder_append(&builder, name)) {
-                free(builder.data);
-                mapper_set_error(error, error_len,
-                                 "mapper: out of memory building DataBind fields");
-                return 0;
-            }
-
-            if (klass->instance_field_has_default &&
-                klass->instance_field_has_default[i]) {
-                if (!klass->instance_field_defaults ||
-                    !mapper_schema_default(
-                        &builder, data, &klass->instance_field_defaults[i])) {
-                    free(builder.data);
-                    mapper_set_error(
-                        error, error_len,
-                        "mapper: unsupported typed class default for '%s'", name);
-                    return 0;
-                }
-            }
-
-            if (!mapper_builder_append(&builder, ";")) {
-                free(builder.data);
-                mapper_set_error(error, error_len,
-                                 "mapper: out of memory building DataBind contract");
-                return 0;
-            }
-        }
-    }
-
-    if (!mapper_builder_append(&builder, " }")) {
-        free(builder.data);
-        mapper_set_error(error, error_len,
-                         "mapper: out of memory finalizing DataBind contract");
-        return 0;
-    }
-
-    *out_schema = builder.data;
-    *out_length = builder.length;
-    return 1;
-}
-
 static mapper_plan_entry_t *mapper_plan_find(
     mapper_ctx_t *ctx, const cmeta_data_desc *data) {
     mapper_plan_entry_t *entry = ctx ? (mapper_plan_entry_t *)ctx->plans : NULL;
@@ -294,13 +77,8 @@ static int mapper_plan_get(
     char *error, size_t error_len) {
     const cmeta_data_desc *data;
     mapper_plan_entry_t *entry;
-    DataBindError bind_error = DATA_BIND_ERROR_INIT;
-    DataBindMessagePlanDiagnostic diagnostic =
-        DATA_BIND_MESSAGE_PLAN_DIAGNOSTIC_INIT;
-    char *schema = NULL;
-    size_t schema_len = 0u;
-    int schema_status;
-    DataBindStatus status;
+    char shared_error[512] = {0};
+    int compile_status;
 
     if (out) *out = NULL;
     if (!ctx || !klass || !out || !exprtk_class_finalize_cmeta_data(klass)) {
@@ -315,37 +93,23 @@ static int mapper_plan_get(
         return 1;
     }
 
-    schema_status = mapper_build_schema(
-        klass, &schema, &schema_len, error, error_len);
-    if (schema_status <= 0) return schema_status;
-
     entry = (mapper_plan_entry_t *)calloc(1u, sizeof(*entry));
     if (!entry) {
-        free(schema);
         mapper_set_error(error, error_len, "mapper: out of memory caching MessagePlan");
         return 0;
     }
 
-    status = data_bind_create_from_text(
-        schema, schema_len, &entry->codec, &bind_error);
-    free(schema);
-    if (status != DATA_BIND_OK) {
-        mapper_set_error(
-            error, error_len, "mapper: DataBind contract compile failed: %s",
-            bind_error.message[0] ? bind_error.message : "invalid contract");
+    compile_status = turbo_script_class_databind_compile(
+        klass, &entry->codec, &entry->plan,
+        shared_error, sizeof(shared_error));
+    if (compile_status <= 0) {
         free(entry);
-        return 0;
-    }
-
-    status = data_bind_message_plan_compile_object(
-        entry->codec, klass->name, data, &entry->plan, &diagnostic);
-    if (status != DATA_BIND_OK) {
-        mapper_set_error(
-            error, error_len, "mapper: MessagePlan compile failed: %s",
-            diagnostic.message[0] ? diagnostic.message : "invalid object binding");
-        data_bind_free(entry->codec);
-        free(entry);
-        return 0;
+        if (compile_status == 0)
+            mapper_set_error(
+                error, error_len, "mapper: %s",
+                shared_error[0] ? shared_error
+                                : "DataBind MessagePlan compile failed");
+        return compile_status;
     }
 
     if (data->stable_id) {
