@@ -24,6 +24,10 @@ static const cmeta_type_desc EXPRTK_VALUE_CMETA_TYPE = {
     .identity = &EXPRTK_VALUE_CMETA_IDENTITY
 };
 
+const cmeta_type_desc *exprtk_value_cmeta_type(void) {
+    return &EXPRTK_VALUE_CMETA_TYPE;
+}
+
 static const cmeta_type_identity EXPRTK_STRING_SLOT_CMETA_IDENTITY =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.string-slot");
 static const cmeta_type_desc EXPRTK_STRING_SLOT_CMETA_TYPE = {
