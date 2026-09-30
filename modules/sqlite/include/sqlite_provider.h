@@ -24,6 +24,7 @@ extern "C" {
 typedef struct sqlite_provider_column_request_s {
     const char *sql;
     int column;
+    size_t max_count; /* 0 rejects materialization */
 } sqlite_provider_column_request;
 
 typedef struct sqlite_provider_f64_column_s {
