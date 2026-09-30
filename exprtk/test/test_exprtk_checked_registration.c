@@ -27,9 +27,9 @@ static void check_transaction_failure_at(size_t fail_at) {
     exprtk_func_t *before;
     registration_fault_t fault = {fail_at, 0};
     const exprtk_native_registration_t batch[] = {
-        {"batch.first", registration_noop, NULL},
-        {"batch.middle", registration_noop, NULL},
-        {"batch.last", registration_noop, NULL},
+        {"batch.first", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
+        {"batch.middle", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
+        {"batch.last", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
     };
 
     exprtk_env_init(&env);
@@ -65,9 +65,9 @@ spec("exprtk checked native registration") {
     it("publishes the complete batch after every allocation succeeds") {
         exprtk_env_t env;
         const exprtk_native_registration_t batch[] = {
-            {"batch.first", registration_noop, NULL},
-            {"batch.middle", registration_noop, NULL},
-            {"batch.last", registration_noop, NULL},
+            {"batch.first", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
+            {"batch.middle", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
+            {"batch.last", registration_noop, NULL, EXPRTK_NATIVE_FLAG_NONE},
         };
 
         exprtk_env_init(&env);
