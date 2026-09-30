@@ -384,9 +384,12 @@ static exprtk_value_t db_exec(size_t argc, exprtk_value_t *args,
 
   step = cflow_publisher_resume(&publisher, NULL, &command_result);
   if (step.kind != CFLOW_STEP_VALUE_AND_DONE) {
-    const char *message =
-        step.error && step.error[0] ? step.error
-                                    : "command Publisher did not produce VALUE_AND_DONE";
+    char message[256];
+    snprintf(
+        message, sizeof(message), "%s",
+        step.error && step.error[0]
+            ? step.error
+            : "command Publisher did not produce VALUE_AND_DONE");
     cflow_publisher_destroy(&publisher);
     orm_query_destroy(query);
     if (ctx && ctx->env) {
