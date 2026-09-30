@@ -114,7 +114,7 @@ TurboScript comes with a rich set of optional modules:
 | `ts` | Time-series helpers (`ts.*`) | [module source](../modules/ts/) |
 | built-in vectors | Vector operations; no import required | [vector cheatsheet](api/vec_cheatsheet.md) |
 | `net` | HTTP/1, HTTP/2 and WebSocket clients | [task/network guide](advanced/tasks.md) |
-| `sqlite` | SQL, embeddings and local RAG | [SQLite README](../modules/sqlite/README.md) |
+| `db` | TurboDB::Orm connections, CFlow commands and typed queries | [db README](../modules/db/README.md) |
 | `img` | Image handles and pixel/image operations | [image README](../modules/img/README.md) |
 | `crypto`, `hash`, `fuzzy` | Cryptography, hashing and fuzzy matching | [API reference](api/api-reference.md) |
 | `os` | Platform information, shell-free child processes, logging, service and power management | [os README](../modules/os/README.md) |
