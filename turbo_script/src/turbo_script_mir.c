@@ -230,6 +230,14 @@ int ts_emit_direct_resolved_call(ts_mir_compiler_t *c, const char *name, size_t 
   exprtk_func_t *f = c->ts_ctx->env.funcs;
   while (f) {
     if (f->name && strcmp(f->name, name) == 0 && !f->is_script) {
+      /*
+       * Canonical reflected bindings may require exact ExprTk value tags
+       * (notably int64 -> long without an intermediate double). Keep those
+       * calls on the runtime value bridge rather than packing numeric doubles.
+       */
+      if ((f->data.native.flags &
+           EXPRTK_NATIVE_PRESERVE_VALUE_TYPES) != 0u)
+        return 0;
       void *fn_ptr = (void *)f->data.native.fn;
       void *ud = f->data.native.user_data;
       MIR_reg_t arr_reg = ts_emit_packed_args(c, argc, arg_regs);
