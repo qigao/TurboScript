@@ -1,6 +1,7 @@
 #include "tinytest.h" /* TurboScript host plugin-loader regression. */
 #include "ts_plugin_loader.h"
 #include "exprtk.h"
+#include <limits.h>
 #include <math.h>
 #include <string.h>
 
@@ -129,18 +130,19 @@ spec("plugin loader") {
       check_not_null(handle);
       if (handle) {
         check_null(handle->module);
-        check_equal(handle->manifest->export_count, (size_t)9u);
+        check_equal(handle->manifest->export_count, (size_t)10u);
         check_equal(handle->manifest->exports[0].kind,
                     SALTS_PLUGIN_EXPORT_FUNCTION);
         check_equal(
             ts_plugin_init_ex(handle, &env, NULL, &error),
             TS_PLUGIN_ERROR_NONE);
-        check_equal(handle->function_binding_count, (size_t)9u);
+        check_equal(handle->function_binding_count, (size_t)10u);
         check_true(exprtk_env_has_func(&env, "loader_function.double"));
         check_true(exprtk_env_has_func(&env, "loader_function.stateful"));
         check_true(exprtk_env_has_func(&env, "loader_function.increment"));
         check_true(exprtk_env_has_func(&env, "loader_function.positive"));
         check_true(exprtk_env_has_func(&env, "loader_function.long_to_double"));
+        check_true(exprtk_env_has_func(&env, "loader_function.long_exact"));
         check_true(exprtk_env_has_func(&env, "loader_function.float_to_double"));
         check_true(exprtk_env_has_func(&env, "loader_function.add"));
         check_true(exprtk_env_has_func(&env, "loader_function.answer"));
@@ -172,6 +174,17 @@ spec("plugin loader") {
             "loader_function.long_to_double", 1u, &arg, &env);
         check_equal(result.type, EXPRTK_VAL_NUMBER);
         check(fabs(result.data.number - 7.5) <= 1e-9);
+        exprtk_value_destroy(&result);
+
+#if LONG_MAX > 2147483647L
+        arg = exprtk_val_int(INT64_C(9007199254740993));
+#else
+        arg = exprtk_val_int((int64_t)LONG_MAX);
+#endif
+        result = exprtk_call_internal(
+            "loader_function.long_exact", 1u, &arg, &env);
+        check_equal(result.type, EXPRTK_VAL_NUMBER);
+        check(fabs(result.data.number - 1.0) <= 1e-9);
         exprtk_value_destroy(&result);
 
         arg = exprtk_val_num(1.5);
