@@ -339,7 +339,7 @@ static const char *sqlite_provider_error_impl(void *self, void *session,
   sqlite_handle_t *h;
   (void)self;
   h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
-  return h ? h->error_msg : "";
+  return h ? h->error_msg : NULL;
 }
 
 CMETA_IMPLEMENTS(sqlite_provider, sqlite_provider_impl, 0u,
@@ -436,14 +436,20 @@ static void sqlite_top_insert(sqlite_rag_result_t *top, size_t *top_count, size_
 
 /* == API functions ======================================================== */
 
-static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
+  char *path;
+  int handle;
+  (void)env;
+
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc != 1 || args[0].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.open: expected string path");
     return SQLITE_ZERO;
   }
 
-  char *path = mem_alloc(ud->scratch, args[0].data.string.len + 1);
+  path = mem_alloc(ud->scratch, args[0].data.string.len + 1u);
   if (!path) {
     SQLITE_CTX_ERROR(ud, "sqlite.open: OOM");
     return SQLITE_ZERO;
@@ -451,48 +457,42 @@ static exprtk_value_t fn_sqlite_open(size_t argc, exprtk_value_t *args, exprtk_e
   memcpy(path, args[0].data.string.data, args[0].data.string.len);
   path[args[0].data.string.len] = '\0';
 
-  sqlite3 *db = NULL;
-  int rc = sqlite3_open(path, &db);
-  if (rc != SQLITE_OK) {
-    if (db) sqlite3_close(db);
+  handle = sqlite_provider_open(ud->provider, ud->ctx, path);
+  if (handle < 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.open: failed to open database");
     return SQLITE_ZERO;
   }
-
-  int handle = sqlite_handle_alloc(ud->ctx, db);
-  if (handle < 0) {
-    sqlite3_close(db);
-    SQLITE_CTX_ERROR(ud, "sqlite.open: too many open handles");
-    return SQLITE_ZERO;
-  }
-
-  return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = (double)handle};
+  return exprtk_val_num((double)handle);
 }
 
-static exprtk_value_t fn_sqlite_close(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_close(size_t argc, exprtk_value_t *args,
+                                       exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
+  (void)env;
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     SQLITE_CTX_ERROR(ud, "sqlite.close: expected number handle");
     return SQLITE_ZERO;
   }
-  sqlite_handle_free(ud->ctx, (int)args[0].data.number);
+  sqlite_provider_close(ud->provider, ud->ctx, (int)args[0].data.number);
   return SQLITE_ZERO;
 }
 
-static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args,
+                                      exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+  char *sql;
+  int changes;
+  (void)env;
+
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc != 2 || args[0].type != EXPRTK_VAL_NUMBER ||
+      args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.exec: expected (number, string)");
     return SQLITE_ZERO;
   }
 
-  sqlite_handle_t *h = sqlite_handle_get(ud->ctx, (int)args[0].data.number);
-  if (!h || !h->db) {
-    SQLITE_CTX_ERROR(ud, "sqlite.exec: invalid handle");
-    return SQLITE_ZERO;
-  }
-
-  char *sql = mem_alloc(ud->scratch, args[1].data.string.len + 1);
+  sql = mem_alloc(ud->scratch, args[1].data.string.len + 1u);
   if (!sql) {
     SQLITE_CTX_ERROR(ud, "sqlite.exec: OOM");
     return SQLITE_ZERO;
@@ -500,39 +500,44 @@ static exprtk_value_t fn_sqlite_exec(size_t argc, exprtk_value_t *args, exprtk_e
   memcpy(sql, args[1].data.string.data, args[1].data.string.len);
   sql[args[1].data.string.len] = '\0';
 
-  char *err_msg = NULL;
-  int rc = sqlite3_exec(h->db, sql, NULL, NULL, &err_msg);
-  if (rc != SQLITE_OK) {
-    if (err_msg) {
-      strncpy(h->error_msg, err_msg, sizeof(h->error_msg) - 1);
-      h->error_msg[sizeof(h->error_msg) - 1] = '\0';
-      sqlite3_free(err_msg);
-    }
+  changes = sqlite_provider_exec(
+      ud->provider, ud->ctx, (int)args[0].data.number, sql);
+  if (changes < 0) {
     SQLITE_CTX_ERROR(ud, "sqlite.exec: execution failed");
     return SQLITE_ZERO;
   }
-
-  return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = (double)sqlite3_changes(h->db)};
+  return exprtk_val_num((double)changes);
 }
 
-static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args,
+                                           exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc < 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+  sqlite_provider_column_request request;
+  sqlite_provider_f64_column column = {0};
+  exprtk_value_t result = SQLITE_ZERO;
+  char *sql;
+  int col_idx = 0;
+
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc < 2 || argc > 3 ||
+      args[0].type != EXPRTK_VAL_NUMBER ||
+      args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: expected (number, string [, number])");
     return SQLITE_ZERO;
   }
-
-  sqlite_handle_t *h = sqlite_handle_get(ud->ctx, (int)args[0].data.number);
-  if (!h || !h->db) {
-    SQLITE_CTX_ERROR(ud, "sqlite.query_col: invalid handle");
-    return SQLITE_ZERO;
+  if (argc == 3) {
+    if (args[2].type != EXPRTK_VAL_NUMBER ||
+        !isfinite(args[2].data.number) ||
+        args[2].data.number < 0.0 ||
+        floor(args[2].data.number) != args[2].data.number ||
+        args[2].data.number > (double)INT_MAX) {
+      SQLITE_CTX_ERROR(ud, "sqlite.query_col: invalid column index");
+      return SQLITE_ZERO;
+    }
+    col_idx = (int)args[2].data.number;
   }
 
-  int col_idx = 0;
-  if (argc >= 3 && args[2].type == EXPRTK_VAL_NUMBER)
-    col_idx = (int)args[2].data.number;
-
-  char *sql = mem_alloc(ud->scratch, args[1].data.string.len + 1);
+  sql = mem_alloc(ud->scratch, args[1].data.string.len + 1u);
   if (!sql) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
     return SQLITE_ZERO;
@@ -540,72 +545,41 @@ static exprtk_value_t fn_sqlite_query_col(size_t argc, exprtk_value_t *args, exp
   memcpy(sql, args[1].data.string.data, args[1].data.string.len);
   sql[args[1].data.string.len] = '\0';
 
-  sqlite3_stmt *stmt = NULL;
-  int rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
-  if (rc != SQLITE_OK) {
-    strncpy(h->error_msg, sqlite3_errmsg(h->db), sizeof(h->error_msg) - 1);
-    h->error_msg[sizeof(h->error_msg) - 1] = '\0';
-    SQLITE_CTX_ERROR(ud, "sqlite.query_col: prepare failed");
+  request.sql = sql;
+  request.column = col_idx;
+  request.max_count = ud->env->max_external_value_bytes / sizeof(double);
+  if (!sqlite_provider_query_column(
+          ud->provider, ud->ctx, (int)args[0].data.number,
+          &request, &column)) {
+    SQLITE_CTX_ERROR(ud, "sqlite.query_col: query failed");
     return SQLITE_ZERO;
   }
 
-  size_t element_limit = ud->env->max_external_value_bytes / sizeof(double);
-  size_t initial_capacity = element_limit < 64 ? element_limit : 64;
-  vec_t data = {0};
-  if (element_limit == 0 ||
-      vec_init_bytes(&data, sizeof(double), _Alignof(double), element_limit) != STL_OK ||
-      vec_reserve(&data, initial_capacity) != STL_OK) {
-    if (data.data) vec_destroy(&data);
-    sqlite3_finalize(stmt);
-    SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
-    return SQLITE_ZERO;
-  }
-
-  while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
-    double element = sqlite3_column_double(stmt, col_idx);
-    if (vec_push(&data, &element) != STL_OK) {
-      vec_destroy(&data);
-      sqlite3_finalize(stmt);
-      SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
-      return SQLITE_ZERO;
-    }
-  }
-
-  sqlite3_finalize(stmt);
-
-  if (rc != SQLITE_DONE) {
-    vec_destroy(&data);
-    strncpy(h->error_msg, sqlite3_errmsg(h->db), sizeof(h->error_msg) - 1);
-    h->error_msg[sizeof(h->error_msg) - 1] = '\0';
-    SQLITE_CTX_ERROR(ud, "sqlite.query_col: step failed");
-    return SQLITE_ZERO;
-  }
-
-  exprtk_value_t result = SQLITE_ZERO;
   if (exprtk_value_copy_to_env(
-          exprtk_val_vec((double *)data.data, data.size), ud->env, &result) != 0) {
-    vec_destroy(&data);
+          exprtk_val_vec(column.data, column.count), ud->env, &result) != 0) {
+    sqlite_provider_release_column(ud->provider, ud->ctx, &column);
     SQLITE_CTX_ERROR(ud, "sqlite.query_col: OOM");
     return SQLITE_ZERO;
   }
-  vec_destroy(&data);
+  sqlite_provider_release_column(ud->provider, ud->ctx, &column);
   return result;
 }
 
-static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args,
+                                              exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc != 2 || args[0].type != EXPRTK_VAL_NUMBER || args[1].type != EXPRTK_VAL_STRING) {
+  char *sql;
+  double result = 0.0;
+  (void)env;
+
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc != 2 || args[0].type != EXPRTK_VAL_NUMBER ||
+      args[1].type != EXPRTK_VAL_STRING) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: expected (number, string)");
     return SQLITE_ZERO;
   }
 
-  sqlite_handle_t *h = sqlite_handle_get(ud->ctx, (int)args[0].data.number);
-  if (!h || !h->db) {
-    SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: invalid handle");
-    return SQLITE_ZERO;
-  }
-
-  char *sql = mem_alloc(ud->scratch, args[1].data.string.len + 1);
+  sql = mem_alloc(ud->scratch, args[1].data.string.len + 1u);
   if (!sql) {
     SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: OOM");
     return SQLITE_ZERO;
@@ -613,43 +587,40 @@ static exprtk_value_t fn_sqlite_query_scalar(size_t argc, exprtk_value_t *args, 
   memcpy(sql, args[1].data.string.data, args[1].data.string.len);
   sql[args[1].data.string.len] = '\0';
 
-  sqlite3_stmt *stmt = NULL;
-  int rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
-  if (rc != SQLITE_OK) {
-    strncpy(h->error_msg, sqlite3_errmsg(h->db), sizeof(h->error_msg) - 1);
-    h->error_msg[sizeof(h->error_msg) - 1] = '\0';
-    SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: prepare failed");
+  if (!sqlite_provider_query_scalar(
+          ud->provider, ud->ctx, (int)args[0].data.number, sql, &result)) {
+    SQLITE_CTX_ERROR(ud, "sqlite.query_scalar: query failed");
     return SQLITE_ZERO;
   }
-
-  double result = 0.0;
-  if (sqlite3_step(stmt) == SQLITE_ROW)
-    result = sqlite3_column_double(stmt, 0);
-
-  sqlite3_finalize(stmt);
-  return (exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = result};
+  return exprtk_val_num(result);
 }
 
-static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+static exprtk_value_t fn_sqlite_error(size_t argc, exprtk_value_t *args,
+                                       exprtk_env_t *env, void *user_data) {
   sqlite_ud_t *ud = (sqlite_ud_t *)user_data;
-  if (argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
+  const char *error;
+  size_t len;
+  exprtk_value_t value;
+  (void)env;
+
+  if (!ud || !sqlite_provider_valid(ud->provider) ||
+      argc != 1 || args[0].type != EXPRTK_VAL_NUMBER) {
     SQLITE_CTX_ERROR(ud, "sqlite.error: expected number handle");
     return SQLITE_ZERO;
   }
 
-  sqlite_handle_t *h = sqlite_handle_get(ud->ctx, (int)args[0].data.number);
-  if (!h) {
+  error = sqlite_provider_error(
+      ud->provider, ud->ctx, (int)args[0].data.number);
+  if (!error) {
     SQLITE_CTX_ERROR(ud, "sqlite.error: invalid handle");
     return SQLITE_ZERO;
   }
+  len = strlen(error);
+  if (len == 0u) return SQLITE_ZERO;
 
-  size_t len = strlen(h->error_msg);
-  if (len == 0)
-    return SQLITE_ZERO;
-
-  exprtk_value_t value;
-  if (exprtk_value_copy_to_env(exprtk_val_str(vstr_from_buf(h->error_msg, len)),
-                               ud->env, &value) != 0)
+  if (exprtk_value_copy_to_env(
+          exprtk_val_str(vstr_from_buf((char *)error, len)),
+          ud->env, &value) != 0)
     return SQLITE_ZERO;
   return value;
 }
