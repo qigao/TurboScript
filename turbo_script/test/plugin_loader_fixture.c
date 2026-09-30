@@ -1,4 +1,5 @@
 #include "ts_plugin.h" /* TurboScript canonical plugin-loader fixture. */
+#include <limits.h>
 
 #ifndef FIXTURE_PLUGIN_NAME
 #define FIXTURE_PLUGIN_NAME "loader_fixture"
@@ -19,6 +20,8 @@ FunctionDecl(value, int, loader_fixture_increment,
 FunctionDecl(value, bool, loader_fixture_positive,
     (int, value, CMETA_PARAM_IN));
 FunctionDecl(value, double, loader_fixture_long_to_double,
+    (long, value, CMETA_PARAM_IN));
+FunctionDecl(value, double, loader_fixture_long_exact,
     (long, value, CMETA_PARAM_IN));
 FunctionDecl(value, double, loader_fixture_float_to_double,
     (float, value, CMETA_PARAM_IN));
@@ -46,6 +49,14 @@ bool loader_fixture_positive(int value) {
 
 double loader_fixture_long_to_double(long value) {
   return (double)value + 0.5;
+}
+
+double loader_fixture_long_exact(long value) {
+#if LONG_MAX > 2147483647L
+  return value == (long)INT64_C(9007199254740993) ? 1.0 : 0.0;
+#else
+  return value == LONG_MAX ? 1.0 : 0.0;
+#endif
 }
 
 double loader_fixture_float_to_double(float value) {
@@ -123,6 +134,18 @@ static bool SALTS_PLUGIN_CALL loader_fixture_long_to_double_invoke(
   return true;
 }
 
+static bool SALTS_PLUGIN_CALL loader_fixture_long_exact_invoke(
+    void *context, void *return_storage, void *const *params,
+    size_t param_count) {
+  long input;
+  if (context != NULL || !return_storage || !params ||
+      param_count != 1u || !params[0])
+    return false;
+  input = *(const long *)params[0];
+  *(double *)return_storage = loader_fixture_long_exact(input);
+  return true;
+}
+
 static bool SALTS_PLUGIN_CALL loader_fixture_float_to_double_invoke(
     void *context, void *return_storage, void *const *params,
     size_t param_count) {
@@ -169,7 +192,7 @@ static bool SALTS_PLUGIN_CALL loader_fixture_notify_invoke(
   return true;
 }
 
-static salts_plugin_export loader_fixture_function_exports[9];
+static salts_plugin_export loader_fixture_function_exports[10];
 
 static const salts_plugin_manifest loader_fixture_function_manifest = {
     .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
@@ -177,7 +200,7 @@ static const salts_plugin_manifest loader_fixture_function_manifest = {
     .plugin_id = FIXTURE_PLUGIN_NAME,
     .version = {1u, 0u, 0u},
     .exports = loader_fixture_function_exports,
-    .export_count = 9u,
+    .export_count = 10u,
     .self = NULL,
     .start = NULL,
     .request_stop = NULL,
@@ -264,6 +287,20 @@ salts_plugin_query(uint32_t host_abi) {
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
       .capabilities = 0u,
+      .export_id = "loader_function.long_exact",
+      .contract_id = "loader_function.math",
+      .value.function = {
+          .desc = FunctionMeta(loader_fixture_long_exact),
+          .abi = FunctionAbi(loader_fixture_long_exact),
+          .context = NULL,
+          .invoke = loader_fixture_long_exact_invoke,
+      },
+  };
+  loader_fixture_function_exports[6] = (salts_plugin_export){
+      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
+      .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+      .contract_version = 1u,
+      .capabilities = 0u,
       .export_id = "loader_function.float_to_double",
       .contract_id = "loader_function.math",
       .value.function = {
@@ -273,7 +310,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_float_to_double_invoke,
       },
   };
-  loader_fixture_function_exports[6] = (salts_plugin_export){
+  loader_fixture_function_exports[7] = (salts_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -287,7 +324,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_add_invoke,
       },
   };
-  loader_fixture_function_exports[7] = (salts_plugin_export){
+  loader_fixture_function_exports[8] = (salts_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -301,7 +338,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_answer_invoke,
       },
   };
-  loader_fixture_function_exports[8] = (salts_plugin_export){
+  loader_fixture_function_exports[9] = (salts_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
