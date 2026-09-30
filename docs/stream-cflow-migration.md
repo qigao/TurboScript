@@ -108,6 +108,29 @@ Phase 1 is the synchronous numeric in-memory slice:
 Shapes outside that boundary remain explicitly legacy rather than being
 silently coerced into the numeric CFlow model.
 
+### Cross-statement intermediate streams
+
+The first #74 slice also admits a graphable numeric non-terminal stream on
+assignment:
+
+```text
+s = stream.of([1, 2, 3]).map(x => x * 2)
+        |
+        v
+CFlow Graph / Plan (eager)
+        |
+        v
+TurboScript.Stream.v1
+  source = owned numeric vector
+  __ts_cflow_materialized = 1
+```
+
+The envelope owns only materialized data. It carries no AST, MIR callable,
+Graph, or Plan pointer, so statement boundaries do not extend compiler/runtime
+object lifetimes. Existing `count/collect/toList/toVector` semantics may
+consume that envelope. Re-admitting further `map/filter` from the materialized
+envelope is a separate follow-up slice.
+
 ## Phase 2 file/data rule
 
 Phase 2 must preserve current eager behavior before introducing incremental

@@ -816,6 +816,111 @@ static int ts_cflow_runtime_source_array(turbo_script_ctx_t *ctx,
   return 1;
 }
 
+static int ts_cflow_runtime_result_to_stream(
+    turbo_script_ctx_t *ctx, const cflow_result *result, exprtk_value_t *out) {
+  exprtk_value_t source = {.type = EXPRTK_VAL_NULL};
+  exprtk_value_t stream;
+
+  if (!ctx || !result || !out) return 0;
+  if (!ts_cflow_runtime_result_to_vector(ctx, result, &source)) return 0;
+
+  stream = exprtk_val_map();
+  if (exprtk_map_set(
+          &stream, "__ts_stream_kind",
+          exprtk_val_str(vstr_from_cstr("TurboScript.Stream.v1"))) != 0 ||
+      exprtk_map_set(&stream, "source", source) != 0 ||
+      exprtk_map_set(
+          &stream, "__ts_cflow_materialized", exprtk_val_num(1.0)) != 0) {
+    exprtk_value_destroy(&source);
+    exprtk_value_destroy(&stream);
+    return 0;
+  }
+
+  exprtk_value_destroy(&source);
+  *out = stream;
+  return 1;
+}
+
+ts_cflow_runtime_status_t ts_cflow_runtime_try_materialized_stream(
+    turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
+    char *error, size_t error_size) {
+  ts_cflow_lowered_pipeline_t analysis = {0};
+  ts_cflow_lowered_pipeline_t lowered = {0};
+  cflow_plan plan = {0};
+  cflow_result result = {0};
+  double *input = NULL;
+  size_t input_count = 0u;
+  const char *lower_error = NULL;
+  ts_cflow_runtime_status_t status = TS_CFLOW_RUNTIME_ERROR;
+
+  if (error && error_size > 0u) error[0] = '\0';
+  if (!ctx || !expr || !out) return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  if (ts_cflow_runtime_terminal(expr, NULL) != TS_CFLOW_TERMINAL_NONE)
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  /*
+   * Analysis is the admission boundary. Shapes that are not yet graphable
+   * stay on the explicit legacy barrier. Once admitted, all later failures
+   * are CFlow errors and must not fall back.
+   */
+  if (!ts_cflow_lower_pipeline_runtime_analysis(
+          ctx, expr, &analysis, &lower_error))
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+
+  if (ts_cflow_runtime_graph_has_op(&analysis.graph, CFLOW_OP_REDUCE)) {
+    ts_cflow_lowered_pipeline_destroy(&analysis);
+    return TS_CFLOW_RUNTIME_NOT_APPLICABLE;
+  }
+  ts_cflow_lowered_pipeline_destroy(&analysis);
+
+  if (!ts_cflow_lower_pipeline_executable(ctx, expr, &lowered, &lower_error)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        lower_error ? lower_error
+                    : "CFlow intermediate stream executable lowering failed");
+    goto done;
+  }
+
+  if (!ts_cflow_runtime_source_array(
+          ctx, lowered.source_expr, &input, &input_count)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow intermediate stream source materialization failed");
+    goto done;
+  }
+
+  if (!cflow_plan_compile_surface(&plan, &lowered.graph, NULL)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow intermediate stream plan compilation failed");
+    goto done;
+  }
+
+  if (!cflow_plan_eval_array(&plan, input, input_count, &result)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow intermediate stream plan execution failed");
+    goto done;
+  }
+
+  if (!ts_cflow_runtime_result_to_stream(ctx, &result, out)) {
+    ts_cflow_runtime_error(
+        error, error_size,
+        "CFlow intermediate stream envelope materialization failed");
+    goto done;
+  }
+
+  status = TS_CFLOW_RUNTIME_HANDLED;
+
+done:
+  cflow_result_destroy(&result);
+  cflow_plan_destroy(&plan);
+  ts_cflow_lowered_pipeline_destroy(&lowered);
+  free(input);
+  return status;
+}
+
 ts_cflow_runtime_status_t ts_cflow_runtime_try_scalar_terminal(
     turbo_script_ctx_t *ctx, const exprtk_node_t *expr, exprtk_value_t *out,
     char *error, size_t error_size) {
