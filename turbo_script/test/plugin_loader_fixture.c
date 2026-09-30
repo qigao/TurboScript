@@ -23,6 +23,8 @@ FunctionDecl(value, double, loader_fixture_float_to_double,
 FunctionDecl(value, double, loader_fixture_add,
     (double, left, CMETA_PARAM_IN),
     (double, right, CMETA_PARAM_IN));
+Function0Decl(value, int, loader_fixture_answer);
+Function0Decl(value, void, loader_fixture_notify);
 
 double loader_fixture_double(double value) {
   return value * 2.0;
@@ -46,6 +48,13 @@ double loader_fixture_float_to_double(float value) {
 
 double loader_fixture_add(double left, double right) {
   return left + right;
+}
+
+int loader_fixture_answer(void) {
+  return 42;
+}
+
+void loader_fixture_notify(void) {
 }
 
 static bool SALTS_PLUGIN_CALL loader_fixture_double_invoke(
@@ -122,7 +131,27 @@ static bool SALTS_PLUGIN_CALL loader_fixture_add_invoke(
   return true;
 }
 
-static salts_plugin_export loader_fixture_function_exports[6];
+static bool SALTS_PLUGIN_CALL loader_fixture_answer_invoke(
+    void *context, void *return_storage, void *const *params,
+    size_t param_count) {
+  (void)params;
+  if (context != NULL || !return_storage || param_count != 0u)
+    return false;
+  *(int *)return_storage = loader_fixture_answer();
+  return true;
+}
+
+static bool SALTS_PLUGIN_CALL loader_fixture_notify_invoke(
+    void *context, void *return_storage, void *const *params,
+    size_t param_count) {
+  (void)params;
+  if (context != NULL || return_storage != NULL || param_count != 0u)
+    return false;
+  loader_fixture_notify();
+  return true;
+}
+
+static salts_plugin_export loader_fixture_function_exports[8];
 
 static const salts_plugin_manifest loader_fixture_function_manifest = {
     .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
@@ -130,7 +159,7 @@ static const salts_plugin_manifest loader_fixture_function_manifest = {
     .plugin_id = FIXTURE_PLUGIN_NAME,
     .version = {1u, 0u, 0u},
     .exports = loader_fixture_function_exports,
-    .export_count = 6u,
+    .export_count = 8u,
     .self = NULL,
     .start = NULL,
     .request_stop = NULL,
@@ -224,6 +253,34 @@ salts_plugin_query(uint32_t host_abi) {
           .abi = FunctionAbi(loader_fixture_add),
           .context = NULL,
           .invoke = loader_fixture_add_invoke,
+      },
+  };
+  loader_fixture_function_exports[6] = (salts_plugin_export){
+      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
+      .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+      .contract_version = 1u,
+      .capabilities = 0u,
+      .export_id = "loader_function.answer",
+      .contract_id = "loader_function.math",
+      .value.function = {
+          .desc = FunctionMeta(loader_fixture_answer),
+          .abi = FunctionAbi(loader_fixture_answer),
+          .context = NULL,
+          .invoke = loader_fixture_answer_invoke,
+      },
+  };
+  loader_fixture_function_exports[7] = (salts_plugin_export){
+      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
+      .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+      .contract_version = 1u,
+      .capabilities = 0u,
+      .export_id = "loader_function.notify",
+      .contract_id = "loader_function.math",
+      .value.function = {
+          .desc = FunctionMeta(loader_fixture_notify),
+          .abi = FunctionAbi(loader_fixture_notify),
+          .context = NULL,
+          .invoke = loader_fixture_notify_invoke,
       },
   };
   return &loader_fixture_function_manifest;
