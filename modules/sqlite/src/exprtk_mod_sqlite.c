@@ -4,6 +4,7 @@
  */
 #include "sqlite_ctx.h"
 #include <cstl.h>
+#include <limits.h>
 #include <math.h>
 #include <stdint.h>
 
@@ -1041,18 +1042,28 @@ static exprtk_value_t fn_sqlite_rag_search(size_t argc, exprtk_value_t *args, ex
 
 /* == Loader =============================================================== */
 
-void sqlite_load(void *p, void *e, void *s) {
-  sqlite_ctx_t *ctx = (sqlite_ctx_t *)p;
+int sqlite_load_provider(sqlite_provider *provider, void *session,
+                         void *e, void *s) {
   exprtk_env_t *env = (exprtk_env_t *)e;
   mem_pool_t *scratch = (mem_pool_t *)s;
-  if (!ctx || !env || !scratch) return;
+  sqlite_ud_t *ud;
 
-  sqlite_ud_t *ud = mem_alloc(&env->arena, sizeof(*ud));
-  if (!ud) return;
-  ud->ctx = ctx;
+  if (!provider || !sqlite_provider_valid(provider) ||
+      !session || !env || !scratch)
+    return 0;
+
+  ud = mem_alloc(&env->arena, sizeof(*ud));
+  if (!ud) return 0;
+  ud->provider = provider;
+  ud->ctx = (sqlite_ctx_t *)session;
   ud->env = env;
   ud->scratch = scratch;
 
+  /*
+   * Core DB operations below dispatch through provider->vtable. Advanced
+   * embedding/RAG helpers still share the same provider-created session and
+   * are migrated independently; no second sqlite_ctx is created here.
+   */
   exprtk_env_register_func(env, "sqlite.open", fn_sqlite_open, ud);
   exprtk_env_register_func(env, "sqlite.close", fn_sqlite_close, ud);
   exprtk_env_register_func(env, "sqlite.exec", fn_sqlite_exec, ud);
@@ -1069,4 +1080,5 @@ void sqlite_load(void *p, void *e, void *s) {
   exprtk_env_register_func(env, "sqlite.rag_init", fn_sqlite_rag_init, ud);
   exprtk_env_register_func(env, "sqlite.rag_add", fn_sqlite_rag_add, ud);
   exprtk_env_register_func(env, "sqlite.rag_search", fn_sqlite_rag_search, ud);
+  return 1;
 }
