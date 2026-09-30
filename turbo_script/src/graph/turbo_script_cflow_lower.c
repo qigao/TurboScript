@@ -112,23 +112,60 @@ static bool ts_cflow_runtime_numeric_value(const exprtk_value_t *value) {
           value->type == EXPRTK_VAL_INTEGER);
 }
 
+static bool ts_cflow_runtime_numeric_collection_value(
+    const exprtk_value_t *value) {
+  if (!value) return false;
+  if (value->type == EXPRTK_VAL_VECTOR) return true;
+  if (value->type != EXPRTK_VAL_LIST) return false;
+
+  for (size_t i = 0; i < value->data.list.count; ++i) {
+    if (!ts_cflow_runtime_numeric_value(&value->data.list.items[i]))
+      return false;
+  }
+  return true;
+}
+
+static bool ts_cflow_runtime_materialized_stream_source(
+    const exprtk_value_t *value, exprtk_value_t *source_out) {
+  exprtk_value_t kind;
+  exprtk_value_t marker;
+  exprtk_value_t source;
+  static const char marker_text[] = "TurboScript.Stream.v1";
+
+  if (!value || !source_out || !exprtk_value_is_object_like(value) ||
+      !exprtk_map_has(value, "__ts_stream_kind") ||
+      !exprtk_map_has(value, "__ts_cflow_materialized") ||
+      !exprtk_map_has(value, "source"))
+    return false;
+
+  kind = exprtk_map_get(value, "__ts_stream_kind");
+  marker = exprtk_map_get(value, "__ts_cflow_materialized");
+  if (kind.type != EXPRTK_VAL_STRING ||
+      kind.data.string.len != sizeof(marker_text) - 1u ||
+      memcmp(kind.data.string.data, marker_text, sizeof(marker_text) - 1u) != 0 ||
+      !ts_cflow_runtime_numeric_value(&marker) ||
+      ((marker.type == EXPRTK_VAL_NUMBER && marker.data.number == 0.0) ||
+       (marker.type == EXPRTK_VAL_INTEGER && marker.data.integer == 0)))
+    return false;
+
+  source = exprtk_map_get(value, "source");
+  if (!ts_cflow_runtime_numeric_collection_value(&source)) return false;
+  *source_out = source;
+  return true;
+}
+
 static bool ts_cflow_runtime_numeric_collection_source(
     turbo_script_ctx_t *runtime_ctx, const exprtk_node_t *node) {
   exprtk_value_t value;
+  exprtk_value_t source;
 
   if (!runtime_ctx || !node || node->type != EXPRTK_NODE_VARIABLE ||
       !node->data.variable.name)
     return false;
 
   value = exprtk_env_get(&runtime_ctx->env, node->data.variable.name);
-  if (value.type == EXPRTK_VAL_VECTOR) return true;
-  if (value.type != EXPRTK_VAL_LIST) return false;
-
-  for (size_t i = 0; i < value.data.list.count; ++i) {
-    if (!ts_cflow_runtime_numeric_value(&value.data.list.items[i]))
-      return false;
-  }
-  return true;
+  if (ts_cflow_runtime_numeric_collection_value(&value)) return true;
+  return ts_cflow_runtime_materialized_stream_source(&value, &source);
 }
 
 static bool ts_cflow_append_callable(

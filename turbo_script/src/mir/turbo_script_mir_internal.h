@@ -176,6 +176,7 @@ struct ts_mir_var_entry_s {
   MIR_reg_t reg;     // MIR register
   int dirty;         // Dirty flag: 1 = needs sync to environment
   int dynamic_value; // 1 = holds dynamic value (not numeric)
+  int stream_value;  // 1 = compile-time known TurboScript Stream value
 };
 
 /* =========================================================================
@@ -402,6 +403,9 @@ void ts_mir_mark_all_vars_dirty(ts_mir_compiler_t *c);
 void ts_mir_mark_var_dynamic(ts_mir_compiler_t *c, const char *name);
 void ts_mir_mark_var_numeric(ts_mir_compiler_t *c, const char *name);
 int ts_mir_var_is_dynamic(ts_mir_compiler_t *c, const char *name);
+void ts_mir_mark_var_stream(ts_mir_compiler_t *c, const char *name);
+void ts_mir_clear_var_stream(ts_mir_compiler_t *c, const char *name);
+int ts_mir_var_is_stream(ts_mir_compiler_t *c, const char *name);
 void ts_mir_clear_dirty_flags(ts_mir_compiler_t *c);
 void ts_mir_sync_all_dirty_vars(ts_mir_compiler_t *c);
 int ts_mir_bind_existing_reg(ts_mir_compiler_t *c, const char *name, MIR_reg_t reg);

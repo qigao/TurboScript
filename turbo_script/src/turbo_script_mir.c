@@ -362,6 +362,23 @@ static int ts_member_call_is_stream_chain(exprtk_node_t *node) {
   return ts_member_call_is_stream_chain(node->data.member_call.object);
 }
 
+static int ts_member_call_returns_stream_value(const exprtk_node_t *node) {
+  const char *method;
+  if (!node || node->type != EXPRTK_NODE_MEMBER_CALL ||
+      !node->data.member_call.method)
+    return 0;
+  method = node->data.member_call.method;
+  return strcmp(method, "stream") == 0 ||
+         strcmp(method, "of") == 0 ||
+         strcmp(method, "text") == 0 ||
+         strcmp(method, "lines") == 0 ||
+         strcmp(method, "split") == 0 ||
+         strcmp(method, "filter") == 0 ||
+         strcmp(method, "filterExpr") == 0 ||
+         strcmp(method, "where") == 0 ||
+         strcmp(method, "map") == 0;
+}
+
 static int ts_call_has_spread_args(size_t argc, exprtk_node_t **args) {
   if (!args) return 0;
   for (size_t i = 0; i < argc; ++i) {
@@ -968,6 +985,7 @@ static int ts_oop_receiver_can_assign_temp(ts_mir_compiler_t *c, exprtk_node_t *
 
 static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   exprtk_node_t *rhs = node->data.assignment.value;
+  ts_mir_clear_var_stream(c, node->data.assignment.name);
   if (rhs && rhs->type == EXPRTK_NODE_NEW && rhs->data.new_expr.class_name) {
     if (ts_oop_call_args_need_value_bridge(c, rhs->data.new_expr.arg_count,
                                            rhs->data.new_expr.args)) {
@@ -1029,8 +1047,22 @@ static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   if (rhs && rhs->type == EXPRTK_NODE_MEMBER_CALL && rhs->data.member_call.object &&
       rhs->data.member_call.method) {
     if (ts_member_call_is_stream_chain(rhs)) {
+      MIR_reg_t result;
       ts_mir_clear_var_class(c, node->data.assignment.name);
-      return ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+      result = ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+      if (ts_member_call_returns_stream_value(rhs))
+        ts_mir_mark_var_stream(c, node->data.assignment.name);
+      return result;
+    }
+    if (rhs->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
+        rhs->data.member_call.object->data.variable.name &&
+        ts_mir_var_is_stream(c, rhs->data.member_call.object->data.variable.name)) {
+      MIR_reg_t result;
+      ts_mir_clear_var_class(c, node->data.assignment.name);
+      result = ts_emit_value_expr_assign(c, node->data.assignment.name, rhs);
+      if (ts_member_call_returns_stream_value(rhs))
+        ts_mir_mark_var_stream(c, node->data.assignment.name);
+      return result;
     }
     if (rhs->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
         ts_mir_var_is_dynamic(c, rhs->data.member_call.object->data.variable.name)) {
@@ -1113,9 +1145,13 @@ static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   }
   if (rhs && rhs->type == EXPRTK_NODE_VARIABLE && rhs->data.variable.name &&
       ts_mir_var_is_dynamic(c, rhs->data.variable.name)) {
+    MIR_reg_t result;
     ts_mir_clear_var_class(c, node->data.assignment.name);
     (void)ts_mir_get_or_create_reg(c, node->data.assignment.name);
-    return ts_emit_dynamic_var_assign(c, node->data.assignment.name, rhs->data.variable.name);
+    result = ts_emit_dynamic_var_assign(c, node->data.assignment.name, rhs->data.variable.name);
+    if (ts_mir_var_is_stream(c, rhs->data.variable.name))
+      ts_mir_mark_var_stream(c, node->data.assignment.name);
+    return result;
   }
   if (rhs && rhs->type == EXPRTK_NODE_MEMBER_ACCESS && rhs->data.member_access.object &&
       rhs->data.member_access.member) {

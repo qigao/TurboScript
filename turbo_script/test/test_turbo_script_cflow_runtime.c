@@ -165,6 +165,59 @@ spec("TurboScript CFlow stream runtime") {
       turbo_script_free(interp);
     }
 
+
+    it("re-admits pure map and filter from a materialized stream") {
+      const char *source =
+          "s=stream.of([1,2,3]).map(x => x * 2);"
+          "t=s.filter(x => x > 2);"
+          "u=t.map(x => x + 1);"
+          "n=u.count();"
+          "v=u.toVector();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_t;
+      exprtk_value_t jit_t;
+      exprtk_value_t interp_u;
+      exprtk_value_t jit_u;
+      exprtk_value_t interp_vector;
+      exprtk_value_t jit_vector;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run_mir_interp(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+
+      interp_t = exprtk_env_get(&interp->env, "t");
+      jit_t = exprtk_env_get(&jit->env, "t");
+      interp_u = exprtk_env_get(&interp->env, "u");
+      jit_u = exprtk_env_get(&jit->env, "u");
+      check_true(exprtk_value_is_object_like(&interp_t));
+      check_true(exprtk_value_is_object_like(&jit_t));
+      check_true(exprtk_value_is_object_like(&interp_u));
+      check_true(exprtk_value_is_object_like(&jit_u));
+      check_true(exprtk_map_has(&interp_t, "__ts_cflow_materialized"));
+      check_true(exprtk_map_has(&jit_t, "__ts_cflow_materialized"));
+      check_true(exprtk_map_has(&interp_u, "__ts_cflow_materialized"));
+      check_true(exprtk_map_has(&jit_u, "__ts_cflow_materialized"));
+
+      check(fabs(ts_get_num(interp, "n") - 2.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "n") - 2.0) <= 1e-9);
+
+      interp_vector = exprtk_env_get(&interp->env, "v");
+      jit_vector = exprtk_env_get(&jit->env, "v");
+      check_equal(interp_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(jit_vector.type, EXPRTK_VAL_VECTOR);
+      check_equal(interp_vector.data.vector.size, (size_t)2u);
+      check_equal(jit_vector.data.vector.size, (size_t)2u);
+      check(fabs(interp_vector.data.vector.data[0] - 5.0) <= 1e-9);
+      check(fabs(interp_vector.data.vector.data[1] - 7.0) <= 1e-9);
+      check(fabs(jit_vector.data.vector.data[0] - 5.0) <= 1e-9);
+      check(fabs(jit_vector.data.vector.data[1] - 7.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
     it("keeps admitted numeric terminals out of the legacy stream evaluator") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       exprtk_value_t result;

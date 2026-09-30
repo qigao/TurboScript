@@ -398,6 +398,34 @@ int ts_mir_var_is_dynamic(ts_mir_compiler_t *c, const char *name) {
   return 0;
 }
 
+void ts_mir_mark_var_stream(ts_mir_compiler_t *c, const char *name) {
+  if (!c || !name) return;
+  for (int i = 0; i < c->var_count; ++i) {
+    if (strcmp(c->vars[i]->name, name) == 0) {
+      c->vars[i]->stream_value = 1;
+      return;
+    }
+  }
+}
+
+void ts_mir_clear_var_stream(ts_mir_compiler_t *c, const char *name) {
+  if (!c || !name) return;
+  for (int i = 0; i < c->var_count; ++i) {
+    if (strcmp(c->vars[i]->name, name) == 0) {
+      c->vars[i]->stream_value = 0;
+      return;
+    }
+  }
+}
+
+int ts_mir_var_is_stream(ts_mir_compiler_t *c, const char *name) {
+  if (!c || !name) return 0;
+  for (int i = 0; i < c->var_count; ++i) {
+    if (strcmp(c->vars[i]->name, name) == 0) return c->vars[i]->stream_value;
+  }
+  return 0;
+}
+
 int ts_mir_add_class_name(ts_mir_compiler_t *c, const char *name) {
   if (!c || !name) return 0;
   for (int i = 0; i < c->class_name_count; ++i) {
