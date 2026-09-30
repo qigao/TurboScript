@@ -7,6 +7,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 # Update and install necessary system dependencies
 RUN apt-get update && apt-get install -y \
     build-essential \
+    cmake \
     ninja-build \
     pkg-config \
     git \
@@ -25,12 +26,7 @@ RUN apt-get update && apt-get install -y \
     wget \
     && rm -rf /var/lib/apt/lists/*
 
-# Install a recent CMake (3.31.0)
-RUN curl -L https://github.com/Kitware/CMake/releases/download/v3.31.0/cmake-3.31.0-linux-x86_64.sh \
-    -o /tmp/cmake-install.sh \
-    && chmod +x /tmp/cmake-install.sh \
-    && /tmp/cmake-install.sh --skip-license --prefix=/usr/local \
-    && rm /tmp/cmake-install.sh
+# Use the distribution CMake; the project requires only CMake 3.20+.
 
 # Clone and bootstrap vcpkg
 # Depth 1 is recommended for speed and to avoid network issues with large histories
