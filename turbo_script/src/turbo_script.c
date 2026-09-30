@@ -557,20 +557,34 @@ typedef enum {
 enum { TS_MAX_PLUGIN_NAME_LENGTH = 128 };
 
 static int ts_is_valid_plugin_name(const char *name) {
-  size_t length = 0;
-  unsigned char ch;
+  size_t length = 0u;
+  int segment_start = 1;
+
   if (!name || !*name) return 0;
-  ch = (unsigned char)name[0];
-  if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') || ch == '_'))
-    return 0;
+
   while (name[length]) {
-    ch = (unsigned char)name[length];
-    if (!((ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z') ||
-          (ch >= '0' && ch <= '9') || ch == '_' || ch == '-'))
+    const unsigned char ch = (unsigned char)name[length];
+
+    if (ch == '.') {
+      if (segment_start) return 0;
+      segment_start = 1;
+    } else if (segment_start) {
+      if (!((ch >= 'A' && ch <= 'Z') ||
+            (ch >= 'a' && ch <= 'z') ||
+            ch == '_'))
+        return 0;
+      segment_start = 0;
+    } else if (!((ch >= 'A' && ch <= 'Z') ||
+                 (ch >= 'a' && ch <= 'z') ||
+                 (ch >= '0' && ch <= '9') ||
+                 ch == '_' || ch == '-')) {
       return 0;
+    }
+
     if (++length > TS_MAX_PLUGIN_NAME_LENGTH) return 0;
   }
-  return 1;
+
+  return !segment_start;
 }
 
 static int ts_is_builtin_module(const char *name) {
