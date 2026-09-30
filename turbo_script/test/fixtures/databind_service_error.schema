@@ -1,0 +1,21 @@
+schema ErrorPlugin [version(1)];
+
+component StorePlugin {
+    service Store;
+}
+
+message Request {
+    uint32 id;
+}
+
+message Response {
+    uint32 value;
+}
+
+message NotFound {
+    uint32 id;
+}
+
+service Store {
+    Read: Request -> Response throws NotFound;
+}
