@@ -89,7 +89,6 @@ set(_turboscript_module_targets
     ta_tbs
     fin_tbs
     ts_tbs
-    sqlite_tbs
     mapper_tbs
     img_tbs
     crypto_tbs
