@@ -17,8 +17,11 @@ typedef struct ts_plugin_handle_s {
     salts_plugin_lease lease;                /* keeps manifest/code alive */
     const salts_plugin_manifest *manifest;   /* borrowed under lease */
     const salts_plugin_export *module_export;/* canonical module capability */
-    ts_plugin_module *module;                /* borrowed interface handle */
-    void *instance;                          /* per-script-context instance */
+    ts_plugin_module *module;                /* optional borrowed interface handle */
+    void *instance;                          /* optional per-script-context instance */
+    void *function_bindings;                 /* private canonical Function binding cache */
+    size_t function_binding_count;
+    int initialized;
 } ts_plugin_handle_t;
 
 #define TS_PLUGIN_ERROR_PATH_CAPACITY 1024U

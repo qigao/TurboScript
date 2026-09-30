@@ -11,8 +11,12 @@ cmake_config_target(${TARGET_NAME_PLUGIN_LOADER} FOLDER turbo_script)
 target_include_directories(
   ${TARGET_NAME_PLUGIN_LOADER}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-  PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(${TARGET_NAME_PLUGIN_LOADER} PUBLIC Salts::Plugin)
+  PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include
+          ${CMAKE_SOURCE_DIR}/exprtk/src)
+target_link_libraries(
+  ${TARGET_NAME_PLUGIN_LOADER}
+  PUBLIC Salts::Plugin
+  PRIVATE exprtk)
 
 # Source files listed explicitly to avoid CMake globbing configuration issues
 set(SOURCE_FILES

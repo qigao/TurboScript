@@ -1,5 +1,7 @@
 #include "tinytest.h" /* TurboScript host plugin-loader regression. */
 #include "ts_plugin_loader.h"
+#include "exprtk.h"
+#include <math.h>
 #include <string.h>
 
 #if defined(_WIN32)
@@ -8,6 +10,7 @@
 #define LOADER_WRONG_NAME_FILE "loader_wrong_name.dll"
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.dll"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dll"
+#define LOADER_FUNCTION_FILE "loader_function.dll"
 #define LOADER_LEGACY_FILE "loader_legacy.dll"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dll"
 #define LOADER_PACKAGE_FILE "loader_package.dll"
@@ -17,6 +20,7 @@
 #define LOADER_WRONG_NAME_FILE "loader_wrong_name.dylib"
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.dylib"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dylib"
+#define LOADER_FUNCTION_FILE "loader_function.dylib"
 #define LOADER_LEGACY_FILE "loader_legacy.dylib"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dylib"
 #define LOADER_PACKAGE_FILE "loader_package.dylib"
@@ -26,6 +30,7 @@
 #define LOADER_WRONG_NAME_FILE "loader_wrong_name.so"
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.so"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.so"
+#define LOADER_FUNCTION_FILE "loader_function.so"
 #define LOADER_LEGACY_FILE "loader_legacy.so"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.so"
 #define LOADER_PACKAGE_FILE "loader_package.so"
@@ -105,6 +110,45 @@ spec("plugin loader") {
       check_null(handle);
       check_equal(error.stage, TS_PLUGIN_STAGE_SYMBOL);
       check_not_null(strstr(error.message, "salts_plugin_query"));
+    }
+  }
+
+  describe("canonical Function exports") {
+    it("loads and binds a Function-only plugin without a module adapter") {
+      ts_plugin_error_t error = {0};
+      ts_plugin_handle_t *handle = NULL;
+      exprtk_env_t env;
+      exprtk_value_t arg;
+      exprtk_value_t result;
+
+      exprtk_env_init(&env);
+      check_equal(
+          ts_plugin_load_ex(
+              LOADER_FUNCTION_FILE, "loader_function", &handle, &error),
+          TS_PLUGIN_ERROR_NONE);
+      check_not_null(handle);
+      if (handle) {
+        check_null(handle->module);
+        check_equal(handle->manifest->export_count, (size_t)1u);
+        check_equal(handle->manifest->exports[0].kind,
+                    SALTS_PLUGIN_EXPORT_FUNCTION);
+        check_equal(
+            ts_plugin_init_ex(handle, &env, NULL, &error),
+            TS_PLUGIN_ERROR_NONE);
+        check_equal(handle->function_binding_count, (size_t)1u);
+        check_true(exprtk_env_has_func(&env, "loader_function.double"));
+
+        arg = exprtk_val_num(3.5);
+        result = exprtk_call_internal(
+            "loader_function.double", 1u, &arg, &env);
+        check_equal(result.type, EXPRTK_VAL_NUMBER);
+        check(fabs(result.data.number - 7.0) <= 1e-9);
+        check_false(env.aborted);
+        exprtk_value_destroy(&result);
+      }
+
+      exprtk_env_free(&env);
+      if (handle) ts_plugin_unload(handle);
     }
   }
 

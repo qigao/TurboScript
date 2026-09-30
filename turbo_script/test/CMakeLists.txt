@@ -48,6 +48,11 @@ target_compile_definitions(
   test_plugin_loader_init_failure
   PRIVATE FIXTURE_PLUGIN_NAME="loader_init_failure" FIXTURE_INIT_FAILURE)
 
+add_plugin_loader_fixture(test_plugin_loader_function loader_function)
+target_compile_definitions(
+  test_plugin_loader_function
+  PRIVATE FIXTURE_PLUGIN_NAME="loader_function" FIXTURE_FUNCTION_ONLY)
+
 add_plugin_loader_fixture(test_plugin_loader_legacy loader_legacy)
 target_compile_definitions(
   test_plugin_loader_legacy PRIVATE FIXTURE_PLUGIN_NAME="loader_legacy")
@@ -90,13 +95,14 @@ set_target_properties(
 cmake_add_test(
   TARGET test_ts_plugin_loader
   SOURCES test_ts_plugin_loader.c
-  LIBS turbo_script_plugin_loader Salts::TinyTest
+  LIBS turbo_script_plugin_loader Salts::TinyTest exprtk
   INCLUDES ${CMAKE_SOURCE_DIR}/exprtk/include
   DEPENDS test_plugin_loader_fixture test_plugin_loader_bad_abi
           test_plugin_loader_prefixed_conflict
           test_plugin_loader_wrong_name test_plugin_loader_missing_entry
-          test_plugin_loader_init_failure test_plugin_loader_legacy
-          test_plugin_loader_cwd_only test_plugin_loader_package
+          test_plugin_loader_init_failure test_plugin_loader_function
+          test_plugin_loader_legacy test_plugin_loader_cwd_only
+          test_plugin_loader_package
   FOLDER turbo_script
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set_tests_properties(
@@ -117,7 +123,7 @@ endmacro()
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
   test_plugin_loader_fixture test_plugin_loader_prefixed_conflict
-  crypto_tbs)
+  test_plugin_loader_function crypto_tbs)
 add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)

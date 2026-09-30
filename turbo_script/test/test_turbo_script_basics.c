@@ -113,6 +113,24 @@ spec("turbo_script_basics") {
       turbo_script_free(ctx);
     }
 
+    it("should call a canonical Function-only plugin in interpreter and JIT") {
+      const char *source =
+          "import(\"loader_function\");"
+          "answer=loader_function.double(3.5);";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "answer") - 7.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "answer") - 7.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
     it("should load crypto through its collision-safe plugin filename") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 

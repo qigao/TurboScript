@@ -3,11 +3,175 @@
  * @brief TurboScript host adapter over the canonical Salts plugin registry.
  */
 #include "ts_plugin_loader.h"
+#include "exprtk_runtime_internal.h"
 
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+static int plugin_error_set(ts_plugin_error_t *error, ts_plugin_error_code_t code,
+                            ts_plugin_error_stage_t stage, uint32_t native_code,
+                            const char *path, const char *format, ...);
+
+typedef struct ts_plugin_function_binding_s {
+  const salts_plugin_export *entry;
+  salts_plugin_function_invoke_fn invoke;
+  void *context;
+} ts_plugin_function_binding_t;
+
+static int plugin_function_is_double_unary(
+    const salts_plugin_export *entry) {
+  const cmeta_function_desc *desc;
+  const cmeta_function_abi_desc *abi;
+  const cmeta_param_desc *param;
+
+  if (!entry || entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION)
+    return 0;
+  desc = entry->value.function.desc;
+  abi = entry->value.function.abi;
+  if (!desc || !abi || !entry->value.function.invoke ||
+      !cmeta_function_desc_valid(desc) ||
+      !cmeta_function_abi_desc_valid(abi) ||
+      desc->param_count != 1u || abi->param_count != 1u ||
+      !cmeta_type_equal(desc->return_type, &cmeta_type_double) ||
+      abi->return_carrier != CMETA_ABI_SCALAR ||
+      cmeta_function_param_abi(abi, 0u) != CMETA_ABI_SCALAR)
+    return 0;
+
+  param = cmeta_function_param(desc, 0u);
+  return param != NULL &&
+         cmeta_type_equal(param->type, &cmeta_type_double) &&
+         (param->flags & CMETA_PARAM_DIRECTION_MASK) == CMETA_PARAM_IN;
+}
+
+static exprtk_value_t plugin_function_double_unary_call(
+    size_t argc, exprtk_value_t *args, exprtk_env_t *env, void *user_data) {
+  ts_plugin_function_binding_t *binding =
+      (ts_plugin_function_binding_t *)user_data;
+  void *params[1];
+  double input;
+  double result = 0.0;
+
+  if (!binding || !binding->invoke || argc != 1u || !args) {
+    if (env) {
+      env->aborted = 1;
+      snprintf(env->error_msg, sizeof(env->error_msg),
+               "invalid canonical plugin function invocation");
+    }
+    return exprtk_val_num(0.0);
+  }
+
+  if (args[0].type == EXPRTK_VAL_NUMBER) {
+    input = args[0].data.number;
+  } else if (args[0].type == EXPRTK_VAL_INTEGER) {
+    input = (double)args[0].data.integer;
+  } else if (args[0].type == EXPRTK_VAL_BOOL) {
+    input = args[0].data.boolean ? 1.0 : 0.0;
+  } else {
+    if (env) {
+      env->aborted = 1;
+      snprintf(env->error_msg, sizeof(env->error_msg),
+               "plugin function '%s' requires one numeric argument",
+               binding->entry && binding->entry->export_id
+                   ? binding->entry->export_id : "<unknown>");
+    }
+    return exprtk_val_num(0.0);
+  }
+
+  params[0] = &input;
+  if (!binding->invoke(binding->context, &result, params, 1u)) {
+    if (env) {
+      env->aborted = 1;
+      snprintf(env->error_msg, sizeof(env->error_msg),
+               "plugin function '%s' exact adapter rejected invocation",
+               binding->entry && binding->entry->export_id
+                   ? binding->entry->export_id : "<unknown>");
+    }
+    return exprtk_val_num(0.0);
+  }
+  return exprtk_val_num(result);
+}
+
+static int plugin_bind_function_exports(
+    ts_plugin_handle_t *handle, exprtk_env_t *env,
+    ts_plugin_error_t *error) {
+  ts_plugin_function_binding_t *bindings = NULL;
+  exprtk_native_registration_t *registrations = NULL;
+  size_t function_count = 0u;
+  size_t index = 0u;
+  exprtk_registration_status_t registration_status;
+
+  if (!handle || !handle->manifest || !env)
+    return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
+                            TS_PLUGIN_STAGE_ARGUMENT, 0u, NULL,
+                            "plugin function binding requires a manifest and environment");
+
+  for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
+    if (handle->manifest->exports[i].kind == SALTS_PLUGIN_EXPORT_FUNCTION)
+      ++function_count;
+  }
+  if (function_count == 0u) return TS_PLUGIN_ERROR_NONE;
+
+  bindings = (ts_plugin_function_binding_t *)calloc(
+      function_count, sizeof(*bindings));
+  registrations = (exprtk_native_registration_t *)calloc(
+      function_count, sizeof(*registrations));
+  if (!bindings || !registrations) {
+    free(registrations);
+    free(bindings);
+    return plugin_error_set(error, TS_PLUGIN_ERROR_OUT_OF_MEMORY,
+                            TS_PLUGIN_STAGE_INITIALIZE, 0u, NULL,
+                            "out of memory binding canonical plugin functions");
+  }
+
+  for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
+    const salts_plugin_export *entry = &handle->manifest->exports[i];
+    salts_plugin_status status;
+    if (entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION) continue;
+
+    status = salts_plugin_export_require_function(
+        entry, entry->contract_id, entry->contract_version, 0u);
+    if (status != SALTS_PLUGIN_OK ||
+        !plugin_function_is_double_unary(entry)) {
+      free(registrations);
+      free(bindings);
+      return plugin_error_set(
+          error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_INITIALIZE,
+          (uint32_t)status, NULL,
+          "plugin function '%s' is outside the first canonical scalar binding slice",
+          entry->export_id ? entry->export_id : "<unnamed>");
+    }
+
+    bindings[index].entry = entry;
+    bindings[index].invoke = entry->value.function.invoke;
+    bindings[index].context = entry->value.function.context;
+    registrations[index].name = entry->export_id;
+    registrations[index].fn = plugin_function_double_unary_call;
+    registrations[index].user_data = &bindings[index];
+    ++index;
+  }
+
+  registration_status = exprtk_env_register_funcs_checked(
+      env, registrations, function_count);
+  free(registrations);
+  if (registration_status != EXPRTK_REGISTRATION_OK) {
+    free(bindings);
+    return plugin_error_set(
+        error,
+        registration_status == EXPRTK_REGISTRATION_OUT_OF_MEMORY
+            ? TS_PLUGIN_ERROR_OUT_OF_MEMORY
+            : TS_PLUGIN_ERROR_DESCRIPTOR,
+        TS_PLUGIN_STAGE_INITIALIZE, (uint32_t)registration_status, NULL,
+        registration_status == EXPRTK_REGISTRATION_CONFLICT
+            ? "plugin function export conflicts with an existing script binding"
+            : "failed to register canonical plugin function bindings");
+  }
+
+  handle->function_bindings = bindings;
+  handle->function_binding_count = function_count;
+  return TS_PLUGIN_ERROR_NONE;
+}
 
 static void plugin_error_clear(ts_plugin_error_t *error) {
   if (error) memset(error, 0, sizeof(*error));
@@ -437,24 +601,48 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
 
   status = salts_plugin_manifest_find_export(
       manifest, TS_PLUGIN_MODULE_EXPORT_ID, &module_export);
-  if (status != SALTS_PLUGIN_OK ||
-      salts_plugin_export_require_interface(
-          module_export, TS_PLUGIN_MODULE_CONTRACT_ID,
-          TS_PLUGIN_MODULE_CONTRACT_VERSION, 0u,
-          ts_plugin_module_interface()) != SALTS_PLUGIN_OK) {
+  if (status == SALTS_PLUGIN_OK) {
+    if (salts_plugin_export_require_interface(
+            module_export, TS_PLUGIN_MODULE_CONTRACT_ID,
+            TS_PLUGIN_MODULE_CONTRACT_VERSION, 0u,
+            ts_plugin_module_interface()) != SALTS_PLUGIN_OK) {
+      plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
+                       (uint32_t)status, resolved,
+                       "TurboScript module interface export is invalid");
+      free(resolved);
+      plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
+      return TS_PLUGIN_ERROR_DESCRIPTOR;
+    }
+
+    module = (ts_plugin_module *)module_export->value.interface.value;
+    if (!ts_plugin_module_valid(module)) {
+      plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
+                       0u, resolved,
+                       "TurboScript module interface value is invalid");
+      free(resolved);
+      plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
+      return TS_PLUGIN_ERROR_DESCRIPTOR;
+    }
+  } else if (status == SALTS_PLUGIN_UNKNOWN_EXPORT) {
+    size_t function_count = 0u;
+    module_export = NULL;
+    for (size_t i = 0u; i < manifest->export_count; ++i) {
+      if (manifest->exports[i].kind == SALTS_PLUGIN_EXPORT_FUNCTION)
+        ++function_count;
+    }
+    if (function_count == 0u) {
+      plugin_error_set(
+          error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
+          (uint32_t)status, resolved,
+          "plugin publishes neither canonical Function exports nor the TurboScript module interface");
+      free(resolved);
+      plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
+      return TS_PLUGIN_ERROR_DESCRIPTOR;
+    }
+  } else {
     plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
                      (uint32_t)status, resolved,
-                     "plugin does not publish the canonical TurboScript module interface");
-    free(resolved);
-    plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
-    return TS_PLUGIN_ERROR_DESCRIPTOR;
-  }
-
-  module = (ts_plugin_module *)module_export->value.interface.value;
-  if (!ts_plugin_module_valid(module)) {
-    plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
-                     0u, resolved,
-                     "TurboScript module interface value is invalid");
+                     "failed to inspect canonical plugin exports");
     free(resolved);
     plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
     return TS_PLUGIN_ERROR_DESCRIPTOR;
@@ -476,6 +664,9 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   handle->module_export = module_export;
   handle->module = module;
   handle->instance = NULL;
+  handle->function_bindings = NULL;
+  handle->function_binding_count = 0u;
+  handle->initialized = 0;
   registry.impl = NULL;
   free(resolved);
 
@@ -493,22 +684,38 @@ ts_plugin_handle_t *ts_plugin_load(const char *path) {
 
 int ts_plugin_init_ex(ts_plugin_handle_t *handle, void *env, void *scratch,
                       ts_plugin_error_t *error) {
+  int bind_status;
+
   plugin_error_clear(error);
-  if (!handle || !handle->manifest || !handle->module ||
-      !ts_plugin_module_valid(handle->module))
+  if (!handle || !handle->manifest || !env)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
                             TS_PLUGIN_STAGE_ARGUMENT, 0u, NULL,
-                            "validated plugin handle is required");
-  if (handle->instance)
+                            "validated plugin handle and target environment are required");
+  if (handle->initialized)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
                             TS_PLUGIN_STAGE_INITIALIZE, 0u, NULL,
                             "plugin is already initialized");
 
-  handle->instance = ts_plugin_module_load(handle->module, env, scratch);
-  if (!handle->instance)
-    return plugin_error_set(error, TS_PLUGIN_ERROR_INITIALIZE,
-                            TS_PLUGIN_STAGE_INITIALIZE, 0u, NULL,
-                            "plugin initialization returned no instance");
+  if (handle->module && ts_plugin_module_valid(handle->module)) {
+    handle->instance = ts_plugin_module_load(handle->module, env, scratch);
+    if (!handle->instance)
+      return plugin_error_set(error, TS_PLUGIN_ERROR_INITIALIZE,
+                              TS_PLUGIN_STAGE_INITIALIZE, 0u, NULL,
+                              "plugin module initialization returned no instance");
+  }
+
+  bind_status = plugin_bind_function_exports(
+      handle, (exprtk_env_t *)env, error);
+  if (bind_status != TS_PLUGIN_ERROR_NONE) {
+    if (handle->instance && handle->module &&
+        ts_plugin_module_valid(handle->module)) {
+      ts_plugin_module_unload(handle->module, handle->instance);
+      handle->instance = NULL;
+    }
+    return bind_status;
+  }
+
+  handle->initialized = 1;
   return TS_PLUGIN_ERROR_NONE;
 }
 
@@ -529,6 +736,11 @@ void ts_plugin_unload(ts_plugin_handle_t *handle) {
     ts_plugin_module_unload(handle->module, handle->instance);
     handle->instance = NULL;
   }
+
+  free(handle->function_bindings);
+  handle->function_bindings = NULL;
+  handle->function_binding_count = 0u;
+  handle->initialized = 0;
 
   if (salts_plugin_lease_valid(handle->lease))
     (void)salts_plugin_registry_release(&handle->registry, &handle->lease);
