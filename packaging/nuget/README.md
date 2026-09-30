@@ -2,7 +2,7 @@
 
 嵌入式 C/C++ SDK，保留 MIR 解释器和 JIT，包含原生扩展模块（含 Praktor 需要的 os/net），不附带 CLI。
 SDK 目录：`sdk/linux-x64`、`sdk/macos-arm64`、`sdk/android-arm64-v8a`。
-依赖 NuGet 包 Salts.Native 1.8.3、SaltsUtils.Native 4.1.3、CHttp.Native 1.1.4。
+依赖 GitHub 发布的 `Salts.Native`、`SaltsUtils.Native`、`CHttp.Native`，消费时始终选择最新可用版本，不在 consumer 侧写死任何版本号。
 
 还原包后设置 `SALTS_ROOT`、`SALTS_UTILS_ROOT`、`CHTTP_ROOT`、`TURBOSCRIPT_ROOT` 和包含各 SDK 目录的
 `CMAKE_PREFIX_PATH`，使用 `find_package(TurboScript CONFIG REQUIRED)` 与
@@ -13,11 +13,11 @@ Android 使用 NDK API 26、c++_shared，验证 ELF 架构及 C/C++ 消费端交
 不把交叉编译成功当作设备运行验证。应用需自行部署 libc++_shared.so 和依赖动态库。
 
 正式发布采用与 Salts 相同的 tag contract：`CMakeLists.txt`、root `vcpkg.json`、
-Git tag 和 NuGet package 使用同一个版本。当前正式版本为 `3.0.3`，只有
-`v3.0.3` tag 可以发布 `TurboScript.Native 3.0.3`。
+Git tag 和 NuGet package 使用同一个版本。当前正式版本为 `3.0.4`，只有
+`v3.0.4` tag 可以发布 `TurboScript.Native 3.0.4`。
 
-3.0.3 增加 legacy `turbo_script_run()` / `turbo_script_run_jit()` 的 cooperative context interrupt hook，同时保持现有 import/plugin/.tbs 语义。
+3.0.4 延续 cooperative context interrupt hook，同时保持现有 import/plugin/.tbs 语义。
 
-PR/master qualification 仍使用唯一的 `3.0.3-ci.<run>.<attempt>` 构建版本，但只作为
+PR/master qualification 使用唯一的 `3.0.4-ci.<run>.<attempt>` 构建版本，但只作为
 CI artifact，不推送到 GitHub Packages。每个 SDK 内的 manifest 记录实际源码提交、
 依赖版本和构建配置。
