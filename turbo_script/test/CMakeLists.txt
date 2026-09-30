@@ -129,6 +129,12 @@ add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
+add_ts_test(test_turbo_script_sqlite_provider test_turbo_script_sqlite_provider.c)
+target_include_directories(
+  test_turbo_script_sqlite_provider
+  PRIVATE ${CMAKE_SOURCE_DIR}/modules/sqlite/include)
+add_dependencies(test_turbo_script_sqlite_provider sqlite_tbs)
+
 cmake_add_test(
   TARGET test_turbo_script_cmeta_bridge
   SOURCES test_turbo_script_cmeta_bridge.c
