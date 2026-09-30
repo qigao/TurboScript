@@ -630,6 +630,48 @@ spec("turbo_script_quant") {
     }
   }
 
+  describe("Canonical fin Plugin Functions") {
+    it("should bind strategy.kelly from CMeta and preserve interpreter/JIT parity") {
+      const char *source = "k = strategy.kelly(0.6, 0.02, 0.015);";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      ts_plugin_function_view_t view = {0};
+      int found = 0;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_load_plugin(interp, "fin"), 0);
+      check_equal(turbo_script_load_plugin(jit, "fin"), 0);
+
+      for (size_t i = 0u; i < interp->plugin_count; ++i) {
+        if (ts_plugin_find_bound_function(
+                interp->plugins[i], "strategy.kelly", &view)) {
+          found = 1;
+          break;
+        }
+      }
+
+      check_true(found);
+      check_not_null(view.entry);
+      if (view.entry) {
+        check_equal(view.entry->kind, SALTS_PLUGIN_EXPORT_FUNCTION);
+        check_not_null(view.entry->value.function.desc);
+        check_not_null(view.entry->value.function.abi);
+        check_equal(view.entry->value.function.desc->param_count, (size_t)3u);
+        check_true(cmeta_effects_are_pure(
+            view.entry->value.function.desc->effects));
+      }
+
+      check_equal(turbo_script_run_mir_interp(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "k") - 0.3) <= 1e-9);
+      check(fabs(ts_get_num(jit, "k") - 0.3) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+  }
+
   describe("Quant: Risk Metrics") {
     it("should compute VaR, CVaR, Kelly criterion") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
