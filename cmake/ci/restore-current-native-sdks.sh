@@ -49,3 +49,5 @@ restore_sdk qigao/salts-utils 'SaltsUtils.Native.*.nupkg' salts-utils \
   'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake' SALTS_UTILS_ROOT SALTS_UTILS_SDK_RELEASE
 restore_sdk qigao/chttp 'CHttp.Native.*.nupkg' chttp \
   'lib/cmake/Chttp/ChttpConfig.cmake' CHTTP_ROOT CHTTP_SDK_RELEASE
+restore_sdk qigao/TurboDB 'TurboDB.Native.*.nupkg' turbodb \
+  'lib/cmake/TurboDB/TurboDBConfig.cmake' TURBODB_ROOT TURBODB_SDK_RELEASE
