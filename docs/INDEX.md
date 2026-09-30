@@ -37,7 +37,8 @@ DataBind 公共接口。
 - `cron`: 定时任务
 - `ta` / `fin` / `strategy`: 时间序列、金融与策略辅助
 - `vec`: 向量操作
-- `net` / `http` / `sqlite`: 网络、HTTP 和数据库能力
+- `net` / `http`: 网络与 HTTP 能力
+- `db`: TurboDB::Orm 数据库能力；driver/module 由用户显式配置
 
 ## 构建与测试
 
