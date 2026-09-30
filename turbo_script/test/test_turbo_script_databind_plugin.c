@@ -1,6 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "tinytest.h"
 
+#include <stdint.h>
 #include <string.h>
 
 static ts_plugin_handle_t *find_plugin(
