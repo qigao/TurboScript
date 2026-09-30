@@ -21,6 +21,11 @@ extern "C" {
 #define SQLITE_PROVIDER_CONTRACT_ID "turboscript.sqlite.provider"
 #define SQLITE_PROVIDER_CONTRACT_VERSION 1u
 
+typedef struct sqlite_provider_column_request_s {
+    const char *sql;
+    int column;
+} sqlite_provider_column_request;
+
 typedef struct sqlite_provider_f64_column_s {
     double *data;
     size_t count;
@@ -47,7 +52,8 @@ typedef struct sqlite_provider_f64_column_s {
     X(I, R4, bool, query_scalar, void *, session, int, handle,                \
       const char *, sql, double *, out_value)                                 \
     X(I, R4, bool, query_column, void *, session, int, handle,                \
-      const char *, sql, sqlite_provider_f64_column *, out_column)            \
+      const sqlite_provider_column_request *, request,                        \
+      sqlite_provider_f64_column *, out_column)                               \
     X(I, V2, void, release_column, void *, session,                           \
       sqlite_provider_f64_column *, column)                                   \
     X(I, R2, const char *, error, void *, session, int, handle)
