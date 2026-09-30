@@ -1,528 +1,285 @@
-# 插件开发指南
+# TurboScript 原生插件开发
 
-学习如何使用 C/C++ 扩展 TurboScript。
+TurboScript 原生插件统一使用 **当前 Salts Plugin ABI**。
 
----
+TurboScript 不再拥有第二套通用原生插件 ABI。插件的 DSO 加载、生命周期、
+lease 与 capability 发布由 Salts::Plugin 管理；原生函数和接口语义由 CMeta
+描述。
 
-## 目录
+## 架构
 
-1. [快速开始](#快速开始)
-2. [插件架构](#插件架构)
-3. [创建简单插件](#创建简单插件)
-4. [有状态插件](#有状态插件)
-5. [构建插件](#构建插件)
-6. [插件发现](#插件发现)
-7. [最佳实践](#最佳实践)
-8. [故障排除](#故障排除)
+```text
+import("fin")
+   |
+   v
+TurboScript import / 命名空间
+   |
+   v
+Salts::Plugin registry
+  load -> start -> acquire lease
+   |
+   v
+salts_plugin_manifest
+   |
+   +--> FUNCTION
+   |      CMeta FunctionDesc
+   |      CMeta FunctionAbi
+   |      exact invoke/context
+   |
+   +--> INTERFACE
+          CMeta InterfaceDesc
+          { self, vtable }
+   |
+   v
+TurboScript 已绑定 dispatch cache
+   |
+   +--> interpreter / JIT
+   +--> 满足条件时进入 CFlow
+```
 
----
+职责边界：
 
-## 快速开始
+- **Salts::Plugin**：DSO、唯一 Plugin ABI、生命周期、lease。
+- **CMeta**：函数/接口类型、ABI、effects、properties、参数方向和所有权。
+- **TurboScript**：`import()`、脚本命名空间、脚本值转换、诊断、解释器/JIT。
+- **CFlow**：对满足 CMeta contract 的预绑定 Function 做图执行。
 
-### 5 分钟插件
+TurboScript 的 Host Module ABI 是宿主执行 TurboScript 程序的 ABI，与原生
+Plugin publication ABI 是两回事。
 
-用 3 步创建一个简单的数学插件：
+## 加载与发现
 
-**步骤 1：编写插件** (`my_math_plugin.c`)：
+```javascript
+import("fin");
+```
+
+TurboScript 根据平台解析插件文件，然后通过
+`salts_plugin_registry_*` 加载。DSO 必须发布当前 ABI 的
+`salts_plugin_query`，并返回合法 manifest。
+
+典型文件名：
+
+```text
+Windows  fin.dll
+Linux    fin.so
+macOS    fin.dylib
+```
+
+加载器使用可执行文件/安装包插件目录，不搜索当前工作目录。部分仓库插件因
+依赖库重名使用避碰物理文件名，但逻辑 plugin ID 不变。
+
+## Canonical Function export
+
+普通无状态原生操作优先发布为 FUNCTION。
+
+语义真相只有：
+
+```text
+FunctionDesc + FunctionAbi + exact invoke adapter
+```
+
+TurboScript 中的 dispatch row 只是缓存，不是第二份签名/effect 描述。
+
+示例：
 
 ```c
-#include "ts_plugin.h"
-#include "exprtk_module.h"
+#include <salts/plugin.h>
+#include <salts/thread.h>
 
-// 定义你的函数
-static exprtk_value_t my_factorial(size_t argc, exprtk_value_t *args,
-                                    exprtk_env_t *env, turbo_pool_t *arena) {
-    if (argc != 1 || args[0].type != EXPRTK_NUMBER) {
-        return exprtk_value_number(NAN);
-    }
+FunctionDecl(value, double, my_double,
+    (double, value, CMETA_PARAM_IN));
 
-    int n = (int)args[0].number;
-    if (n < 0) return exprtk_value_number(NAN);
-
-    double result = 1.0;
-    for (int i = 2; i <= n; i++) {
-        result *= i;
-    }
-
-    return exprtk_value_number(result);
+double my_double(double value) {
+    return value * 2.0;
 }
 
-// 注册函数
-static exprtk_func_entry_t my_math_funcs[] = {
-    {"factorial", my_factorial},
-    {NULL, NULL}  // 哨兵
-};
+static bool SALTS_PLUGIN_CALL my_double_invoke(
+    void *context,
+    void *return_storage,
+    void *const *params,
+    size_t param_count) {
+    if (context != NULL || return_storage == NULL ||
+        params == NULL || param_count != 1u || params[0] == NULL)
+        return false;
 
-static const exprtk_module_t my_math_module = {
-    .name = "my_math",
-    .funcs = my_math_funcs
-};
-
-const exprtk_module_t *exprtk_module_my_math(void) {
-    return &my_math_module;
+    *(double *)return_storage =
+        my_double(*(const double *)params[0]);
+    return true;
 }
 
-// 导出插件（一行搞定！）
-TS_PLUGIN_MODULE(my_math, exprtk_module_my_math)
+static salts_plugin_export exports[1];
+static salts_once_t exports_once = SALTS_ONCE_INIT;
+
+static void init_exports(void) {
+    exports[0] = (salts_plugin_export){
+        .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
+        .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+        .contract_version = 1u,
+        .export_id = "math.double",
+        .contract_id = "example.math",
+        .value.function = {
+            .desc = FunctionMeta(my_double),
+            .abi = FunctionAbi(my_double),
+            .context = NULL,
+            .invoke = my_double_invoke,
+        },
+    };
+}
+
+static const salts_plugin_manifest manifest = {
+    .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
+    .abi_version = SALTS_PLUGIN_ABI_VERSION,
+    .plugin_id = "my_math",
+    .version = {1u, 0u, 0u},
+    .exports = exports,
+    .export_count = 1u,
+};
+
+SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
+salts_plugin_query(uint32_t host_abi) {
+    if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
+    salts_once(&exports_once, init_exports);
+    return &manifest;
+}
 ```
 
-**步骤 2：构建插件**：
-
-```bash
-# Windows (MSVC)
-cl /LD my_math_plugin.c /I"path/to/tScript/include" /Fe:my_math.dll
-
-# Linux (GCC)
-gcc -shared -fPIC my_math_plugin.c -I"path/to/tScript/include" -o my_math.so
-```
-
-**步骤 3：在 TurboScript 中使用**：
+脚本名称由 `export_id` 决定：
 
 ```javascript
 import("my_math");
-
-var result = my_math.factorial(5);  // 120
-print(result);
+value = math.double(3.5);
 ```
 
-完成！🎉
+### 当前 scalar binding 范围
 
----
+TurboScript 当前直接支持 CMeta finite scalar universe：
 
-## 插件架构
+- `bool`
+- `int`
+- `long`
+- `float`
+- `double`
+- 0–16 个 `IN` scalar 参数
+- scalar 或 `void` 返回值
 
-### 双层模块系统
+pointer/object/aggregate/opaque 以及 OUT/INOUT 不能靠动态猜测调用；需要明确的
+后续 language binding。
 
-TurboScript 使用双模块系统：
+对 canonical integer binding，TurboScript 保留原始 ExprTk value 类型，
+不会先做旧的 integer→double 归一化，因此 `long` ABI 不会在进入 adapter
+之前丢失 int64 精度。
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                    TurboScript 运行时                        │
-├─────────────────────────────────────────────────────────────┤
-│                                                              │
-│  ┌──────────────────────┐      ┌──────────────────────┐   │
-│  │   内置模块           │      │   插件模块           │   │
-│  │  (编译时)            │      │  (运行时加载)        │   │
-│  ├──────────────────────┤      ├──────────────────────┤   │
-│  │ • math               │      │ • ta.dll             │   │
-│  │ • string             │      │ • fin.dll            │   │
-│  │ • stats              │      │ • net.dll            │   │
-│  │ • io                 │      │ • sqlite.dll         │   │
-│  │ • core               │      │ • custom.dll         │   │
-│  └──────────────────────┘      └──────────────────────┘   │
-│           ↓                              ↓                  │
-│  全局注册表                        每上下文环境              │
-│  (exprtk_registry)               (exprtk_env_t)            │
-└─────────────────────────────────────────────────────────────┘
-```
+## CFlow
 
-**内置模块**：静态嵌入 `turbo_script.dll`，始终可用，无需 `import()`。
+Plugin Function 和其它 graphable callable 使用同一条 CMeta/CFlow admission
+路径。
 
-**插件模块**：动态加载的 DLL，通过 `import("name")` 按需加载。
+PURE 且类型/ABI 合法的 Function 可以进入 CFlow。FunctionDesc 提供
+effects/properties，FunctionAbi 提供 native carrier contract。
 
----
-
-## 插件 ABI
-
-每个插件 DLL 导出**恰好一个函数**：
-
-```c
-TS_EXPORT const ts_plugin_t *ts_api_create(void);
+```text
+Plugin Function
+  -> live lease
+  -> FunctionDesc / FunctionAbi
+  -> pre-bound exact adapter
+  -> CFlow projection
+  -> Graph / Plan
 ```
 
-`ts_plugin_t` 结构：
+STATEFUL、IO、ASYNC、UNKNOWN 等 effect 会形成保守 barrier。TurboScript
+不会维护单独的插件 purity/effect 表。
 
-```c
-typedef struct ts_plugin_s {
-    const char *name;       // 插件名称（例如 "ta"、"my_plugin"）
-    uint32_t    version;    // ABI 版本（当前为 1）
+只要 Graph/Plan/run 仍能访问插件代码、descriptor、trait、context 或
+Interface，Plugin lease 就必须保持有效。
 
-    // 当执行 import("name") 时调用
-    void *(*load)(void *env, void *scratch);
+## Canonical Interface export
 
-    // 当上下文被释放时调用
-    void (*unload)(void *instance);
-} ts_plugin_t;
+长生命周期、有状态、多态 provider 应发布 INTERFACE：
+
+```text
+CMeta InterfaceDesc + { self, vtable }
 ```
 
----
-
-## 创建简单插件
-
-### 方法 1：无状态插件（TS_PLUGIN_MODULE）
-
-**用例**：简单的函数注册，不需要状态。
+典型对象：
 
-```c
-#include "ts_plugin.h"
-#include "exprtk_module.h"
-#include <math.h>
-
-// 定义你的函数
-static exprtk_value_t my_square(size_t argc, exprtk_value_t *args,
-                                 exprtk_env_t *env, turbo_pool_t *arena) {
-    if (argc != 1 || args[0].type != EXPRTK_NUMBER) {
-        return exprtk_value_number(NAN);
-    }
-
-    double x = args[0].number;
-    return exprtk_value_number(x * x);
-}
-
-static exprtk_value_t my_cube(size_t argc, exprtk_value_t *args,
-                               exprtk_env_t *env, turbo_pool_t *arena) {
-    if (argc != 1 || args[0].type != EXPRTK_NUMBER) {
-        return exprtk_value_number(NAN);
-    }
-
-    double x = args[0].number;
-    return exprtk_value_number(x * x * x);
-}
-
-// 定义模块
-static exprtk_func_entry_t my_funcs[] = {
-    {"square", my_square},
-    {"cube", my_cube},
-    {NULL, NULL}  // 哨兵
-};
+- 数据库/resource provider
+- 网络/session provider
+- device/runtime provider
 
-static const exprtk_module_t my_module = {
-    .name = "my_plugin",
-    .funcs = my_funcs
-};
-
-const exprtk_module_t *exprtk_module_my_plugin(void) {
-    return &my_module;
-}
-
-// 导出插件（一行搞定！）
-TS_PLUGIN_MODULE(my_plugin, exprtk_module_my_plugin)
-```
-
----
-
-## 有状态插件
-
-### 方法 2：TS_PLUGIN_STATEFUL
+Interface 是领域原生 contract。TurboScript adapter 负责脚本值转换，不应把
+ExprTk 类型泄漏进领域 Interface。
 
-**用例**：插件需要维护状态（例如数据库连接、缓存）。
-
-```c
-#include "ts_plugin.h"
-#include <sqlite3.h>
-
-// 插件上下文
-typedef struct {
-    sqlite3 *db;
-    int connection_count;
-} sqlite_ctx_t;
+SQLite 的 provider Interface 收敛由 #84 跟踪。
 
-// 创建上下文
-static sqlite_ctx_t *sqlite_create(void) {
-    sqlite_ctx_t *ctx = malloc(sizeof(sqlite_ctx_t));
-    ctx->db = NULL;
-    ctx->connection_count = 0;
-    return ctx;
-}
+## 仓库中的迁移 helper
 
-// 使用上下文的函数
-static exprtk_value_t db_open(size_t argc, exprtk_value_t *args,
-                               exprtk_env_t *env, turbo_pool_t *arena) {
-    sqlite_ctx_t *ctx = (sqlite_ctx_t *)env->user_data;
+当前仓库仍保留：
 
-    if (argc != 1 || args[0].type != EXPRTK_STRING) {
-        return exprtk_value_number(0);
-    }
+- `TS_PLUGIN_MODULE`
+- `TS_PLUGIN_MODULE_WITH_UNLOAD`
+- `TS_PLUGIN_STATEFUL`
 
-    const char *path = args[0].data.string.value;
-    int rc = sqlite3_open(path, &ctx->db);
+它们已经通过当前 Salts Plugin manifest 发布 capability，只用于逐步迁移旧
+模块；**不是**另一套 loader 或 ABI。
 
-    if (rc == SQLITE_OK) {
-        ctx->connection_count++;
-        return exprtk_value_number(1);
-    }
+新 capability 的默认原则：
 
-    return exprtk_value_number(0);
-}
+1. 普通操作发布 canonical FUNCTION；
+2. 有状态 provider 发布 canonical INTERFACE；
+3. 已有逻辑 Service/Component contract 时复用 DataBind/CMeta 生成结果；
+4. TurboScript 只保留脚本命名空间和转换层。
 
-// 注册函数
-static void sqlite_register(sqlite_ctx_t *ctx, void *env, void *scratch) {
-    exprtk_env_t *e = (exprtk_env_t *)env;
+## Hot path
 
-    // 在环境中存储上下文
-    e->user_data = ctx;
+Plugin discovery/reflection 属于 control plane。
 
-    // 注册函数
-    exprtk_env_register_func(e, "sqlite.open", db_open, NULL);
-    exprtk_env_register_func(e, "sqlite.query", db_query, NULL);
-    exprtk_env_register_func(e, "sqlite.close", db_close, NULL);
-}
+完成 import/binding 后，调用只使用预绑定 exact adapter 或 provider vtable，
+不得每次调用重新：
 
-// 销毁上下文
-static void sqlite_destroy(sqlite_ctx_t *ctx) {
-    if (ctx->db) {
-        sqlite3_close(ctx->db);
-    }
-    free(ctx);
-}
+- 查 Plugin registry
+- 查 DSO symbol
+- 查 manifest
+- 协商 ABI
+- 查 reflection catalog
 
-// 导出插件
-TS_PLUGIN_STATEFUL(sqlite, sqlite_create, sqlite_register, sqlite_destroy)
-```
+## 生命周期
 
-**在 TurboScript 中使用**：
+TurboScript context 在插件 callback、descriptor、Interface 或 CFlow callable
+仍可达期间持有 Salts Plugin lease。
 
-```javascript
-import("sqlite");
+销毁 context 时，先销毁脚本侧引用，再 release lease，最后停止/卸载 DSO。
 
-sqlite.open("data.db");
-var result = sqlite.query("SELECT * FROM users");
-sqlite.close();
-```
+## 构建
 
----
+插件应直接使用安装好的/current Salts Plugin 与 CMeta headers，不复制 ABI
+struct。
 
-## 构建插件
-
-### Windows (MSVC)
-
-```bash
-cl /LD my_plugin.c ^
-   /I"C:\turbonet\tScript\ts_loader\include" ^
-   /I"C:\turbonet\tScript\exprtk\include" ^
-   /Fe:my_plugin.dll
-```
-
-### Linux (GCC)
-
-```bash
-gcc -shared -fPIC my_plugin.c \
-    -I/path/to/tScript/ts_loader/include \
-    -I/path/to/tScript/exprtk/include \
-    -o my_plugin.so
-```
-
-### macOS (Clang)
-
-```bash
-clang -shared -fPIC my_plugin.c \
-      -I/path/to/tScript/ts_loader/include \
-      -I/path/to/tScript/exprtk/include \
-      -o my_plugin.dylib
-```
-
-### CMake
-
-```cmake
-add_library(my_plugin SHARED my_plugin.c)
-
-target_include_directories(my_plugin PRIVATE
-    ${CMAKE_SOURCE_DIR}/tScript/ts_loader/include
-    ${CMAKE_SOURCE_DIR}/tScript/exprtk/include)
-
-# Windows：自动导出符号
-set_target_properties(my_plugin PROPERTIES
-    WINDOWS_EXPORT_ALL_SYMBOLS ON)
-
-# 输出名称：my_plugin.dll/so/dylib
-set_target_properties(my_plugin PROPERTIES
-    OUTPUT_NAME "my_plugin")
-```
-
----
-
-## 插件发现
-
-### 默认搜索路径
-
-TurboScript 按以下顺序搜索插件：
-
-1. **可执行文件插件目录**：`<exe_dir>/plugins/my_plugin.dll`
-2. **可执行文件目录兼容路径**：`<exe_dir>/my_plugin.dll`
-
-加载器不会搜索当前工作目录或操作系统 `PATH`，因此无论从哪个目录启动
-TurboScript，插件选择都保持一致，并避免加载同名的非预期动态库。
-若两个无前缀路径都无法打开，TurboScript 才会在相同两个目录中尝试旧版
-`tbs_my_plugin.dll` 文件名。
-
-### 插件命名约定
-
-```
-Windows: <name>.dll
-Linux:   <name>.so
-macOS:   <name>.dylib
-```
-
-**示例：**
-- `import("ta")` → 搜索 `ta.dll`
-- `import("my_math")` → 搜索 `my_math.dll`
-
-crypto 插件的依赖库已经占用了逻辑名对应的动态库文件名，因此使用避碰文件名：
-
-- `import("crypto")` → `crypto_plugin.dll`（Linux 为 `crypto_plugin.so`）
-
-它的脚本逻辑名和插件描述符名称仍为 `crypto`。
-
----
-
-## 最佳实践
-
-### 1. 使用 Arena 分配器
-
-```c
-// ✅ 好：使用提供的 arena
-static exprtk_value_t my_func(size_t argc, exprtk_value_t *args,
-                              exprtk_env_t *env, turbo_pool_t *arena) {
-    double *temp = TURBO_POOL_ALLOC_ARRAY(arena, double, 100);
-    // 无需释放 - arena 会处理
-}
-
-// ❌ 差：手动 malloc/free
-static exprtk_value_t my_func(...) {
-    double *temp = malloc(100 * sizeof(double));
-    // 容易泄漏！
-    free(temp);
-}
-```
-
-### 2. 验证参数
-
-```c
-static exprtk_value_t my_func(size_t argc, exprtk_value_t *args,
-                              exprtk_env_t *env, turbo_pool_t *arena) {
-    // 检查参数数量
-    if (argc != 2) {
-        return exprtk_value_number(NAN);
-    }
-
-    // 检查参数类型
-    if (args[0].type != EXPRTK_NUMBER || args[1].type != EXPRTK_NUMBER) {
-        return exprtk_value_number(NAN);
-    }
-
-    // ... 实现
-}
-```
-
-### 3. 优雅地处理错误
-
-```c
-static exprtk_value_t divide(size_t argc, exprtk_value_t *args,
-                             exprtk_env_t *env, turbo_pool_t *arena) {
-    if (argc != 2) return exprtk_value_number(NAN);
-
-    double a = args[0].number;
-    double b = args[1].number;
-
-    // 检查除零
-    if (fabs(b) < 1e-15) {
-        return exprtk_value_number(NAN);  // 错误时返回 NaN
-    }
-
-    return exprtk_value_number(a / b);
-}
-```
-
----
+本仓库 CMake 使用 `Salts::Plugin` / `Salts::PluginABI` 等正常依赖图。
 
 ## 故障排除
 
-### 找不到插件
+### open 阶段失败
 
-```
-错误：无法加载插件 'my_plugin'
-```
+检查插件文件是否位于配置的插件/安装包目录，并确认其动态依赖可用。
 
-**解决方案：**
-1. 检查插件是否位于 `<exe_dir>/plugins/my_plugin.dll`
-2. 检查插件依赖是否位于插件目录或应用程序目录
-3. 检查错误中的加载阶段：`open`、`symbol`、`ABI` 或 `initialize`
+### symbol/ABI 阶段失败
 
-### 找不到符号
+确认 DSO 发布 `salts_plugin_query`，并使用当前 Salts Plugin ABI 重新构建。
 
-```
-错误：在 my_plugin.dll 中找不到 ts_api_create
-```
+不存在旧 TurboScript 私有 Plugin ABI fallback。
 
-**解决方案：**
-1. 确保使用了 `TS_PLUGIN_MODULE` 或 `TS_PLUGIN_STATEFUL` 宏
-2. 检查 DLL 导出：`dumpbin /EXPORTS my_plugin.dll`（Windows）
-3. 验证 `TS_EXPORT` 定义正确
+### Function 初始化失败
 
-### 插件崩溃
+检查：
 
-**常见原因：**
-1. 内存损坏（使用 arena 分配器）
-2. 空指针解引用
-3. ABI 不匹配（重新编译插件）
+- FunctionDesc / FunctionAbi 是否合法；
+- exact adapter 是否存在；
+- 参数 direction/carrier 是否属于当前 TurboScript binding 范围；
+- `export_id` 是否与已有 env function 冲突。
 
----
+## 相关内容
 
-## 真实示例
-
-### 示例：HTTP 客户端插件
-
-```c
-#include "ts_plugin.h"
-#include <curl/curl.h>
-
-typedef struct {
-    CURL *curl;
-} http_ctx_t;
-
-static http_ctx_t *http_create(void) {
-    http_ctx_t *ctx = malloc(sizeof(http_ctx_t));
-    ctx->curl = curl_easy_init();
-    return ctx;
-}
-
-static exprtk_value_t http_get(size_t argc, exprtk_value_t *args,
-                                exprtk_env_t *env, turbo_pool_t *arena) {
-    http_ctx_t *ctx = (http_ctx_t *)env->user_data;
-
-    if (argc != 1 || args[0].type != EXPRTK_STRING) {
-        return exprtk_value_string("");
-    }
-
-    const char *url = args[0].data.string.value;
-
-    // 执行 HTTP GET
-    curl_easy_setopt(ctx->curl, CURLOPT_URL, url);
-    // ...（实现细节）
-
-    return exprtk_value_string(response);
-}
-
-static void http_register(http_ctx_t *ctx, void *env, void *scratch) {
-    exprtk_env_t *e = (exprtk_env_t *)env;
-    e->user_data = ctx;
-    exprtk_env_register_func(e, "http.get", http_get, NULL);
-}
-
-static void http_destroy(http_ctx_t *ctx) {
-    curl_easy_cleanup(ctx->curl);
-    free(ctx);
-}
-
-TS_PLUGIN_STATEFUL(http, http_create, http_register, http_destroy)
-```
-
-**使用：**
-```javascript
-import("http");
-
-var response = http.get("https://api.example.com/data");
-print(response);
-```
-
----
-
-## 另请参阅
-
-- **[语言指南](language-guide.md)** - TurboScript 语法参考
-- **[API 参考](api-reference.md)** - 内置函数
-- **[架构](../advanced/architecture.md)** - 内部设计
-
----
-
-**为 TurboScript 插件开发者用 ❤️ 构建**
+- `exprtk/include/ts_plugin.h`：基于 Salts Plugin Interface 的迁移 helper。
+- `turbo_script/include/ts_plugin_loader.h`：TurboScript binding adapter。
+- #22：Plugin ABI/CMeta 总体收敛。
+- #84：SQLite canonical provider Interface。
