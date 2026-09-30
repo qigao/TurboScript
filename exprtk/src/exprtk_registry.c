@@ -22,7 +22,7 @@ static const cmeta_type_identity exprtk_env_cmeta_identity =
 static const cmeta_type_identity exprtk_scratch_cmeta_identity =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.scratch");
 
-static const cmeta_type_desc exprtk_value_cmeta_type = {
+static const cmeta_type_desc exprtk_registry_value_cmeta_type = {
     .name = "exprtk_value_t",
     .size = sizeof(exprtk_value_t),
     .align = _Alignof(exprtk_value_t),
@@ -62,7 +62,7 @@ static const cmeta_type_desc exprtk_value_ptr_cmeta_type = {
     .size = sizeof(exprtk_value_t *),
     .align = _Alignof(exprtk_value_t *),
     .kind = CMETA_T_POINTER,
-    .pointee = &exprtk_value_cmeta_type,
+    .pointee = &exprtk_registry_value_cmeta_type,
     .traits = NULL,
     .identity = &exprtk_value_ptr_cmeta_identity
 };
@@ -109,7 +109,7 @@ int exprtk_func_entry_reflect(
     out->function = (cmeta_function_desc){
         sizeof(cmeta_function_desc),
         entry->name,
-        &exprtk_value_cmeta_type,
+        &exprtk_registry_value_cmeta_type,
         out->params,
         4u,
         CMETA_EFFECT_UNKNOWN,
