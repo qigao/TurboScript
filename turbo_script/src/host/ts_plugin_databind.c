@@ -212,8 +212,11 @@ static cserde_status ts_databind_writer_write(
         completed = frame->container;
         frame->container = ts_databind_null_value();
         --writer->depth;
-        return ts_databind_writer_attach(writer, &completed)
-                   ? CSERDE_OK : CSERDE_SINK_ERROR;
+        {
+          const int ok = ts_databind_writer_attach(writer, &completed);
+          exprtk_value_destroy(&completed);
+          return ok ? CSERDE_OK : CSERDE_SINK_ERROR;
+        }
       }
       if (token->kind != CSERDE_STRING)
         return CSERDE_INVALID_TOKEN;
@@ -231,8 +234,11 @@ static cserde_status ts_databind_writer_write(
       exprtk_value_t completed = frame->container;
       frame->container = ts_databind_null_value();
       --writer->depth;
-      return ts_databind_writer_attach(writer, &completed)
-                 ? CSERDE_OK : CSERDE_SINK_ERROR;
+      {
+        const int ok = ts_databind_writer_attach(writer, &completed);
+        exprtk_value_destroy(&completed);
+        return ok ? CSERDE_OK : CSERDE_SINK_ERROR;
+      }
     }
   }
 
