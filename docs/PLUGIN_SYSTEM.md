@@ -293,4 +293,4 @@ Check:
   Plugin Interface publication.
 - `turbo_script/include/ts_plugin_loader.h` — TurboScript binding adapter.
 - issue #22 — Plugin ABI/CMeta convergence tracking.
-- issue #84 — domain-specific SQLite provider Interface migration.
+- issue #84 — TurboDB::Orm database integration with explicit user driver configuration.

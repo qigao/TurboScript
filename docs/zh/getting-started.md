@@ -246,7 +246,7 @@ import("ta");           // 技术分析，调用命名空间为 ta.*
 import("fin");          // 金融与策略函数，调用命名空间为 strategy.*
 import("ts");           // 时间序列函数，调用命名空间为 ts.*
 import("net");          // HTTP/WebSocket
-import("sqlite");       // SQL、embedding 与本地 RAG
+import("db");           // TurboDB::Orm；driver/module 由用户配置显式选择
 ```
 
 数学、字符串、向量、table、文件 I/O 和日期时间函数均为内置能力，不需要

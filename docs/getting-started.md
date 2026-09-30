@@ -244,7 +244,7 @@ import("ta");           // Technical analysis, exposed as ta.*
 import("fin");          // Finance and strategy helpers, exposed as strategy.*
 import("ts");           // Time-series helpers, exposed as ts.*
 import("net");          // HTTP/WebSocket
-import("sqlite");       // SQL, embeddings and local RAG helpers
+import("db");           // TurboDB::Orm; driver/module selected explicitly by user config
 ```
 
 Math, strings, vectors, tables, file I/O and date/time helpers are built in;

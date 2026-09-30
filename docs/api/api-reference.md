@@ -918,7 +918,7 @@ For functions provided by optional modules:
 - **Vector Operations**: See [vec_cheatsheet.md](vec_cheatsheet.md)
 - **Finance / Strategy**: See [ta_fin_cheatsheet.md](ta_fin_cheatsheet.md) and [modules/FIN_MODULE.md](../modules/FIN_MODULE.md)
 - **Network**: See [modules/net.md](modules/net.md)
-- **SQLite**: See [modules/sqlite.md](modules/sqlite.md)
+- **Database / TurboDB::Orm**: See [db README](../../modules/db/README.md)
 
 ---
 
