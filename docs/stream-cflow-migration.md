@@ -127,9 +127,11 @@ TurboScript.Stream.v1
 
 The envelope owns only materialized data. It carries no AST, MIR callable,
 Graph, or Plan pointer, so statement boundaries do not extend compiler/runtime
-object lifetimes. Existing `count/collect/toList/toVector` semantics may
-consume that envelope. Re-admitting further `map/filter` from the materialized
-envelope is a separate follow-up slice.
+object lifetimes. Existing `count/collect/toList/toVector` terminals can consume
+that envelope, and pure/capture-free numeric `map/filter` operations on a
+materialized envelope are re-admitted as a new CFlow source boundary. Each
+assignment remains eager: the resumed Graph/Plan executes immediately and
+produces another owned materialized envelope.
 
 ## Phase 2 file/data rule
 
