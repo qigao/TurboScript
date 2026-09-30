@@ -21,3 +21,10 @@ Git tag 和 NuGet package 使用同一个版本。当前正式版本为 `3.0.4`�
 PR/master qualification 使用唯一的 `3.0.4-ci.<run>.<attempt>` 构建版本，但只作为
 CI artifact，不推送到 GitHub Packages。每个 SDK 内的 manifest 记录实际源码提交、
 依赖版本和构建配置。
+
+## TurboDB / database module
+
+The optional native `db` module is backed by the current TurboDB ORM package. Consumers that use `import("db")` should reference the latest `TurboDB.Native` package directly, just as TurboScript CI restores the latest GitHub release; TurboScript does not pin a TurboDB version or bundle a private ORM/driver loader.
+
+Database choice is runtime user configuration. `db.connect({...})` requires an explicit canonical driver ID and an explicit driver module path. The module passes backend-specific `options` to TurboDB unchanged. It does not scan driver directories, choose SQLite by default, infer aliases, retry older ABIs, or fall back to another database. Driver modules remain TurboDB package artifacts and are loaded only when requested by user configuration.
+

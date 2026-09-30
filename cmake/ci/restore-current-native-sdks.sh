@@ -49,3 +49,23 @@ restore_sdk qigao/salts-utils 'SaltsUtils.Native.*.nupkg' salts-utils \
   'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake' SALTS_UTILS_ROOT SALTS_UTILS_SDK_RELEASE
 restore_sdk qigao/chttp 'CHttp.Native.*.nupkg' chttp \
   'lib/cmake/Chttp/ChttpConfig.cmake' CHTTP_ROOT CHTTP_SDK_RELEASE
+case "$rid" in
+  linux-x64|windows-x64|android-arm64-v8a)
+    restore_sdk qigao/TurboDB 'TurboDB.Native.*.nupkg' turbodb \
+      'lib/cmake/TurboDB/TurboDBConfig.cmake' TURBODB_ROOT TURBODB_SDK_RELEASE
+    ;;
+  *)
+    # TurboDB.Native 2.x currently publishes Linux/Windows/Android SDK trees.
+    # Keep TurboScript's other platforms buildable without inventing a database
+    # fallback. CMake enables db_tbs only when this config file actually exists.
+    turbodb_unavailable="$root/turbodb-unavailable/$rid"
+    mkdir -p "$turbodb_unavailable"
+    if [[ -n "${GITHUB_ENV:-}" ]]; then
+      echo "TURBODB_ROOT=$turbodb_unavailable" >> "$GITHUB_ENV"
+      echo "TURBODB_SDK_RELEASE=" >> "$GITHUB_ENV"
+    else
+      printf 'TURBODB_ROOT=%q\n' "$turbodb_unavailable"
+      printf 'TURBODB_SDK_RELEASE=%q\n' ""
+    fi
+    ;;
+esac
