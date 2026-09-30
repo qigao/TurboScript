@@ -34,7 +34,9 @@ typedef struct {
 #define SQLITE_ZERO ((exprtk_value_t){EXPRTK_VAL_NUMBER, .data.number = 0.0})
 
 #define SQLITE_CTX_ERROR(ud, msg) do {                                  \
-    (ud)->env->aborted = 1;                                             \
+    (void)(msg);                                                        \
+    if ((ud) != NULL && (ud)->env != NULL)                              \
+        (ud)->env->aborted = 1;                                         \
 } while (0)
 
 void *sqlite_ctx_create(void);
