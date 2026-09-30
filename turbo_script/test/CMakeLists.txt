@@ -129,6 +129,12 @@ add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
+add_ts_test(test_turbo_script_db         test_turbo_script_db.c)
+add_dependencies(test_turbo_script_db db_tbs)
+target_compile_definitions(
+  test_turbo_script_db
+  PRIVATE TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH="${TurboDB_DRIVER_DIR}/turbodb_driver_sqlite${CMAKE_SHARED_MODULE_SUFFIX}")
+
 cmake_add_test(
   TARGET test_turbo_script_cmeta_bridge
   SOURCES test_turbo_script_cmeta_bridge.c
