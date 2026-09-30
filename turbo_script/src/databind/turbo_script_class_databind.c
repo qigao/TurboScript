@@ -166,7 +166,7 @@ static int ts_build_schema(
   }
 
   if (!ts_builder_append(
-          &builder, "schema TurboScriptClass [version(1)]; message ") ||
+          &builder, "schema TurboScriptMapper [version(1)]; message ") ||
       !ts_builder_append(&builder, klass->name) ||
       !ts_builder_append(&builder, " {")) {
     free(builder.data);
