@@ -28,6 +28,22 @@ const cmeta_type_desc *exprtk_value_cmeta_type(void) {
     return &EXPRTK_VALUE_CMETA_TYPE;
 }
 
+static const cmeta_type_identity EXPRTK_VALUE_PTR_CMETA_IDENTITY =
+    CMETA_TYPE_ID_POINTER_INIT(&EXPRTK_VALUE_CMETA_IDENTITY);
+static const cmeta_type_desc EXPRTK_VALUE_PTR_CMETA_TYPE = {
+    .name = "exprtk_value_t *",
+    .size = sizeof(exprtk_value_t *),
+    .align = _Alignof(exprtk_value_t *),
+    .kind = CMETA_T_POINTER,
+    .pointee = &EXPRTK_VALUE_CMETA_TYPE,
+    .traits = NULL,
+    .identity = &EXPRTK_VALUE_PTR_CMETA_IDENTITY
+};
+
+const cmeta_type_desc *exprtk_value_ptr_cmeta_type(void) {
+    return &EXPRTK_VALUE_PTR_CMETA_TYPE;
+}
+
 static const cmeta_type_identity EXPRTK_STRING_SLOT_CMETA_IDENTITY =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.string-slot");
 static const cmeta_type_desc EXPRTK_STRING_SLOT_CMETA_TYPE = {
