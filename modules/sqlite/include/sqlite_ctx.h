@@ -6,6 +6,7 @@
 #define SQLITE_CTX_H
 
 #include "exprtk.h"
+#include "sqlite_provider.h"
 #include "salts_buffer.h"
 #include <sqlite3.h>
 #include <string.h>
@@ -24,8 +25,9 @@ typedef struct {
 } sqlite_ctx_t;
 
 typedef struct {
-    sqlite_ctx_t  *ctx;
-    exprtk_env_t  *env;
+    sqlite_provider *provider;
+    sqlite_ctx_t *ctx; /* provider session; direct access remains for advanced migration-only helpers */
+    exprtk_env_t *env;
     mem_pool_t *scratch;
 } sqlite_ud_t;
 
@@ -37,6 +39,9 @@ typedef struct {
 
 void *sqlite_ctx_create(void);
 void sqlite_ctx_destroy(void *ctx);
-void sqlite_load(void *ctx, void *env, void *scratch);
+
+/* Bind the TurboScript sqlite.* facade to one provider-owned session. */
+int sqlite_load_provider(sqlite_provider *provider, void *session,
+                         void *env, void *scratch);
 
 #endif /* SQLITE_CTX_H */
