@@ -1,5 +1,7 @@
 #include "ts_plugin.h"
 #include "exprtk.h"
+#include "exprtk_class.h"
+#include "turbo_script_class_databind.h"
 
 #include <orm.h>
 #include <orm_runtime.h>
@@ -21,6 +23,19 @@ typedef struct db_driver_binding_s {
   size_t module_path_len;
 } db_driver_binding_t;
 
+typedef struct db_row_plan_entry_s {
+  char *stable_id;
+  DataBind *codec;
+  DataBindMessagePlan *plan;
+  const cmeta_data_desc *data;
+  struct db_row_plan_entry_s *next;
+} db_row_plan_entry_t;
+
+typedef struct db_row_factory_context_s {
+  struct db_ctx_s *db;
+  exprtk_class_t *klass;
+} db_row_factory_context_t;
+
 typedef struct db_ctx_s {
   orm_runtime_t *runtime;
   exprtk_env_t *env;
@@ -28,6 +43,7 @@ typedef struct db_ctx_s {
   db_driver_binding_t drivers[DB_MAX_DRIVERS];
   size_t driver_count;
   orm_connection_t *connections[DB_MAX_CONNECTIONS];
+  db_row_plan_entry_t *row_plans;
 } db_ctx_t;
 
 typedef struct db_connect_request_s {
