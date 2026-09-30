@@ -6,6 +6,7 @@
 #define SQLITE_CTX_H
 
 #include "exprtk.h"
+#include "sqlite_provider.h"
 #include "salts_buffer.h"
 #include <sqlite3.h>
 #include <string.h>
@@ -24,8 +25,9 @@ typedef struct {
 } sqlite_ctx_t;
 
 typedef struct {
-    sqlite_ctx_t  *ctx;
-    exprtk_env_t  *env;
+    sqlite_provider *provider;
+    sqlite_ctx_t *ctx;
+    exprtk_env_t *env;
     mem_pool_t *scratch;
 } sqlite_ud_t;
 
