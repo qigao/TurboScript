@@ -29,3 +29,13 @@ set_target_properties(
   PROPERTIES PREFIX ""
              VERSION ${PROJECT_VERSION}
              SOVERSION ${PROJECT_VERSION_MAJOR})
+
+if(BUILD_TESTING)
+  cmake_add_test(
+    TARGET test_turbo_script_db
+    SOURCES ${CMAKE_SOURCE_DIR}/turbo_script/test/test_turbo_script_db.c
+    LIBS turbo_script Salts::TinyTest Salts::CSTL Salts::Coroutine exprtk MIR::MIR
+    DEPENDS db_tbs
+    DEFS TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH="${TurboDB_DRIVER_DIR}/turbodb_driver_sqlite${CMAKE_SHARED_MODULE_SUFFIX}"
+    FOLDER modules/db)
+endif()
