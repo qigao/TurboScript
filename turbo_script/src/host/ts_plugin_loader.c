@@ -10,6 +10,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int plugin_error_set(ts_plugin_error_t *error, ts_plugin_error_code_t code,
+                            ts_plugin_error_stage_t stage, uint32_t native_code,
+                            const char *path, const char *format, ...);
+
 typedef struct ts_plugin_function_binding_s {
   const salts_plugin_export *entry;
   salts_plugin_function_invoke_fn invoke;
