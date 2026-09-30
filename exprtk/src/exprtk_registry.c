@@ -395,8 +395,13 @@ exprtk_value_t exprtk_call_internal(const char *name, size_t argc,
                         if (normalized_needs_free) free(normalized_args);
                         return result;
                     } else {
+                        exprtk_value_t *native_args =
+                            (f->data.native.flags &
+                             EXPRTK_NATIVE_PRESERVE_VALUE_TYPES)
+                                ? args
+                                : normalized_args;
                         exprtk_value_t raw =
-                            f->data.native.fn(argc, normalized_args, env,
+                            f->data.native.fn(argc, native_args, env,
                                               f->data.native.user_data);
                         exprtk_value_t result = exprtk_value_clone_to_env(raw, env);
                         exprtk_value_destroy(&raw);
