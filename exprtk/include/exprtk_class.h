@@ -37,6 +37,7 @@ typedef struct exprtk_method_entry_s exprtk_method_entry_t;
  * external CFlow carrier contracts.
  */
 EXPRTK_C_API const cmeta_type_desc *exprtk_value_cmeta_type(void);
+EXPRTK_C_API const cmeta_type_desc *exprtk_value_ptr_cmeta_type(void);
 
 /**
  * @brief Method entry - maps method name to function
