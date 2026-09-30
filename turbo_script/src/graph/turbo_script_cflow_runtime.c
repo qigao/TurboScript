@@ -784,6 +784,23 @@ static int ts_cflow_runtime_source_array(turbo_script_ctx_t *ctx,
     exprtk_value_t value =
         exprtk_env_get(&ctx->env, source->data.variable.name);
 
+    if (exprtk_value_is_object_like(&value) &&
+        exprtk_map_has(&value, "__ts_stream_kind") &&
+        exprtk_map_has(&value, "__ts_cflow_materialized") &&
+        exprtk_map_has(&value, "source")) {
+      exprtk_value_t kind = exprtk_map_get(&value, "__ts_stream_kind");
+      exprtk_value_t marker =
+          exprtk_map_get(&value, "__ts_cflow_materialized");
+      static const char stream_marker[] = "TurboScript.Stream.v1";
+      if (kind.type != EXPRTK_VAL_STRING ||
+          kind.data.string.len != sizeof(stream_marker) - 1u ||
+          memcmp(kind.data.string.data, stream_marker,
+                 sizeof(stream_marker) - 1u) != 0 ||
+          !ts_cflow_runtime_value_to_double(&marker, &(double){0.0}))
+        return 0;
+      value = exprtk_map_get(&value, "source");
+    }
+
     if (value.type == EXPRTK_VAL_VECTOR) {
       count = value.data.vector.size;
       if (count > 0u) {
