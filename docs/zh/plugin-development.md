@@ -209,7 +209,7 @@ CMeta InterfaceDesc + { self, vtable }
 Interface 是领域原生 contract。TurboScript adapter 负责脚本值转换，不应把
 ExprTk 类型泄漏进领域 Interface。
 
-SQLite 的 provider Interface 收敛由 #84 跟踪。
+数据库能力统一通过 TurboDB::Orm + 用户显式 driver/module 配置；#84 跟踪该集成，不在 TurboScript 中再定义 SQLite provider。
 
 ## 仓库中的迁移 helper
 
@@ -282,4 +282,4 @@ struct。
 - `exprtk/include/ts_plugin.h`：基于 Salts Plugin Interface 的迁移 helper。
 - `turbo_script/include/ts_plugin_loader.h`：TurboScript binding adapter。
 - #22：Plugin ABI/CMeta 总体收敛。
-- #84：SQLite canonical provider Interface。
+- #84：TurboDB::Orm 数据库集成与显式用户 driver 配置。
