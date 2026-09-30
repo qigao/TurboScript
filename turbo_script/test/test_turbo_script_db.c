@@ -1,4 +1,5 @@
 #include "turbo_script.h"
+#include "exprtk_class.h"
 #include "tinytest.h"
 
 #include <math.h>
@@ -216,6 +217,161 @@ spec("TurboScript TurboDB ORM configuration") {
 
     check(turbo_script_run(ctx, script) != 0);
     check_not_null(strstr(turbo_script_get_error(ctx), "db.exec"));
+
+    turbo_script_free(ctx);
+  }
+
+  it("decodes typed RowClass results through TurboDB object CFlow") {
+    char path[2048];
+    char script[16384];
+    turbo_script_ctx_t *interp = new_db_ctx();
+    turbo_script_ctx_t *jit = new_db_ctx();
+    exprtk_value_t interp_rows;
+    exprtk_value_t jit_rows;
+    exprtk_value_t field;
+
+    check_not_null(interp);
+    check_not_null(jit);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class Person { id: int64; name: string; score: double; };"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "db.exec(dbx,\"CREATE TABLE person(id INTEGER,name TEXT,score REAL);\");"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[1,\"Ada\",1.5]);"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[2,\"Bob\",2.5]);"
+              "rows=db.query(dbx,"
+              "\"SELECT id,name,score FROM person ORDER BY id;\","
+              "Person);"
+              "closed=db.close(dbx);",
+              path) > 0);
+
+    check_equal(turbo_script_run(interp, script), 0);
+    check_equal(turbo_script_run_jit(jit, script), 0);
+
+    interp_rows = exprtk_env_get(&interp->env, "rows");
+    jit_rows = exprtk_env_get(&jit->env, "rows");
+    check_equal(interp_rows.type, EXPRTK_VAL_LIST);
+    check_equal(jit_rows.type, EXPRTK_VAL_LIST);
+    check_equal(interp_rows.data.list.count, (size_t)2u);
+    check_equal(jit_rows.data.list.count, (size_t)2u);
+
+    check_equal(interp_rows.data.list.items[0].type, EXPRTK_VAL_INSTANCE);
+    check_equal(interp_rows.data.list.items[1].type, EXPRTK_VAL_INSTANCE);
+    check_equal(jit_rows.data.list.items[0].type, EXPRTK_VAL_INSTANCE);
+    check_equal(jit_rows.data.list.items[1].type, EXPRTK_VAL_INSTANCE);
+
+    check_true(exprtk_instance_get_field(
+        interp_rows.data.list.items[0].data.instance_val.instance,
+        "id", &field));
+    check_equal(field.type, EXPRTK_VAL_INTEGER);
+    check_equal(field.data.integer, INT64_C(1));
+
+    check_true(exprtk_instance_get_field(
+        interp_rows.data.list.items[0].data.instance_val.instance,
+        "name", &field));
+    check_equal(field.type, EXPRTK_VAL_STRING);
+    check_equal(field.data.string.len, (size_t)3u);
+    check(memcmp(field.data.string.data, "Ada", 3u) == 0);
+
+    check_true(exprtk_instance_get_field(
+        interp_rows.data.list.items[1].data.instance_val.instance,
+        "score", &field));
+    check_equal(field.type, EXPRTK_VAL_NUMBER);
+    check(fabs(field.data.number - 2.5) <= 1e-9);
+
+    check_true(exprtk_instance_get_field(
+        jit_rows.data.list.items[0].data.instance_val.instance,
+        "id", &field));
+    check_equal(field.type, EXPRTK_VAL_INTEGER);
+    check_equal(field.data.integer, INT64_C(1));
+
+    check_true(exprtk_instance_get_field(
+        jit_rows.data.list.items[1].data.instance_val.instance,
+        "name", &field));
+    check_equal(field.type, EXPRTK_VAL_STRING);
+    check_equal(field.data.string.len, (size_t)3u);
+    check(memcmp(field.data.string.data, "Bob", 3u) == 0);
+
+    check(fabs(ts_get_num(interp, "closed") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "closed") - 1.0) <= 1e-9);
+
+    turbo_script_free(jit);
+    turbo_script_free(interp);
+  }
+
+  it("binds typed query parameters before opening object flow") {
+    char path[2048];
+    char script[12288];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+    exprtk_value_t rows;
+    exprtk_value_t field;
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class Person { id: int64; name: string; score: double; };"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "db.exec(dbx,\"CREATE TABLE person(id INTEGER,name TEXT,score REAL);\");"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[1,\"Ada\",1.5]);"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(?1,?2,?3);\","
+              "[2,\"Bob\",2.5]);"
+              "rows=db.query(dbx,"
+              "\"SELECT id,name,score FROM person WHERE id > ?1 ORDER BY id;\","
+              "Person,[1]);",
+              path) > 0);
+
+    check_equal(turbo_script_run(ctx, script), 0);
+    rows = exprtk_env_get(&ctx->env, "rows");
+    check_equal(rows.type, EXPRTK_VAL_LIST);
+    check_equal(rows.data.list.count, (size_t)1u);
+    check_equal(rows.data.list.items[0].type, EXPRTK_VAL_INSTANCE);
+    check_true(exprtk_instance_get_field(
+        rows.data.list.items[0].data.instance_val.instance,
+        "name", &field));
+    check_equal(field.type, EXPRTK_VAL_STRING);
+    check_equal(field.data.string.len, (size_t)3u);
+    check(memcmp(field.data.string.data, "Bob", 3u) == 0);
+
+    turbo_script_free(ctx);
+  }
+
+  it("surfaces DataBind field diagnostics for incompatible typed rows") {
+    char path[2048];
+    char script[12288];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "class Person { id: int64; name: string; score: double; };"
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "db.exec(dbx,\"CREATE TABLE person(id INTEGER,name TEXT,score REAL);\");"
+              "db.exec(dbx,"
+              "\"INSERT INTO person(id,name,score) VALUES(1,'Ada',1.5);\");"
+              "rows=db.query(dbx,"
+              "\"SELECT id,score FROM person;\","
+              "Person);",
+              path) > 0);
+
+    check(turbo_script_run(ctx, script) != 0);
+    check_not_null(strstr(turbo_script_get_error(ctx), "db.query failed"));
+    check_not_null(strstr(turbo_script_get_error(ctx), "name"));
 
     turbo_script_free(ctx);
   }
