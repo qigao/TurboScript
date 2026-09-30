@@ -6,6 +6,7 @@
 #include "exprtk_module.h"
 #include "exprtk_mod_strategy.h"
 #include "fin.h"
+#include "fin_plugin_functions.h"
 #include "simd_helpers.h"
 #include "strategy_optimizer.h"
 #include <math.h>
@@ -104,19 +105,25 @@ static exprtk_value_t fn_cvar(size_t argc, exprtk_value_t *args, exprtk_env_t *e
   return exprtk_val_num(cnt == 0 ? var : sum / (double)cnt);
 }
 
+double ts_fin_kelly(double win_rate, double avg_win, double avg_loss) {
+  double odds;
+  if (avg_loss <= 0.0) return 0.0;
+  odds = avg_win / avg_loss;
+  if (odds <= 0.0) return 0.0;
+  return win_rate - (1.0 - win_rate) / odds;
+}
+
 static exprtk_value_t fn_kelly(size_t argc, exprtk_value_t *args, exprtk_env_t *env,
                                mem_pool_t *arena) {
   (void)env;
   (void)arena;
-  if (argc == 3 && args[0].type == EXPRTK_VAL_NUMBER && args[1].type == EXPRTK_VAL_NUMBER &&
+  if (argc == 3 && args[0].type == EXPRTK_VAL_NUMBER &&
+      args[1].type == EXPRTK_VAL_NUMBER &&
       args[2].type == EXPRTK_VAL_NUMBER) {
-    const double w = args[0].data.number;
-    const double avg_win = args[1].data.number;
-    const double avg_loss = args[2].data.number;
-    if (avg_loss <= 0.0) return exprtk_val_num(0);
-    const double b = avg_win / avg_loss;
-    if (b <= 0.0) return exprtk_val_num(0);
-    return exprtk_val_num(w - (1.0 - w) / b);
+    return exprtk_val_num(ts_fin_kelly(
+        args[0].data.number,
+        args[1].data.number,
+        args[2].data.number));
   }
   return exprtk_val_num(0);
 }
