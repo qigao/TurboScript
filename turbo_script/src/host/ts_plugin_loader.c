@@ -675,6 +675,31 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   return TS_PLUGIN_ERROR_NONE;
 }
 
+int ts_plugin_find_bound_function(
+    const ts_plugin_handle_t *handle, const char *export_id,
+    ts_plugin_function_view_t *out) {
+  const ts_plugin_function_binding_t *bindings;
+
+  if (out) memset(out, 0, sizeof(*out));
+  if (!handle || !export_id || !*export_id || !out ||
+      !handle->function_bindings || handle->function_binding_count == 0u)
+    return 0;
+
+  bindings =
+      (const ts_plugin_function_binding_t *)handle->function_bindings;
+  for (size_t i = 0u; i < handle->function_binding_count; ++i) {
+    const salts_plugin_export *entry = bindings[i].entry;
+    if (entry && entry->export_id &&
+        strcmp(entry->export_id, export_id) == 0) {
+      out->entry = entry;
+      out->invoke = bindings[i].invoke;
+      out->context = bindings[i].context;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 ts_plugin_handle_t *ts_plugin_load(const char *path) {
   ts_plugin_handle_t *handle = NULL;
   if (ts_plugin_load_ex(path, NULL, &handle, NULL) != TS_PLUGIN_ERROR_NONE)
