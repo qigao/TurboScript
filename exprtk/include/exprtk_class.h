@@ -29,6 +29,15 @@ typedef struct exprtk_class_s exprtk_class_t;
 typedef struct exprtk_instance_s exprtk_instance_t;
 typedef struct exprtk_method_entry_s exprtk_method_entry_t;
 
+/*
+ * Canonical CMeta storage descriptor for exprtk_value_t.
+ *
+ * The descriptor has stable identity "turboscript.exprtk.value" and is the
+ * single authority used by ExprTk reflection, dynamic data projection, and
+ * external CFlow carrier contracts.
+ */
+EXPRTK_C_API const cmeta_type_desc *exprtk_value_cmeta_type(void);
+
 /**
  * @brief Method entry - maps method name to function
  */
