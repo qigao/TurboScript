@@ -107,13 +107,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           ctest --test-dir build/source-test --no-tests=error --output-on-failure
       - name: Run CFlow qualification benchmark
         shell: bash
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           "$GITHUB_WORKSPACE/build/source-test/bin/bench_turbo_script_cflow" |
             tee "$GITHUB_WORKSPACE/build/source-test/cflow-qualification-benchmark.txt"
       - name: Verify exact head and clean tracked source
@@ -184,7 +184,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH="$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
           export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
           unset LSAN_OPTIONS
@@ -246,7 +246,7 @@ jobs:
             -DTURBOSCRIPT_BUILD_MODULES=OFF \
             -DTURBOSCRIPT_BUILD_CLI=OFF
           cmake --build build/host-abi --parallel 2
-          export LD_LIBRARY_PATH="$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           ctest --test-dir build/host-abi -R '^test_turbo_script_host_' \
             --no-tests=error --output-on-failure
           cmake --install build/host-abi
@@ -255,7 +255,7 @@ jobs:
         run: |
           set -euxo pipefail
           prefix="$GITHUB_WORKSPACE/stage/host-abi"
-          export LD_LIBRARY_PATH="$prefix/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
+          export LD_LIBRARY_PATH="$prefix/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
           cmake -S cmake/ci/host-abi -B build/installed-host-abi -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
@@ -370,7 +370,7 @@ jobs:
           mv stage stage-hidden
           prefix="$relocated/$RID"
           export TURBOSCRIPT_ROOT="$prefix"
-          export LD_LIBRARY_PATH="$prefix/lib:$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/$TRIPLET/lib"
+          export LD_LIBRARY_PATH="$prefix/lib:$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/$TRIPLET/lib"
           export DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
           args=(-DCMAKE_BUILD_TYPE=Release)
           if [[ "$RID" == android-arm64-v8a ]]; then
