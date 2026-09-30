@@ -227,7 +227,7 @@ static bool sqlite_provider_query_scalar_impl(void *self, void *session,
   h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
   if (!h || !h->db) return false;
 
-  rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
+  rc = sqlite3_prepare_v2(h->db, request->sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     sqlite_set_error(h, sqlite3_errmsg(h->db));
     return false;
@@ -250,7 +250,8 @@ static bool sqlite_provider_query_scalar_impl(void *self, void *session,
 }
 
 static bool sqlite_provider_query_column_impl(
-    void *self, void *session, int handle, const char *sql,
+    void *self, void *session, int handle,
+    const sqlite_provider_column_request *request,
     sqlite_provider_f64_column *out_column) {
   sqlite_handle_t *h;
   sqlite3_stmt *stmt = NULL;
@@ -260,7 +261,8 @@ static bool sqlite_provider_query_column_impl(
   int rc;
   (void)self;
 
-  if (!out_column || !sql) return false;
+  if (!out_column || !request || !request->sql || request->column < 0)
+    return false;
   out_column->data = NULL;
   out_column->count = 0u;
 
@@ -293,7 +295,13 @@ static bool sqlite_provider_query_column_impl(
       data = grown;
       capacity = next;
     }
-    data[count++] = sqlite3_column_double(stmt, 0);
+    if (request->column >= sqlite3_column_count(stmt)) {
+      sqlite3_finalize(stmt);
+      free(data);
+      sqlite_set_error(h, "sqlite.query_col: column index out of range");
+      return false;
+    }
+    data[count++] = sqlite3_column_double(stmt, request->column);
   }
 
   sqlite3_finalize(stmt);
