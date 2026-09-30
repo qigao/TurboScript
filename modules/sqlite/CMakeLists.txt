@@ -17,7 +17,7 @@ cmake_config_target(
 target_link_libraries(
   ${TARGET_NAME_LIB}
   PRIVATE exprtk unofficial::sqlite3::sqlite3 Salts::CSTL
-  PUBLIC Salts::Coroutine)
+  PUBLIC Salts::Coroutine Salts::CMeta)
 target_include_directories(
   ${TARGET_NAME_LIB}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
@@ -35,7 +35,7 @@ cmake_config_target(
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE exprtk unofficial::sqlite3::sqlite3 Salts::CSTL
-  PUBLIC Salts::Coroutine)
+  PUBLIC Salts::Coroutine Salts::CMeta)
 set_target_properties(
   ${TARGET_NAME}
   PROPERTIES PREFIX ""
