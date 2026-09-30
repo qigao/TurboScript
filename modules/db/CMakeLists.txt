@@ -5,7 +5,9 @@ set(TARGET_NAME db_tbs)
 
 add_library(
   ${TARGET_NAME} SHARED
-  src/db_plugin.c)
+  src/db_plugin.c
+  ${CMAKE_SOURCE_DIR}/turbo_script/src/databind/turbo_script_class_databind.c
+  ${CMAKE_SOURCE_DIR}/turbo_script/src/databind/turbo_script_class_databind.h)
 
 cmake_config_target(
   ${TARGET_NAME}
@@ -15,11 +17,12 @@ cmake_config_target(
 
 target_link_libraries(
   ${TARGET_NAME}
-  PRIVATE exprtk Orm::C)
+  PRIVATE exprtk Orm::C Salts::DataBind)
 
 target_include_directories(
   ${TARGET_NAME}
-  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+  PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src
+          ${CMAKE_SOURCE_DIR}/turbo_script/src/databind)
 
 set_target_properties(
   ${TARGET_NAME}
