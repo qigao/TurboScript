@@ -227,7 +227,7 @@ static bool sqlite_provider_query_scalar_impl(void *self, void *session,
   h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
   if (!h || !h->db) return false;
 
-  rc = sqlite3_prepare_v2(h->db, request->sql, -1, &stmt, NULL);
+  rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     sqlite_set_error(h, sqlite3_errmsg(h->db));
     return false;
@@ -269,7 +269,7 @@ static bool sqlite_provider_query_column_impl(
   h = sqlite_handle_get((sqlite_ctx_t *)session, handle);
   if (!h || !h->db) return false;
 
-  rc = sqlite3_prepare_v2(h->db, sql, -1, &stmt, NULL);
+  rc = sqlite3_prepare_v2(h->db, request->sql, -1, &stmt, NULL);
   if (rc != SQLITE_OK) {
     sqlite_set_error(h, sqlite3_errmsg(h->db));
     return false;
