@@ -3,7 +3,12 @@ cmake_minimum_required(VERSION 3.15)
 set(TARGET_NAME mapper)
 set(TARGET_NAME_PLUGIN mapper_tbs)
 
-set(MAPPER_SOURCES src/exprtk_mod_mapper.c src/mapper_databind.c src/mapper_databind.h)
+set(MAPPER_SOURCES
+    src/exprtk_mod_mapper.c
+    src/mapper_databind.c
+    src/mapper_databind.h
+    ${CMAKE_SOURCE_DIR}/turbo_script/src/databind/turbo_script_class_databind.c
+    ${CMAKE_SOURCE_DIR}/turbo_script/src/databind/turbo_script_class_databind.h)
 set(MAPPER_PLUGIN_SOURCES src/mapper_plugin.c)
 set(MAPPER_HEADERS include/mapper.h)
 
@@ -14,7 +19,8 @@ cmake_config_target(${TARGET_NAME}
   EXPORT_NAME Mapper)
 target_include_directories(${TARGET_NAME}
   PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
-         $<INSTALL_INTERFACE:include>)
+         $<INSTALL_INTERFACE:include>
+  PRIVATE ${CMAKE_SOURCE_DIR}/turbo_script/src/databind)
 target_link_libraries(${TARGET_NAME}
   PUBLIC exprtk Salts::Core Salts::DataBind Salts::JsonParser
          Salts::CYaml Salts::CYamlJsonAdapter Salts::XmlParser
