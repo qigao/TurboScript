@@ -123,7 +123,7 @@ endmacro()
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
   test_plugin_loader_fixture test_plugin_loader_prefixed_conflict
-  crypto_tbs)
+  test_plugin_loader_function crypto_tbs)
 add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
