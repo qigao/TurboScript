@@ -1,8 +1,10 @@
 #include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
+#include "exprtk.h"
 #include "tinytest.h"
 #include "salts_fs.h"
 #include "turbo_script.h"
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -116,7 +118,11 @@ spec("turbo_script_basics") {
     it("should call a canonical Function-only plugin in interpreter and JIT") {
       const char *source =
           "import(\"loader_function\");"
-          "answer=loader_function.double(3.5);";
+          "answer=loader_function.double(3.5);"
+          "mixed=loader_function.increment(4)"
+          "+loader_function.add(1.25,2.5)"
+          "+loader_function.long_to_double(7)"
+          "+loader_function.float_to_double(1.5);";
       turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
       turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
 
@@ -126,6 +132,36 @@ spec("turbo_script_basics") {
       check_equal(turbo_script_run_jit(jit, source), 0);
       check(fabs(ts_get_num(interp, "answer") - 7.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "answer") - 7.0) <= 1e-9);
+      check(fabs(ts_get_num(interp, "mixed") - 18.0) <= 1e-6);
+      check(fabs(ts_get_num(jit, "mixed") - 18.0) <= 1e-6);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+    it("should preserve exact integer values through interpreter and JIT plugin calls") {
+      const char *source = "exact = loader_function.long_exact(big);";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      int64_t exact_input;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_load_plugin(interp, "loader_function"), 0);
+      check_equal(turbo_script_load_plugin(jit, "loader_function"), 0);
+
+#if LONG_MAX > 2147483647L
+      exact_input = INT64_C(9007199254740993);
+#else
+      exact_input = (int64_t)LONG_MAX;
+#endif
+      exprtk_env_set(&interp->env, "big", exprtk_val_int(exact_input));
+      exprtk_env_set(&jit->env, "big", exprtk_val_int(exact_input));
+
+      check_equal(turbo_script_run(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+      check(fabs(ts_get_num(interp, "exact") - 1.0) <= 1e-9);
+      check(fabs(ts_get_num(jit, "exact") - 1.0) <= 1e-9);
 
       turbo_script_free(jit);
       turbo_script_free(interp);

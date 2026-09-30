@@ -633,6 +633,7 @@ ts_host_registry_bind_runtime_impl(turbo_script_ctx_t *ctx, exprtk_env_t *runtim
     registrations[i].name = entry->name;
     registrations[i].fn = ts_host_registry_callback_adapter;
     registrations[i].user_data = entry;
+    registrations[i].flags = EXPRTK_NATIVE_FLAG_NONE;
   }
   registration_status = exprtk_env_register_funcs_checked_with_fault(
       runtime_ctx, registrations, vec_size(&ctx->host_functions), should_fail, fault_user_data);

@@ -437,6 +437,19 @@ typedef struct exprtk_map_entry_s {
 typedef exprtk_value_t (*exprtk_native_fn)(size_t arg_count, exprtk_value_t *args,
                                           struct exprtk_env_s *env, void *user_data);
 
+typedef uint32_t exprtk_native_flags_t;
+enum {
+  EXPRTK_NATIVE_FLAG_NONE = 0u,
+  /*
+   * Preserve the exact script value tags presented by the evaluator.
+   * Canonical reflected native bindings use this when integer/bool identity
+   * is part of their ABI contract. Legacy native functions keep the existing
+   * INTEGER -> NUMBER compatibility normalization by leaving this flag clear.
+   */
+  EXPRTK_NATIVE_PRESERVE_VALUE_TYPES = 1u << 0,
+  EXPRTK_NATIVE_FLAG_MASK = EXPRTK_NATIVE_PRESERVE_VALUE_TYPES
+};
+
 typedef struct exprtk_func_s {
   char *name;
   int is_script;
@@ -450,6 +463,7 @@ typedef struct exprtk_func_s {
     struct {
       exprtk_native_fn fn;
       void *user_data;
+      exprtk_native_flags_t flags;
     } native;
     struct {
       exprtk_node_t **arg_params;
