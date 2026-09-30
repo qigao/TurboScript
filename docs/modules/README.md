@@ -83,8 +83,11 @@ See [Mapper README](../../modules/mapper/README.md) for class-first JSON/YAML/XM
 document mapping. See [csv_filter_expression.md](../csv_filter_expression.md)
 for CSV filter expressions.
 
-### SQLite / RAG Module
-See [sqlite README](../../modules/sqlite/README.md) for SQLite SQL helpers, FTS5 probing, embedding BLOB storage, cosine search, and the `sqlite.rag_*` local RAG helpers.
+### Database Module
+See [db README](../../modules/db/README.md) for TurboDB::Orm-backed database
+connections, CFlow command execution, and typed RowClass queries. Driver ID and
+module path are explicit user configuration; TurboScript does not select or
+fallback to a database backend.
 
 ### Technical Analysis
 See [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) for TA indicators.
