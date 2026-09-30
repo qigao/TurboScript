@@ -1043,27 +1043,38 @@ done:
         binding->operation.response.data->storage_type->size);
   }
   if (binding && error_envelope &&
-      outcome.kind == DATA_BIND_BINDING_OUTCOME_TYPED_ERROR &&
-      outcome.typed_error_index <
-          binding->operation.error_count) {
-    const DataBindNativeErrorBinding *error_binding =
-        &binding->operation.errors[outcome.typed_error_index];
-    const cmeta_data_desc *error_data = NULL;
-    DataBindError error = DATA_BIND_ERROR_INIT;
-    if (error_binding->data_resolver &&
-        error_binding->data_resolver(
-            &error_data, &error) == DATA_BIND_OK &&
-        cmeta_data_desc_valid(error_data) &&
-        error_binding->payload_offset <=
-            binding->native.error_envelope_bytes &&
-        error_data->storage_type->size <=
-            binding->native.error_envelope_bytes -
-                error_binding->payload_offset) {
-      (void)ts_databind_clear_native(
-          &options, error_data,
-          (unsigned char *)error_envelope +
-              error_binding->payload_offset,
-          error_data->storage_type->size);
+      binding->native.error_count != 0u &&
+      binding->native.error_kind_bytes == sizeof(uint32_t) &&
+      binding->native.error_kind_offset <=
+          binding->native.error_envelope_bytes -
+              binding->native.error_kind_bytes) {
+    uint32_t kind = 0u;
+    memcpy(
+        &kind,
+        (unsigned char *)error_envelope +
+            binding->native.error_kind_offset,
+        sizeof(kind));
+    if (kind != 0u &&
+        (size_t)kind <= binding->operation.error_count) {
+      const DataBindNativeErrorBinding *error_binding =
+          &binding->operation.errors[(size_t)kind - 1u];
+      const cmeta_data_desc *error_data = NULL;
+      DataBindError error = DATA_BIND_ERROR_INIT;
+      if (error_binding->data_resolver &&
+          error_binding->data_resolver(
+              &error_data, &error) == DATA_BIND_OK &&
+          cmeta_data_desc_valid(error_data) &&
+          error_binding->payload_offset <=
+              binding->native.error_envelope_bytes &&
+          error_data->storage_type->size <=
+              binding->native.error_envelope_bytes -
+                  error_binding->payload_offset) {
+        (void)ts_databind_clear_native(
+            &options, error_data,
+            (unsigned char *)error_envelope +
+                error_binding->payload_offset,
+            error_data->storage_type->size);
+      }
     }
   }
 
