@@ -49,6 +49,7 @@ find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 if(TURBOSCRIPT_BUILD_MODULES)
   find_package(Chttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  find_package(TurboDB CONFIG REQUIRED PATHS "$ENV{TURBODB_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 endif()
 find_package(MIR CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
@@ -85,6 +86,7 @@ install(
           fin_tbs
           ts_tbs
           sqlite_tbs
+          db_tbs
           mapper_tbs
           img_tbs
           crypto_tbs
