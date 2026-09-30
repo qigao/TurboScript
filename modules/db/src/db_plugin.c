@@ -79,6 +79,188 @@ static exprtk_value_t db_fail(db_ctx_t *ctx, const char *role,
   return exprtk_val_num(0.0);
 }
 
+static db_row_plan_entry_t *db_row_plan_find(
+    db_ctx_t *ctx, const cmeta_data_desc *data) {
+  db_row_plan_entry_t *entry = ctx ? ctx->row_plans : NULL;
+  while (entry) {
+    if (entry->plan && entry->codec && entry->stable_id &&
+        data && data->stable_id &&
+        strcmp(entry->stable_id, data->stable_id) == 0 &&
+        cmeta_data_desc_equal(entry->data, data) &&
+        cmeta_data_desc_equal(
+            data_bind_message_plan_object_data(entry->plan), data))
+      return entry;
+    entry = entry->next;
+  }
+  return NULL;
+}
+
+static int db_row_plan_get(
+    db_ctx_t *ctx, exprtk_class_t *klass,
+    db_row_plan_entry_t **out, char *error, size_t error_len) {
+  const cmeta_data_desc *data;
+  db_row_plan_entry_t *entry;
+  char compile_error[512] = {0};
+  int status;
+
+  if (out) *out = NULL;
+  if (!ctx || !klass || !out ||
+      !exprtk_class_finalize_cmeta_data(klass)) {
+    if (error && error_len)
+      snprintf(error, error_len, "invalid typed RowClass reflection");
+    return 0;
+  }
+
+  data = exprtk_class_cmeta_data(klass);
+  if (!data || !data->stable_id) {
+    if (error && error_len)
+      snprintf(error, error_len, "typed RowClass has no canonical CMeta data identity");
+    return 0;
+  }
+
+  entry = db_row_plan_find(ctx, data);
+  if (entry) {
+    *out = entry;
+    return 1;
+  }
+
+  entry = (db_row_plan_entry_t *)calloc(1u, sizeof(*entry));
+  if (!entry) {
+    if (error && error_len)
+      snprintf(error, error_len, "out of memory caching typed RowClass plan");
+    return 0;
+  }
+
+  status = turbo_script_class_databind_compile(
+      klass, &entry->codec, &entry->plan,
+      compile_error, sizeof(compile_error));
+  if (status <= 0) {
+    free(entry);
+    if (error && error_len) {
+      snprintf(
+          error, error_len, "%s",
+          status < 0
+              ? "RowClass contains a field outside the typed DataBind domain"
+              : (compile_error[0]
+                     ? compile_error
+                     : "typed RowClass DataBind compilation failed"));
+    }
+    return 0;
+  }
+
+  entry->data = data;
+  {
+    const size_t stable_len = strlen(data->stable_id);
+    entry->stable_id = (char *)malloc(stable_len + 1u);
+    if (entry->stable_id)
+      memcpy(entry->stable_id, data->stable_id, stable_len + 1u);
+  }
+  if (!entry->stable_id) {
+    data_bind_message_plan_free(entry->plan);
+    data_bind_free(entry->codec);
+    free(entry);
+    if (error && error_len)
+      snprintf(error, error_len, "out of memory caching RowClass identity");
+    return 0;
+  }
+
+  entry->next = ctx->row_plans;
+  ctx->row_plans = entry;
+  *out = entry;
+  return 1;
+}
+
+static void db_row_plan_cache_destroy(db_ctx_t *ctx) {
+  db_row_plan_entry_t *entry;
+  if (!ctx) return;
+  entry = ctx->row_plans;
+  ctx->row_plans = NULL;
+  while (entry) {
+    db_row_plan_entry_t *next = entry->next;
+    data_bind_message_plan_free(entry->plan);
+    data_bind_free(entry->codec);
+    free(entry->stable_id);
+    free(entry);
+    entry = next;
+  }
+}
+
+static orm_status_t db_row_factory_create(
+    void *context, void *out_value, cmeta_object_ref *out_object,
+    orm_error_t *error) {
+  db_row_factory_context_t *factory =
+      (db_row_factory_context_t *)context;
+  exprtk_value_t *carrier = (exprtk_value_t *)out_value;
+  exprtk_instance_t *instance;
+  cmeta_status cmeta_status_;
+
+  if (error) orm_error_init(error);
+  if (!factory || !factory->db || !factory->db->env ||
+      !factory->klass || !carrier || !out_object) {
+    if (error) {
+      error->status = ORM_STATUS_INVALID_ARGUMENT;
+      snprintf(error->message, sizeof(error->message),
+               "invalid TurboScript typed row factory");
+    }
+    return ORM_STATUS_INVALID_ARGUMENT;
+  }
+
+  memset(carrier, 0, sizeof(*carrier));
+  carrier->type = EXPRTK_VAL_NULL;
+  instance = exprtk_instance_create(
+      factory->klass, &factory->db->env->arena);
+  if (!instance) {
+    if (error) {
+      error->status = ORM_STATUS_OUT_OF_MEMORY;
+      snprintf(error->message, sizeof(error->message),
+               "allocate TurboScript typed row instance");
+    }
+    return ORM_STATUS_OUT_OF_MEMORY;
+  }
+
+  *carrier = exprtk_val_instance(instance);
+  cmeta_status_ = exprtk_instance_borrow_cmeta_object(instance, out_object);
+  if (cmeta_status_ != CMETA_OK) {
+    exprtk_instance_destroy(instance);
+    memset(carrier, 0, sizeof(*carrier));
+    carrier->type = EXPRTK_VAL_NULL;
+    if (error) {
+      error->status = ORM_STATUS_TYPE_ERROR;
+      snprintf(error->message, sizeof(error->message),
+               "borrow typed row as CMeta object failed (%d)",
+               (int)cmeta_status_);
+    }
+    return ORM_STATUS_TYPE_ERROR;
+  }
+
+  return ORM_STATUS_OK;
+}
+
+static void db_row_factory_destroy(void *context, void *value) {
+  exprtk_value_t *carrier = (exprtk_value_t *)value;
+  (void)context;
+  if (!carrier) return;
+  if (carrier->type == EXPRTK_VAL_INSTANCE &&
+      carrier->data.instance_val.instance) {
+    exprtk_instance_destroy(carrier->data.instance_val.instance);
+  }
+  memset(carrier, 0, sizeof(*carrier));
+  carrier->type = EXPRTK_VAL_NULL;
+}
+
+static void db_row_list_rollback(exprtk_value_t *list) {
+  if (!list || list->type != EXPRTK_VAL_LIST) return;
+  for (size_t i = 0u; i < list->data.list.count; ++i) {
+    exprtk_value_t *item = &list->data.list.items[i];
+    if (item->type == EXPRTK_VAL_INSTANCE &&
+        item->data.instance_val.instance)
+      exprtk_instance_destroy(item->data.instance_val.instance);
+    memset(item, 0, sizeof(*item));
+    item->type = EXPRTK_VAL_NULL;
+  }
+  exprtk_value_destroy(list);
+}
+
 static int db_string_field(const exprtk_value_t *map, const char *name,
                            orm_string_view_t *out) {
   exprtk_value_t value;
