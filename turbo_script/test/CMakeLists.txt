@@ -119,6 +119,41 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     FOLDER turbo_script)
 endmacro()
 
+# Generated DataBind Service Plugin qualification is host-only: salts_idl_target
+# requires a host salts-idlc when cross-compiling. Core catalog binding still
+# compiles on every target platform through turbo_script_plugin_loader.
+if(NOT CMAKE_CROSSCOMPILING)
+  salts_idl_target(
+    TARGET turboscript_databind_service_fixture
+    IDL "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service.schema"
+    COMPONENT "Image.ImageProcessor"
+    VERSION "1.0.0"
+    ARTIFACT_NAME "Image.ImageProcessor"
+    ARTIFACTS PLUGIN
+    SOURCES
+      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service_business.c")
+
+  salts_idl_target(
+    TARGET turboscript_databind_error_fixture
+    IDL "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service_error.schema"
+    COMPONENT "ErrorPlugin.StorePlugin"
+    VERSION "1.0.0"
+    ARTIFACT_NAME "ErrorPlugin.StorePlugin"
+    ARTIFACTS PLUGIN
+    SOURCES
+      "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service_error_business.c")
+
+  foreach(_fixture_target IN ITEMS
+          ${turboscript_databind_service_fixture_PLUGIN_TARGET}
+          ${turboscript_databind_error_fixture_PLUGIN_TARGET})
+    set_target_properties(
+      ${_fixture_target}
+      PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/plugins"
+        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/plugins")
+  endforeach()
+endif()
+
 # Interpreter test suites (split by module)
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
@@ -129,6 +164,15 @@ add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
+if(NOT CMAKE_CROSSCOMPILING)
+  add_ts_test(
+    test_turbo_script_databind_plugin
+    test_turbo_script_databind_plugin.c)
+  add_dependencies(
+    test_turbo_script_databind_plugin
+    ${turboscript_databind_service_fixture_PLUGIN_TARGET}
+    ${turboscript_databind_error_fixture_PLUGIN_TARGET})
+endif()
 if(TARGET db_tbs)
   add_ts_test(test_turbo_script_db test_turbo_script_db.c)
   add_dependencies(test_turbo_script_db db_tbs)
