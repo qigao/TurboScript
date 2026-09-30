@@ -535,7 +535,6 @@ static exprtk_value_t databind_function_call(
   void *request = NULL;
   void *response = NULL;
   void **frame_params = NULL;
-  const void **invoke_params_const = NULL;
   void **invoke_params = NULL;
   size_t *param_bytes = NULL;
   size_t request_bytes;
@@ -636,9 +635,6 @@ static exprtk_value_t databind_function_call(
     invoke_params[i] = frame_params[i];
   invoke_params[binding->request_param_index] = request;
   invoke_params[binding->response_param_index] = response;
-  invoke_params_const = (const void **)invoke_params;
-  (void)invoke_params_const;
-
   if (!binding->invoke(
           binding->context, &native_status,
           invoke_params, param_count)) {
@@ -757,7 +753,7 @@ int ts_plugin_databind_bind(
       databind_project_field
   };
   size_t count;
-  salts_plugin_status plugin_status;
+  salts_plugin_status plugin_status = SALTS_PLUGIN_OK;
   exprtk_registration_status_t registration_status;
 
   if (!handle || !handle->manifest || !env)
