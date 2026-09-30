@@ -261,7 +261,8 @@ static bool sqlite_provider_query_column_impl(
   int rc;
   (void)self;
 
-  if (!out_column || !request || !request->sql || request->column < 0)
+  if (!out_column || !request || !request->sql || request->column < 0 ||
+      request->max_count == 0u)
     return false;
   out_column->data = NULL;
   out_column->count = 0u;
@@ -277,9 +278,16 @@ static bool sqlite_provider_query_column_impl(
 
   while ((rc = sqlite3_step(stmt)) == SQLITE_ROW) {
     double *grown;
+    if (count >= request->max_count) {
+      sqlite3_finalize(stmt);
+      free(data);
+      sqlite_set_error(h, "sqlite.query_col: result exceeds configured limit");
+      return false;
+    }
     if (count == capacity) {
       size_t next = capacity ? capacity * 2u : 16u;
-      if (next < capacity || next > SIZE_MAX / sizeof(*data)) {
+      if (next > request->max_count) next = request->max_count;
+      if (next <= capacity || next > SIZE_MAX / sizeof(*data)) {
         sqlite3_finalize(stmt);
         free(data);
         sqlite_set_error(h, "sqlite.query_col: result too large");
