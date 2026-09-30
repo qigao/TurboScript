@@ -122,7 +122,7 @@ TurboScript 提供了丰富的可选模块：
 | `fin` / `strategy` | 风险指标、策略上下文、组合辅助函数 | [ta_fin_cheatsheet.md](../ta_fin_cheatsheet.md) |
 | `vec` | 高级向量操作 | [vec_cheatsheet.md](../vec_cheatsheet.md) |
 | `net` | HTTP/WebSocket 网络 | [modules/net.md](../modules/net.md) |
-| `sqlite` | 数据库访问 | [modules/sqlite.md](../modules/sqlite.md) |
+| `db` | TurboDB::Orm 数据库访问；driver/module 由用户显式配置 | [db README](../../modules/db/README.md) |
 | `os` | 平台信息、无 shell 子进程、日志、服务和电源管理 | [os README](../../modules/os/README.md) |
 
 ---
