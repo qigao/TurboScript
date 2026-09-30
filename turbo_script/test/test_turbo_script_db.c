@@ -35,10 +35,10 @@ static int build_success_script(char *out, size_t capacity) {
     return 0;
   return snprintf(
              out, capacity,
-             "a=db.connect({driver:\"sqlite\",module_path:\"%s\","
-             "options:{filename:\":memory:\"}});"
-             "b=db.connect({driver:\"sqlite\",module_path:\"%s\","
-             "options:{filename:\":memory:\"}});"
+             "a=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+             "options:map {filename:\":memory:\"}});"
+             "b=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+             "options:map {filename:\":memory:\"}});"
              "ca=db.close(a);"
              "cb=db.close(b);",
              path, path) > 0;
@@ -52,7 +52,7 @@ static int build_failure_script(char *out, size_t capacity,
   if (!append_quoted_path(path, sizeof(path), module_path)) return 0;
   return snprintf(
              out, capacity,
-             "x=db.connect({driver:\"%s\",module_path:\"%s\"%s});",
+             "x=db.connect(map {driver:\"%s\",module_path:\"%s\"%s});",
              driver, path, options_source ? options_source : "") > 0;
 }
 
@@ -100,7 +100,7 @@ spec("TurboScript TurboDB ORM configuration") {
     check_true(build_failure_script(
         script, sizeof(script), "postgresql",
         TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH,
-        ",options:{filename:\":memory:\"}"));
+        ",options:map {filename:\":memory:\"}"));
 
     check(turbo_script_run(ctx, script) != 0);
     check_not_null(strstr(turbo_script_get_error(ctx), "driver"));
@@ -114,8 +114,8 @@ spec("TurboScript TurboDB ORM configuration") {
     check_not_null(ctx);
     check(turbo_script_run(
               ctx,
-              "x=db.connect({driver:\"sqlite\","
-              "options:{filename:\":memory:\"}});") != 0);
+              "x=db.connect(map {driver:\"sqlite\","
+              "options:map {filename:\":memory:\"}});") != 0);
     check_not_null(strstr(turbo_script_get_error(ctx), "module_path"));
 
     turbo_script_free(ctx);
@@ -129,7 +129,7 @@ spec("TurboScript TurboDB ORM configuration") {
     check_true(build_failure_script(
         script, sizeof(script), "sqlite",
         TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH,
-        ",options:{}"));
+        ",options:map {}"));
 
     check(turbo_script_run(ctx, script) != 0);
     check_not_null(strstr(turbo_script_get_error(ctx), "filename"));
@@ -147,11 +147,11 @@ spec("TurboScript TurboDB ORM configuration") {
         path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
     check(snprintf(
               script, sizeof(script),
-              "a=db.connect({driver:\"sqlite\",module_path:\"%s\","
-              "options:{filename:\":memory:\"}});"
-              "b=db.connect({driver:\"sqlite\","
+              "a=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "b=db.connect(map {driver:\"sqlite\","
               "module_path:\"/definitely/different/driver\","
-              "options:{filename:\":memory:\"}});",
+              "options:map {filename:\":memory:\"}});",
               path) > 0);
 
     check(turbo_script_run(ctx, script) != 0);
