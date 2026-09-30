@@ -21,15 +21,6 @@ static const cmeta_type_identity exprtk_env_cmeta_identity =
 static const cmeta_type_identity exprtk_scratch_cmeta_identity =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.scratch");
 
-static const cmeta_type_desc exprtk_value_cmeta_type = {
-    .name = "exprtk_value_t",
-    .size = sizeof(exprtk_value_t),
-    .align = _Alignof(exprtk_value_t),
-    .kind = CMETA_T_OBJECT,
-    .pointee = NULL,
-    .traits = NULL,
-    .identity = &exprtk_value_cmeta_identity
-};
 static const cmeta_type_desc exprtk_env_cmeta_type = {
     .name = "exprtk_env_t",
     .size = sizeof(exprtk_env_t),
