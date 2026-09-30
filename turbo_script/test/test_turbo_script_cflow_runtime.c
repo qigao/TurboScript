@@ -85,6 +85,99 @@ spec("TurboScript CFlow stream runtime") {
     }
 
 
+    it("projects a pure canonical Plugin Function directly into CFlow MAP") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *root = NULL;
+      exprtk_node_t *expr;
+      exprtk_value_t result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "loader_function"), 0);
+
+      expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.of([1,2,3])"
+          ".map(x => loader_function.double(x))"
+          ".toVector();",
+          &root);
+      check_not_null(expr);
+      check_equal(
+          ts_cflow_runtime_try_scalar_terminal(
+              ctx, expr, &result, error, sizeof(error)),
+          TS_CFLOW_RUNTIME_HANDLED);
+      check_equal(error[0], '\0');
+      check_equal(result.type, EXPRTK_VAL_VECTOR);
+      check_equal(result.data.vector.size, (size_t)3u);
+      check(fabs(result.data.vector.data[0] - 2.0) <= 1e-9);
+      check(fabs(result.data.vector.data[1] - 4.0) <= 1e-9);
+      check(fabs(result.data.vector.data[2] - 6.0) <= 1e-9);
+
+      exprtk_value_destroy(&result);
+      exprtk_free(root);
+      turbo_script_free(ctx);
+    }
+
+    it("keeps stateful canonical Plugin Functions outside CFlow admission") {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_node_t *root = NULL;
+      exprtk_node_t *expr;
+      exprtk_value_t result = exprtk_val_num(-1.0);
+      char error[256] = {0};
+
+      check_not_null(ctx);
+      check_equal(turbo_script_load_plugin(ctx, "loader_function"), 0);
+
+      expr = ts_stream_test_single_expr(
+          ctx,
+          "stream.of([1,2,3])"
+          ".map(x => loader_function.stateful(x))"
+          ".toVector();",
+          &root);
+      check_not_null(expr);
+      check_equal(
+          ts_cflow_runtime_try_scalar_terminal(
+              ctx, expr, &result, error, sizeof(error)),
+          TS_CFLOW_RUNTIME_NOT_APPLICABLE);
+
+      exprtk_value_destroy(&result);
+      exprtk_free(root);
+      turbo_script_free(ctx);
+    }
+
+    it("keeps canonical Plugin Function CFlow MAP aligned in interpreter and JIT") {
+      const char *source =
+          "mapped=stream.of([1,2,3])"
+          ".map(x => loader_function.double(x))"
+          ".toVector();";
+      turbo_script_ctx_t *interp = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      turbo_script_ctx_t *jit = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t interp_result;
+      exprtk_value_t jit_result;
+
+      check_not_null(interp);
+      check_not_null(jit);
+      check_equal(turbo_script_load_plugin(interp, "loader_function"), 0);
+      check_equal(turbo_script_load_plugin(jit, "loader_function"), 0);
+      check_equal(turbo_script_run_mir_interp(interp, source), 0);
+      check_equal(turbo_script_run_jit(jit, source), 0);
+
+      interp_result = exprtk_env_get(&interp->env, "mapped");
+      jit_result = exprtk_env_get(&jit->env, "mapped");
+      check_equal(interp_result.type, EXPRTK_VAL_VECTOR);
+      check_equal(jit_result.type, EXPRTK_VAL_VECTOR);
+      check_equal(interp_result.data.vector.size, (size_t)3u);
+      check_equal(jit_result.data.vector.size, (size_t)3u);
+      check(fabs(interp_result.data.vector.data[0] - 2.0) <= 1e-9);
+      check(fabs(interp_result.data.vector.data[2] - 6.0) <= 1e-9);
+      check(fabs(jit_result.data.vector.data[0] - 2.0) <= 1e-9);
+      check(fabs(jit_result.data.vector.data[2] - 6.0) <= 1e-9);
+
+      turbo_script_free(jit);
+      turbo_script_free(interp);
+    }
+
+
 
     it("materializes an admitted intermediate numeric stream through CFlow") {
       turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
