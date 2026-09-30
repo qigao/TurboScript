@@ -4,6 +4,9 @@
 #include "exprtk.h"
 #include "exprtk_grammar.h"
 
+#include <cflow/function_projection.h>
+
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -168,6 +171,165 @@ static bool ts_cflow_runtime_numeric_collection_source(
   return ts_cflow_runtime_materialized_stream_source(&value, &source);
 }
 
+static double ts_cflow_plugin_double_signature(double value) {
+  return value;
+}
+
+typedef struct ts_cflow_plugin_callable_capture_s {
+  salts_plugin_function_invoke_fn invoke;
+  void *context;
+} ts_cflow_plugin_callable_capture_t;
+
+_Static_assert(
+    sizeof(ts_cflow_plugin_callable_capture_t) <= CMETA_CAPTURE_INLINE,
+    "plugin callable capture must fit CMeta inline storage");
+
+static bool ts_cflow_plugin_callable_invoke(
+    const cmeta_callable *self, void *out, const void *const *args) {
+  ts_cflow_plugin_callable_capture_t capture;
+  void *params[1];
+
+  if (!self || self->capture_size != sizeof(capture) ||
+      !out || !args || !args[0])
+    return false;
+
+  memcpy(&capture, self->capture.bytes, sizeof(capture));
+  if (!capture.invoke) return false;
+  params[0] = (void *)args[0];
+  return capture.invoke(capture.context, out, params, 1u);
+}
+
+static int ts_cflow_plugin_function_view(
+    turbo_script_ctx_t *runtime_ctx, const char *export_id,
+    ts_plugin_function_view_t *out) {
+  if (out) memset(out, 0, sizeof(*out));
+  if (!runtime_ctx || !export_id || !out) return 0;
+
+  for (size_t i = 0u; i < runtime_ctx->plugin_count; ++i) {
+    if (runtime_ctx->plugins[i] &&
+        ts_plugin_find_bound_function(
+            runtime_ctx->plugins[i], export_id, out))
+      return 1;
+  }
+  return 0;
+}
+
+static const exprtk_node_t *ts_cflow_plugin_lambda_body(
+    const exprtk_node_t *lambda) {
+  const exprtk_node_t *body;
+  if (!lambda || lambda->type != EXPRTK_NODE_FUNCTION_EXPRESSION)
+    return NULL;
+  body = lambda->data.func_def.body;
+  if (body && body->type == EXPRTK_NODE_BLOCK &&
+      body->data.block.count == 1u)
+    body = body->data.block.statements[0];
+  if (body && body->type == EXPRTK_NODE_FLOW &&
+      body->data.flow.type == exprtk_TOKEN_RETURN)
+    body = body->data.flow.value;
+  return body;
+}
+
+static bool ts_cflow_try_append_plugin_function(
+    turbo_script_ctx_t *runtime_ctx,
+    ts_cflow_lowered_pipeline_t *out,
+    const exprtk_node_t *lambda,
+    ts_cmeta_lambda_role_t role,
+    cflow_op op,
+    bool *matched,
+    const char **error) {
+  const exprtk_node_t *body;
+  const exprtk_node_t *object;
+  const exprtk_node_t *argument;
+  const exprtk_node_t *parameter;
+  char export_id[256];
+  int written;
+  ts_plugin_function_view_t view = {0};
+  const cmeta_function_desc *function;
+  const cmeta_function_abi_desc *abi;
+  ts_cflow_plugin_callable_capture_t capture;
+  cmeta_callable adapter = {0};
+  cflow_function_projection projection = {0};
+  cflow_function_projection_status status;
+
+  if (matched) *matched = false;
+  if (!runtime_ctx || !out || !lambda ||
+      role != TS_CMETA_LAMBDA_MAP || op != CFLOW_OP_MAP ||
+      lambda->type != EXPRTK_NODE_FUNCTION_EXPRESSION ||
+      lambda->data.func_def.arg_count != 1u)
+    return false;
+
+  body = ts_cflow_plugin_lambda_body(lambda);
+  if (!body || body->type != EXPRTK_NODE_MEMBER_CALL ||
+      !body->data.member_call.object ||
+      !body->data.member_call.method ||
+      body->data.member_call.arg_count != 1u)
+    return false;
+
+  object = body->data.member_call.object;
+  argument = body->data.member_call.args[0];
+  parameter = lambda->data.func_def.arg_params[0];
+  if (!object || object->type != EXPRTK_NODE_VARIABLE ||
+      !object->data.variable.name ||
+      !argument || argument->type != EXPRTK_NODE_VARIABLE ||
+      !argument->data.variable.name ||
+      !parameter || parameter->type != EXPRTK_NODE_VARIABLE ||
+      !parameter->data.variable.name ||
+      strcmp(argument->data.variable.name,
+             parameter->data.variable.name) != 0)
+    return false;
+
+  written = snprintf(export_id, sizeof(export_id), "%s.%s",
+                     object->data.variable.name,
+                     body->data.member_call.method);
+  if (written < 0 || (size_t)written >= sizeof(export_id))
+    return false;
+
+  if (!ts_cflow_plugin_function_view(runtime_ctx, export_id, &view))
+    return false;
+  if (matched) *matched = true;
+
+  if (!view.entry || view.entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION ||
+      !view.invoke) {
+    if (error) *error = "loaded plugin Function binding is invalid";
+    return false;
+  }
+
+  function = view.entry->value.function.desc;
+  abi = view.entry->value.function.abi;
+  if (!function || !abi ||
+      !cmeta_effects_are_pure(function->effects)) {
+    if (error) *error =
+        "plugin Function effects block CFlow MAP admission";
+    return false;
+  }
+
+  adapter.meta = CMETA_WRAP_TYPED_ANY(ts_cflow_plugin_double_signature);
+  adapter.meta.effects = function->effects;
+  adapter.meta.properties = function->properties;
+  adapter.invoke = ts_cflow_plugin_callable_invoke;
+  adapter.dispatch = CMETA_CALLABLE_DISPATCH_ADAPTER;
+  capture.invoke = view.invoke;
+  capture.context = view.context;
+  adapter.capture_size = sizeof(capture);
+  memcpy(adapter.capture.bytes, &capture, sizeof(capture));
+
+  status = cflow_function_projection_admit(
+      function, abi, adapter, CFLOW_OP_MAP, &projection);
+  if (status != CFLOW_FUNCTION_PROJECTION_OK) {
+    if (error)
+      *error = cflow_function_projection_status_string(status);
+    return false;
+  }
+
+  if (!cflow_graph_add_function_projection(&out->graph, &projection)) {
+    if (error) *error =
+        out->graph.error ? out->graph.error
+                         : "plugin Function CFlow graph admission failed";
+    return false;
+  }
+  return true;
+}
+
 static bool ts_cflow_append_callable(
     turbo_script_ctx_t *runtime_ctx, bool executable_mode,
     ts_cflow_lowered_pipeline_t *out, const exprtk_node_t *lambda,
@@ -179,6 +341,15 @@ static bool ts_cflow_append_callable(
   const char *kernel_error = NULL;
   cmeta_callable callable;
   double reduce_seed = 0.0;
+  bool plugin_matched = false;
+
+  if (runtime_ctx && role == TS_CMETA_LAMBDA_MAP) {
+    if (ts_cflow_try_append_plugin_function(
+            runtime_ctx, out, lambda, role, op,
+            &plugin_matched, error))
+      return true;
+    if (plugin_matched) return false;
+  }
 
   if (!ts_cmeta_analyze_lambda(lambda, role, &contract, &analysis_error)) {
     if (error) *error = analysis_error ? analysis_error

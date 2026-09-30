@@ -155,6 +155,7 @@ cmake_add_test(
   INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
+add_dependencies(test_turbo_script_cflow_runtime test_plugin_loader_function)
 cmake_add_test(
   TARGET test_turbo_script_cflow_qualification
   SOURCES test_turbo_script_cflow_qualification.c

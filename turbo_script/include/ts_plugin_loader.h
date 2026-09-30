@@ -11,6 +11,12 @@
 extern "C" {
 #endif
 
+typedef struct ts_plugin_function_view_s {
+    const salts_plugin_export *entry;         /* borrowed under the plugin lease */
+    salts_plugin_function_invoke_fn invoke;   /* pre-bound exact adapter */
+    void *context;                            /* provider-owned, lease-bound */
+} ts_plugin_function_view_t;
+
 typedef struct ts_plugin_handle_s {
     salts_plugin_registry registry;          /* owns the loaded DSO */
     salts_plugin_ref plugin_ref;             /* registry identity */
@@ -72,6 +78,15 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
  * @return handle on success, NULL on failure.
  */
 ts_plugin_handle_t *ts_plugin_load(const char *path);
+
+/*
+ * Control-plane lookup over the already-bound canonical Function cache.
+ * Performs no registry/symbol/manifest discovery. Returned descriptor/code
+ * pointers are valid only while the handle's Salts Plugin lease remains held.
+ */
+int ts_plugin_find_bound_function(
+    const ts_plugin_handle_t *handle, const char *export_id,
+    ts_plugin_function_view_t *out);
 
 /**
  * Call the canonical TurboScript module interface load(env, scratch) method

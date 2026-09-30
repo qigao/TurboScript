@@ -129,14 +129,15 @@ spec("plugin loader") {
       check_not_null(handle);
       if (handle) {
         check_null(handle->module);
-        check_equal(handle->manifest->export_count, (size_t)1u);
+        check_equal(handle->manifest->export_count, (size_t)2u);
         check_equal(handle->manifest->exports[0].kind,
                     SALTS_PLUGIN_EXPORT_FUNCTION);
         check_equal(
             ts_plugin_init_ex(handle, &env, NULL, &error),
             TS_PLUGIN_ERROR_NONE);
-        check_equal(handle->function_binding_count, (size_t)1u);
+        check_equal(handle->function_binding_count, (size_t)2u);
         check_true(exprtk_env_has_func(&env, "loader_function.double"));
+        check_true(exprtk_env_has_func(&env, "loader_function.stateful"));
 
         arg = exprtk_val_num(3.5);
         result = exprtk_call_internal(

@@ -17,6 +17,13 @@ double loader_fixture_double(double value) {
   return value * 2.0;
 }
 
+FunctionDecl(stateful, double, loader_fixture_stateful,
+    (double, value, CMETA_PARAM_IN));
+
+double loader_fixture_stateful(double value) {
+  return value + 10.0;
+}
+
 static bool SALTS_PLUGIN_CALL loader_fixture_double_invoke(
     void *context, void *return_storage, void *const *params,
     size_t param_count) {
@@ -33,15 +40,31 @@ static bool SALTS_PLUGIN_CALL loader_fixture_double_invoke(
   return true;
 }
 
-static salts_plugin_export loader_fixture_function_export;
+static bool SALTS_PLUGIN_CALL loader_fixture_stateful_invoke(
+    void *context, void *return_storage, void *const *params,
+    size_t param_count) {
+  double input;
+  double output;
+
+  if (context != NULL || !return_storage || !params ||
+      param_count != 1u || !params[0])
+    return false;
+
+  input = *(const double *)params[0];
+  output = loader_fixture_stateful(input);
+  *(double *)return_storage = output;
+  return true;
+}
+
+static salts_plugin_export loader_fixture_function_exports[2];
 
 static const salts_plugin_manifest loader_fixture_function_manifest = {
     .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
     .abi_version = SALTS_PLUGIN_ABI_VERSION,
     .plugin_id = FIXTURE_PLUGIN_NAME,
     .version = {1u, 0u, 0u},
-    .exports = &loader_fixture_function_export,
-    .export_count = 1u,
+    .exports = loader_fixture_function_exports,
+    .export_count = 2u,
     .self = NULL,
     .start = NULL,
     .request_stop = NULL,
@@ -53,7 +76,7 @@ SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
 salts_plugin_query(uint32_t host_abi) {
   if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
 
-  loader_fixture_function_export = (salts_plugin_export){
+  loader_fixture_function_exports[0] = (salts_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -65,6 +88,20 @@ salts_plugin_query(uint32_t host_abi) {
           .abi = FunctionAbi(loader_fixture_double),
           .context = NULL,
           .invoke = loader_fixture_double_invoke,
+      },
+  };
+  loader_fixture_function_exports[1] = (salts_plugin_export){
+      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
+      .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+      .contract_version = 1u,
+      .capabilities = 0u,
+      .export_id = "loader_function.stateful",
+      .contract_id = "loader_function.math",
+      .value.function = {
+          .desc = FunctionMeta(loader_fixture_stateful),
+          .abi = FunctionAbi(loader_fixture_stateful),
+          .context = NULL,
+          .invoke = loader_fixture_stateful_invoke,
       },
   };
   return &loader_fixture_function_manifest;
