@@ -41,16 +41,14 @@ Count: 6
 - `ws.consume`
 - `ws.send`
 
-## sqlite plugin (`sqlite`)
+## db plugin (`db`)
 
-Count: 6
+Count: 4
 
-- `sqlite.close`
-- `sqlite.error`
-- `sqlite.exec`
-- `sqlite.open`
-- `sqlite.query_col`
-- `sqlite.query_scalar`
+- `db.connect`
+- `db.exec`
+- `db.query`
+- `db.close`
 
 ## mapper plugin (`mapper`)
 
