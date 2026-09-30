@@ -623,11 +623,18 @@ static exprtk_value_t databind_function_call(
       binding->plan, &provider, &native_options,
       &frame, &diagnostic);
   if (bind_status != DATA_BIND_OK) {
-    databind_call_error(
-        env, binding->entry->export_id,
+    char detail[448];
+    snprintf(
+        detail, sizeof(detail), "%s%s%s%s%s",
+        diagnostic.schema_field[0] ? "field=" : "",
+        diagnostic.schema_field[0] ? diagnostic.schema_field : "",
+        diagnostic.function_param[0] ? " param=" : "",
+        diagnostic.function_param[0] ? diagnostic.function_param : "",
         diagnostic.message[0]
             ? diagnostic.message
-            : "bind input map");
+            : " bind input map");
+    databind_call_error(
+        env, binding->entry->export_id, detail);
     goto cleanup;
   }
 
@@ -655,11 +662,18 @@ static exprtk_value_t databind_function_call(
   bind_status = data_bind_binding_plan_write_outputs(
       binding->plan, &provider, &frame, &diagnostic);
   if (bind_status != DATA_BIND_OK) {
-    databind_call_error(
-        env, binding->entry->export_id,
+    char detail[448];
+    snprintf(
+        detail, sizeof(detail), "%s%s%s%s%s",
+        diagnostic.schema_field[0] ? "field=" : "",
+        diagnostic.schema_field[0] ? diagnostic.schema_field : "",
+        diagnostic.function_param[0] ? " param=" : "",
+        diagnostic.function_param[0] ? diagnostic.function_param : "",
         diagnostic.message[0]
             ? diagnostic.message
-            : "publish Service response");
+            : " publish Service response");
+    databind_call_error(
+        env, binding->entry->export_id, detail);
     goto cleanup;
   }
 
