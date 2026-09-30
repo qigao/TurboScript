@@ -608,6 +608,171 @@ static exprtk_value_t db_exec(size_t argc, exprtk_value_t *args,
   return result;
 }
 
+static exprtk_value_t db_query(size_t argc, exprtk_value_t *args,
+                               exprtk_env_t *env, void *user_data) {
+  db_ctx_t *ctx = (db_ctx_t *)user_data;
+  size_t slot;
+  orm_connection_t *connection;
+  exprtk_class_t *klass;
+  db_row_plan_entry_t *plan_entry = NULL;
+  db_row_factory_context_t factory_context;
+  orm_object_row_factory_t factory;
+  orm_object_flow_config_t flow;
+  orm_query_t *query = NULL;
+  cflow_publisher publisher = {0};
+  orm_error_t error;
+  orm_status_t status;
+  exprtk_value_t rows = exprtk_val_list_empty();
+  char plan_error[512] = {0};
+  int publisher_open = 0;
+  (void)env;
+
+  if (!ctx || (argc != 3u && argc != 4u) ||
+      !db_handle_value(args[0], &slot) ||
+      !(connection = ctx->connections[slot]) ||
+      args[1].type != EXPRTK_VAL_STRING ||
+      args[2].type != EXPRTK_VAL_CLASS ||
+      !(klass = args[2].data.class_val.klass) ||
+      exprtk_class_is_abstract(klass) ||
+      exprtk_class_is_interface(klass)) {
+    exprtk_value_destroy(&rows);
+    return db_fail(
+        ctx,
+        "db.query requires (connection, sql, concrete RowClass [, scalar_params_list])",
+        NULL);
+  }
+
+  if (!db_row_plan_get(
+          ctx, klass, &plan_entry, plan_error, sizeof(plan_error))) {
+    exprtk_value_destroy(&rows);
+    if (ctx && ctx->env) {
+      ctx->env->aborted = 1;
+      snprintf(ctx->env->error_msg, sizeof(ctx->env->error_msg),
+               "db.query RowClass binding failed: %s",
+               plan_error[0] ? plan_error : "invalid typed class");
+    }
+    return exprtk_val_num(0.0);
+  }
+
+  orm_error_init(&error);
+  status = orm_raw(connection, args[1].data.string, &query, &error);
+  if (status != ORM_STATUS_OK || !query) {
+    exprtk_value_destroy(&rows);
+    return db_fail(ctx, "db.query creation failed", &error);
+  }
+
+  if (argc == 4u && !db_bind_params(query, &args[3], &error)) {
+    orm_query_destroy(query);
+    exprtk_value_destroy(&rows);
+    return db_fail(
+        ctx,
+        error.status != ORM_STATUS_OK
+            ? "db.query parameter binding failed"
+            : "db.query params must be a list of null/bool/int/number/string/bytes",
+        error.status != ORM_STATUS_OK ? &error : NULL);
+  }
+
+  factory_context = (db_row_factory_context_t){ctx, klass};
+  factory = (orm_object_row_factory_t){
+      sizeof(orm_object_row_factory_t),
+      ORM_C_ABI_VERSION,
+      exprtk_value_cmeta_type(),
+      &factory_context,
+      db_row_factory_create,
+      db_row_factory_destroy
+  };
+  orm_object_flow_config(
+      &flow, plan_entry->data, plan_entry->plan, &factory);
+  if (ctx->env->max_external_value_bytes != 0u &&
+      ctx->env->max_external_value_bytes < flow.max_buffer_bytes)
+    flow.max_buffer_bytes = ctx->env->max_external_value_bytes;
+
+  orm_error_init(&error);
+  status = orm_query_open_object_flow(query, &flow, &publisher, &error);
+  if (status != ORM_STATUS_OK || !cflow_publisher_valid(&publisher)) {
+    orm_query_destroy(query);
+    exprtk_value_destroy(&rows);
+    return db_fail(ctx, "db.query object Publisher open failed", &error);
+  }
+  publisher_open = 1;
+
+  for (;;) {
+    exprtk_value_t row = {.type = EXPRTK_VAL_NULL};
+    cflow_step step = cflow_publisher_resume(&publisher, NULL, &row);
+
+    if (step.kind == CFLOW_STEP_DONE) break;
+
+    if (step.kind == CFLOW_STEP_WAIT) {
+      if (publisher_open) cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      db_row_list_rollback(&rows);
+      return db_fail(
+          ctx,
+          "db.query synchronous object flow cannot consume WAIT; async query API is required",
+          NULL);
+    }
+
+    if (step.kind == CFLOW_STEP_ERROR) {
+      char message[512];
+      snprintf(
+          message, sizeof(message), "%s",
+          step.error && step.error[0]
+              ? step.error
+              : "typed row Publisher failed");
+      if (publisher_open) cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      db_row_list_rollback(&rows);
+      if (ctx && ctx->env) {
+        ctx->env->aborted = 1;
+        snprintf(ctx->env->error_msg, sizeof(ctx->env->error_msg),
+                 "db.query failed: %s", message);
+      }
+      return exprtk_val_num(0.0);
+    }
+
+    if (step.kind != CFLOW_STEP_VALUE &&
+        step.kind != CFLOW_STEP_VALUE_AND_DONE) {
+      if (row.type == EXPRTK_VAL_INSTANCE)
+        db_row_factory_destroy(&factory_context, &row);
+      if (publisher_open) cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      db_row_list_rollback(&rows);
+      return db_fail(ctx, "db.query Publisher returned an invalid step", NULL);
+    }
+
+    if (row.type != EXPRTK_VAL_INSTANCE ||
+        !row.data.instance_val.instance ||
+        !exprtk_instance_of(row.data.instance_val.instance, klass)) {
+      db_row_factory_destroy(&factory_context, &row);
+      if (publisher_open) cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      db_row_list_rollback(&rows);
+      return db_fail(
+          ctx, "db.query Publisher returned an incompatible RowClass value", NULL);
+    }
+
+    if (exprtk_list_push(&rows, row) != 0) {
+      db_row_factory_destroy(&factory_context, &row);
+      if (publisher_open) cflow_publisher_destroy(&publisher);
+      orm_query_destroy(query);
+      db_row_list_rollback(&rows);
+      return db_fail(ctx, "db.query could not append typed row", NULL);
+    }
+
+    /* Ownership of the instance now lives through the result list / env graph.
+     * The local carrier itself owns no separate reference. */
+    memset(&row, 0, sizeof(row));
+    row.type = EXPRTK_VAL_NULL;
+
+    if (step.kind == CFLOW_STEP_VALUE_AND_DONE) break;
+  }
+
+  cflow_publisher_destroy(&publisher);
+  publisher_open = 0;
+  orm_query_destroy(query);
+  return rows;
+}
+
 static exprtk_value_t db_close(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, void *user_data) {
   db_ctx_t *ctx = (db_ctx_t *)user_data;
@@ -644,6 +809,8 @@ static void db_ctx_destroy(db_ctx_t *ctx) {
       ctx->connections[i] = NULL;
     }
   }
+
+  db_row_plan_cache_destroy(ctx);
 
   if (ctx->runtime) {
     orm_error_init(&error);
@@ -685,6 +852,7 @@ static void *db_module_load(void *self, void *env_ptr, void *scratch_ptr) {
 
   exprtk_env_register_func(env, "db.connect", db_connect, ctx);
   exprtk_env_register_func(env, "db.exec", db_exec, ctx);
+  exprtk_env_register_func(env, "db.query", db_query, ctx);
   exprtk_env_register_func(env, "db.close", db_close, ctx);
   return ctx;
 }
