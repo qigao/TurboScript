@@ -137,6 +137,89 @@ spec("TurboScript TurboDB ORM configuration") {
     turbo_script_free(ctx);
   }
 
+  it("executes DDL and parameterized commands through TurboDB CFlow") {
+    char path[2048];
+    char script[12288];
+    turbo_script_ctx_t *interp = new_db_ctx();
+    turbo_script_ctx_t *jit = new_db_ctx();
+
+    check_not_null(interp);
+    check_not_null(jit);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "ddl=db.exec(dbx,\"CREATE TABLE person(id INTEGER,name TEXT);\");"
+              "one=db.exec(dbx,"
+              "\"INSERT INTO person(id,name) VALUES(?1,?2);\","
+              "[7,\"Alice\"]);"
+              "two=db.exec(dbx,"
+              "\"INSERT INTO person(id,name) VALUES(?1,?2);\","
+              "[8,\"Bob\"]);"
+              "closed=db.close(dbx);",
+              path) > 0);
+
+    check_equal(turbo_script_run(interp, script), 0);
+    check_equal(turbo_script_run_jit(jit, script), 0);
+
+    check(fabs(ts_get_num(interp, "ddl") - 0.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "ddl") - 0.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "one") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "one") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "two") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "two") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(interp, "closed") - 1.0) <= 1e-9);
+    check(fabs(ts_get_num(jit, "closed") - 1.0) <= 1e-9);
+
+    turbo_script_free(jit);
+    turbo_script_free(interp);
+  }
+
+  it("rejects non-scalar command parameters before demand") {
+    char path[2048];
+    char script[8192];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "bad=db.exec(dbx,\"CREATE TABLE t(v INTEGER);\","
+              "[map {x:1}]);",
+              path) > 0);
+
+    check(turbo_script_run(ctx, script) != 0);
+    check_not_null(strstr(turbo_script_get_error(ctx), "params must be"));
+
+    turbo_script_free(ctx);
+  }
+
+  it("surfaces backend command errors without materialized fallback") {
+    char path[2048];
+    char script[8192];
+    turbo_script_ctx_t *ctx = new_db_ctx();
+
+    check_not_null(ctx);
+    check_true(append_quoted_path(
+        path, sizeof(path), TURBOSCRIPT_TEST_SQLITE_DRIVER_PATH));
+    check(snprintf(
+              script, sizeof(script),
+              "dbx=db.connect(map {driver:\"sqlite\",module_path:\"%s\","
+              "options:map {filename:\":memory:\"}});"
+              "bad=db.exec(dbx,\"INSERT INTO missing_table(v) VALUES(1);\");",
+              path) > 0);
+
+    check(turbo_script_run(ctx, script) != 0);
+    check_not_null(strstr(turbo_script_get_error(ctx), "db.exec"));
+
+    turbo_script_free(ctx);
+  }
+
   it("rejects changing module_path for an already loaded driver ID") {
     char path[2048];
     char script[8192];

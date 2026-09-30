@@ -293,6 +293,123 @@ static exprtk_value_t db_connect(size_t argc, exprtk_value_t *args,
   return exprtk_val_int((int64_t)slot + 1);
 }
 
+static int db_orm_value(exprtk_value_t input, orm_value_t *out) {
+  if (!out) return 0;
+
+  switch (input.type) {
+    case EXPRTK_VAL_NULL:
+      *out = orm_null();
+      return 1;
+    case EXPRTK_VAL_BOOL:
+      *out = orm_bool(input.data.boolean != 0);
+      return 1;
+    case EXPRTK_VAL_INTEGER:
+      *out = orm_i64(input.data.integer);
+      return 1;
+    case EXPRTK_VAL_NUMBER:
+      if (!isfinite(input.data.number)) return 0;
+      *out = orm_f64(input.data.number);
+      return 1;
+    case EXPRTK_VAL_STRING:
+      *out = orm_text_v(input.data.string);
+      return 1;
+    case EXPRTK_VAL_BYTES:
+      *out = orm_blob(input.data.bytes.data, input.data.bytes.len);
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int db_bind_params(orm_query_t *query, const exprtk_value_t *params,
+                          orm_error_t *error) {
+  orm_status_t status;
+
+  if (!params) return 1;
+  if (!query || params->type != EXPRTK_VAL_LIST) return 0;
+
+  for (size_t i = 0u; i < params->data.list.count; ++i) {
+    orm_value_t value;
+    if (!db_orm_value(params->data.list.items[i], &value)) return 0;
+    status = orm_query_bind(query, value, error);
+    if (status != ORM_STATUS_OK) return 0;
+  }
+  return 1;
+}
+
+static exprtk_value_t db_exec(size_t argc, exprtk_value_t *args,
+                              exprtk_env_t *env, void *user_data) {
+  db_ctx_t *ctx = (db_ctx_t *)user_data;
+  size_t slot;
+  orm_connection_t *connection;
+  orm_query_t *query = NULL;
+  cflow_publisher publisher = {0};
+  orm_command_result_t command_result = ORM_COMMAND_RESULT_INIT;
+  orm_error_t error;
+  orm_status_t status;
+  cflow_step step;
+  exprtk_value_t result;
+  (void)env;
+
+  if (!ctx || (argc != 2u && argc != 3u) ||
+      !db_handle_value(args[0], &slot) ||
+      !(connection = ctx->connections[slot]) ||
+      args[1].type != EXPRTK_VAL_STRING) {
+    return db_fail(
+        ctx,
+        "db.exec requires (connection, sql [, scalar_params_list])",
+        NULL);
+  }
+
+  orm_error_init(&error);
+  status = orm_raw(connection, args[1].data.string, &query, &error);
+  if (status != ORM_STATUS_OK || !query)
+    return db_fail(ctx, "db.exec query creation failed", &error);
+
+  if (argc == 3u && !db_bind_params(query, &args[2], &error)) {
+    orm_query_destroy(query);
+    return db_fail(
+        ctx,
+        error.status != ORM_STATUS_OK
+            ? "db.exec parameter binding failed"
+            : "db.exec params must be a list of null/bool/int/number/string/bytes",
+        error.status != ORM_STATUS_OK ? &error : NULL);
+  }
+
+  status = orm_query_open_command_flow(query, &publisher, &error);
+  if (status != ORM_STATUS_OK || !cflow_publisher_valid(&publisher)) {
+    orm_query_destroy(query);
+    return db_fail(ctx, "db.exec command Publisher open failed", &error);
+  }
+
+  step = cflow_publisher_resume(&publisher, NULL, &command_result);
+  if (step.kind != CFLOW_STEP_VALUE_AND_DONE) {
+    char message[256];
+    snprintf(
+        message, sizeof(message), "%s",
+        step.error && step.error[0]
+            ? step.error
+            : "command Publisher did not produce VALUE_AND_DONE");
+    cflow_publisher_destroy(&publisher);
+    orm_query_destroy(query);
+    if (ctx && ctx->env) {
+      ctx->env->aborted = 1;
+      snprintf(ctx->env->error_msg, sizeof(ctx->env->error_msg),
+               "db.exec command failed: %s", message);
+    }
+    return exprtk_val_num(0.0);
+  }
+
+  cflow_publisher_destroy(&publisher);
+  orm_query_destroy(query);
+
+  if (command_result.affected_rows > (uint64_t)INT64_MAX)
+    return db_fail(ctx, "db.exec affected_rows exceeds script int64 range", NULL);
+
+  result = exprtk_val_int((int64_t)command_result.affected_rows);
+  return result;
+}
+
 static exprtk_value_t db_close(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, void *user_data) {
   db_ctx_t *ctx = (db_ctx_t *)user_data;
@@ -369,6 +486,7 @@ static void *db_module_load(void *self, void *env_ptr, void *scratch_ptr) {
   }
 
   exprtk_env_register_func(env, "db.connect", db_connect, ctx);
+  exprtk_env_register_func(env, "db.exec", db_exec, ctx);
   exprtk_env_register_func(env, "db.close", db_close, ctx);
   return ctx;
 }
