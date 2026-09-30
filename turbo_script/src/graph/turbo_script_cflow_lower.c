@@ -223,6 +223,9 @@ static const exprtk_node_t *ts_cflow_plugin_lambda_body(
   if (body && body->type == EXPRTK_NODE_BLOCK &&
       body->data.block.count == 1u)
     body = body->data.block.statements[0];
+  if (body && body->type == EXPRTK_NODE_FLOW &&
+      body->data.flow.type == exprtk_TOKEN_RETURN)
+    body = body->data.flow.value;
   return body;
 }
 
