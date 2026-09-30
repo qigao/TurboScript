@@ -14,6 +14,7 @@ typedef struct exprtk_native_registration_s {
     const char *name;
     exprtk_native_fn fn;
     void *user_data;
+    exprtk_native_flags_t flags;
 } exprtk_native_registration_t;
 
 typedef int (*exprtk_registration_fault_fn)(size_t allocation_index,
