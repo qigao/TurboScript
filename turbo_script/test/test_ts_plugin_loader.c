@@ -129,19 +129,21 @@ spec("plugin loader") {
       check_not_null(handle);
       if (handle) {
         check_null(handle->module);
-        check_equal(handle->manifest->export_count, (size_t)6u);
+        check_equal(handle->manifest->export_count, (size_t)8u);
         check_equal(handle->manifest->exports[0].kind,
                     SALTS_PLUGIN_EXPORT_FUNCTION);
         check_equal(
             ts_plugin_init_ex(handle, &env, NULL, &error),
             TS_PLUGIN_ERROR_NONE);
-        check_equal(handle->function_binding_count, (size_t)6u);
+        check_equal(handle->function_binding_count, (size_t)8u);
         check_true(exprtk_env_has_func(&env, "loader_function.double"));
         check_true(exprtk_env_has_func(&env, "loader_function.increment"));
         check_true(exprtk_env_has_func(&env, "loader_function.positive"));
         check_true(exprtk_env_has_func(&env, "loader_function.long_to_double"));
         check_true(exprtk_env_has_func(&env, "loader_function.float_to_double"));
         check_true(exprtk_env_has_func(&env, "loader_function.add"));
+        check_true(exprtk_env_has_func(&env, "loader_function.answer"));
+        check_true(exprtk_env_has_func(&env, "loader_function.notify"));
 
         arg = exprtk_val_num(3.5);
         result = exprtk_call_internal(
@@ -187,6 +189,17 @@ spec("plugin loader") {
           check(fabs(result.data.number - 3.75) <= 1e-9);
           exprtk_value_destroy(&result);
         }
+
+        result = exprtk_call_internal(
+            "loader_function.answer", 0u, NULL, &env);
+        check_equal(result.type, EXPRTK_VAL_INTEGER);
+        check_equal(result.data.integer, (int64_t)42);
+        exprtk_value_destroy(&result);
+
+        result = exprtk_call_internal(
+            "loader_function.notify", 0u, NULL, &env);
+        check_equal(result.type, EXPRTK_VAL_NULL);
+        exprtk_value_destroy(&result);
 
         check_false(env.aborted);
 
