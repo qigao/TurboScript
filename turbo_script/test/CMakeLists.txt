@@ -1,3 +1,21 @@
+# Generated DataBind Service Plugin fixture uses the installed SaltsUtils
+# generator exactly as a real consumer would. No TurboScript-specific schema or
+# Function metadata is handwritten.
+salts_idl_target(
+  TARGET turbo_script_databind_plugin_fixture
+  IDL "${CMAKE_CURRENT_SOURCE_DIR}/databind_plugin_fixture.schema"
+  COMPONENT "Image.ImageProcessor"
+  VERSION "1.0.0"
+  ARTIFACT_NAME "Image.ImageProcessor"
+  ARTIFACTS PLUGIN
+  SOURCES databind_plugin_fixture_business.c)
+
+set_target_properties(
+  ${turbo_script_databind_plugin_fixture_PLUGIN_TARGET}
+  PROPERTIES
+    RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins
+    LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/plugins)
+
 # Plugin loader fixtures use the same output layout as production plugins.
 add_library(test_plugin_loader_fixture SHARED plugin_loader_fixture.c)
 cmake_config_target(
@@ -129,6 +147,11 @@ add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
 add_ts_test(test_turbo_script_task       test_turbo_script_task.c)
+add_ts_test(test_turbo_script_databind_plugin test_turbo_script_databind_plugin.c)
+add_dependencies(
+  test_turbo_script_databind_plugin
+  ${turbo_script_databind_plugin_fixture_PLUGIN_TARGET})
+
 if(TARGET db_tbs)
   add_ts_test(test_turbo_script_db test_turbo_script_db.c)
   add_dependencies(test_turbo_script_db db_tbs)
