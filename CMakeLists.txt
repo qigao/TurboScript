@@ -47,9 +47,13 @@ find_package(Threads REQUIRED)
 find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+set(TURBOSCRIPT_HAS_TURBODB OFF)
 if(TURBOSCRIPT_BUILD_MODULES)
   find_package(Chttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
-  find_package(TurboDB CONFIG REQUIRED PATHS "$ENV{TURBODB_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  if(EXISTS "$ENV{TURBODB_ROOT}/lib/cmake/TurboDB/TurboDBConfig.cmake")
+    find_package(TurboDB CONFIG REQUIRED PATHS "$ENV{TURBODB_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+    set(TURBOSCRIPT_HAS_TURBODB ON)
+  endif()
 endif()
 find_package(MIR CONFIG REQUIRED)
 find_package(xxHash CONFIG REQUIRED)
@@ -80,22 +84,27 @@ install(
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
 if(TURBOSCRIPT_BUILD_MODULES)
+set(_turboscript_module_targets
+    net_tbs
+    ta_tbs
+    fin_tbs
+    ts_tbs
+    sqlite_tbs
+    mapper_tbs
+    img_tbs
+    crypto_tbs
+    hash_tbs
+    fuzzy_tbs
+    os_tbs)
+if(TARGET db_tbs)
+  list(APPEND _turboscript_module_targets db_tbs)
+endif()
 install(
-  TARGETS net_tbs
-          ta_tbs
-          fin_tbs
-          ts_tbs
-          sqlite_tbs
-          db_tbs
-          mapper_tbs
-          img_tbs
-          crypto_tbs
-          hash_tbs
-          fuzzy_tbs
-          os_tbs
+  TARGETS ${_turboscript_module_targets}
   LIBRARY DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins
   ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
   RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}/plugins)
+unset(_turboscript_module_targets)
 endif()
 
 install(
