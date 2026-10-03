@@ -24,8 +24,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - id: version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -45,14 +43,6 @@ jobs:
             fi
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/master ]]; then
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-              echo "release=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=$version" >> "$GITHUB_OUTPUT"
-              echo "release=true" >> "$GITHUB_OUTPUT"
-            fi
           else
             echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -453,9 +443,9 @@ jobs:
     if: >-
       always() &&
       github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
       needs.metadata.outputs.release == 'true' &&
-      needs.pack.result == 'success' &&
-      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+      needs.pack.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
