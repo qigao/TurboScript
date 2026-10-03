@@ -1,4 +1,5 @@
 #include "../src/turbo_script_internal.h"
+#include "exprtk.h"
 #include "tinytest.h"
 
 #include <string.h>
