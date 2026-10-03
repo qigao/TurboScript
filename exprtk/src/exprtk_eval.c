@@ -15,6 +15,73 @@
 #include <math.h>
 #include <stdlib.h>
 
+static int eval_qualified_receiver_name(
+    const exprtk_node_t *node, char *out, size_t out_size,
+    size_t *used, const char **root_name) {
+    const char *segment = NULL;
+    size_t segment_len;
+
+    if (!node || !out || out_size == 0 || !used || *used >= out_size)
+        return 0;
+
+    if (node->type == EXPRTK_NODE_VARIABLE) {
+        segment = node->data.variable.name;
+        if (!segment || !*segment) return 0;
+        if (root_name && !*root_name) *root_name = segment;
+    } else if (node->type == EXPRTK_NODE_MEMBER_ACCESS) {
+        if (!eval_qualified_receiver_name(
+                node->data.member_access.object, out, out_size,
+                used, root_name) ||
+            !node->data.member_access.member ||
+            !*node->data.member_access.member)
+            return 0;
+        if (*used + 1 >= out_size) return 0;
+        out[(*used)++] = '.';
+        segment = node->data.member_access.member;
+    } else {
+        return 0;
+    }
+
+    segment_len = strlen(segment);
+    if (segment_len >= out_size - *used) return 0;
+    memcpy(out + *used, segment, segment_len);
+    *used += segment_len;
+    out[*used] = '\0';
+    return 1;
+}
+
+static int eval_qualified_member_call_name(
+    const exprtk_node_t *node, char *out, size_t out_size,
+    const char **root_name) {
+    size_t used = 0;
+    size_t method_len;
+
+    if (root_name) *root_name = NULL;
+    if (!node || node->type != EXPRTK_NODE_MEMBER_CALL ||
+        !node->data.member_call.object ||
+        !node->data.member_call.method ||
+        !*node->data.member_call.method ||
+        !out || out_size == 0)
+        return 0;
+
+    out[0] = '\0';
+    if (!eval_qualified_receiver_name(
+            node->data.member_call.object, out, out_size,
+            &used, root_name))
+        return 0;
+
+    method_len = strlen(node->data.member_call.method);
+    if (used + 1 >= out_size ||
+        method_len >= out_size - used - 1)
+        return 0;
+
+    out[used++] = '.';
+    memcpy(out + used, node->data.member_call.method, method_len);
+    used += method_len;
+    out[used] = '\0';
+    return 1;
+}
+
 static int eval_value_truthy(exprtk_value_t value) {
     if (value.type == EXPRTK_VAL_BOOL) return value.data.boolean != 0;
     if (value.type == EXPRTK_VAL_INTEGER) return value.data.integer != 0;
@@ -841,9 +908,30 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
         }
         case EXPRTK_NODE_MEMBER_CALL: {
             size_t mc_argc = 0;
+            char qualified_name[256];
+            const char *qualified_root = NULL;
             exprtk_value_t *mc_args = eval_expand_args(
                 node->data.member_call.args, node->data.member_call.arg_count, env, &mc_argc);
             if (!mc_args && mc_argc == 0) return zero;
+
+            /*
+             * Native/plugin functions may use multi-segment qualified IDs
+             * such as Image.Codec.Decode. Resolve the pure syntax namespace
+             * chain directly only when its root is not a runtime value; real
+             * object/map/class receivers keep the normal member semantics.
+             */
+            if (eval_qualified_member_call_name(
+                    node, qualified_name, sizeof(qualified_name),
+                    &qualified_root) &&
+                qualified_root &&
+                !exprtk_env_has(env, qualified_root) &&
+                exprtk_env_has_func(env, qualified_name)) {
+                exprtk_value_t result =
+                    exprtk_call_internal(qualified_name, mc_argc, mc_args, env);
+                exprtk_values_destroy(mc_args, mc_argc);
+                free(mc_args);
+                return result;
+            }
 
             mc_ctx_t mc = {
                 .method   = node->data.member_call.method,
