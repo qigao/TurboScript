@@ -35,6 +35,16 @@ jobs:
             exit 1
           fi
 
+          header_major="$(awk '/^#define TURBO_SCRIPT_VERSION_MAJOR / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_minor="$(awk '/^#define TURBO_SCRIPT_VERSION_MINOR / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_patch="$(awk '/^#define TURBO_SCRIPT_VERSION_PATCH / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_string="$(awk '/^#define TURBO_SCRIPT_VERSION_STRING / {gsub(/"/, "", $3); print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_version="$header_major.$header_minor.$header_patch"
+          if [[ "$header_version" != "$version" || "$header_string" != "$version" ]]; then
+            echo "release version mismatch: CMake=$version public-header=$header_version public-header-string=$header_string" >&2
+            exit 1
+          fi
+
           tag="v$version"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
