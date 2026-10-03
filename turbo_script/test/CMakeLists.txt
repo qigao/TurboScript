@@ -292,7 +292,7 @@ macro(add_mir_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
     TARGET ${TARGET_NAME}
     SOURCES ${SOURCE_FILE}
-    LIBS turbo_script Salts::TinyTest Salts::CSTL exprtk MIR::MIR
+    LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk MIR::MIR
     DEPENDS mapper_tbs
     FOLDER turbo_script)
 endmacro()
