@@ -351,6 +351,22 @@ jobs:
             -DTURBOSCRIPT_BUILD_MODULES=ON -DTURBOSCRIPT_BUILD_CLI=OFF "${args[@]}"
           cmake --build build/sdk --parallel 2
           cmake --install build/sdk
+
+          prefix="$GITHUB_WORKSPACE/stage/$RID"
+          if [[ "$RID" == macos-arm64 ]]; then
+            library="$prefix/lib/libturbo_script.dylib"
+            export_platform=macos
+          else
+            library="$prefix/lib/libturbo_script.so"
+            export_platform=elf
+          fi
+          test -f "$library"
+          python3 cmake/ci/verify-shared-exports.py \
+            --library "$library" \
+            --header "$prefix/include/turbo_script.h" \
+            --allowlist turbo_script/exports/public-symbols.txt \
+            --platform "$export_platform"
+
           cat > "stage/$RID/turboscript-sdk-manifest.txt" <<EOF
           version=$SDK_VERSION
           commit=$(git rev-parse HEAD)
