@@ -24,8 +24,6 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
       - id: version
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         shell: bash
         run: |
           set -euo pipefail
@@ -37,6 +35,22 @@ jobs:
             exit 1
           fi
 
+          header_major="$(awk '/^#define TURBO_SCRIPT_VERSION_MAJOR / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_minor="$(awk '/^#define TURBO_SCRIPT_VERSION_MINOR / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_patch="$(awk '/^#define TURBO_SCRIPT_VERSION_PATCH / {print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_string="$(awk '/^#define TURBO_SCRIPT_VERSION_STRING / {gsub(/"/, "", $3); print $3; exit}' turbo_script/include/turbo_script.h)"
+          header_version="$header_major.$header_minor.$header_patch"
+          if [[ "$header_version" != "$version" || "$header_string" != "$version" ]]; then
+            echo "release version mismatch: CMake=$version public-header=$header_version public-header-string=$header_string" >&2
+            exit 1
+          fi
+
+          nuget_version="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("packaging/nuget/TurboScript.Native.csproj").find(".//PackageVersion").text)')"
+          if [[ "$nuget_version" != "$version" ]]; then
+            echo "release version mismatch: CMake=$version NuGet=$nuget_version" >&2
+            exit 1
+          fi
+
           tag="v$version"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
@@ -45,14 +59,6 @@ jobs:
             fi
             echo "version=$version" >> "$GITHUB_OUTPUT"
             echo "release=true" >> "$GITHUB_OUTPUT"
-          elif [[ "$GITHUB_EVENT_NAME" == push && "$GITHUB_REF" == refs/heads/master ]]; then
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
-              echo "release=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "version=$version" >> "$GITHUB_OUTPUT"
-              echo "release=true" >> "$GITHUB_OUTPUT"
-            fi
           else
             echo "version=$version-ci.$GITHUB_RUN_NUMBER.$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
             echo "release=false" >> "$GITHUB_OUTPUT"
@@ -453,9 +459,9 @@ jobs:
     if: >-
       always() &&
       github.event_name == 'push' &&
+      startsWith(github.ref, 'refs/tags/v') &&
       needs.metadata.outputs.release == 'true' &&
-      needs.pack.result == 'success' &&
-      (github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/v'))
+      needs.pack.result == 'success'
     runs-on: ubuntu-24.04
     permissions:
       contents: write
