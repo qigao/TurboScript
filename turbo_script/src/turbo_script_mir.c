@@ -514,6 +514,15 @@ int ts_expr_contains_value_call(ts_mir_compiler_t *c, exprtk_node_t *node) {
                                             node->data.function.args);
 
   case EXPRTK_NODE_MEMBER_CALL:
+    /*
+     * Multi-segment native/plugin names (for example Image.Codec.Decode)
+     * are admitted at runtime after import() has registered the exact
+     * qualified function. Keep nested receivers on the value bridge so
+     * interpreter and JIT share the same namespace/object disambiguation.
+     */
+    if (node->data.member_call.object &&
+        node->data.member_call.object->type == EXPRTK_NODE_MEMBER_ACCESS)
+      return 1;
     if (ts_member_call_is_stream_chain(node)) return 1;
     if (node->data.member_call.object &&
         node->data.member_call.object->type == EXPRTK_NODE_VARIABLE &&
@@ -1054,6 +1063,11 @@ static MIR_reg_t ts_emit_assignment(ts_mir_compiler_t *c, exprtk_node_t *node) {
   }
   if (rhs && rhs->type == EXPRTK_NODE_MEMBER_CALL && rhs->data.member_call.object &&
       rhs->data.member_call.method) {
+    if (rhs->data.member_call.object->type == EXPRTK_NODE_MEMBER_ACCESS) {
+      ts_mir_clear_var_class(c, node->data.assignment.name);
+      (void)ts_mir_get_or_create_reg(c, node->data.assignment.name);
+      return ts_emit_runtime_value_node(c, node);
+    }
     if (ts_member_call_is_stream_chain(rhs)) {
       MIR_reg_t result;
       ts_mir_clear_var_class(c, node->data.assignment.name);
@@ -1787,6 +1801,8 @@ MIR_reg_t ts_compile_expr(ts_mir_compiler_t *c, exprtk_node_t *node) {
   case EXPRTK_NODE_MEMBER_CALL: {
     if (!node->data.member_call.object || !node->data.member_call.method)
       return ts_emit_unsupported_node(c, node);
+    if (node->data.member_call.object->type == EXPRTK_NODE_MEMBER_ACCESS)
+      return ts_emit_runtime_value_node(c, node);
     if (ts_member_call_is_stream_chain(node)) {
       return ts_emit_runtime_value_node(c, node);
     }

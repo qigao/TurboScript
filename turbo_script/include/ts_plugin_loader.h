@@ -27,6 +27,9 @@ typedef struct ts_plugin_handle_s {
     void *instance;                          /* optional per-script-context instance */
     void *function_bindings;                 /* private canonical Function binding cache */
     size_t function_binding_count;
+    void *databind_bindings;                 /* private generated Service BindingPlan cache */
+    size_t databind_binding_count;
+    void *databind_codec;                    /* caller-owned catalog codec, lease-bound metadata */
     int initialized;
 } ts_plugin_handle_t;
 

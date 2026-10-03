@@ -14,6 +14,7 @@ restore_sdk() {
   local config_rel="$4"
   local root_env="$5"
   local release_env="$6"
+  local host_tool_rel="${7:-}"
   local dir="$root/$name"
   local tag
   local nupkg
@@ -34,6 +35,12 @@ restore_sdk() {
   sdk="$dir/package/sdk/$rid"
   test -f "$sdk/$config_rel"
 
+  if [[ -n "$host_tool_rel" ]]; then
+    test -f "$sdk/$host_tool_rel"
+    chmod +x "$sdk/$host_tool_rel"
+    test -x "$sdk/$host_tool_rel"
+  fi
+
   if [[ -n "${GITHUB_ENV:-}" ]]; then
     echo "$root_env=$sdk" >> "$GITHUB_ENV"
     echo "$release_env=$tag" >> "$GITHUB_ENV"
@@ -45,8 +52,14 @@ restore_sdk() {
 
 restore_sdk qigao/salts 'Salts.Native.*.nupkg' salts \
   'lib/cmake/Salts/SaltsConfig.cmake' SALTS_ROOT SALTS_SDK_RELEASE
+case "$rid" in
+  windows-x64) saltsutils_host_tool='bin/salts-idlc.exe' ;;
+  linux-x64|macos-arm64|macos-x64) saltsutils_host_tool='bin/salts-idlc' ;;
+  *) saltsutils_host_tool='' ;;
+esac
 restore_sdk qigao/salts-utils 'SaltsUtils.Native.*.nupkg' salts-utils \
-  'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake' SALTS_UTILS_ROOT SALTS_UTILS_SDK_RELEASE
+  'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake' SALTS_UTILS_ROOT SALTS_UTILS_SDK_RELEASE \
+  "$saltsutils_host_tool"
 restore_sdk qigao/chttp 'CHttp.Native.*.nupkg' chttp \
   'lib/cmake/Chttp/ChttpConfig.cmake' CHTTP_ROOT CHTTP_SDK_RELEASE
 case "$rid" in
