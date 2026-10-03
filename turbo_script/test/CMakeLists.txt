@@ -159,7 +159,12 @@ add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)
 add_dependencies(test_turbo_script_basics
   test_plugin_loader_fixture test_plugin_loader_prefixed_conflict
   test_plugin_loader_function crypto_tbs)
-add_ts_test(test_turbo_script_quant      test_turbo_script_quant.c)
+cmake_add_test(
+  TARGET test_turbo_script_quant
+  SOURCES test_turbo_script_quant.c
+  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL Salts::Coroutine exprtk ta MIR::MIR
+  DEPENDS mapper_tbs fin_tbs ta_tbs ts_tbs net_tbs
+  FOLDER turbo_script)
 add_ts_test(test_turbo_script_scientific test_turbo_script_scientific.c)
 add_ts_test(test_turbo_script_io         test_turbo_script_io.c)
 add_ts_test(test_turbo_script_timer      test_turbo_script_timer.c)
