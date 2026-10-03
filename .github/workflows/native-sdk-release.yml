@@ -45,6 +45,12 @@ jobs:
             exit 1
           fi
 
+          nuget_version="$(python3 -c 'import xml.etree.ElementTree as ET; print(ET.parse("packaging/nuget/TurboScript.Native.csproj").find(".//PackageVersion").text)')"
+          if [[ "$nuget_version" != "$version" ]]; then
+            echo "release version mismatch: CMake=$version NuGet=$nuget_version" >&2
+            exit 1
+          fi
+
           tag="v$version"
           if [[ "$GITHUB_REF" == refs/tags/* ]]; then
             if [[ "$GITHUB_REF_NAME" != "$tag" ]]; then
