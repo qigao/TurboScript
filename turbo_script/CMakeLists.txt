@@ -124,6 +124,34 @@ target_compile_definitions(
   PRIVATE TURBO_SCRIPT_BUILD_SHARED
   INTERFACE TURBO_SCRIPT_USE_SHARED)
 
+set(_turboscript_public_symbols_file
+    "${CMAKE_CURRENT_SOURCE_DIR}/exports/public-symbols.txt")
+file(STRINGS "${_turboscript_public_symbols_file}" _turboscript_public_symbols
+     REGEX "^[A-Za-z_][A-Za-z0-9_]*$")
+
+if(APPLE)
+  set(_turboscript_export_file
+      "${CMAKE_CURRENT_BINARY_DIR}/turboscript-exported-symbols.txt")
+  file(WRITE "${_turboscript_export_file}" "")
+  foreach(_turboscript_symbol IN LISTS _turboscript_public_symbols)
+    file(APPEND "${_turboscript_export_file}" "_${_turboscript_symbol}\n")
+  endforeach()
+  target_link_options(
+    ${TARGET_NAME}
+    PRIVATE "-Wl,-exported_symbols_list,${_turboscript_export_file}")
+elseif(UNIX)
+  set(_turboscript_export_file
+      "${CMAKE_CURRENT_BINARY_DIR}/turboscript-version-script.map")
+  file(WRITE "${_turboscript_export_file}" "{\n  global:\n")
+  foreach(_turboscript_symbol IN LISTS _turboscript_public_symbols)
+    file(APPEND "${_turboscript_export_file}" "    ${_turboscript_symbol};\n")
+  endforeach()
+  file(APPEND "${_turboscript_export_file}" "  local:\n    *;\n};\n")
+  target_link_options(
+    ${TARGET_NAME}
+    PRIVATE "-Wl,--version-script=${_turboscript_export_file}")
+endif()
+
 target_link_libraries(
   ${TARGET_NAME}
   PRIVATE exprtk MIR::MIR Salts::CSTL Salts::CMeta Salts::CFlow ${TARGET_NAME_PLUGIN_LOADER}
