@@ -86,13 +86,21 @@ int exprtk_func_entry_reflect(
         CMETA_PARAM_INOUT | CMETA_PARAM_BORROWED
     };
     out->function = (cmeta_function_desc){
-        sizeof(cmeta_function_desc),
-        entry->name,
-        exprtk_value_cmeta_type(),
-        out->params,
-        4u,
-        CMETA_EFFECT_UNKNOWN,
-        CMETA_PROP_NONE
+        .size = sizeof(cmeta_function_desc),
+        .name = entry->name,
+        .return_type = exprtk_value_cmeta_type(),
+        .params = out->params,
+        .param_count = 4u,
+        .effects = CMETA_EFFECT_UNKNOWN,
+        .properties = CMETA_PROP_NONE,
+        /*
+         * Raw ExprTk builtin results are not one uniform ownership class.
+         * A builtin may return a scratch-borrowed dynamic payload. The
+         * authoritative escape boundary is exprtk_call_builtin(), which
+         * clones/promotes the raw value into the caller env before scratch
+         * teardown. Do not infer VALUE from the by-value C return spelling.
+         */
+        .result_flags = CMETA_RESULT_UNKNOWN
     };
     out->invoke = entry->fn;
     return cmeta_function_desc_valid(&out->function);
