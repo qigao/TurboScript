@@ -351,15 +351,60 @@ bool ts_cflow_text_length_map_bind(
   return true;
 }
 
+static bool ts_cflow_text_function_reflection_init(
+    const ts_cflow_text_kernel_binding_t *binding,
+    const char *name,
+    const cmeta_type_desc *return_type,
+    ts_cflow_text_function_reflection_t *out) {
+  if (!binding || !binding->owner || !name || !return_type || !out)
+    return false;
+
+  memset(out, 0, sizeof(*out));
+
+  out->input_ptr_type.name = "TurboScript.LineSlice.v1 *";
+  out->input_ptr_type.size = sizeof(ts_cflow_line_slice_t *);
+  out->input_ptr_type.align = _Alignof(ts_cflow_line_slice_t *);
+  out->input_ptr_type.kind = CMETA_T_POINTER;
+  out->input_ptr_type.pointee = ts_cflow_line_slice_type();
+
+  out->param.size = sizeof(out->param);
+  out->param.name = "line";
+  out->param.type = &out->input_ptr_type;
+  out->param.flags = CMETA_PARAM_IN | CMETA_PARAM_BORROWED;
+
+  out->function.size = sizeof(out->function);
+  out->function.name = name;
+  out->function.return_type = return_type;
+  out->function.params = &out->param;
+  out->function.param_count = 1u;
+  out->function.effects = binding->callable.meta.effects;
+  out->function.properties = binding->callable.meta.properties;
+  out->function.result_flags = CMETA_RESULT_VALUE;
+
+  out->param_abi[0] = CMETA_ABI_OBJECT_POINTER;
+  out->abi.size = sizeof(out->abi);
+  out->abi.function = &out->function;
+  out->abi.return_carrier = CMETA_ABI_SCALAR;
+  out->abi.param_carriers = out->param_abi;
+  out->abi.param_count = 1u;
+
+  return cmeta_function_desc_valid(&out->function) &&
+         cmeta_function_abi_desc_valid(&out->abi);
+}
+
+bool ts_cflow_text_length_map_reflect(
+    const ts_cflow_text_kernel_binding_t *binding,
+    ts_cflow_text_function_reflection_t *out) {
+  return ts_cflow_text_function_reflection_init(
+      binding, "TurboScript.LineSlice.length",
+      &cmeta_type_double, out);
+}
+
 bool ts_cflow_text_length_map_graph_add(
     cflow_graph *graph,
     const ts_cflow_text_kernel_binding_t *binding,
     const char **error) {
-  cmeta_type_desc input_ptr_type;
-  cmeta_param_desc param;
-  cmeta_function_desc function;
-  cmeta_abi_carrier param_abi[1];
-  cmeta_function_abi_desc abi;
+  ts_cflow_text_function_reflection_t reflection;
   cflow_function_typed_adapter_projection projection;
   cflow_function_projection_status status;
 
@@ -369,39 +414,14 @@ bool ts_cflow_text_length_map_graph_add(
     return false;
   }
 
-  memset(&input_ptr_type, 0, sizeof(input_ptr_type));
-  input_ptr_type.name = "TurboScript.LineSlice.v1 *";
-  input_ptr_type.size = sizeof(ts_cflow_line_slice_t *);
-  input_ptr_type.align = _Alignof(ts_cflow_line_slice_t *);
-  input_ptr_type.kind = CMETA_T_POINTER;
-  input_ptr_type.pointee = ts_cflow_line_slice_type();
-
-  memset(&param, 0, sizeof(param));
-  param.size = sizeof(param);
-  param.name = "line";
-  param.type = &input_ptr_type;
-  param.flags = CMETA_PARAM_IN | CMETA_PARAM_BORROWED;
-
-  memset(&function, 0, sizeof(function));
-  function.size = sizeof(function);
-  function.name = "TurboScript.LineSlice.length";
-  function.return_type = &cmeta_type_double;
-  function.params = &param;
-  function.param_count = 1u;
-  function.effects = binding->callable.meta.effects;
-  function.properties = binding->callable.meta.properties;
-
-  param_abi[0] = CMETA_ABI_OBJECT_POINTER;
-  memset(&abi, 0, sizeof(abi));
-  abi.size = sizeof(abi);
-  abi.function = &function;
-  abi.return_carrier = CMETA_ABI_SCALAR;
-  abi.param_carriers = param_abi;
-  abi.param_count = 1u;
+  if (!ts_cflow_text_length_map_reflect(binding, &reflection)) {
+    if (error) *error = "typed text MAP reflection is invalid";
+    return false;
+  }
 
   memset(&projection, 0, sizeof(projection));
   status = cflow_function_typed_adapter_projection_admit(
-      &function, &abi, binding->callable,
+      &reflection.function, &reflection.abi, binding->callable,
       ts_cflow_line_slice_type(), &cmeta_type_double,
       &projection);
   if (status != CFLOW_FUNCTION_PROJECTION_OK) {
@@ -465,15 +485,19 @@ bool ts_cflow_text_nonempty_filter_bind(
   return true;
 }
 
+bool ts_cflow_text_nonempty_filter_reflect(
+    const ts_cflow_text_kernel_binding_t *binding,
+    ts_cflow_text_function_reflection_t *out) {
+  return ts_cflow_text_function_reflection_init(
+      binding, "TurboScript.LineSlice.nonempty",
+      &cmeta_type_bool, out);
+}
+
 bool ts_cflow_text_nonempty_filter_graph_add(
     cflow_graph *graph,
     const ts_cflow_text_kernel_binding_t *binding,
     const char **error) {
-  cmeta_type_desc input_ptr_type;
-  cmeta_param_desc param;
-  cmeta_function_desc function;
-  cmeta_abi_carrier param_abi[1];
-  cmeta_function_abi_desc abi;
+  ts_cflow_text_function_reflection_t reflection;
   cflow_function_typed_adapter_projection projection;
   cflow_function_projection_status status;
 
@@ -483,39 +507,14 @@ bool ts_cflow_text_nonempty_filter_graph_add(
     return false;
   }
 
-  memset(&input_ptr_type, 0, sizeof(input_ptr_type));
-  input_ptr_type.name = "TurboScript.LineSlice.v1 *";
-  input_ptr_type.size = sizeof(ts_cflow_line_slice_t *);
-  input_ptr_type.align = _Alignof(ts_cflow_line_slice_t *);
-  input_ptr_type.kind = CMETA_T_POINTER;
-  input_ptr_type.pointee = ts_cflow_line_slice_type();
-
-  memset(&param, 0, sizeof(param));
-  param.size = sizeof(param);
-  param.name = "line";
-  param.type = &input_ptr_type;
-  param.flags = CMETA_PARAM_IN | CMETA_PARAM_BORROWED;
-
-  memset(&function, 0, sizeof(function));
-  function.size = sizeof(function);
-  function.name = "TurboScript.LineSlice.nonempty";
-  function.return_type = &cmeta_type_bool;
-  function.params = &param;
-  function.param_count = 1u;
-  function.effects = binding->callable.meta.effects;
-  function.properties = binding->callable.meta.properties;
-
-  param_abi[0] = CMETA_ABI_OBJECT_POINTER;
-  memset(&abi, 0, sizeof(abi));
-  abi.size = sizeof(abi);
-  abi.function = &function;
-  abi.return_carrier = CMETA_ABI_SCALAR;
-  abi.param_carriers = param_abi;
-  abi.param_count = 1u;
+  if (!ts_cflow_text_nonempty_filter_reflect(binding, &reflection)) {
+    if (error) *error = "typed text FILTER reflection is invalid";
+    return false;
+  }
 
   memset(&projection, 0, sizeof(projection));
   status = cflow_function_typed_filter_projection_admit(
-      &function, &abi, binding->callable,
+      &reflection.function, &reflection.abi, binding->callable,
       ts_cflow_line_slice_type(), &projection);
   if (status != CFLOW_FUNCTION_PROJECTION_OK) {
     if (error)
