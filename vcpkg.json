@@ -1,6 +1,6 @@
 {
   "name": "vcpkg-turbonet",
-  "version-semver": "3.0.6",
+  "version-semver": "3.0.7",
   "dependencies": [
     {
       "name": "xxhash",
