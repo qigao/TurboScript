@@ -3,7 +3,7 @@
 
 #include <cmeta/function.h>
 
-FunctionDecl(value, double, ts_fin_kelly,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, ts_fin_kelly,
     (double, win_rate, CMETA_PARAM_IN),
     (double, avg_win, CMETA_PARAM_IN),
     (double, avg_loss, CMETA_PARAM_IN));
