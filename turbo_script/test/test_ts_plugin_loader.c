@@ -133,10 +133,30 @@ spec("plugin loader") {
         check_equal(handle->manifest->export_count, (size_t)10u);
         check_equal(handle->manifest->exports[0].kind,
                     SALTS_PLUGIN_EXPORT_FUNCTION);
+        for (size_t i = 0u; i < 9u; ++i) {
+          check_not_null(handle->manifest->exports[i].value.function.desc);
+          check_equal(
+              handle->manifest->exports[i].value.function.desc->result_flags,
+              (cmeta_result_flags)CMETA_RESULT_VALUE);
+        }
+        check_not_null(handle->manifest->exports[9].value.function.desc);
+        check_equal(
+            handle->manifest->exports[9].value.function.desc->result_flags,
+            (cmeta_result_flags)CMETA_RESULT_UNKNOWN);
         check_equal(
             ts_plugin_init_ex(handle, &env, NULL, &error),
             TS_PLUGIN_ERROR_NONE);
         check_equal(handle->function_binding_count, (size_t)10u);
+        {
+          ts_plugin_function_view_t view = {0};
+          check_true(ts_plugin_find_bound_function(
+              handle, "loader_function.double", &view));
+          check_not_null(view.entry);
+          check_not_null(view.entry->value.function.desc);
+          check_equal(
+              view.entry->value.function.desc->result_flags,
+              (cmeta_result_flags)CMETA_RESULT_VALUE);
+        }
         check_true(exprtk_env_has_func(&env, "loader_function.double"));
         check_true(exprtk_env_has_func(&env, "loader_function.stateful"));
         check_true(exprtk_env_has_func(&env, "loader_function.increment"));
