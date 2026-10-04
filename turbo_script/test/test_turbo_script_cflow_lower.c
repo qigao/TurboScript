@@ -295,6 +295,7 @@ spec("TurboScript CFlow pipeline lowering") {
     exprtk_node_t *lambda =
         ts_test_single_expr("line => line.length()", &lambda_root);
     ts_cflow_text_kernel_binding_t binding = {0};
+    ts_cflow_text_function_reflection_t reflection = {0};
     ts_cflow_text_lines_source_t source = {0};
     cflow_graph graph = {0};
     cflow_plan plan = {0};
@@ -317,6 +318,20 @@ spec("TurboScript CFlow pipeline lowering") {
                 CMETA_PROP_DETERMINISTIC) != 0u);
     check_true((binding.callable.meta.properties &
                 CMETA_PROP_TOTAL) != 0u);
+
+    check_true(ts_cflow_text_length_map_reflect(
+        &binding, &reflection));
+    check_true(cmeta_function_desc_valid(&reflection.function));
+    check_true(cmeta_function_abi_desc_valid(&reflection.abi));
+    check_equal(reflection.function.result_flags,
+                (cmeta_result_flags)CMETA_RESULT_VALUE);
+    check_equal(reflection.function.params[0].flags,
+                (cmeta_param_flags)(CMETA_PARAM_IN |
+                                    CMETA_PARAM_BORROWED));
+    check_equal(reflection.abi.return_carrier,
+                (cmeta_abi_carrier)CMETA_ABI_SCALAR);
+    check_equal(reflection.abi.param_carriers[0],
+                (cmeta_abi_carrier)CMETA_ABI_OBJECT_POINTER);
 
     check_true(ts_cflow_text_lines_source_init(
         &source, "a\nbb\n", strlen("a\nbb\n")));
@@ -389,6 +404,7 @@ spec("TurboScript CFlow pipeline lowering") {
     exprtk_node_t *lambda =
         ts_test_single_expr("line => line.length() > 0", &lambda_root);
     ts_cflow_text_kernel_binding_t binding = {0};
+    ts_cflow_text_function_reflection_t reflection = {0};
     ts_cflow_text_lines_source_t source = {0};
     cflow_graph graph = {0};
     cflow_plan plan = {0};
@@ -407,6 +423,20 @@ spec("TurboScript CFlow pipeline lowering") {
                 CMETA_CALLABLE_DISPATCH_ADAPTER);
     check_equal(binding.callable.meta.effects,
                 (cmeta_effects)CMETA_EFFECT_PURE);
+
+    check_true(ts_cflow_text_nonempty_filter_reflect(
+        &binding, &reflection));
+    check_true(cmeta_function_desc_valid(&reflection.function));
+    check_true(cmeta_function_abi_desc_valid(&reflection.abi));
+    check_equal(reflection.function.result_flags,
+                (cmeta_result_flags)CMETA_RESULT_VALUE);
+    check_equal(reflection.function.params[0].flags,
+                (cmeta_param_flags)(CMETA_PARAM_IN |
+                                    CMETA_PARAM_BORROWED));
+    check_equal(reflection.abi.return_carrier,
+                (cmeta_abi_carrier)CMETA_ABI_SCALAR);
+    check_equal(reflection.abi.param_carriers[0],
+                (cmeta_abi_carrier)CMETA_ABI_OBJECT_POINTER);
 
     check_true(ts_cflow_text_lines_source_init(
         &source, "a\n\nbb\n", strlen("a\n\nbb\n")));

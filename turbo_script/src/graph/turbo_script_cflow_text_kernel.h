@@ -20,6 +20,14 @@ typedef struct ts_cflow_text_kernel_binding {
   ts_cflow_text_kernel_t *owner;
 } ts_cflow_text_kernel_binding_t;
 
+typedef struct ts_cflow_text_function_reflection {
+  cmeta_type_desc input_ptr_type;
+  cmeta_param_desc param;
+  cmeta_function_desc function;
+  cmeta_abi_carrier param_abi[1];
+  cmeta_function_abi_desc abi;
+} ts_cflow_text_function_reflection_t;
+
 /*
  * Bind the first typed text callable slice:
  *
@@ -42,6 +50,15 @@ bool ts_cflow_text_length_map_bind(
     const exprtk_node_t *lambda,
     ts_cflow_text_kernel_binding_t *out,
     const char **error);
+
+/*
+ * Build the exact reflected FunctionDesc/FunctionAbi used by typed MAP
+ * admission. The scalar double result is a canonical VALUE; the LineSlice
+ * parameter remains an IN|BORROWED object-pointer carrier.
+ */
+bool ts_cflow_text_length_map_reflect(
+    const ts_cflow_text_kernel_binding_t *binding,
+    ts_cflow_text_function_reflection_t *out);
 
 /* Add the bound callable as an explicit typed MAP node. */
 bool ts_cflow_text_length_map_graph_add(
@@ -67,6 +84,10 @@ bool ts_cflow_text_nonempty_filter_bind(
     const exprtk_node_t *lambda,
     ts_cflow_text_kernel_binding_t *out,
     const char **error);
+
+bool ts_cflow_text_nonempty_filter_reflect(
+    const ts_cflow_text_kernel_binding_t *binding,
+    ts_cflow_text_function_reflection_t *out);
 
 bool ts_cflow_text_nonempty_filter_graph_add(
     cflow_graph *graph,
