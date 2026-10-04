@@ -284,6 +284,12 @@ double ts_mir_call_host_slot(void *registry_owner_ptr, void *runtime_ctx_ptr,
 }
 
 double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *argv) {
+  /*
+   * Keep MIR on the same ExprTk ownership boundary as interpreter dispatch:
+   * the baked exact invoke pointer is raw/ownership-UNKNOWN metadata, while
+   * exprtk_call_builtin() promotes any scratch-borrowed payload into env-owned
+   * storage before scratch teardown.
+   */
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_builtin_fn fn = (exprtk_builtin_fn)fn_ptr;
   exprtk_value_t args[16];
