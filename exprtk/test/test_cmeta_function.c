@@ -7,6 +7,21 @@
 
 extern const exprtk_module_t *exprtk_module_math(void);
 
+static exprtk_value_t scratch_string_builtin(
+    size_t argc, exprtk_value_t *args,
+    exprtk_env_t *env, mem_pool_t *scratch) {
+    static const char text[] = "scratch-owned";
+    char *copy;
+    (void)argc;
+    (void)args;
+    (void)env;
+
+    copy = (char *)mem_alloc(scratch, sizeof(text));
+    if (!copy) return exprtk_val_num(0.0);
+    memcpy(copy, text, sizeof(text));
+    return exprtk_val_str(vstr_from_buf(copy, sizeof(text) - 1u));
+}
+
 spec("CMeta builtin function reflection") {
     it("uses one canonical exprtk value descriptor across reflection") {
         const cmeta_type_desc *value_type = exprtk_value_cmeta_type();
@@ -47,6 +62,7 @@ spec("CMeta builtin function reflection") {
         check_equal(fn->return_type->name, "exprtk_value_t");
         check((fn->effects) == (CMETA_EFFECT_UNKNOWN));
         check((fn->properties) == (CMETA_PROP_NONE));
+        check((fn->result_flags) == (CMETA_RESULT_UNKNOWN));
         check((reflected.invoke) == (module->entries[0].fn));
 
         check_equal(fn->params[0].name, "argc");
@@ -94,6 +110,23 @@ spec("CMeta builtin function reflection") {
         check((left.invoke) == (exprtk_find_builtin(name, &env)));
         check((right.invoke) == (left.invoke));
 
+        exprtk_env_free(&env);
+    }
+
+    it("promotes scratch-backed raw builtin results before scratch teardown") {
+        exprtk_env_t env;
+        exprtk_value_t result;
+
+        exprtk_env_init(&env);
+        result = exprtk_call_builtin(scratch_string_builtin, 0u, NULL, &env);
+
+        check((result.type) == (EXPRTK_VAL_STRING));
+        check((result.ownership) == (EXPRTK_VALUE_OWNED));
+        check_not_null(result.storage);
+        check((result.data.string.len) == (size_t)13u);
+        check(memcmp(result.data.string.data, "scratch-owned", 13u) == 0);
+
+        exprtk_value_destroy(&result);
         exprtk_env_free(&env);
     }
 
