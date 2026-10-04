@@ -94,7 +94,7 @@ Example shape:
 #include <salts/plugin.h>
 #include <salts/thread.h>
 
-FunctionDecl(value, double, my_double,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, my_double,
     (double, value, CMETA_PARAM_IN));
 
 double my_double(double value) {
