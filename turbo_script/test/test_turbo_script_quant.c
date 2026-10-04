@@ -658,6 +658,9 @@ spec("turbo_script_quant") {
         check_not_null(view.entry->value.function.desc);
         check_not_null(view.entry->value.function.abi);
         check_equal(view.entry->value.function.desc->param_count, (size_t)3u);
+        check_equal(
+            view.entry->value.function.desc->result_flags,
+            (cmeta_result_flags)CMETA_RESULT_VALUE);
         check_true(cmeta_effects_are_pure(
             view.entry->value.function.desc->effects));
       }

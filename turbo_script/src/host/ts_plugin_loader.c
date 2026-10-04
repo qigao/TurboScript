@@ -89,9 +89,13 @@ static int plugin_function_scalar_binding(
   if (return_kind == TS_PLUGIN_SCALAR_UNSUPPORTED)
     return 0;
   if (return_kind == TS_PLUGIN_SCALAR_VOID) {
-    if (abi->return_carrier != CMETA_ABI_VOID) return 0;
-  } else if (abi->return_carrier != CMETA_ABI_SCALAR) {
-    return 0;
+    if (abi->return_carrier != CMETA_ABI_VOID ||
+        desc->result_flags != CMETA_RESULT_UNKNOWN)
+      return 0;
+  } else {
+    if (abi->return_carrier != CMETA_ABI_SCALAR ||
+        desc->result_flags != CMETA_RESULT_VALUE)
+      return 0;
   }
 
   memset(binding, 0, sizeof(*binding));

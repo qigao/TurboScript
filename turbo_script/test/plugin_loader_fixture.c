@@ -11,24 +11,29 @@
 
 #if defined(FIXTURE_FUNCTION_ONLY)
 
+#if defined(FIXTURE_UNKNOWN_RESULT)
 FunctionDecl(value, double, loader_fixture_double,
     (double, value, CMETA_PARAM_IN));
-FunctionDecl(stateful, double, loader_fixture_stateful,
+#else
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_double,
     (double, value, CMETA_PARAM_IN));
-FunctionDecl(value, int, loader_fixture_increment,
+#endif
+FunctionDeclResult(stateful, double, CMETA_RESULT_VALUE, loader_fixture_stateful,
+    (double, value, CMETA_PARAM_IN));
+FunctionDeclResult(value, int, CMETA_RESULT_VALUE, loader_fixture_increment,
     (int, value, CMETA_PARAM_IN));
-FunctionDecl(value, bool, loader_fixture_positive,
+FunctionDeclResult(value, bool, CMETA_RESULT_VALUE, loader_fixture_positive,
     (int, value, CMETA_PARAM_IN));
-FunctionDecl(value, double, loader_fixture_long_to_double,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_long_to_double,
     (long, value, CMETA_PARAM_IN));
-FunctionDecl(value, double, loader_fixture_long_exact,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_long_exact,
     (long, value, CMETA_PARAM_IN));
-FunctionDecl(value, double, loader_fixture_float_to_double,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_float_to_double,
     (float, value, CMETA_PARAM_IN));
-FunctionDecl(value, double, loader_fixture_add,
+FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_add,
     (double, left, CMETA_PARAM_IN),
     (double, right, CMETA_PARAM_IN));
-Function0Decl(value, int, loader_fixture_answer);
+Function0DeclResult(value, int, CMETA_RESULT_VALUE, loader_fixture_answer);
 Function0Decl(value, void, loader_fixture_notify);
 
 double loader_fixture_double(double value) {

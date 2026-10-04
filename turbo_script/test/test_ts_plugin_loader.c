@@ -12,6 +12,7 @@
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.dll"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dll"
 #define LOADER_FUNCTION_FILE "loader_function.dll"
+#define LOADER_UNKNOWN_RESULT_FILE "loader_unknown_result.dll"
 #define LOADER_LEGACY_FILE "loader_legacy.dll"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dll"
 #define LOADER_PACKAGE_FILE "loader_package.dll"
@@ -22,6 +23,7 @@
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.dylib"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.dylib"
 #define LOADER_FUNCTION_FILE "loader_function.dylib"
+#define LOADER_UNKNOWN_RESULT_FILE "loader_unknown_result.dylib"
 #define LOADER_LEGACY_FILE "loader_legacy.dylib"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.dylib"
 #define LOADER_PACKAGE_FILE "loader_package.dylib"
@@ -32,6 +34,7 @@
 #define LOADER_MISSING_ENTRY_FILE "loader_missing_entry.so"
 #define LOADER_INIT_FAILURE_FILE "loader_init_failure.so"
 #define LOADER_FUNCTION_FILE "loader_function.so"
+#define LOADER_UNKNOWN_RESULT_FILE "loader_unknown_result.so"
 #define LOADER_LEGACY_FILE "loader_legacy.so"
 #define LOADER_CWD_ONLY_FILE "loader_cwd_only.so"
 #define LOADER_PACKAGE_FILE "loader_package.so"
@@ -115,6 +118,29 @@ spec("plugin loader") {
   }
 
   describe("canonical Function exports") {
+    it("rejects legacy UNKNOWN semantics for non-void scalar returns") {
+      ts_plugin_error_t error = {0};
+      ts_plugin_handle_t *handle = NULL;
+      exprtk_env_t env;
+
+      exprtk_env_init(&env);
+      check_equal(
+          ts_plugin_load_ex(
+              LOADER_UNKNOWN_RESULT_FILE, "loader_unknown_result",
+              &handle, &error),
+          TS_PLUGIN_ERROR_NONE);
+      check_not_null(handle);
+      if (handle) {
+        check_equal(
+            ts_plugin_init_ex(handle, &env, NULL, &error),
+            TS_PLUGIN_ERROR_DESCRIPTOR);
+        check_equal(error.stage, TS_PLUGIN_STAGE_INITIALIZE);
+        check_not_null(strstr(error.message, "canonical finite scalar ABI"));
+        ts_plugin_unload(handle);
+      }
+      exprtk_env_free(&env);
+    }
+
     it("loads and binds a Function-only plugin without a module adapter") {
       ts_plugin_error_t error = {0};
       ts_plugin_handle_t *handle = NULL;
@@ -133,10 +159,30 @@ spec("plugin loader") {
         check_equal(handle->manifest->export_count, (size_t)10u);
         check_equal(handle->manifest->exports[0].kind,
                     SALTS_PLUGIN_EXPORT_FUNCTION);
+        for (size_t i = 0u; i < 9u; ++i) {
+          check_not_null(handle->manifest->exports[i].value.function.desc);
+          check_equal(
+              handle->manifest->exports[i].value.function.desc->result_flags,
+              (cmeta_result_flags)CMETA_RESULT_VALUE);
+        }
+        check_not_null(handle->manifest->exports[9].value.function.desc);
+        check_equal(
+            handle->manifest->exports[9].value.function.desc->result_flags,
+            (cmeta_result_flags)CMETA_RESULT_UNKNOWN);
         check_equal(
             ts_plugin_init_ex(handle, &env, NULL, &error),
             TS_PLUGIN_ERROR_NONE);
         check_equal(handle->function_binding_count, (size_t)10u);
+        {
+          ts_plugin_function_view_t view = {0};
+          check_true(ts_plugin_find_bound_function(
+              handle, "loader_function.double", &view));
+          check_not_null(view.entry);
+          check_not_null(view.entry->value.function.desc);
+          check_equal(
+              view.entry->value.function.desc->result_flags,
+              (cmeta_result_flags)CMETA_RESULT_VALUE);
+        }
         check_true(exprtk_env_has_func(&env, "loader_function.double"));
         check_true(exprtk_env_has_func(&env, "loader_function.stateful"));
         check_true(exprtk_env_has_func(&env, "loader_function.increment"));

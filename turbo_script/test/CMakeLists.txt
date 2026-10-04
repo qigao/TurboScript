@@ -53,6 +53,12 @@ target_compile_definitions(
   test_plugin_loader_function
   PRIVATE FIXTURE_PLUGIN_NAME="loader_function" FIXTURE_FUNCTION_ONLY)
 
+add_plugin_loader_fixture(test_plugin_loader_unknown_result loader_unknown_result)
+target_compile_definitions(
+  test_plugin_loader_unknown_result
+  PRIVATE FIXTURE_PLUGIN_NAME="loader_unknown_result"
+          FIXTURE_FUNCTION_ONLY FIXTURE_UNKNOWN_RESULT)
+
 add_plugin_loader_fixture(test_plugin_loader_legacy loader_legacy)
 target_compile_definitions(
   test_plugin_loader_legacy PRIVATE FIXTURE_PLUGIN_NAME="loader_legacy")
@@ -101,7 +107,7 @@ cmake_add_test(
           test_plugin_loader_prefixed_conflict
           test_plugin_loader_wrong_name test_plugin_loader_missing_entry
           test_plugin_loader_init_failure test_plugin_loader_function
-          test_plugin_loader_legacy test_plugin_loader_cwd_only
+          test_plugin_loader_unknown_result test_plugin_loader_legacy test_plugin_loader_cwd_only
           test_plugin_loader_package
   FOLDER turbo_script
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
