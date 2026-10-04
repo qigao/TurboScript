@@ -11,8 +11,13 @@
 
 #if defined(FIXTURE_FUNCTION_ONLY)
 
+#if defined(FIXTURE_UNKNOWN_RESULT)
+FunctionDecl(value, double, loader_fixture_double,
+    (double, value, CMETA_PARAM_IN));
+#else
 FunctionDeclResult(value, double, CMETA_RESULT_VALUE, loader_fixture_double,
     (double, value, CMETA_PARAM_IN));
+#endif
 FunctionDeclResult(stateful, double, CMETA_RESULT_VALUE, loader_fixture_stateful,
     (double, value, CMETA_PARAM_IN));
 FunctionDeclResult(value, int, CMETA_RESULT_VALUE, loader_fixture_increment,
