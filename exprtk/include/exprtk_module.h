@@ -41,9 +41,18 @@ typedef struct {
  *                     exprtk_env_t *env,
  *                     mem_pool_t *scratch)
  *
+ * Result ownership is intentionally CMETA_RESULT_UNKNOWN at this raw adapter
+ * boundary. exprtk_value_t is a dynamic carrier whose payload may be borrowed
+ * from the per-call scratch pool or may already own retained storage. A raw
+ * builtin result must therefore not escape directly. exprtk_call_builtin()
+ * clones/promotes the result into the target env owner, destroys the raw value,
+ * and only then destroys scratch.
+ *
  * Consumers may retain the copied metadata only as long as this reflection
  * storage remains alive. Invocation continues through the exact entry->fn
- * pointer; reflection is not consulted on the hot call path.
+ * pointer. Callers that need an escaping result must preserve the
+ * exprtk_call_builtin() promotion boundary rather than infer ownership from the
+ * by-value C return type.
  */
 typedef struct exprtk_function_reflection {
     cmeta_param_desc params[4];
