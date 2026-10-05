@@ -2201,13 +2201,23 @@ double ts_mir_value_expr_assign(void *ctx_ptr, const char *target_name, void *no
   return ts_mir_numeric_value(result);
 }
 
-double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
+double ts_mir_value_expr(
+    void *ctx_ptr, void *node_ptr, exprtk_value_t *out_value) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_node_t *node = (exprtk_node_t *)node_ptr;
-  exprtk_value_t result;
+  const cmeta_data_desc *value_data = exprtk_value_cmeta_data();
+  exprtk_value_t result = {.type = EXPRTK_VAL_NULL};
   double numeric_result;
 
-  if (!ctx || !node) return 0.0;
+  if (!ctx || !node || !out_value) return 0.0;
+  if (cmeta_data_value_init_zero(value_data, out_value) != CMETA_OK) {
+    ctx->env.aborted = 1;
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg),
+             "MIR runtime error: initialize managed value slot");
+    ts_mir_promote_env_error(ctx);
+    return 0.0;
+  }
+
   {
     char cflow_error[256] = {0};
     ts_cflow_runtime_status_t cflow_status =
@@ -2218,6 +2228,7 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
       snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s",
                cflow_error[0] ? cflow_error : "CFlow stream execution failed");
       ts_mir_promote_env_error(ctx);
+      cmeta_data_value_destroy(value_data, &result);
       return 0.0;
     }
     if (cflow_status != TS_CFLOW_RUNTIME_HANDLED &&
@@ -2225,14 +2236,29 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr) {
       if (!ctx->env.aborted && ctx->env.error_msg[0] == '\0')
         ts_mir_value_arg_error(&ctx->env, node);
       ts_mir_promote_env_error(ctx);
+      cmeta_data_value_destroy(value_data, &result);
       return 0.0;
     }
   }
 
-  if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted) ts_mir_promote_env_error(ctx);
+  if (ctx->env.flow != exprtk_FLOW_NORMAL || ctx->env.aborted)
+    ts_mir_promote_env_error(ctx);
   numeric_result = ts_mir_numeric_value(result);
-  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &result);
+  if (cmeta_data_value_move(value_data, out_value, &result) != CMETA_OK) {
+    cmeta_data_value_destroy(value_data, &result);
+    cmeta_data_value_destroy(value_data, out_value);
+    ctx->env.aborted = 1;
+    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg),
+             "MIR runtime error: publish managed value slot");
+    ts_mir_promote_env_error(ctx);
+    return 0.0;
+  }
   return numeric_result;
+}
+
+void ts_mir_value_slot_destroy(void *value) {
+  if (value == NULL) return;
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), value);
 }
 
 exprtk_value_t turbo_script_mir_eval_node(const exprtk_node_t *node, exprtk_env_t *env) {
