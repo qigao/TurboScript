@@ -26,18 +26,26 @@ spec("CMeta builtin function reflection") {
     it("uses one canonical exprtk value descriptor across reflection") {
         const cmeta_type_desc *value_type = exprtk_value_cmeta_type();
         const cmeta_type_desc *value_ptr_type = exprtk_value_ptr_cmeta_type();
+        const cmeta_data_desc *value_data = exprtk_value_cmeta_data();
         const exprtk_module_t *module = exprtk_module_math();
         exprtk_function_reflection_t reflected = {0};
 
         check_not_null(value_type);
         check_not_null(value_ptr_type);
+        check_not_null(value_data);
         check(cmeta_type_desc_valid(value_type));
         check(cmeta_type_desc_valid(value_ptr_type));
+        check(cmeta_data_desc_valid(value_data));
         check_equal(value_type->name, "exprtk_value_t");
         check_equal(
             value_type->identity->stable_atom_id,
             "turboscript.exprtk.value");
         check(value_ptr_type->pointee == value_type);
+        check(value_data->storage_type == value_type);
+        check_equal(value_data->stable_id, "turboscript.exprtk.value.data");
+        check_not_null(cmeta_data_construct_ops_of(value_data));
+        check_true(cmeta_data_value_move_supported(value_data));
+        check_false(cmeta_data_value_copy_supported(value_data));
 
         check_not_null(module);
         check(module->count > 0u);
@@ -127,6 +135,39 @@ spec("CMeta builtin function reflection") {
         check(memcmp(result.data.string.data, "scratch-owned", 13u) == 0);
 
         exprtk_value_destroy(&result);
+        exprtk_env_free(&env);
+    }
+
+    it("moves and destroys promoted builtin results through canonical CMeta lifecycle") {
+        const cmeta_data_desc *data = exprtk_value_cmeta_data();
+        exprtk_env_t env;
+        exprtk_value_t source;
+        exprtk_value_t destination;
+
+        exprtk_env_init(&env);
+        source = exprtk_call_builtin(scratch_string_builtin, 0u, NULL, &env);
+
+        check((source.type) == (EXPRTK_VAL_STRING));
+        check((source.ownership) == (EXPRTK_VALUE_OWNED));
+        check_equal(cmeta_data_value_init_zero(data, &destination), CMETA_OK);
+        check((destination.type) == (EXPRTK_VAL_NULL));
+
+        check_equal(
+            cmeta_data_value_move(data, &destination, &source), CMETA_OK);
+        check((source.type) == (EXPRTK_VAL_NULL));
+        check((destination.type) == (EXPRTK_VAL_STRING));
+        check((destination.ownership) == (EXPRTK_VALUE_OWNED));
+        check_not_null(destination.storage);
+        check((destination.data.string.len) == (size_t)13u);
+        check(memcmp(
+            destination.data.string.data, "scratch-owned", 13u) == 0);
+
+        check_equal(
+            cmeta_data_value_restore_zero(data, &destination), CMETA_OK);
+        check((destination.type) == (EXPRTK_VAL_NULL));
+        check_equal(
+            cmeta_data_value_restore_zero(data, &destination), CMETA_OK);
+
         exprtk_env_free(&env);
     }
 
