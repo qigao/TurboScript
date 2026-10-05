@@ -109,6 +109,7 @@ struct ts_mir_externals_s {
   MIR_item_t call_assign_proto, call_assign_import;
   MIR_item_t call_value_assign_proto, call_value_assign_import;
   MIR_item_t value_expr_proto, value_expr_import;
+  MIR_item_t value_slot_destroy_proto, value_slot_destroy_import;
   MIR_item_t value_expr_assign_proto, value_expr_assign_import;
   MIR_item_t await_value_proto, await_value_import;
   MIR_item_t await_assign_proto, await_assign_import;
@@ -576,7 +577,8 @@ double ts_mir_call_value_assign(void *ctx_ptr, const char *target, const char *n
                                 void *call_node);
 int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk_value_t *args,
                                 size_t arg_count, exprtk_value_t *out_value);
-double ts_mir_value_expr(void *ctx_ptr, void *node);
+double ts_mir_value_expr(void *ctx_ptr, void *node, exprtk_value_t *out_value);
+void ts_mir_value_slot_destroy(void *value);
 double ts_mir_value_expr_assign(void *ctx_ptr, const char *target, void *node);
 double ts_mir_await_value(void *ctx_ptr, void *arg_node);
 double ts_mir_await_assign(void *ctx_ptr, const char *target, void *arg_node);
