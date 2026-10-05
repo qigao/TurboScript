@@ -288,6 +288,12 @@ cmake_add_test(
   LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk MIR::MIR
   FOLDER turbo_script)
 
+add_test(
+  NAME test_turbo_script_mir_cmeta_cleanup_contract
+  COMMAND ${CMAKE_COMMAND}
+          -DTURBOSCRIPT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
+          -P ${CMAKE_CURRENT_SOURCE_DIR}/test_mir_cmeta_cleanup_contract.cmake)
+
 # MIR / JIT test suites (split by module)
 macro(add_mir_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
