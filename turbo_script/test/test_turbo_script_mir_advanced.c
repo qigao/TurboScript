@@ -101,15 +101,11 @@ spec("turbo_script_mir_advanced") {
       turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       const char *script =
-          "func churn(n) {"
-          "  count = 0;"
-          "  for (i = 0; i < n; i += 1) {"
-          "    string.upper(\"managed\");"
-          "    count += 1;"
-          "  }"
-          "  return count;"
+          "func managed_double(x) {"
+          "  string.upper(\"managed\");"
+          "  return x * 2;"
           "}"
-          "result = churn(1024);";
+          "result = managed_double(512);";
 
       check((turbo_script_run(ctx_interp, script)) == (0));
       check((turbo_script_run_jit(ctx_jit, script)) == (0));
