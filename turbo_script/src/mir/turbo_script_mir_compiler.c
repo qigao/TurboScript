@@ -69,6 +69,27 @@ static int ts_mir_ensure_var_capacity(ts_mir_compiler_t *c, int needed) {
   return 1;
 }
 
+static int ts_mir_ensure_managed_slot_capacity(ts_mir_compiler_t *c, int needed) {
+  ts_mir_managed_slot_entry_t *grown = NULL;
+  int capacity;
+
+  if (!c) return 0;
+  if (needed <= c->managed_slot_capacity) return 1;
+
+  capacity = c->managed_slot_capacity > 0 ? c->managed_slot_capacity * 2 : 8;
+  if (capacity < needed) capacity = needed;
+  grown = (ts_mir_managed_slot_entry_t *)realloc(
+      c->managed_slots, (size_t)capacity * sizeof(*grown));
+  if (!grown) {
+    ts_mir_fail(c, "JIT compile error: out of memory growing managed slot table");
+    return 0;
+  }
+
+  c->managed_slots = grown;
+  c->managed_slot_capacity = capacity;
+  return 1;
+}
+
 static int ts_mir_ensure_compiled_func_capacity(ts_mir_compiler_t *c, int needed) {
   ts_compiled_func_t *new_entries = NULL;
   int new_capacity = 0;
@@ -640,6 +661,14 @@ static void ts_mir_discard_current_vars(ts_mir_compiler_t *c) {
   c->var_capacity = 0;
 }
 
+static void ts_mir_discard_managed_slots(ts_mir_compiler_t *c) {
+  if (!c) return;
+  free(c->managed_slots);
+  c->managed_slots = NULL;
+  c->managed_slot_count = 0;
+  c->managed_slot_capacity = 0;
+}
+
 static void ts_mir_destroy_compiled_funcs(ts_mir_compiler_t *c) {
   if (!c)
     return;
@@ -734,6 +763,7 @@ void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
     return;
 
   ts_mir_discard_current_vars(c);
+  ts_mir_discard_managed_slots(c);
   ts_mir_destroy_compiled_funcs(c);
   ts_mir_destroy_pointer_caches(c);
   ts_mir_destroy_builtin_admissions(c);
@@ -759,6 +789,9 @@ ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c) {
   frame.closure_env_reg = c->closure_env_reg;
   frame.func_aliases = c->func_aliases;
   frame.func_alias_count = c->func_alias_count;
+  frame.managed_slots = c->managed_slots;
+  frame.managed_slot_count = c->managed_slot_count;
+  frame.managed_slot_capacity = c->managed_slot_capacity;
   frame.vec_ptr_count = c->vec_ptr_count;
   frame.map_ptr_count = c->map_ptr_count;
   frame.oop_ptr_count = c->oop_ptr_count;
@@ -784,6 +817,9 @@ void ts_mir_begin_isolated_compile(ts_mir_compiler_t *c) {
   c->closure_env_reg = 0;
   c->func_aliases = NULL;
   c->func_alias_count = 0;
+  c->managed_slots = NULL;
+  c->managed_slot_count = 0;
+  c->managed_slot_capacity = 0;
   c->vec_ptr_count = 0;
   c->map_ptr_count = 0;
   c->oop_ptr_count = 0;
@@ -800,6 +836,7 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
     return;
 
   ts_mir_discard_current_vars(c);
+  ts_mir_discard_managed_slots(c);
   ts_mir_discard_class_names(c);
   ts_mir_discard_class_types(c);
   c->func = frame->func;
@@ -812,6 +849,9 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
   c->closure_env_reg = frame->closure_env_reg;
   c->func_aliases = frame->func_aliases;
   c->func_alias_count = frame->func_alias_count;
+  c->managed_slots = frame->managed_slots;
+  c->managed_slot_count = frame->managed_slot_count;
+  c->managed_slot_capacity = frame->managed_slot_capacity;
   c->vec_ptr_count = frame->vec_ptr_count;
   c->map_ptr_count = frame->map_ptr_count;
   c->oop_ptr_count = frame->oop_ptr_count;
@@ -821,6 +861,33 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
   c->class_types = frame->class_types;
   c->class_type_count = frame->class_type_count;
   c->class_type_capacity = frame->class_type_capacity;
+}
+
+MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, size_t size) {
+  MIR_reg_t ptr_reg;
+
+  if (!c || size == 0u) {
+    if (c) ts_mir_fail(c, "JIT compile error: invalid managed slot size");
+    return 0;
+  }
+  if (!ts_mir_ensure_managed_slot_capacity(c, c->managed_slot_count + 1))
+    return 0;
+
+  ptr_reg = ts_mir_new_temp_preg(c);
+  c->managed_slots[c->managed_slot_count++] =
+      (ts_mir_managed_slot_entry_t){ptr_reg, size};
+  return ptr_reg;
+}
+
+void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c) {
+  if (!c) return;
+  for (int i = c->managed_slot_count - 1; i >= 0; --i) {
+    MIR_prepend_insn(
+        c->ctx, c->func,
+        MIR_new_insn(c->ctx, MIR_ALLOCA,
+                     MIR_new_reg_op(c->ctx, c->managed_slots[i].ptr_reg),
+                     MIR_new_int_op(c->ctx, (int64_t)c->managed_slots[i].size)));
+  }
 }
 
 void ts_emit_var_prologue(ts_mir_compiler_t *c) {
