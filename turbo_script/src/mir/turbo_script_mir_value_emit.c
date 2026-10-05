@@ -93,18 +93,18 @@ MIR_reg_t ts_emit_value_expr_assign(ts_mir_compiler_t *c, const char *target_nam
 
 static MIR_reg_t ts_emit_value_expr(ts_mir_compiler_t *c, exprtk_node_t *expr_node) {
   MIR_reg_t res = ts_mir_new_temp_reg(c);
-  MIR_reg_t slot = ts_mir_new_temp_preg(c);
+  MIR_reg_t slot = ts_mir_new_managed_slot(c, sizeof(exprtk_value_t));
 
   /*
-   * First compiler-owned managed value slot. The runtime helper publishes a
-   * promoted exprtk_value_t into this canonical-zero storage but does not own
-   * its final cleanup. The compiler emits cleanup immediately after the last
-   * use in this straight-line witness.
+   * First compiler-owned managed value slot. Allocation is registered now and
+   * emitted once in the function prologue, so loop-carried execution reuses
+   * fixed per-call storage instead of repeatedly executing MIR_ALLOCA.
+   *
+   * The runtime helper publishes a promoted exprtk_value_t into canonical-zero
+   * storage but does not own its final cleanup. The compiler emits cleanup
+   * immediately after the last use in this straight-line witness.
    */
-  MIR_append_insn(
-      c->ctx, c->func,
-      MIR_new_insn(c->ctx, MIR_ALLOCA, MIR_new_reg_op(c->ctx, slot),
-                   MIR_new_int_op(c->ctx, (int64_t)sizeof(exprtk_value_t))));
+  if (slot == 0) return res;
 
   ts_emit_sync_to_env(c);
   MIR_append_insn(
