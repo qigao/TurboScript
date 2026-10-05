@@ -257,6 +257,11 @@ typedef struct {
   exprtk_function_reflection_t reflection;
 } ts_mir_builtin_admission_t;
 
+typedef struct {
+  MIR_reg_t ptr_reg;
+  size_t size;
+} ts_mir_managed_slot_entry_t;
+
 /* =========================================================================
  * Compile frame (for nested function compilation)
  * ========================================================================= */
@@ -272,6 +277,9 @@ struct ts_mir_compile_frame_s {
   MIR_reg_t closure_env_reg;
   ts_mir_func_alias_t *func_aliases;
   size_t func_alias_count;
+  ts_mir_managed_slot_entry_t *managed_slots;
+  int managed_slot_count;
+  int managed_slot_capacity;
   int vec_ptr_count;
   int map_ptr_count;
   int oop_ptr_count;
@@ -323,6 +331,11 @@ struct ts_mir_compiler_s {
   ts_compiled_func_t *compiled_funcs;
   int compiled_func_count;
   int compiled_func_capacity;
+
+  // Compiler-owned managed storage slots, allocated once in function prologue.
+  ts_mir_managed_slot_entry_t *managed_slots;
+  int managed_slot_count;
+  int managed_slot_capacity;
 
   // Cached vector data pointers
   ts_mir_vec_ptr_entry_t *vec_ptrs;
@@ -431,6 +444,8 @@ void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block);
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);
+MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, size_t size);
+void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
 void ts_emit_vec_prologue(ts_mir_compiler_t *c);
 void ts_emit_map_prologue(ts_mir_compiler_t *c);
 
