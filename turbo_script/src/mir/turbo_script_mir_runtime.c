@@ -44,7 +44,7 @@ static double ts_mir_take_numeric_value(exprtk_value_t *value) {
   double result;
   if (!value) return 0.0;
   result = ts_mir_numeric_value(*value);
-  exprtk_value_destroy(value);
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), value);
   return result;
 }
 
