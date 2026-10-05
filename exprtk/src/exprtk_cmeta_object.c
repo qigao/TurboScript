@@ -44,6 +44,63 @@ const cmeta_type_desc *exprtk_value_ptr_cmeta_type(void) {
     return &EXPRTK_VALUE_PTR_CMETA_TYPE;
 }
 
+static const char EXPRTK_VALUE_CMETA_SHAPE[] =
+    "turboscript.exprtk.value.lifecycle";
+
+static cmeta_status exprtk_value_cmeta_init_zero(void *object) {
+    exprtk_value_t *value = (exprtk_value_t *)object;
+    if (value == NULL) return CMETA_INVALID_ARGUMENT;
+    memset(value, 0, sizeof(*value));
+    value->type = EXPRTK_VAL_NULL;
+    return CMETA_OK;
+}
+
+static void exprtk_value_cmeta_restore_zero(void *object) {
+    exprtk_value_t *value = (exprtk_value_t *)object;
+    if (value == NULL) return;
+    exprtk_value_destroy(value);
+}
+
+static void exprtk_value_cmeta_move(void *destination, void *source) {
+    exprtk_value_t *to = (exprtk_value_t *)destination;
+    exprtk_value_t *from = (exprtk_value_t *)source;
+    if (to == NULL || from == NULL || to == from) return;
+    *to = *from;
+    memset(from, 0, sizeof(*from));
+    from->type = EXPRTK_VAL_NULL;
+}
+
+static const cmeta_data_construct_ops EXPRTK_VALUE_CMETA_CONSTRUCT_OPS = {
+    .struct_size = sizeof(cmeta_data_construct_ops),
+    .abi_version = CMETA_DATA_CONSTRUCT_OPS_ABI_VERSION,
+    .storage_type = &EXPRTK_VALUE_CMETA_TYPE,
+    .init_zero = exprtk_value_cmeta_init_zero,
+    .restore_zero = exprtk_value_cmeta_restore_zero,
+    .move = exprtk_value_cmeta_move
+};
+
+static const cmeta_data_desc EXPRTK_VALUE_CMETA_DATA = {
+    .struct_size = sizeof(cmeta_data_desc),
+    .abi_version = CMETA_DATA_DESC_ABI_VERSION,
+    .stable_id = "turboscript.exprtk.value.data",
+    .display_name = "TurboScript managed value",
+    .kind = CMETA_DATA_CUSTOM,
+    .storage_type = &EXPRTK_VALUE_CMETA_TYPE,
+    .shape = EXPRTK_VALUE_CMETA_SHAPE,
+    .buffer_ops = NULL,
+    .enum_ops = NULL,
+    .variant_ops = NULL,
+    .fixed_ops = NULL,
+    .enum_bits_ops = NULL,
+    .collection_ops = NULL,
+    .map_ops = NULL,
+    .construct_ops = &EXPRTK_VALUE_CMETA_CONSTRUCT_OPS
+};
+
+const cmeta_data_desc *exprtk_value_cmeta_data(void) {
+    return &EXPRTK_VALUE_CMETA_DATA;
+}
+
 static const cmeta_type_identity EXPRTK_STRING_SLOT_CMETA_IDENTITY =
     CMETA_TYPE_ID_ATOM_INIT("turboscript.exprtk.string-slot");
 static const cmeta_type_desc EXPRTK_STRING_SLOT_CMETA_TYPE = {
