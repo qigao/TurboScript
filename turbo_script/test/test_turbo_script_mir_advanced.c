@@ -73,6 +73,52 @@ spec("turbo_script_mir_advanced") {
     }
   }
 
+  describe("compiler-owned managed value slot") {
+
+    it("should reuse one function-entry managed slot across loop iterations") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "count = 0;"
+          "for (i = 0; i < 4096; i += 1) {"
+          "  string.upper(\"hello\");"
+          "  count += 1;"
+          "}"
+          "result = count;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(4096.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should allocate managed slots in compiled script-function prologues") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "func managed_double(x) {"
+          "  string.upper(\"managed\");"
+          "  return x * 2;"
+          "}"
+          "result = managed_double(512);";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(1024.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+  }
+
   /* ===== Phase 7: Null and member access ===== */
 
   describe("null literal") {

@@ -109,6 +109,7 @@ struct ts_mir_externals_s {
   MIR_item_t call_assign_proto, call_assign_import;
   MIR_item_t call_value_assign_proto, call_value_assign_import;
   MIR_item_t value_expr_proto, value_expr_import;
+  MIR_item_t value_slot_destroy_proto, value_slot_destroy_import;
   MIR_item_t value_expr_assign_proto, value_expr_assign_import;
   MIR_item_t await_value_proto, await_value_import;
   MIR_item_t await_assign_proto, await_assign_import;
@@ -256,6 +257,11 @@ typedef struct {
   exprtk_function_reflection_t reflection;
 } ts_mir_builtin_admission_t;
 
+typedef struct {
+  MIR_reg_t ptr_reg;
+  size_t size;
+} ts_mir_managed_slot_entry_t;
+
 /* =========================================================================
  * Compile frame (for nested function compilation)
  * ========================================================================= */
@@ -271,6 +277,9 @@ struct ts_mir_compile_frame_s {
   MIR_reg_t closure_env_reg;
   ts_mir_func_alias_t *func_aliases;
   size_t func_alias_count;
+  ts_mir_managed_slot_entry_t *managed_slots;
+  int managed_slot_count;
+  int managed_slot_capacity;
   int vec_ptr_count;
   int map_ptr_count;
   int oop_ptr_count;
@@ -322,6 +331,11 @@ struct ts_mir_compiler_s {
   ts_compiled_func_t *compiled_funcs;
   int compiled_func_count;
   int compiled_func_capacity;
+
+  // Compiler-owned managed storage slots, allocated once in function prologue.
+  ts_mir_managed_slot_entry_t *managed_slots;
+  int managed_slot_count;
+  int managed_slot_capacity;
 
   // Cached vector data pointers
   ts_mir_vec_ptr_entry_t *vec_ptrs;
@@ -430,6 +444,8 @@ void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block);
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);
+MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, size_t size);
+void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
 void ts_emit_vec_prologue(ts_mir_compiler_t *c);
 void ts_emit_map_prologue(ts_mir_compiler_t *c);
 
@@ -576,7 +592,8 @@ double ts_mir_call_value_assign(void *ctx_ptr, const char *target, const char *n
                                 void *call_node);
 int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk_value_t *args,
                                 size_t arg_count, exprtk_value_t *out_value);
-double ts_mir_value_expr(void *ctx_ptr, void *node);
+double ts_mir_value_expr(void *ctx_ptr, void *node, exprtk_value_t *out_value);
+void ts_mir_value_slot_destroy(void *value);
 double ts_mir_value_expr_assign(void *ctx_ptr, const char *target, void *node);
 double ts_mir_await_value(void *ctx_ptr, void *arg_node);
 double ts_mir_await_assign(void *ctx_ptr, const char *target, void *arg_node);

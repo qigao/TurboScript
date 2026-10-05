@@ -93,15 +93,35 @@ MIR_reg_t ts_emit_value_expr_assign(ts_mir_compiler_t *c, const char *target_nam
 
 static MIR_reg_t ts_emit_value_expr(ts_mir_compiler_t *c, exprtk_node_t *expr_node) {
   MIR_reg_t res = ts_mir_new_temp_reg(c);
+  MIR_reg_t slot = ts_mir_new_managed_slot(c, sizeof(exprtk_value_t));
+
+  /*
+   * First compiler-owned managed value slot. Allocation is registered now and
+   * emitted once in the function prologue, so loop-carried execution reuses
+   * fixed per-call storage instead of repeatedly executing MIR_ALLOCA.
+   *
+   * The runtime helper publishes a promoted exprtk_value_t into canonical-zero
+   * storage but does not own its final cleanup. The compiler emits cleanup
+   * immediately after the last use in this straight-line witness.
+   */
+  if (slot == 0) return res;
 
   ts_emit_sync_to_env(c);
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_call_insn(c->ctx, 5,
-                                    MIR_new_ref_op(c->ctx, c->ext.value_expr_proto),
-                                    MIR_new_ref_op(c->ctx, c->ext.value_expr_import),
-                                    MIR_new_reg_op(c->ctx, res),
-                                    MIR_new_reg_op(c->ctx, c->ctx_reg),
-                                    MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)expr_node)));
+  MIR_append_insn(
+      c->ctx, c->func,
+      MIR_new_call_insn(c->ctx, 6,
+                        MIR_new_ref_op(c->ctx, c->ext.value_expr_proto),
+                        MIR_new_ref_op(c->ctx, c->ext.value_expr_import),
+                        MIR_new_reg_op(c->ctx, res),
+                        MIR_new_reg_op(c->ctx, c->ctx_reg),
+                        MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)expr_node),
+                        MIR_new_reg_op(c->ctx, slot)));
+  MIR_append_insn(
+      c->ctx, c->func,
+      MIR_new_call_insn(c->ctx, 3,
+                        MIR_new_ref_op(c->ctx, c->ext.value_slot_destroy_proto),
+                        MIR_new_ref_op(c->ctx, c->ext.value_slot_destroy_import),
+                        MIR_new_reg_op(c->ctx, slot)));
   ts_emit_reload_from_env(c);
   return res;
 }
