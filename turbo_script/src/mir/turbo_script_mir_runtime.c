@@ -269,7 +269,7 @@ double ts_mir_call_native(void *ctx_ptr, void *fn_ptr, void *user_data, int64_t 
   exprtk_env_t *env = ts_task_execution_env(ctx);
   exprtk_value_t raw = fn((size_t)argc, args, env, user_data);
   exprtk_value_t result = exprtk_value_clone_to_env(raw, env);
-  exprtk_value_destroy(&raw);
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &raw);
   return ts_mir_take_numeric_value(&result);
 }
 
