@@ -95,6 +95,8 @@ spec("turbo_script_mir_advanced") {
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
+    }
+
     it("should allocate managed slots in compiled script-function prologues") {
       turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
@@ -118,8 +120,6 @@ spec("turbo_script_mir_advanced") {
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
-    }
-
     }
   }
 
