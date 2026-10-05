@@ -39,6 +39,16 @@ typedef struct exprtk_method_entry_s exprtk_method_entry_t;
 EXPRTK_C_API const cmeta_type_desc *exprtk_value_cmeta_type(void);
 EXPRTK_C_API const cmeta_type_desc *exprtk_value_ptr_cmeta_type(void);
 
+/*
+ * Canonical move/destroy lifecycle for an escaping exprtk_value_t.
+ *
+ * This descriptor intentionally does not claim provider-neutral copy support:
+ * copying dynamic values may require an explicit env/pool owner. It is suitable
+ * for compiler/runtime ownership after a value has crossed an authoritative
+ * promotion boundary such as exprtk_call_builtin().
+ */
+EXPRTK_C_API const cmeta_data_desc *exprtk_value_cmeta_data(void);
+
 /**
  * @brief Method entry - maps method name to function
  */
