@@ -67,7 +67,8 @@ if(function_flush EQUAL -1)
   message(FATAL_ERROR "script-function managed slot prologue flush missing")
 endif()
 
-string(FIND "${emitter_content}" "MIR_ALLOCA" inline_alloca)
+string(FIND "${emitter_content}"
+  "MIR_new_insn(c->ctx, MIR_ALLOCA" inline_alloca)
 if(NOT inline_alloca EQUAL -1)
   message(FATAL_ERROR
     "managed value expression must not allocate storage inside loop/body path")
