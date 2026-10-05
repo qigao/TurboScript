@@ -2,6 +2,7 @@
 
 #include "../host/turbo_script_host_internal.h"
 #include "exprtk_grammar.h"
+#include "exprtk_class.h"
 #include "turbo_script_mir_internal.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -426,7 +427,7 @@ static int ts_mir_artifact_call_begin(ts_mir_artifact_t *artifact, turbo_script_
   runtime_ctx->env.error_line = 0;
   runtime_ctx->env.error_column = 0;
   runtime_ctx->env.error_msg[0] = '\0';
-  exprtk_value_destroy(&runtime_ctx->env.error_value);
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &runtime_ctx->env.error_value);
   runtime_ctx->env.error_value.type = EXPRTK_VAL_NULL;
   runtime_ctx->error_code = TURBO_SCRIPT_ERROR_NONE;
   runtime_ctx->error_msg[0] = '\0';
@@ -504,7 +505,7 @@ int ts_mir_artifact_call_interp(ts_mir_artifact_t *artifact, turbo_script_ctx_t 
   mir_args[3].a = out_value;
   MIR_interp_arr(artifact->ctx, artifact->host_export_wrappers[export_index], &result, 4, mir_args);
   if (result.i != 0 || runtime_ctx->env.aborted || runtime_ctx->env.flow == exprtk_FLOW_THROW) {
-    exprtk_value_destroy(out_value);
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), out_value);
     return -1;
   }
   return 0;
@@ -525,7 +526,7 @@ int ts_mir_artifact_call_jit(ts_mir_artifact_t *artifact, turbo_script_ctx_t *ru
   function = (ts_mir_host_export_fn)artifact->host_export_addresses[export_index];
   if (function(runtime_ctx, args, arg_count, out_value) != 0 || runtime_ctx->env.aborted ||
       runtime_ctx->env.flow == exprtk_FLOW_THROW) {
-    exprtk_value_destroy(out_value);
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), out_value);
     return -1;
   }
   return 0;
