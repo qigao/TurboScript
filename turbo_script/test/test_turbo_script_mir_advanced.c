@@ -95,6 +95,31 @@ spec("turbo_script_mir_advanced") {
 
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
+    it("should allocate managed slots in compiled script-function prologues") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "func churn(n) {"
+          "  count = 0;"
+          "  for (i = 0; i < n; i += 1) {"
+          "    string.upper(\"managed\");"
+          "    count += 1;"
+          "  }"
+          "  return count;"
+          "}"
+          "result = churn(1024);";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(1024.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
     }
   }
 
