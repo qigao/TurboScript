@@ -23,9 +23,7 @@ target_include_directories(${TARGET_NAME}
   PRIVATE ${CMAKE_SOURCE_DIR}/turbo_script/src/databind)
 target_link_libraries(${TARGET_NAME}
   PUBLIC exprtk Salts::Core Salts::DataBind Salts::JsonParser
-         Salts::CYaml Salts::CYamlJsonAdapter Salts::XmlParser
-  PRIVATE Salts::DataBindJsonAdapter Salts::DataBindYamlAdapter
-          Salts::DataBindXmlAdapter)
+         Salts::CYaml Salts::CYamlJsonAdapter Salts::XmlParser)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${MAPPER_PLUGIN_SOURCES})
 cmake_config_target(${TARGET_NAME_PLUGIN}

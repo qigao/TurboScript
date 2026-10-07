@@ -18,7 +18,7 @@ Salts::Plugin registry
   load -> start -> acquire lease
    |
    v
-salts_plugin_manifest
+cmeta_plugin_manifest
    |
    +--> FUNCTION export
    |      CMeta FunctionDesc
@@ -59,8 +59,8 @@ import("fin");
 ```
 
 TurboScript resolves the platform plugin filename and loads it through
-`salts_plugin_registry_*`. The DSO must publish the current
-`salts_plugin_query` entry and a valid current-ABI manifest.
+`cmeta_plugin_registry_*`. The DSO must publish the current
+`cmeta_plugin_query` entry and a valid current-ABI manifest.
 
 The loader searches package/executable plugin locations; it does not search the
 process current working directory.
@@ -101,7 +101,7 @@ double my_double(double value) {
     return value * 2.0;
 }
 
-static bool SALTS_PLUGIN_CALL my_double_invoke(
+static bool CMETA_PLUGIN_CALL my_double_invoke(
     void *context,
     void *return_storage,
     void *const *params,
@@ -115,13 +115,13 @@ static bool SALTS_PLUGIN_CALL my_double_invoke(
     return true;
 }
 
-static salts_plugin_export exports[1];
+static cmeta_plugin_export exports[1];
 static salts_once_t exports_once = SALTS_ONCE_INIT;
 
 static void init_exports(void) {
-    exports[0] = (salts_plugin_export){
-        .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
-        .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+    exports[0] = (cmeta_plugin_export){
+        .struct_size = CMETA_PLUGIN_EXPORT_SIZE,
+        .kind = CMETA_PLUGIN_EXPORT_FUNCTION,
         .contract_version = 1u,
         .capabilities = 0u,
         .export_id = "math.double",
@@ -135,18 +135,18 @@ static void init_exports(void) {
     };
 }
 
-static const salts_plugin_manifest manifest = {
-    .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
-    .abi_version = SALTS_PLUGIN_ABI_VERSION,
+static const cmeta_plugin_manifest manifest = {
+    .struct_size = CMETA_PLUGIN_MANIFEST_SIZE,
+    .abi_version = CMETA_PLUGIN_ABI_VERSION,
     .plugin_id = "my_math",
     .version = {1u, 0u, 0u},
     .exports = exports,
     .export_count = 1u,
 };
 
-SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
-salts_plugin_query(uint32_t host_abi) {
-    if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
+CMETA_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *CMETA_PLUGIN_CALL
+cmeta_plugin_query(uint32_t host_abi) {
+    if (host_abi != CMETA_PLUGIN_ABI_VERSION) return NULL;
     salts_once(&exports_once, init_exports);
     return &manifest;
 }
@@ -272,7 +272,7 @@ and that all of its dynamic dependencies are available.
 
 ### Plugin fails at symbol/ABI stage
 
-Ensure the DSO publishes `salts_plugin_query` and was rebuilt against the
+Ensure the DSO publishes `cmeta_plugin_query` and was rebuilt against the
 current Salts Plugin ABI.
 
 There is no fallback to an older TurboScript-private plugin ABI.

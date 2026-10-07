@@ -22,65 +22,53 @@ is admission control, not process isolation.
 
 ## Build and test
 
-The build uses the latest published Salts, SaltsUtils and CHttp native SDKs
-plus the dependencies in `vcpkg.json`. The versioned `CMakeUserPresets.json`
-is the entry point for local builds and CI. SDK packages are resolved afresh
-with floating NuGet versions; old CMake package locations cannot override the
-selected SDK roots. SDK versions are not pinned in project configuration.
-TLS is supplied by `Salts::CNet` with its GmSSL backend; TurboScript does not
-install or link a separate BoringSSL/OpenSSL implementation.
-TurboScript uses its own MIR runtime and does not require Lua or QuickJS.
-SaltsUtils supplies the data binding, parsing, templating and scheduling modules.
+The build consumes the latest published Salts, SaltsUtils, CHttp and TurboDB
+native SDKs, with floating NuGet versions resolved on every restore. Third-party
+libraries, including MIR, come from `vcpkg.json` and the shared
+[vcpkg-cache](https://github.com/qigao/vcpkg-cache) toolchain. TurboScript does not
+require Lua or QuickJS. CNet supplies HTTP TLS through GmSSL; this project no
+longer installs BoringSSL.
 
-Prerequisites: CMake 3.25 or newer (preset schema 6), Ninja, PowerShell 7,
-.NET SDK 8, a vcpkg checkout, and `GITHUB_TOKEN` with `read:packages` access
-to the qigao packages. Set `PROJECT_ROOT` to your development package parent
-and `VCPKG_ROOT` to the vcpkg checkout. The shared
-[vcpkg-cache](https://github.com/qigao/vcpkg-cache) checkout must exist at
-`%LOCALAPPDATA%/qigao/vcpkg-cache` on Windows or
-`$HOME/.cache/qigao/vcpkg-cache` on Linux; Linux also needs Mono for NuGet
-binary-cache restoration. The shared feed is read-only and the local binary
-cache is writable. Credentials stay in the parent process environment.
+The current MIR port supports Linux, macOS and Android. It explicitly rejects
+Windows; the Windows presets retained in this repository cannot currently build
+the latest source tree. Earlier Windows test results do not apply to this tree.
 
-Restore the SDKs in PowerShell, then build in the same process environment:
+On Linux, install CMake 3.25+, Ninja, PowerShell 7, .NET SDK 8, Mono and the
+native C/C++ toolchain. Set `GITHUB_TOKEN` with `read:packages` access,
+`PROJECT_ROOT` and `VCPKG_ROOT`. Keep the shared cache checkout at
+`$HOME/.cache/qigao/vcpkg-cache`. Credentials remain in the process environment.
+In one PowerShell session:
 
 ```powershell
-./cmake/ci/restore-native-sdks.ps1 -Rid windows-x64 -Local
-$vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
-$vsInstall = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
-if (-not $vsInstall) { throw 'Visual Studio C++ toolchain not found' }
-$env:QIGAO_VCPKG_ROOT = $env:VCPKG_ROOT
-cmd /c "call `"$vsInstall/Common7/Tools/VsDevCmd.bat`" -arch=x64 -host_arch=x64 >nul && set `"VCPKG_ROOT=%QIGAO_VCPKG_ROOT%`" && cmake --preset win-release-user && cmake --build --preset win-release-user && ctest --preset win-release-user --output-on-failure"
-if ($LASTEXITCODE -ne 0) { throw 'Build or tests failed' }
+./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64 -Local
+cmake --preset linux-release-user
+if ($LASTEXITCODE -ne 0) { throw 'Configure failed' }
+cmake --build --preset linux-release-user
+if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
+cmake --build --preset install-linux-release-user
+if ($LASTEXITCODE -ne 0) { throw 'Install failed' }
 ```
 
-On Linux, run the same restore script from `pwsh` with `-Rid linux-x64 -Local`,
-then use `linux-release-user` for configure, build and CTest in that session.
-The restore script sets `SALTS_ROOT`, `SALTS_UTILS_ROOT`, `CHTTP_ROOT` and
-`RE2C_ROOT` only after all packages have been restored. These variables must
-also be supplied to any separately launched IDE or shell. Debug development
-presets consume explicitly supplied matching SDK roots through the same
-variables; restoring the published packages selects Release SDKs.
+The restore script publishes `SALTS_ROOT`, `SALTS_UTILS_ROOT`, `CHTTP_ROOT`,
+`TURBODB_ROOT` and `RE2C_ROOT` only after the complete SDK set is available.
+A separately launched IDE or shell must receive these variables too. Package
+payloads live under ignored `stage/nuget`; installation goes to
+`$PROJECT_ROOT/external/pkgs/turbo_script/release`. Debug profiles require
+explicitly selected matching SDK roots; published packages contain Release SDKs.
 
-SDK downloads live under ignored `stage/nuget`; build trees remain under
-`build`. Installation uses `install-win-release-user` or
-`install-linux-release-user` and writes to
-`$PROJECT_ROOT/external/pkgs/turbo_script/release`. Missing SDKs, invalid
-credentials and unsupported dependencies stop the build rather than selecting
-an older installation. Android profiles still require separately supplied
-matching Android SDK installations and host re2c; native restoration and CI
-currently cover Windows x64 and Linux x64.
+[Native CI](.github/workflows/native-sdk-release.yml) uses the
+`ci-linux-release-user` preset for the full source suite and
+`ci-linux-sanitizer-user` for the existing Host/CFlow sanitizer suite. Configure,
+build and CTest use the same user preset. The CI environment supplies
+`QIGAO_TARGET_TRIPLET` and `VCPKG_CACHE_REPOSITORY_ROOT`; both test switches are
+enabled explicitly. Ordinary Release profiles retain their own test settings.
+The CFlow qualification benchmark runs through `ci-linux-benchmark-user` in CTest.
 
-[Native CI](.github/workflows/native-build.yml) restores the latest SDKs on
-each run, configures and builds the complete Release graph, and runs the
-existing tests through CTest. It uses the same manifest and shared binary
-cache as local builds. The CI presets explicitly enable both `BUILD_TESTS`
-and `ENABLE_TESTS` for the full regression suite; ordinary Release presets
-follow their own test settings and do not include every test.
-
-Native integrations use the current Salts `cmeta_*` utility APIs and
-`coro_executor_*` executor API. Rebuild host applications and native plugins
-against the selected SDK headers. Script function names and behavior are unchanged.
+Native integrations use the current `cmeta_*`, `coro_executor_*` and
+`cmeta_plugin_*` APIs. Plugin macros are `CMETA_PLUGIN_*`, and the query entry
+is `cmeta_plugin_query`; the header remains `<salts/plugin.h>`. Rebuild native
+plugins against the selected SDK's current ABI before loading them. Script
+function names and behavior are unchanged.
 
 Run a script with:
 
