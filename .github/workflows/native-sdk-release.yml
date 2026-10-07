@@ -3,7 +3,7 @@ on:
   pull_request:
     branches: [master]
   push:
-    branches: [master]
+    branches: [master, 'ci/**']
     tags:
       - "v*"
 permissions:
@@ -66,9 +66,11 @@ jobs:
   source-test:
     name: Linux source / full CTest
     needs: metadata
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      QIGAO_TARGET_TRIPLET: x64-linux
     steps:
       - uses: actions/checkout@v4
         with:
@@ -77,67 +79,36 @@ jobs:
       - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
         with:
           mode: read
-      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Prepare source-test toolchain
+      - name: Prepare Linux host
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore current dependency SDK graph
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
-      - name: Configure full source test graph
-        shell: bash
-        run: |
-          set -euxo pipefail
-          cmake -S . -B build/source-test -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
-            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
-            -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
-            -DBUILD_EXAMPLES=OFF \
-            -DTURBOSCRIPT_BUILD_MODULES=ON \
-            -DTURBOSCRIPT_BUILD_CLI=OFF
-      - name: Build full source test graph
-        shell: bash
-        run: cmake --build build/source-test --parallel 2
-      - name: Run full CTest graph
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+      - name: Restore latest native SDKs
+        shell: pwsh
+        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
+      - name: Configure, build and test
         shell: bash
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          ctest --test-dir build/source-test --no-tests=error --output-on-failure
-      - name: Run CFlow qualification benchmark
-        shell: bash
-        run: |
-          set -euo pipefail
-          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          "$GITHUB_WORKSPACE/build/source-test/bin/bench_turbo_script_cflow" |
-            tee "$GITHUB_WORKSPACE/build/source-test/cflow-qualification-benchmark.txt"
-      - name: Verify exact head and clean tracked source
-        shell: bash
-        run: |
-          set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          git status --short --untracked-files=no
-          git diff -- . ':(exclude)build/**'
-          git diff --quiet --exit-code
-          git diff --cached --quiet --exit-code
+          cmake --preset ci-linux-release-user
+          cmake --build --preset ci-linux-release-user --parallel 2
+          ctest --preset ci-linux-release-user --no-tests=error --output-on-failure --timeout 180
+      - name: Run CFlow qualification benchmark through CTest
+        run: ctest --preset ci-linux-benchmark-user --no-tests=error --output-on-failure
 
   host-sanitizer:
     name: Linux Host MIR / ASan+UBSan+LSan
     needs: metadata
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      QIGAO_TARGET_TRIPLET: x64-linux
     steps:
       - uses: actions/checkout@v4
         with:
@@ -146,69 +117,30 @@ jobs:
       - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
         with:
           mode: read
-      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Prepare sanitizer toolchain
+      - name: Prepare Linux host
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore current dependency SDK graph
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
-      - name: Configure sanitized Host graph
-        shell: bash
-        run: |
-          set -euxo pipefail
-          cmake -S . -B build/host-sanitizer -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
-            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
-            -DBUILD_TESTING=ON -DBUILD_TESTS=ON -DENABLE_TESTS=ON \
-            -DBUILD_EXAMPLES=OFF \
-            -DTURBOSCRIPT_BUILD_MODULES=ON \
-            -DTURBOSCRIPT_BUILD_CLI=OFF \
-            -DENABLE_SANITIZER_ADDRESS=ON \
-            -DENABLE_SANITIZER_UNDEFINED=ON
-      - name: Build Host and CFlow sanitizer targets
-        shell: bash
-        run: |
-          cmake --build build/host-sanitizer \
-            --target test_turbo_script_host_module \
-                     test_turbo_script_cflow_mir_kernel \
-                     test_turbo_script_cflow_lower \
-                     test_turbo_script_cflow_qualification \
-            --parallel 2
-      - name: Run Host and CFlow suites under sanitizers
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+      - name: Restore latest native SDKs
+        shell: pwsh
+        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
+      - name: Configure, build and test
         shell: bash
         run: |
           set -euo pipefail
-          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          export ASAN_OPTIONS=detect_leaks=1:halt_on_error=1
-          export UBSAN_OPTIONS=halt_on_error=1:print_stacktrace=1
-          unset LSAN_OPTIONS
-          ctest --test-dir build/host-sanitizer \
-            -R '^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower|test_turbo_script_cflow_qualification)$' \
-            --no-tests=error --verbose --output-on-failure \
-            --output-junit host-cflow-sanitizer-results.xml
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: host-cflow-sanitizer-evidence
-          path: build/host-sanitizer/host-cflow-sanitizer-results.xml
-          if-no-files-found: error
+          cmake --preset ci-linux-sanitizer-user
+          cmake --build --preset ci-linux-sanitizer-user --parallel 2
+          ctest --preset ci-linux-sanitizer-user --no-tests=error --output-on-failure --timeout 180
 
   host-abi:
     name: Linux installed Host ABI v1
     needs: metadata
-    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:

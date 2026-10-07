@@ -655,15 +655,15 @@ int ts_plugin_databind_prepare(
   plugin_status = cmeta_plugin_manifest_find_export(
       handle->manifest, DATA_BIND_PLUGIN_CATALOG_EXPORT_ID,
       &catalog_entry);
-  if (plugin_status == SALTS_PLUGIN_UNKNOWN_EXPORT)
+  if (plugin_status == CMETA_PLUGIN_UNKNOWN_EXPORT)
     return 1;
-  if (plugin_status != SALTS_PLUGIN_OK || !catalog_entry ||
+  if (plugin_status != CMETA_PLUGIN_OK || !catalog_entry ||
       cmeta_plugin_export_require_interface(
           catalog_entry,
           DATA_BIND_PLUGIN_CATALOG_CONTRACT_ID,
           DATA_BIND_PLUGIN_CATALOG_CONTRACT_VERSION,
           0u, data_bind_plugin_catalog_interface()) !=
-          SALTS_PLUGIN_OK) {
+          CMETA_PLUGIN_OK) {
     ts_databind_error(
         error, error_size,
         "invalid DataBind Service catalog Interface export");
@@ -729,13 +729,13 @@ int ts_plugin_databind_prepare(
 
     if (cmeta_plugin_manifest_find_export(
             handle->manifest, binding->operation.export_id,
-            &function_export) != SALTS_PLUGIN_OK ||
+            &function_export) != CMETA_PLUGIN_OK ||
         !function_export ||
-        function_export->kind != SALTS_PLUGIN_EXPORT_FUNCTION ||
+        function_export->kind != CMETA_PLUGIN_EXPORT_FUNCTION ||
         cmeta_plugin_export_require_function(
             function_export, function_export->contract_id,
             function_export->contract_version, 0u) !=
-            SALTS_PLUGIN_OK ||
+            CMETA_PLUGIN_OK ||
         !cmeta_function_desc_equal(
             binding->operation.function,
             function_export->value.function.desc)) {

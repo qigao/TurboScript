@@ -229,6 +229,9 @@ cmake_add_benchmark(
   INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/graph
            ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
   FOLDER turbo_script)
+add_test(NAME bench_turbo_script_cflow COMMAND bench_turbo_script_cflow)
+set_tests_properties(bench_turbo_script_cflow PROPERTIES LABELS benchmark)
+
 cmake_add_test(
   TARGET test_turbo_script_host_result
   SOURCES test_turbo_script_host_result.c

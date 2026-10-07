@@ -654,7 +654,7 @@ spec("turbo_script_quant") {
       check_true(found);
       check_not_null(view.entry);
       if (view.entry) {
-        check_equal(view.entry->kind, SALTS_PLUGIN_EXPORT_FUNCTION);
+        check_equal(view.entry->kind, CMETA_PLUGIN_EXPORT_FUNCTION);
         check_not_null(view.entry->value.function.desc);
         check_not_null(view.entry->value.function.abi);
         check_equal(view.entry->value.function.desc->param_count, (size_t)3u);

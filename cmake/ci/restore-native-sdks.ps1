@@ -24,6 +24,7 @@ New-Item -ItemType Directory -Path $restoreRoot -Force | Out-Null
     <PackageReference Include="Salts.Native" Version="*" />
     <PackageReference Include="SaltsUtils.Native" Version="*" />
     <PackageReference Include="CHttp.Native" Version="*" />
+    <PackageReference Include="TurboDB.Native" Version="*" />
     <PackageReference Include="Qigao.Re2c.Binary" Version="*" />
   </ItemGroup>
 </Project>
@@ -43,6 +44,7 @@ $roots = [ordered]@{
   SALTS_ROOT = Get-PackageRoot 'Salts.Native' 'sdk'
   SALTS_UTILS_ROOT = Get-PackageRoot 'SaltsUtils.Native' 'sdk'
   CHTTP_ROOT = Get-PackageRoot 'CHttp.Native' 'sdk'
+  TURBODB_ROOT = Get-PackageRoot 'TurboDB.Native' 'sdk'
   RE2C_ROOT = Get-PackageRoot 'Qigao.Re2c.Binary' 'tools'
 }
 $re2cName = if ($Rid -eq 'windows-x64') { 're2c.exe' } else { 're2c' }
@@ -50,6 +52,7 @@ $requiredFiles = @{
   SALTS_ROOT = 'lib/cmake/Salts/SaltsConfig.cmake'
   SALTS_UTILS_ROOT = 'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake'
   CHTTP_ROOT = 'lib/cmake/Chttp/ChttpConfig.cmake'
+  TURBODB_ROOT = 'lib/cmake/TurboDB/TurboDBConfig.cmake'
   RE2C_ROOT = "bin/$re2cName"
 }
 foreach ($name in $roots.Keys) {

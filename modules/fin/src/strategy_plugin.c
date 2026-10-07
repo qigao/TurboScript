@@ -34,7 +34,7 @@ static ts_plugin_module fin_module = {
     .vtable = &fin_module_vtable,
 };
 
-static bool SALTS_PLUGIN_CALL fin_kelly_invoke(
+static bool CMETA_PLUGIN_CALL fin_kelly_invoke(
     void *context, void *return_storage, void *const *params,
     size_t param_count) {
   double win_rate;
@@ -60,13 +60,13 @@ static bool SALTS_PLUGIN_CALL fin_kelly_invoke(
  * Both are protected by the same manifest lease; this is not a dual loader or
  * a parallel Plugin ABI.
  */
-static salts_plugin_export fin_exports[2];
-static salts_once_t fin_exports_once = SALTS_ONCE_INIT;
+static cmeta_plugin_export fin_exports[2];
+static cmeta_once_t fin_exports_once = SALTS_ONCE_INIT;
 
 static void fin_exports_init(void) {
-  fin_exports[0] = (salts_plugin_export){
-      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
-      .kind = SALTS_PLUGIN_EXPORT_INTERFACE,
+  fin_exports[0] = (cmeta_plugin_export){
+      .struct_size = CMETA_PLUGIN_EXPORT_SIZE,
+      .kind = CMETA_PLUGIN_EXPORT_INTERFACE,
       .contract_version = TS_PLUGIN_MODULE_CONTRACT_VERSION,
       .capabilities = 0u,
       .export_id = TS_PLUGIN_MODULE_EXPORT_ID,
@@ -77,9 +77,9 @@ static void fin_exports_init(void) {
       },
   };
 
-  fin_exports[1] = (salts_plugin_export){
-      .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
-      .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+  fin_exports[1] = (cmeta_plugin_export){
+      .struct_size = CMETA_PLUGIN_EXPORT_SIZE,
+      .kind = CMETA_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
       .capabilities = 0u,
       .export_id = "strategy.kelly",
@@ -93,9 +93,9 @@ static void fin_exports_init(void) {
   };
 }
 
-static const salts_plugin_manifest fin_manifest = {
-    .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
-    .abi_version = SALTS_PLUGIN_ABI_VERSION,
+static const cmeta_plugin_manifest fin_manifest = {
+    .struct_size = CMETA_PLUGIN_MANIFEST_SIZE,
+    .abi_version = CMETA_PLUGIN_ABI_VERSION,
     .plugin_id = "fin",
     .version = {1u, 0u, 0u},
     .exports = fin_exports,
@@ -107,9 +107,9 @@ static const salts_plugin_manifest fin_manifest = {
     .destroy = NULL,
 };
 
-SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
-salts_plugin_query(uint32_t host_abi) {
-  if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
-  salts_once(&fin_exports_once, fin_exports_init);
+CMETA_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *CMETA_PLUGIN_CALL
+cmeta_plugin_query(uint32_t host_abi) {
+  if (host_abi != CMETA_PLUGIN_ABI_VERSION) return NULL;
+  cmeta_once(&fin_exports_once, fin_exports_init);
   return &fin_manifest;
 }

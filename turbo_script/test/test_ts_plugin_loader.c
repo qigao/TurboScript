@@ -158,7 +158,7 @@ spec("plugin loader") {
         check_null(handle->module);
         check_equal(handle->manifest->export_count, (size_t)10u);
         check_equal(handle->manifest->exports[0].kind,
-                    SALTS_PLUGIN_EXPORT_FUNCTION);
+                    CMETA_PLUGIN_EXPORT_FUNCTION);
         for (size_t i = 0u; i < 9u; ++i) {
           check_not_null(handle->manifest->exports[i].value.function.desc);
           check_equal(

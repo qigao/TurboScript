@@ -56,8 +56,8 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
         &ts__##plugin_name##_adapter_vtable                                     \
     };                                                                          \
     static const cmeta_plugin_export ts__##plugin_name##_export = {             \
-        .struct_size = SALTS_PLUGIN_EXPORT_SIZE,                                \
-        .kind = SALTS_PLUGIN_EXPORT_INTERFACE,                                  \
+        .struct_size = CMETA_PLUGIN_EXPORT_SIZE,                                \
+        .kind = CMETA_PLUGIN_EXPORT_INTERFACE,                                  \
         .contract_version = TS_PLUGIN_MODULE_CONTRACT_VERSION,                  \
         .capabilities = 0u,                                                     \
         .export_id = TS_PLUGIN_MODULE_EXPORT_ID,                                \
@@ -68,8 +68,8 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
         },                                                                      \
     };                                                                          \
     static const cmeta_plugin_manifest ts__##plugin_name##_manifest = {         \
-        .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,                              \
-        .abi_version = SALTS_PLUGIN_ABI_VERSION,                                \
+        .struct_size = CMETA_PLUGIN_MANIFEST_SIZE,                              \
+        .abi_version = CMETA_PLUGIN_ABI_VERSION,                                \
         .plugin_id = #plugin_name,                                              \
         .version = {1u, 0u, 0u},                                               \
         .exports = &ts__##plugin_name##_export,                                \
@@ -80,9 +80,9 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
         .is_quiescent = NULL,                                                   \
         .destroy = NULL,                                                        \
     };                                                                          \
-    SALTS_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *SALTS_PLUGIN_CALL    \
+    CMETA_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *CMETA_PLUGIN_CALL    \
     cmeta_plugin_query(uint32_t host_abi) {                                     \
-        return host_abi == SALTS_PLUGIN_ABI_VERSION                            \
+        return host_abi == CMETA_PLUGIN_ABI_VERSION                            \
                    ? &ts__##plugin_name##_manifest                             \
                    : NULL;                                                      \
     }

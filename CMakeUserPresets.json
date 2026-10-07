@@ -51,8 +51,8 @@
       "binaryDir": "${sourceDir}/build/ci-win-release-user",
       "environment": {
         "PKG_ROOT": "${sourceDir}/stage",
-        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/ci-win-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-win-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/ci-win-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$env{TURBODB_ROOT}/bin${pathListSep}$penv{PATH}",
+        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-win-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$env{TURBODB_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
       },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "$env{QIGAO_TARGET_TRIPLET}",
@@ -73,8 +73,8 @@
       "binaryDir": "${sourceDir}/build/ci-linux-release-user",
       "environment": {
         "PKG_ROOT": "${sourceDir}/stage",
-        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/ci-linux-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-linux-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/ci-linux-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$env{TURBODB_ROOT}/bin${pathListSep}$penv{PATH}",
+        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-linux-release-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$env{TURBODB_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
       },
       "cacheVariables": {
         "VCPKG_TARGET_TRIPLET": "$env{QIGAO_TARGET_TRIPLET}",
@@ -82,7 +82,9 @@
         "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}",
         "BUILD_TESTS": true,
         "ENABLE_TESTS": true,
-        "ENABLE_SANITIZER_ADDRESS": false
+        "ENABLE_SANITIZER_ADDRESS": false,
+        "BUILD_EXAMPLES": false,
+        "TURBOSCRIPT_BUILD_CLI": false
       }
     },
     {
@@ -169,7 +171,8 @@
         "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
         "CHTTP_ROOT": "$penv{CHTTP_ROOT}",
         "VCPKG_RUNTIME_BIN": "$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin",
-        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/Msvc/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}"
+        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/Msvc/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$env{TURBODB_ROOT}/bin${pathListSep}$penv{PATH}",
+        "TURBODB_ROOT": "$penv{TURBODB_ROOT}"
       },
       "cacheVariables": {
         "ENABLE_SANITIZER_ADDRESS": "ON",
@@ -188,7 +191,8 @@
         "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
         "CHTTP_ROOT": "$penv{CHTTP_ROOT}",
         "VCPKG_RUNTIME_BIN": "$env{VCPKG_INSTALLED_DIR}/x64-windows/bin",
-        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/Msvc-Release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$penv{PATH}"
+        "PATH": "$env{RE2C_ROOT}/bin${pathListSep}${sourceDir}/build/Msvc-Release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-windows/bin${pathListSep}$env{SALTS_ROOT}/bin${pathListSep}$env{SALTS_UTILS_ROOT}/bin${pathListSep}$env{CHTTP_ROOT}/bin${pathListSep}$env{TURBODB_ROOT}/bin${pathListSep}$penv{PATH}",
+        "TURBODB_ROOT": "$penv{TURBODB_ROOT}"
       },
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/x64-windows",
@@ -205,8 +209,9 @@
         "SALTS_ROOT": "$penv{SALTS_ROOT}",
         "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
         "CHTTP_ROOT": "$penv{CHTTP_ROOT}",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}",
-        "RE2C_ROOT": "$penv{RE2C_ROOT}"
+        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-debug/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$env{TURBODB_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}",
+        "RE2C_ROOT": "$penv{RE2C_ROOT}",
+        "TURBODB_ROOT": "$penv{TURBODB_ROOT}"
       },
       "cacheVariables": {
         "ENABLE_SANITIZER_ADDRESS": "ON",
@@ -224,8 +229,9 @@
         "SALTS_ROOT": "$penv{SALTS_ROOT}",
         "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
         "CHTTP_ROOT": "$penv{CHTTP_ROOT}",
-        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}",
-        "RE2C_ROOT": "$penv{RE2C_ROOT}"
+        "LD_LIBRARY_PATH": "${sourceDir}/build/linux-gcc-release/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$env{TURBODB_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}",
+        "RE2C_ROOT": "$penv{RE2C_ROOT}",
+        "TURBODB_ROOT": "$penv{TURBODB_ROOT}"
       },
       "cacheVariables": {
         "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/x64-linux",
@@ -320,6 +326,21 @@
         "android-win-user-paths",
         "android-win-environment"
       ]
+    },
+    {
+      "name": "ci-linux-sanitizer-user",
+      "inherits": "ci-linux-release-user",
+      "binaryDir": "${sourceDir}/build/ci-linux-sanitizer-user",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "ENABLE_SANITIZER_ADDRESS": true,
+        "ENABLE_SANITIZER_UNDEFINED": true
+      },
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-linux-sanitizer-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$env{CHTTP_ROOT}/lib${pathListSep}$env{TURBODB_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}",
+        "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+      }
     }
   ],
   "buildPresets": [
@@ -465,6 +486,17 @@
       "targets": [
         "install"
       ]
+    },
+    {
+      "name": "ci-linux-sanitizer-user",
+      "configurePreset": "ci-linux-sanitizer-user"
+    },
+    {
+      "name": "install-ci-linux-sanitizer-user",
+      "configurePreset": "ci-linux-sanitizer-user",
+      "targets": [
+        "install"
+      ]
     }
   ],
   "testPresets": [
@@ -497,6 +529,29 @@
       "name": "ci-linux-release-user",
       "inherits": "base-test",
       "configurePreset": "ci-linux-release-user"
+    },
+    {
+      "name": "ci-linux-sanitizer-user",
+      "inherits": "base-test",
+      "configurePreset": "ci-linux-sanitizer-user",
+      "filter": {
+        "include": {
+          "name": "^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower|test_turbo_script_cflow_qualification)$"
+        }
+      }
+    },
+    {
+      "name": "ci-linux-benchmark-user",
+      "inherits": "base-test",
+      "configurePreset": "ci-linux-release-user",
+      "filter": {
+        "include": {
+          "label": "benchmark"
+        },
+        "exclude": {
+          "label": "^$"
+        }
+      }
     }
   ]
 }

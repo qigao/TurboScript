@@ -288,7 +288,7 @@ static bool ts_cflow_try_append_plugin_function(
     return false;
   if (matched) *matched = true;
 
-  if (!view.entry || view.entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION ||
+  if (!view.entry || view.entry->kind != CMETA_PLUGIN_EXPORT_FUNCTION ||
       !view.invoke) {
     if (error) *error = "loaded plugin Function binding is invalid";
     return false;
