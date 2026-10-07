@@ -9,7 +9,7 @@
 #include "platform.h"
 #include "exprtk_module.h"
 #include "exprtk_types.h"
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 
 #ifdef __cplusplus
 extern "C" {

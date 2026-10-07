@@ -84,10 +84,11 @@ HMAC-SHA256, and MD5 algorithms mandated by S3. The adapter therefore combines
 the private SHA-256 and Monocypher sources with an RFC 1321 MD5 implementation
 without changing request formats or public S3 interfaces.
 
-OpenSSL remains a repository dependency for TLS and cjwt's RSA, ECDSA,
-SHA-384/SHA-512, AES-GCM/AES-KW, and RSA-OAEP support. S3 and Castle password
-hashing no longer call OpenSSL, while cjwt uses this target for HS256,
-PBES2-HS256, randomness, verification, and secret wiping.
+In TurboScript, TLS is supplied by the installed `Salts::CNet` SDK with its
+GmSSL backend. This adapter links `Salts::Core` for platform services and keeps
+its bundled cryptographic implementations private; it has no direct OpenSSL
+or BoringSSL dependency. The S3 and cjwt integration described here records
+the adapter's original use in the Salts ecosystem.
 
 Migration is limited to linking `s3_client` privately to `turbo_crypto` and
 routing its digest calls through this API. Rollback restores the previous

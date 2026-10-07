@@ -8,8 +8,8 @@
 
 #include "exprtk_module.h"
 #include "ts_plugin_loader.h"
-#include "salts_buffer.h"
-#include "salts_coro_executor.h"
+#include "cmeta_buffer.h"
+#include "coro_executor.h"
 #include "turbo_script.h"
 #include <mir.h>
 #include <cstl.h>
@@ -99,7 +99,7 @@ struct turbo_script_ctx_s {
   int memory_exhausted;
 
   /* The context owns one serialized Executor shard for all script callbacks. */
-  salts_coro_executor_t *executor;
+  coro_executor_t *executor;
   ts_timer_scheduler_t *timer_scheduler;
   ts_task_scheduler_t *task_scheduler;
 

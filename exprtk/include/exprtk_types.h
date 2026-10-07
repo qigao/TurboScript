@@ -1,10 +1,10 @@
 #ifndef exprtk_TYPES_H
 #define exprtk_TYPES_H
 
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include "datetime_parser.h"
 #include "vstr.h"
-#include "salts_uuid.h"
+#include "cmeta_uuid.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -378,7 +378,7 @@ typedef struct exprtk_value_s {
     int64_t integer;
     int boolean;
     vstr bytes;
-    salts_uuid_t uuid;
+    cmeta_uuid_t uuid;
     datetime_t datetime;
     exprtk_date_t date;
     exprtk_time_t time;

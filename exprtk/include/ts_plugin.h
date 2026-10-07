@@ -25,7 +25,7 @@
 extern "C" {
 #endif
 
-/* Forward declarations — avoids pulling in exprtk.h / salts_buffer.h */
+/* Forward declarations — avoids pulling in exprtk.h / cmeta_buffer.h */
 typedef struct exprtk_env_s exprtk_env_t;
 typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;

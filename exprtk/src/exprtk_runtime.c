@@ -3292,7 +3292,7 @@ exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
 
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "uuid");
-    if (salts_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != SALTS_OK)
+    if (cmeta_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != SALTS_OK)
         return exprtk_val_num(0);
     len = strlen(text);
     buf = (char *)mem_alloc(mc->arena, len + 1);

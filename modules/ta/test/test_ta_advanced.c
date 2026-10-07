@@ -5,7 +5,7 @@
  */
 #include "ta.h"
 #include "tinytest.h"
-#include <salts_buffer.h>
+#include <cmeta_buffer.h>
 #include <math.h>
 #include <string.h>
 

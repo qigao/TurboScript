@@ -44,10 +44,23 @@ include(GNUInstallDirs)
 include(CmakeUtils)
 
 find_package(Threads REQUIRED)
-find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH)
-find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
-             NO_DEFAULT_PATH)
-find_package(CHttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH)
+foreach(_root IN ITEMS SALTS_ROOT SALTS_UTILS_ROOT CHTTP_ROOT)
+  if(NOT DEFINED ENV{${_root}} OR NOT IS_DIRECTORY "$ENV{${_root}}")
+    message(FATAL_ERROR "${_root} must name the matching installed SDK; run cmake/ci/restore-native-sdks.ps1 first")
+  endif()
+  file(TO_CMAKE_PATH "$ENV{${_root}}" _turboscript_${_root})
+endforeach()
+# A previous configure must not select a different SDK than the active roots.
+foreach(_package IN ITEMS Salts SaltsUtils Chttp)
+  unset(${_package}_DIR CACHE)
+  unset(${_package}_DIR)
+endforeach()
+find_package(Salts CONFIG REQUIRED PATHS "${_turboscript_SALTS_ROOT}"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_package(SaltsUtils CONFIG REQUIRED PATHS "${_turboscript_SALTS_UTILS_ROOT}"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_package(Chttp CONFIG REQUIRED PATHS "${_turboscript_CHTTP_ROOT}"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 find_package(xxHash CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
