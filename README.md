@@ -64,6 +64,19 @@ build and CTest use the same user preset. The CI environment supplies
 enabled explicitly. Ordinary Release profiles retain their own test settings.
 The CFlow qualification benchmark runs through `ci-linux-benchmark-user` in CTest.
 
+PR checks also build and install the native SDKs with `ci-linux-sdk-user`,
+`ci-macos-sdk-user` and `ci-android-sdk-user`; each has an `install-` build preset.
+All platforms use the same floating SDK restore script. Android uses a native
+`ci-host-tools-user` build for Lemon and the host re2c package. TurboDB is included
+on Linux and Android; its published SDK has no macOS slice, so the existing
+macOS package continues to omit the database module.
+
+The existing installed Host ABI and interpreter/JIT CTest suites have their own
+versioned user presets under `cmake/ci/host-abi` and `cmake/ci/sdk-smoke`. They
+reuse the root vcpkg manifest and run against the installed/relocated SDK.
+Android consumers are cross-linked; no device runtime test is claimed.
+
+
 Native integrations use the current `cmeta_*`, `coro_executor_*` and
 `cmeta_plugin_*` APIs. Plugin macros are `CMETA_PLUGIN_*`, and the query entry
 is `cmeta_plugin_query`; the header remains `<salts/plugin.h>`. Rebuild native

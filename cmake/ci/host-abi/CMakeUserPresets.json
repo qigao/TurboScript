@@ -1,0 +1,46 @@
+{
+  "version": 6,
+  "include": [
+    "../../../CMakeUserPresets.json"
+  ],
+  "configurePresets": [
+    {
+      "name": "ci-installed-host-abi-user",
+      "inherits": [
+        "vcpkg-cache-ci",
+        "base-release-linux"
+      ],
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/../../../build/installed-host-abi",
+      "environment": {
+        "VCPKG_ROOT": "$penv{VCPKG_ROOT}",
+        "SALTS_ROOT": "$penv{SALTS_ROOT}",
+        "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
+        "TURBOSCRIPT_ROOT": "${sourceDir}/../../../stage/host-abi",
+        "LD_LIBRARY_PATH": "$env{TURBOSCRIPT_ROOT}/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}${sourceDir}/../../../vcpkg_installed/x64-linux/debug/lib${pathListSep}${sourceDir}/../../../vcpkg_installed/x64-linux/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+      },
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_PREFIX_PATH": "${sourceDir}/../../../vcpkg_installed/x64-linux",
+        "VCPKG_MANIFEST_MODE": true,
+        "VCPKG_MANIFEST_DIR": "${sourceDir}/../../..",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/../../../vcpkg_installed",
+        "VCPKG_TARGET_TRIPLET": "x64-linux",
+        "VCPKG_HOST_TRIPLET": "x64-linux"
+      }
+    }
+  ],
+  "buildPresets": [
+    {
+      "name": "ci-installed-host-abi-user",
+      "configurePreset": "ci-installed-host-abi-user"
+    }
+  ],
+  "testPresets": [
+    {
+      "name": "ci-installed-host-abi-user",
+      "configurePreset": "ci-installed-host-abi-user",
+      "inherits": "base-test"
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 param(
-  [Parameter(Mandatory=$true)][ValidateSet('windows-x64', 'linux-x64')][string]$Rid,
+  [Parameter(Mandatory=$true)][ValidateSet('windows-x64', 'linux-x64', 'macos-arm64', 'android-arm64-v8a')][string]$Rid,
   [switch]$Local
 )
 $ErrorActionPreference = 'Stop'
@@ -32,22 +32,31 @@ New-Item -ItemType Directory -Path $restoreRoot -Force | Out-Null
 dotnet restore $project --packages $packages --configfile "$repositoryRoot/cmake/vcpkg-cache.nuget.config" --no-cache --force-evaluate
 if ($LASTEXITCODE -ne 0) { throw 'Failed to restore the latest native SDKs' }
 
+$hostOs = if ($IsWindows) { 'windows' } elseif ($IsMacOS) { 'macos' } elseif ($IsLinux) { 'linux' } else { throw 'Unsupported build host' }
+$hostArch = [Runtime.InteropServices.RuntimeInformation]::OSArchitecture.ToString().ToLowerInvariant()
+$hostRid = "$hostOs-$hostArch"
+$versions = @{}
+
 $assets = Get-Content -LiteralPath (Join-Path $restoreRoot 'obj/project.assets.json') -Raw | ConvertFrom-Json -AsHashtable
-function Get-PackageRoot([string]$name, [string]$directory) {
+function Get-PackageRoot([string]$name, [string]$directory, [string]$packageRid = $Rid) {
   $keys = @($assets.libraries.Keys | Where-Object { $_.StartsWith("$name/", [StringComparison]::OrdinalIgnoreCase) })
   if ($keys.Count -ne 1) { throw "Expected one resolved $name package" }
-  Write-Host "Restored $($keys[0]) for $Rid"
-  return Join-Path (Join-Path $packages $assets.libraries[$keys[0]].path) "$directory/$Rid"
+  $versions[$name] = $keys[0].Split('/', 2)[1]
+  Write-Host "Restored $($keys[0]) for $packageRid"
+  return Join-Path (Join-Path $packages $assets.libraries[$keys[0]].path) "$directory/$packageRid"
 }
 
 $roots = [ordered]@{
   SALTS_ROOT = Get-PackageRoot 'Salts.Native' 'sdk'
   SALTS_UTILS_ROOT = Get-PackageRoot 'SaltsUtils.Native' 'sdk'
   CHTTP_ROOT = Get-PackageRoot 'CHttp.Native' 'sdk'
-  TURBODB_ROOT = Get-PackageRoot 'TurboDB.Native' 'sdk'
-  RE2C_ROOT = Get-PackageRoot 'Qigao.Re2c.Binary' 'tools'
+  RE2C_ROOT = Get-PackageRoot 'Qigao.Re2c.Binary' 'tools' $hostRid
 }
-$re2cName = if ($Rid -eq 'windows-x64') { 're2c.exe' } else { 're2c' }
+# TurboDB currently publishes Linux, Windows and Android SDKs only.
+if ($Rid -ne 'macos-arm64') {
+  $roots.TURBODB_ROOT = Get-PackageRoot 'TurboDB.Native' 'sdk'
+}
+$re2cName = if ($IsWindows) { 're2c.exe' } else { 're2c' }
 $requiredFiles = @{
   SALTS_ROOT = 'lib/cmake/Salts/SaltsConfig.cmake'
   SALTS_UTILS_ROOT = 'lib/cmake/SaltsUtils/SaltsUtilsConfig.cmake'
@@ -59,7 +68,7 @@ foreach ($name in $roots.Keys) {
   $file = Join-Path $roots[$name] $requiredFiles[$name]
   if (-not (Test-Path -LiteralPath $file -PathType Leaf)) { throw "Missing restored SDK file: $file" }
 }
-if ($Rid -eq 'linux-x64') {
+if (-not $IsWindows) {
   & chmod +x (Join-Path $roots.RE2C_ROOT "bin/$re2cName")
   if ($LASTEXITCODE -ne 0) { throw 'Failed to make restored re2c executable' }
 }
@@ -68,4 +77,21 @@ if ($Rid -eq 'linux-x64') {
 foreach ($name in $roots.Keys) {
   [Environment]::SetEnvironmentVariable($name, $roots[$name], 'Process')
   if (-not $Local) { "$name=$($roots[$name])" >> $env:GITHUB_ENV }
+}
+
+# Clear an inherited database root on a platform without a database SDK.
+if ($Rid -eq 'macos-arm64') {
+  [Environment]::SetEnvironmentVariable('TURBODB_ROOT', '', 'Process')
+  if (-not $Local) { 'TURBODB_ROOT=' >> $env:GITHUB_ENV }
+}
+$releasePackages = @{
+  SALTS_SDK_RELEASE = 'Salts.Native'
+  SALTS_UTILS_SDK_RELEASE = 'SaltsUtils.Native'
+  CHTTP_SDK_RELEASE = 'CHttp.Native'
+  TURBODB_SDK_RELEASE = 'TurboDB.Native'
+}
+foreach ($name in $releasePackages.Keys) {
+  $version = $versions[$releasePackages[$name]]
+  [Environment]::SetEnvironmentVariable($name, $version, 'Process')
+  if (-not $Local) { "$name=$version" >> $env:GITHUB_ENV }
 }

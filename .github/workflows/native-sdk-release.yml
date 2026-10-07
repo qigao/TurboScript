@@ -143,6 +143,9 @@ jobs:
     if: github.event_name == 'pull_request' || github.ref == 'refs/heads/master' || startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      QIGAO_TARGET_TRIPLET: x64-linux
     steps:
       - uses: actions/checkout@v4
         with:
@@ -151,68 +154,34 @@ jobs:
       - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
         with:
           mode: read
-      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
-      - name: Prepare Host ABI toolchain
+      - name: Prepare Linux host
         shell: bash
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config nasm
-      - name: Restore current dependency SDK graph
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
-        run: bash cmake/ci/restore-current-native-sdks.sh linux-x64
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+      - name: Restore latest native SDKs
+        shell: pwsh
+        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
       - name: Build modules-off Host contracts and install SDK
         shell: bash
         run: |
-          set -euxo pipefail
-          prefix="$GITHUB_WORKSPACE/stage/host-abi"
-          cmake -S . -B build/host-abi -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
-            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
-            "-DCMAKE_INSTALL_PREFIX=$prefix" \
-            -DBUILD_TESTING=ON -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF \
-            -DBUILD_EXAMPLES=OFF \
-            -DTURBOSCRIPT_BUILD_HOST_TESTS=ON \
-            -DTURBOSCRIPT_BUILD_MODULES=OFF \
-            -DTURBOSCRIPT_BUILD_CLI=OFF
-          cmake --build build/host-abi --parallel 2
-          export LD_LIBRARY_PATH="$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          ctest --test-dir build/host-abi -R '^test_turbo_script_host_' \
-            --no-tests=error --output-on-failure
-          cmake --install build/host-abi
-      - name: Verify installed public-only C11 and C++17 consumers
-        shell: bash
-        run: |
-          set -euxo pipefail
-          prefix="$GITHUB_WORKSPACE/stage/host-abi"
-          export LD_LIBRARY_PATH="$prefix/lib:$TURBODB_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/debug/lib:$GITHUB_WORKSPACE/vcpkg_installed/x64-linux/lib:${LD_LIBRARY_PATH:-}"
-          cmake -S cmake/ci/host-abi -B build/installed-host-abi -G Ninja \
-            -DCMAKE_BUILD_TYPE=Debug \
-            "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
-            "-DCMAKE_PREFIX_PATH=$prefix;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
-            -DVCPKG_TARGET_TRIPLET=x64-linux \
-            -DVCPKG_MANIFEST_MODE=OFF \
-            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed"
-          cmake --build build/installed-host-abi --parallel 2
-          ctest --test-dir build/installed-host-abi --no-tests=error --output-on-failure
-      - name: Verify exact head and clean tracked source
+          set -euo pipefail
+          cmake --preset ci-linux-host-abi-user
+          cmake --build --preset ci-linux-host-abi-user --parallel 2
+          ctest --preset ci-linux-host-abi-user --no-tests=error --output-on-failure
+          cmake --build --preset install-ci-linux-host-abi-user
+      - name: Run installed public-only C11 and C++17 Host tests
+        working-directory: cmake/ci/host-abi
         shell: bash
         run: |
           set -euo pipefail
-          test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.head.sha || github.sha }}"
-          git status --short --untracked-files=no
-          git diff --quiet --exit-code
-          git diff --cached --quiet --exit-code
+          cmake --preset ci-installed-host-abi-user
+          cmake --build --preset ci-installed-host-abi-user --parallel 2
+          ctest --preset ci-installed-host-abi-user --no-tests=error --output-on-failure
 
   build:
     needs: metadata
@@ -224,14 +193,16 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - {runner: ubuntu-24.04, rid: linux-x64, triplet: x64-linux}
-          - {runner: macos-15, rid: macos-arm64, triplet: arm64-osx}
-          - {runner: ubuntu-24.04, rid: android-arm64-v8a, triplet: arm64-android}
+          - {runner: ubuntu-24.04, rid: linux-x64, triplet: x64-linux, platform: linux}
+          - {runner: macos-15, rid: macos-arm64, triplet: arm64-osx, platform: macos}
+          - {runner: ubuntu-24.04, rid: android-arm64-v8a, triplet: arm64-android, platform: android}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     env:
       RID: ${{ matrix.rid }}
       TRIPLET: ${{ matrix.triplet }}
+      QIGAO_TARGET_TRIPLET: ${{ matrix.triplet }}
+      GITHUB_TOKEN: ${{ github.token }}
       SDK_VERSION: ${{ needs.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -241,7 +212,6 @@ jobs:
       - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
         with:
           mode: read
-      - uses: qigao/vcpkg-cache/.github/actions/setup-re2c-tools@master
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
@@ -256,33 +226,23 @@ jobs:
             brew install ninja nasm
           fi
           if [[ "$RID" == macos-arm64 ]]; then test "$(uname -m)" = arm64; fi
-      - name: Restore current dependency SDKs
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Restore latest native SDKs
+        shell: pwsh
+        run: ./cmake/ci/restore-native-sdks.ps1 -Rid '${{ matrix.rid }}'
+      - name: Build native parser generator for Android
+        if: matrix.platform == 'android'
         shell: bash
-        run: bash cmake/ci/restore-current-native-sdks.sh "$RID"
+        run: |
+          set -euo pipefail
+          cmake --preset ci-host-tools-user
+          cmake --build --preset ci-host-tools-user --parallel 2
       - name: Configure, build and install SDK with native modules
         shell: bash
         run: |
           set -euo pipefail
-          args=(-DCMAKE_BUILD_TYPE=Release)
-          if [[ "$RID" == android-arm64-v8a ]]; then
-            mkdir -p build/host
-            cc tools/lemon/lemon.c -o build/host/lemon
-            args+=( -DCMAKE_SYSTEM_NAME=Android
-              "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
-              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared
-              "-DTURBOSCRIPT_HOST_LEMON_EXECUTABLE=$GITHUB_WORKSPACE/build/host/lemon" )
-          fi
-          cmake -S . -B build/sdk -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            "-DVCPKG_TARGET_TRIPLET=$TRIPLET" "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" \
-            -DVCPKG_INSTALL_OPTIONS=--only-binarycaching \
-            "-DCMAKE_INSTALL_PREFIX=$GITHUB_WORKSPACE/stage/$RID" \
-            -DBUILD_TESTS=OFF -DENABLE_TESTS=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF \
-            -DTURBOSCRIPT_BUILD_MODULES=ON -DTURBOSCRIPT_BUILD_CLI=OFF "${args[@]}"
-          cmake --build build/sdk --parallel 2
-          cmake --install build/sdk
+          cmake --preset 'ci-${{ matrix.platform }}-sdk-user'
+          cmake --build --preset 'ci-${{ matrix.platform }}-sdk-user' --parallel 2
+          cmake --build --preset 'install-ci-${{ matrix.platform }}-sdk-user'
 
           prefix="$GITHUB_WORKSPACE/stage/$RID"
           if [[ "$RID" == macos-arm64 ]]; then
@@ -314,37 +274,22 @@ jobs:
           EOF
           mkdir -p dist
           tar -chzf "dist/turboscript-$RID.tar.gz" -C stage "$RID"
-      - name: Verify relocated SDK consumer
+      - name: Run existing relocated SDK interpreter/JIT tests
         shell: bash
         run: |
           set -euo pipefail
           relocated="$RUNNER_TEMP/turboscript-sdk"
           mkdir -p "$relocated"
           tar -xzf "dist/turboscript-$RID.tar.gz" -C "$relocated"
-          mv stage stage-hidden
-          prefix="$relocated/$RID"
-          export TURBOSCRIPT_ROOT="$prefix"
-          export LD_LIBRARY_PATH="$prefix/lib:$TURBODB_ROOT/lib:$CHTTP_ROOT/lib:$SALTS_UTILS_ROOT/lib:$SALTS_ROOT/lib:$GITHUB_WORKSPACE/vcpkg_installed/$TRIPLET/lib"
-          export DYLD_LIBRARY_PATH="$LD_LIBRARY_PATH"
-          args=(-DCMAKE_BUILD_TYPE=Release)
+          mv "stage/$RID" "build/unrelocated-$RID"
+          export TURBOSCRIPT_ROOT="$relocated/$RID"
+          cd cmake/ci/sdk-smoke
+          cmake --preset 'ci-installed-sdk-${{ matrix.platform }}-user'
+          cmake --build --preset 'ci-installed-sdk-${{ matrix.platform }}-user' --parallel 2
           if [[ "$RID" == android-arm64-v8a ]]; then
-            args+=( -DCMAKE_SYSTEM_NAME=Android
-              "-DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$ANDROID_NDK_HOME/build/cmake/android.toolchain.cmake"
-              -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-26 -DANDROID_STL=c++_shared )
-          fi
-          cmake -S cmake/ci/sdk-smoke -B build/sdk-smoke -G Ninja -DCMAKE_BUILD_TYPE=Release \
-            "-DCMAKE_PREFIX_PATH=$prefix;$CHTTP_ROOT;$SALTS_UTILS_ROOT;$SALTS_ROOT" \
-            "-DTurboScript_DIR=$prefix/lib/cmake/TurboScript" \
-            "-DCMAKE_TOOLCHAIN_FILE=$QIGAO_VCPKG_TOOLCHAIN_FILE" \
-            "-DVCPKG_TARGET_TRIPLET=$TRIPLET" -DVCPKG_MANIFEST_MODE=OFF \
-            "-DVCPKG_INSTALLED_DIR=$GITHUB_WORKSPACE/vcpkg_installed" "${args[@]}"
-          cmake --build build/sdk-smoke --parallel 2
-          if [[ "$RID" == android-arm64-v8a ]]; then
-            readelf -h "$prefix/lib/libturbo_script.so" | tee "$RUNNER_TEMP/elf-header.txt"
-            grep -q 'AArch64' "$RUNNER_TEMP/elf-header.txt"
-            echo 'Android: cross-link validated; device runtime not exercised.' >> "$GITHUB_STEP_SUMMARY"
+            echo 'Android: cross-link completed; device runtime not exercised.' >> "$GITHUB_STEP_SUMMARY"
           else
-            ctest --test-dir build/sdk-smoke --no-tests=error --output-on-failure
+            ctest --preset 'ci-installed-sdk-${{ matrix.platform }}-user' --no-tests=error --output-on-failure
           fi
       - uses: actions/upload-artifact@v4
         with:

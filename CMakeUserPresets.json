@@ -341,6 +341,104 @@
         "ASAN_OPTIONS": "detect_leaks=1:halt_on_error=1",
         "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
       }
+    },
+    {
+      "name": "ci-linux-host-abi-user",
+      "inherits": "ci-linux-release-user",
+      "binaryDir": "${sourceDir}/build/ci-linux-host-abi-user",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/stage/host-abi",
+        "BUILD_TESTS": false,
+        "ENABLE_TESTS": false,
+        "TURBOSCRIPT_BUILD_MODULES": false,
+        "TURBOSCRIPT_BUILD_HOST_TESTS": true
+      },
+      "environment": {
+        "LD_LIBRARY_PATH": "${sourceDir}/build/ci-linux-host-abi-user/bin${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/debug/lib${pathListSep}$env{VCPKG_INSTALLED_DIR}/x64-linux/lib${pathListSep}$env{SALTS_ROOT}/lib${pathListSep}$env{SALTS_UTILS_ROOT}/lib${pathListSep}$penv{LD_LIBRARY_PATH}"
+      }
+    },
+    {
+      "name": "ci-sdk-base",
+      "hidden": true,
+      "inherits": "vcpkg-cache-ci",
+      "generator": "Ninja",
+      "environment": {
+        "VCPKG_ROOT": "$penv{VCPKG_ROOT}",
+        "VCPKG_INSTALLED_DIR": "${sourceDir}/vcpkg_installed",
+        "SALTS_ROOT": "$penv{SALTS_ROOT}",
+        "SALTS_UTILS_ROOT": "$penv{SALTS_UTILS_ROOT}",
+        "CHTTP_ROOT": "$penv{CHTTP_ROOT}",
+        "TURBODB_ROOT": "$penv{TURBODB_ROOT}"
+      },
+      "cacheVariables": {
+        "CMAKE_INSTALL_PREFIX": "${sourceDir}/stage/$env{RID}",
+        "CMAKE_PREFIX_PATH": "$env{VCPKG_INSTALLED_DIR}/$env{QIGAO_TARGET_TRIPLET}",
+        "VCPKG_INSTALLED_DIR": "$env{VCPKG_INSTALLED_DIR}",
+        "VCPKG_TARGET_TRIPLET": "$env{QIGAO_TARGET_TRIPLET}",
+        "VCPKG_MANIFEST_MODE": true,
+        "BUILD_TESTING": false,
+        "BUILD_TESTS": false,
+        "ENABLE_TESTS": false,
+        "BUILD_EXAMPLES": false,
+        "TURBOSCRIPT_BUILD_MODULES": true,
+        "TURBOSCRIPT_BUILD_CLI": false,
+        "ENABLE_SANITIZER_ADDRESS": false
+      }
+    },
+    {
+      "name": "ci-linux-sdk-user",
+      "inherits": [
+        "ci-sdk-base",
+        "base-release-linux"
+      ],
+      "binaryDir": "${sourceDir}/build/ci-linux-sdk-user",
+      "cacheVariables": {
+        "VCPKG_HOST_TRIPLET": "x64-linux"
+      }
+    },
+    {
+      "name": "ci-macos-sdk-user",
+      "inherits": [
+        "ci-sdk-base",
+        "ISMac",
+        "AppleClang",
+        "flags-darwin",
+        "release-mode"
+      ],
+      "binaryDir": "${sourceDir}/build/ci-macos-sdk-user",
+      "cacheVariables": {
+        "VCPKG_HOST_TRIPLET": "arm64-osx"
+      }
+    },
+    {
+      "name": "ci-android-sdk-user",
+      "inherits": [
+        "ci-sdk-base",
+        "android-arm64-v8a-release"
+      ],
+      "binaryDir": "${sourceDir}/build/ci-android-sdk-user",
+      "cacheVariables": {
+        "ANDROID_PLATFORM": "android-26",
+        "VCPKG_HOST_TRIPLET": "x64-linux",
+        "TURBOSCRIPT_HOST_LEMON_EXECUTABLE": "${sourceDir}/build/ci-host-tools-user/bin/lemon"
+      }
+    },
+    {
+      "name": "ci-host-tools-user",
+      "inherits": [
+        "ci-sdk-base",
+        "base-release-linux"
+      ],
+      "binaryDir": "${sourceDir}/build/ci-host-tools-user",
+      "environment": {
+        "QIGAO_TARGET_TRIPLET": "x64-linux"
+      },
+      "cacheVariables": {
+        "TURBOSCRIPT_BUILD_HOST_TOOLS_ONLY": true,
+        "TURBOSCRIPT_BUILD_MODULES": false,
+        "VCPKG_HOST_TRIPLET": "x64-linux"
+      }
     }
   ],
   "buildPresets": [
@@ -497,6 +595,54 @@
       "targets": [
         "install"
       ]
+    },
+    {
+      "name": "ci-linux-host-abi-user",
+      "configurePreset": "ci-linux-host-abi-user"
+    },
+    {
+      "name": "install-ci-linux-host-abi-user",
+      "configurePreset": "ci-linux-host-abi-user",
+      "targets": [
+        "install"
+      ]
+    },
+    {
+      "name": "ci-linux-sdk-user",
+      "configurePreset": "ci-linux-sdk-user"
+    },
+    {
+      "name": "install-ci-linux-sdk-user",
+      "configurePreset": "ci-linux-sdk-user",
+      "targets": [
+        "install"
+      ]
+    },
+    {
+      "name": "ci-macos-sdk-user",
+      "configurePreset": "ci-macos-sdk-user"
+    },
+    {
+      "name": "install-ci-macos-sdk-user",
+      "configurePreset": "ci-macos-sdk-user",
+      "targets": [
+        "install"
+      ]
+    },
+    {
+      "name": "ci-android-sdk-user",
+      "configurePreset": "ci-android-sdk-user"
+    },
+    {
+      "name": "install-ci-android-sdk-user",
+      "configurePreset": "ci-android-sdk-user",
+      "targets": [
+        "install"
+      ]
+    },
+    {
+      "name": "ci-host-tools-user",
+      "configurePreset": "ci-host-tools-user"
     }
   ],
   "testPresets": [
@@ -552,6 +698,11 @@
           "label": "^$"
         }
       }
+    },
+    {
+      "name": "ci-linux-host-abi-user",
+      "inherits": "base-test",
+      "configurePreset": "ci-linux-host-abi-user"
     }
   ]
 }
