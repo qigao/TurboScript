@@ -20,7 +20,6 @@
         {
             "name": "pkg-vcpkg",
             "hidden": true,
-            "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
             "cacheVariables": {
                 "VCPKG_MANIFEST_MODE": true
             }
@@ -56,7 +55,7 @@
             "hidden": true,
             "cacheVariables": {
                 "CMAKE_BUILD_TYPE": "Release",
-                "ENABLE_TESTS": true
+                "ENABLE_TESTS": false
             },
             "inherits": [
                 "default-options"
