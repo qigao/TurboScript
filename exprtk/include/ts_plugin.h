@@ -55,7 +55,7 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
         &ts__##plugin_name##_adapter_token,                                     \
         &ts__##plugin_name##_adapter_vtable                                     \
     };                                                                          \
-    static const salts_plugin_export ts__##plugin_name##_export = {             \
+    static const cmeta_plugin_export ts__##plugin_name##_export = {             \
         .struct_size = SALTS_PLUGIN_EXPORT_SIZE,                                \
         .kind = SALTS_PLUGIN_EXPORT_INTERFACE,                                  \
         .contract_version = TS_PLUGIN_MODULE_CONTRACT_VERSION,                  \
@@ -67,7 +67,7 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
             .value = &ts__##plugin_name##_adapter,                             \
         },                                                                      \
     };                                                                          \
-    static const salts_plugin_manifest ts__##plugin_name##_manifest = {         \
+    static const cmeta_plugin_manifest ts__##plugin_name##_manifest = {         \
         .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,                              \
         .abi_version = SALTS_PLUGIN_ABI_VERSION,                                \
         .plugin_id = #plugin_name,                                              \
@@ -80,8 +80,8 @@ CMETA_INTERFACE(ts_plugin_module, TS_PLUGIN_MODULE_METHODS);
         .is_quiescent = NULL,                                                   \
         .destroy = NULL,                                                        \
     };                                                                          \
-    SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL    \
-    salts_plugin_query(uint32_t host_abi) {                                     \
+    SALTS_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *SALTS_PLUGIN_CALL    \
+    cmeta_plugin_query(uint32_t host_abi) {                                     \
         return host_abi == SALTS_PLUGIN_ABI_VERSION                            \
                    ? &ts__##plugin_name##_manifest                             \
                    : NULL;                                                      \

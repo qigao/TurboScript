@@ -4,7 +4,7 @@
 
 static void wait_for_timers(turbo_script_ctx_t *ctx) {
   for (int i = 0; i < 200 && turbo_script_timer_active_count(ctx); ++i)
-    salts_sleep_ms(5);
+    cmeta_sleep_ms(5);
 }
 
 suite("TurboScript Executor timers") {

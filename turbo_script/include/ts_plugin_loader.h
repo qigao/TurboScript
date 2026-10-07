@@ -12,17 +12,17 @@ extern "C" {
 #endif
 
 typedef struct ts_plugin_function_view_s {
-    const salts_plugin_export *entry;         /* borrowed under the plugin lease */
-    salts_plugin_function_invoke_fn invoke;   /* pre-bound exact adapter */
+    const cmeta_plugin_export *entry;         /* borrowed under the plugin lease */
+    cmeta_plugin_function_invoke_fn invoke;   /* pre-bound exact adapter */
     void *context;                            /* provider-owned, lease-bound */
 } ts_plugin_function_view_t;
 
 typedef struct ts_plugin_handle_s {
-    salts_plugin_registry registry;          /* owns the loaded DSO */
-    salts_plugin_ref plugin_ref;             /* registry identity */
-    salts_plugin_lease lease;                /* keeps manifest/code alive */
-    const salts_plugin_manifest *manifest;   /* borrowed under lease */
-    const salts_plugin_export *module_export;/* canonical module capability */
+    cmeta_plugin_registry registry;          /* owns the loaded DSO */
+    cmeta_plugin_ref plugin_ref;             /* registry identity */
+    cmeta_plugin_lease lease;                /* keeps manifest/code alive */
+    const cmeta_plugin_manifest *manifest;   /* borrowed under lease */
+    const cmeta_plugin_export *module_export;/* canonical module capability */
     ts_plugin_module *module;                /* optional borrowed interface handle */
     void *instance;                          /* optional per-script-context instance */
     void *function_bindings;                 /* private canonical Function binding cache */
@@ -77,7 +77,7 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
 
 /**
  * Resolve the configured TurboScript plugin path and load it through
- * Salts::Plugin. The DSO must export the canonical salts_plugin_query entry.
+ * Salts::Plugin. The DSO must export the canonical cmeta_plugin_query entry.
  * @return handle on success, NULL on failure.
  */
 ts_plugin_handle_t *ts_plugin_load(const char *path);

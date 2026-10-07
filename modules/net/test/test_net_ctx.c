@@ -5,7 +5,7 @@
 #include "net_ctx.h"
 #include "tinytest.h"
 #include <string.h>
-#include <salts_buffer.h>
+#include <cmeta_buffer.h>
 spec("net_ctx") {
 
     describe("Lifecycle") {

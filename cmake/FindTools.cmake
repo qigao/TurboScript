@@ -1,11 +1,20 @@
-# Find re2c
-find_program(RE2C_EXECUTABLE re2c)
-if(NOT RE2C_EXECUTABLE)
-    message(WARNING "re2c not found - some lexers might not be generated")
+# Lexer generation must use the explicitly selected host SDK.
+if(NOT DEFINED ENV{RE2C_ROOT} OR NOT IS_DIRECTORY "$ENV{RE2C_ROOT}")
+    message(FATAL_ERROR "RE2C_ROOT must name the restored host re2c package")
+endif()
+unset(RE2C_EXECUTABLE CACHE)
+unset(RE2C_EXECUTABLE)
+file(TO_CMAKE_PATH "$ENV{RE2C_ROOT}" _re2c_root)
+find_program(RE2C_EXECUTABLE re2c PATHS "${_re2c_root}/bin"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH REQUIRED)
+file(REAL_PATH "$ENV{RE2C_ROOT}" _re2c_root)
+file(REAL_PATH "${RE2C_EXECUTABLE}" _re2c_executable)
+cmake_path(IS_PREFIX _re2c_root "${_re2c_executable}" NORMALIZE _re2c_in_root)
+if(NOT _re2c_in_root)
+    message(FATAL_ERROR "re2c executable is outside RE2C_ROOT: ${RE2C_EXECUTABLE}")
 endif()
 
-# Find lemon (use built-in or system)
-# Check for project-provided lemon target first (prefer direct target over alias)
+# Cross builds execute an explicitly supplied host generator.
 if(CMAKE_CROSSCOMPILING)
     if(NOT TURBOSCRIPT_HOST_LEMON_EXECUTABLE OR
        NOT EXISTS "${TURBOSCRIPT_HOST_LEMON_EXECUTABLE}")
@@ -16,16 +25,8 @@ if(CMAKE_CROSSCOMPILING)
 elseif(TARGET lemon)
     set(LEMON_EXECUTABLE $<TARGET_FILE:lemon>)
     set(LEMON_DEPENDS lemon)
-    message(STATUS "Using project-provided lemon target")
 else()
-    # Fallback to system lemon only if project target not available
-    find_program(LEMON_EXECUTABLE lemon)
-    if(NOT LEMON_EXECUTABLE)
-        message(WARNING "lemon not found - some parsers might not be generated")
-    else()
-        message(WARNING "Using system lemon - version mismatch may occur!")
-    endif()
-    set(LEMON_DEPENDS "")
+    message(FATAL_ERROR "The required in-tree lemon target is missing")
 endif()
 
 # Set path to lemon parser template

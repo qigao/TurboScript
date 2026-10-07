@@ -10,7 +10,7 @@
 #define EXPRTK_MODULE_H
 
 #include "exprtk_types.h"
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include <cmeta/function.h>
 #include <stddef.h>
 #include <stdlib.h>
@@ -121,7 +121,7 @@ static inline exprtk_value_t exprtk_val_bytes(vstr v) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_uuid(salts_uuid_t v) {
+static inline exprtk_value_t exprtk_val_uuid(cmeta_uuid_t v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_UUID;

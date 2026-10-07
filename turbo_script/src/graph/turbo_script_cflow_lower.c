@@ -176,7 +176,7 @@ static double ts_cflow_plugin_double_signature(double value) {
 }
 
 typedef struct ts_cflow_plugin_callable_capture_s {
-  salts_plugin_function_invoke_fn invoke;
+  cmeta_plugin_function_invoke_fn invoke;
   void *context;
 } ts_cflow_plugin_callable_capture_t;
 

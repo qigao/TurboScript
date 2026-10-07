@@ -159,7 +159,7 @@ static int eval_value_text(exprtk_value_t value, char *buf, size_t buf_size,
     } else if (value.type == EXPRTK_VAL_BYTES) {
         n = snprintf(buf, buf_size, "bytes(%zu)", value.data.bytes.len);
     } else if (value.type == EXPRTK_VAL_UUID) {
-        if (salts_uuid_format(&value.data.uuid, buf, buf_size) != SALTS_OK) return 0;
+        if (cmeta_uuid_format(&value.data.uuid, buf, buf_size) != SALTS_OK) return 0;
         *out_data = buf;
         *out_len = strlen(buf);
         return 1;
@@ -440,7 +440,7 @@ exprtk_value_t exprtk_eval(const exprtk_node_t *node, exprtk_env_t *env) {
                                     if (bytes_len > 0) APPEND_STR(bytes_buf, (size_t)bytes_len);
                                 } else if (expr_val.type == EXPRTK_VAL_UUID) {
                                     char uuid_buf[SALTS_UUID_STRING_SIZE];
-                                    if (salts_uuid_format(&expr_val.data.uuid, uuid_buf,
+                                    if (cmeta_uuid_format(&expr_val.data.uuid, uuid_buf,
                                                           sizeof(uuid_buf)) == SALTS_OK)
                                         APPEND_STR(uuid_buf, strlen(uuid_buf));
                                 } else if (expr_val.type == EXPRTK_VAL_DATE ||

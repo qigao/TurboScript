@@ -1,0 +1,83 @@
+name: Native build and tests
+on:
+  push:
+    branches: [main, master, 'ci/**']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+  packages: read
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-2025
+            rid: windows-x64
+            triplet: x64-windows
+            preset: ci-win-release-user
+          - runner: ubuntu-24.04
+            rid: linux-x64
+            triplet: x64-linux
+            preset: ci-linux-release-user
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    env:
+      QIGAO_TARGET_TRIPLET: ${{ matrix.triplet }}
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@fafb1efe5ac2440bfd7a08e493988d0459d89e51
+        with:
+          mode: read
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Prepare Linux host
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+      - name: Prepare Windows host
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          choco install ninja nasm -y --no-progress
+          if ($LASTEXITCODE -ne 0) { throw 'Failed to install build tools' }
+          $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
+          $vsInstall = & $vswhere -latest -products '*' -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if ($LASTEXITCODE -ne 0 -or -not $vsInstall) { throw 'Visual Studio C++ toolchain not found' }
+          "VSINSTALL=$vsInstall" >> $env:GITHUB_ENV
+          if (-not $env:VCPKG_ROOT -or -not $env:QIGAO_VCPKG_WINDOWS_TRIPLET) { throw 'Shared vcpkg environment is missing' }
+          "QIGAO_VCPKG_ROOT=$env:VCPKG_ROOT" >> $env:GITHUB_ENV
+          "QIGAO_TARGET_TRIPLET=$env:QIGAO_VCPKG_WINDOWS_TRIPLET" >> $env:GITHUB_ENV
+      - name: Restore latest native SDKs
+        shell: pwsh
+        run: ./cmake/ci/restore-native-sdks.ps1 -Rid '${{ matrix.rid }}'
+      - name: Configure, build and test on Windows
+        if: runner.os == 'Windows'
+        shell: cmd
+        run: |
+          call "%VSINSTALL%\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 >nul
+          if errorlevel 1 exit /b 1
+          set "VCPKG_ROOT=%QIGAO_VCPKG_ROOT%"
+          cmake --preset "${{ matrix.preset }}"
+          if errorlevel 1 exit /b 1
+          cmake --build --preset "${{ matrix.preset }}" --parallel 2
+          if errorlevel 1 exit /b 1
+          ctest --preset "${{ matrix.preset }}" --no-tests=error --output-on-failure
+          if errorlevel 1 exit /b 1
+      - name: Configure, build and test on Linux
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --preset '${{ matrix.preset }}'
+          cmake --build --preset '${{ matrix.preset }}' --parallel 2
+          ctest --preset '${{ matrix.preset }}' --no-tests=error --output-on-failure

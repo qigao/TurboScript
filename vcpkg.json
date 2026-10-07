@@ -1,5 +1,5 @@
 {
-  "name": "vcpkg-turbonet",
+  "name": "turboscript",
   "version-semver": "3.0.8",
   "dependencies": [
     {
@@ -9,9 +9,6 @@
     "mir-jit",
     {
       "name": "tiny-aes-c"
-    },
-    {
-      "name": "boringssl"
     },
     {
       "name": "stb"

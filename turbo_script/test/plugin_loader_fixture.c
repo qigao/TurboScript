@@ -197,9 +197,9 @@ static bool SALTS_PLUGIN_CALL loader_fixture_notify_invoke(
   return true;
 }
 
-static salts_plugin_export loader_fixture_function_exports[10];
+static cmeta_plugin_export loader_fixture_function_exports[10];
 
-static const salts_plugin_manifest loader_fixture_function_manifest = {
+static const cmeta_plugin_manifest loader_fixture_function_manifest = {
     .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
     .abi_version = SALTS_PLUGIN_ABI_VERSION,
     .plugin_id = FIXTURE_PLUGIN_NAME,
@@ -213,11 +213,11 @@ static const salts_plugin_manifest loader_fixture_function_manifest = {
     .destroy = NULL,
 };
 
-SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
-salts_plugin_query(uint32_t host_abi) {
+SALTS_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *SALTS_PLUGIN_CALL
+cmeta_plugin_query(uint32_t host_abi) {
   if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
 
-  loader_fixture_function_exports[0] = (salts_plugin_export){
+  loader_fixture_function_exports[0] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -231,7 +231,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_double_invoke,
       },
   };
-  loader_fixture_function_exports[1] = (salts_plugin_export){
+  loader_fixture_function_exports[1] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -245,7 +245,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_stateful_invoke,
       },
   };
-  loader_fixture_function_exports[2] = (salts_plugin_export){
+  loader_fixture_function_exports[2] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -259,7 +259,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_increment_invoke,
       },
   };
-  loader_fixture_function_exports[3] = (salts_plugin_export){
+  loader_fixture_function_exports[3] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -273,7 +273,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_positive_invoke,
       },
   };
-  loader_fixture_function_exports[4] = (salts_plugin_export){
+  loader_fixture_function_exports[4] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -287,7 +287,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_long_to_double_invoke,
       },
   };
-  loader_fixture_function_exports[5] = (salts_plugin_export){
+  loader_fixture_function_exports[5] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -301,7 +301,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_long_exact_invoke,
       },
   };
-  loader_fixture_function_exports[6] = (salts_plugin_export){
+  loader_fixture_function_exports[6] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -315,7 +315,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_float_to_double_invoke,
       },
   };
-  loader_fixture_function_exports[7] = (salts_plugin_export){
+  loader_fixture_function_exports[7] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -329,7 +329,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_add_invoke,
       },
   };
-  loader_fixture_function_exports[8] = (salts_plugin_export){
+  loader_fixture_function_exports[8] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -343,7 +343,7 @@ salts_plugin_query(uint32_t host_abi) {
           .invoke = loader_fixture_answer_invoke,
       },
   };
-  loader_fixture_function_exports[9] = (salts_plugin_export){
+  loader_fixture_function_exports[9] = (cmeta_plugin_export){
       .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
       .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
       .contract_version = 1u,
@@ -402,7 +402,7 @@ static ts_plugin_module loader_fixture_module = {
     .vtable = &loader_fixture_vtable,
 };
 
-static const salts_plugin_export loader_fixture_export = {
+static const cmeta_plugin_export loader_fixture_export = {
     .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
     .kind = SALTS_PLUGIN_EXPORT_INTERFACE,
     .contract_version = TS_PLUGIN_MODULE_CONTRACT_VERSION,
@@ -415,7 +415,7 @@ static const salts_plugin_export loader_fixture_export = {
     },
 };
 
-static const salts_plugin_manifest loader_fixture_manifest = {
+static const cmeta_plugin_manifest loader_fixture_manifest = {
     .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
     .abi_version = FIXTURE_ABI_VERSION,
     .plugin_id = FIXTURE_PLUGIN_NAME,
@@ -429,8 +429,8 @@ static const salts_plugin_manifest loader_fixture_manifest = {
     .destroy = NULL,
 };
 
-SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
-salts_plugin_query(uint32_t host_abi) {
+SALTS_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *SALTS_PLUGIN_CALL
+cmeta_plugin_query(uint32_t host_abi) {
   (void)host_abi;
   return &loader_fixture_manifest;
 }

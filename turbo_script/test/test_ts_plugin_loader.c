@@ -113,7 +113,7 @@ spec("plugin loader") {
                   TS_PLUGIN_ERROR_SYMBOL);
       check_null(handle);
       check_equal(error.stage, TS_PLUGIN_STAGE_SYMBOL);
-      check_not_null(strstr(error.message, "salts_plugin_query"));
+      check_not_null(strstr(error.message, "cmeta_plugin_query"));
     }
   }
 

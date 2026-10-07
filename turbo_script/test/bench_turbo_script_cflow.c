@@ -3,7 +3,7 @@
 #include "../src/graph/turbo_script_cflow_runtime.h"
 
 #include "exprtk.h"
-#include "salts_fs.h"
+#include "cmeta_fs.h"
 
 #include <cflow/plan.h>
 
@@ -401,7 +401,7 @@ static int ts_bench_file_text_case(void) {
   char *text = NULL;
   exprtk_node_t *root = NULL;
   exprtk_node_t *expr;
-  salts_fs_buf_t file_buf;
+  cmeta_fs_buf_t file_buf;
   double legacy_us;
   double runtime_us;
 
@@ -412,8 +412,8 @@ static int ts_bench_file_text_case(void) {
     memcpy(text + i * line_len, line, line_len);
   text[bytes] = '\0';
 
-  file_buf = salts_fs_buf_init(text, bytes);
-  if (salts_fs_write_file(path, &file_buf) != 0)
+  file_buf = cmeta_fs_buf_init(text, bytes);
+  if (cmeta_fs_write_file(path, &file_buf) != 0)
     goto fail;
 
   expr = ts_bench_single_expr(ctx, script, &root);
@@ -446,14 +446,14 @@ static int ts_bench_file_text_case(void) {
       runtime_us / legacy_us);
 
   exprtk_free(root);
-  salts_fs_unlink(path);
+  cmeta_fs_unlink(path);
   free(text);
   turbo_script_free(ctx);
   return 0;
 
 fail:
   if (root) exprtk_free(root);
-  (void)salts_fs_unlink(path);
+  (void)cmeta_fs_unlink(path);
   free(text);
   turbo_script_free(ctx);
   return 1;

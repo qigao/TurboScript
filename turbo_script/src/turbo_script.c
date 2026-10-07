@@ -2,9 +2,9 @@
 #include "exprtk.h"
 #include "ts_plugin.h"
 #include "ts_plugin_loader.h"
-#include "salts_buffer.h"
-#include "salts_fs.h"
-#include "salts_thread.h"
+#include "cmeta_buffer.h"
+#include "cmeta_fs.h"
+#include "cmeta_thread.h"
 #include "turbo_script_internal.h"
 #include "turbo_script_timer.h"
 #include "turbo_script_task.h"
@@ -51,7 +51,7 @@ static int ts_push_script_dir(turbo_script_ctx_t *ctx, const char *path, char **
   char *new_dir = NULL;
 
   if (!ctx || !path || !prev_dir) return -1;
-  if (salts_fs_path_dirname(path, dirname, sizeof(dirname)) != 0) return -1;
+  if (cmeta_fs_path_dirname(path, dirname, sizeof(dirname)) != 0) return -1;
 
   new_dir = strdup(dirname);
   if (!new_dir) return -1;
@@ -76,11 +76,11 @@ static int ts_resolve_script_path(turbo_script_ctx_t *ctx, const char *name, cha
     name += 2;
   }
 
-  if (salts_fs_path_is_absolute(name) || !ctx->current_script_dir || !ctx->current_script_dir[0]) {
+  if (cmeta_fs_path_is_absolute(name) || !ctx->current_script_dir || !ctx->current_script_dir[0]) {
     return ts_copy_path(resolved, resolved_size, name);
   }
 
-  return salts_fs_path_join(resolved, resolved_size, ctx->current_script_dir, name);
+  return cmeta_fs_path_join(resolved, resolved_size, ctx->current_script_dir, name);
 }
 
 static int ts_prepare_expr(turbo_script_ctx_t *ctx, const char *script) {
@@ -122,7 +122,7 @@ static void ts_context_destroy_final(turbo_script_ctx_t *ctx) {
   ts_task_scheduler_destroy(ctx);
   ts_timer_scheduler_destroy(ctx);
   if (ctx->executor) {
-    (void)salts_coro_executor_destroy(ctx->executor);
+    (void)coro_executor_destroy(ctx->executor);
     ctx->executor = NULL;
   }
 
@@ -203,8 +203,8 @@ void turbo_script_free(turbo_script_ctx_t *ctx) {
   ts_timer_scheduler_shutdown(ctx);
   ts_task_scheduler_shutdown(ctx);
   if (ctx->executor) {
-    (void)salts_coro_executor_shutdown(ctx->executor);
-    (void)salts_coro_executor_wait(ctx->executor);
+    (void)coro_executor_shutdown(ctx->executor);
+    (void)coro_executor_wait(ctx->executor);
   }
   ts_context_release(ctx);
 }
@@ -865,7 +865,7 @@ static exprtk_value_t ts_export(size_t argc, exprtk_value_t *args, exprtk_env_t 
 static int ts_run_script_file_in_env(turbo_script_ctx_t *ctx, const char *filename,
                                      exprtk_env_t *exec_env, exprtk_value_t *exports_out,
                                      int *has_exports_out) {
-  salts_fs_buf_t buf;
+  cmeta_fs_buf_t buf;
   exprtk_node_t *ast = NULL;
   char *prev_dir = NULL;
   const char *prev_import_name = NULL;
@@ -875,21 +875,21 @@ static int ts_run_script_file_in_env(turbo_script_ctx_t *ctx, const char *filena
   int import_state_pushed = 0;
   int rc = -1;
 
-  if (salts_fs_read_file(filename, &buf) != 0) {
+  if (cmeta_fs_read_file(filename, &buf) != 0) {
     set_error(ctx, TURBO_SCRIPT_ERROR_IO, "import: failed to read script");
     return -1;
   }
 
   char *script = (char *)malloc(buf.len + 1);
   if (!script) {
-    salts_fs_buf_free(&buf);
+    cmeta_fs_buf_free(&buf);
     set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "import: out of memory");
     return -1;
   }
 
   memcpy(script, buf.base, buf.len);
   script[buf.len] = '\0';
-  salts_fs_buf_free(&buf);
+  cmeta_fs_buf_free(&buf);
 
   prev_import_name = ctx->current_import_name;
   prev_import_exports = ctx->current_import_exports;
@@ -1122,7 +1122,7 @@ static void ts_print_value(const exprtk_value_t *val, int repl_mode) {
     break;
   case EXPRTK_VAL_UUID: {
     char text[SALTS_UUID_STRING_SIZE];
-    if (salts_uuid_format(&val->data.uuid, text, sizeof(text)) == SALTS_OK) printf("%s", text);
+    if (cmeta_uuid_format(&val->data.uuid, text, sizeof(text)) == SALTS_OK) printf("%s", text);
     else printf("[uuid]");
     break;
   }
@@ -1247,11 +1247,11 @@ turbo_script_ctx_t *turbo_script_init_with_plugin_authorizer(
   mem_init(&ctx->scratch_arena, 4096);
 
   {
-    salts_coro_executor_config_t executor_config = SALTS_CORO_EXECUTOR_CONFIG_DEFAULT;
+    coro_executor_config_t executor_config = CORO_EXECUTOR_CONFIG_DEFAULT;
     executor_config.worker_count = 1;
     executor_config.queue_capacity_per_worker = 256;
     executor_config.coroutine_pool.max_capacity = 128;
-    ctx->executor = salts_coro_executor_create(&executor_config);
+    ctx->executor = coro_executor_create(&executor_config);
   }
   if (!ctx->executor) {
     turbo_script_free(ctx);
@@ -1478,8 +1478,8 @@ int turbo_script_run_file(turbo_script_ctx_t *ctx, const char *filename) {
   }
 
   clear_error(ctx);
-  salts_fs_buf_t buf;
-  if (salts_fs_read_file(filename, &buf) != 0) {
+  cmeta_fs_buf_t buf;
+  if (cmeta_fs_read_file(filename, &buf) != 0) {
     set_error(ctx, TURBO_SCRIPT_ERROR_IO, "run_file: failed to read file");
     return -1;
   }
@@ -1487,14 +1487,14 @@ int turbo_script_run_file(turbo_script_ctx_t *ctx, const char *filename) {
   /* Ensure null-termination */
   char *script = (char *)malloc(buf.len + 1);
   if (!script) {
-    salts_fs_buf_free(&buf);
+    cmeta_fs_buf_free(&buf);
     set_error(ctx, TURBO_SCRIPT_ERROR_OOM, "run_file: out of memory");
     return -1;
   }
 
   memcpy(script, buf.base, buf.len);
   script[buf.len] = '\0';
-  salts_fs_buf_free(&buf);
+  cmeta_fs_buf_free(&buf);
 
   if (ts_push_script_dir(ctx, filename, &prev_dir) != 0) {
     free(script);

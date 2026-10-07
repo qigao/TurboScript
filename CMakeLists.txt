@@ -44,14 +44,33 @@ include(GNUInstallDirs)
 include(CmakeUtils)
 
 find_package(Threads REQUIRED)
-find_package(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
-find_package(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}"
+set(_turboscript_sdk_roots SALTS_ROOT SALTS_UTILS_ROOT)
+if(TURBOSCRIPT_BUILD_MODULES)
+  list(APPEND _turboscript_sdk_roots CHTTP_ROOT)
+endif()
+foreach(_root IN LISTS _turboscript_sdk_roots)
+  if(NOT DEFINED ENV{${_root}} OR NOT IS_DIRECTORY "$ENV{${_root}}")
+    message(FATAL_ERROR "${_root} must name the matching installed SDK; run cmake/ci/restore-native-sdks.ps1 first")
+  endif()
+  file(TO_CMAKE_PATH "$ENV{${_root}}" _turboscript_${_root})
+endforeach()
+# A previous configure must not select a different SDK than the active roots.
+foreach(_package IN ITEMS Salts SaltsUtils Chttp TurboDB)
+  unset(${_package}_DIR CACHE)
+  unset(${_package}_DIR)
+endforeach()
+find_package(Salts CONFIG REQUIRED PATHS "${_turboscript_SALTS_ROOT}"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_package(SaltsUtils CONFIG REQUIRED PATHS "${_turboscript_SALTS_UTILS_ROOT}"
              NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 set(TURBOSCRIPT_HAS_TURBODB OFF)
 if(TURBOSCRIPT_BUILD_MODULES)
-  find_package(Chttp CONFIG REQUIRED PATHS "$ENV{CHTTP_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+  find_package(Chttp CONFIG REQUIRED PATHS "${_turboscript_CHTTP_ROOT}"
+               NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
   if(EXISTS "$ENV{TURBODB_ROOT}/lib/cmake/TurboDB/TurboDBConfig.cmake")
-    find_package(TurboDB CONFIG REQUIRED PATHS "$ENV{TURBODB_ROOT}" NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+    file(TO_CMAKE_PATH "$ENV{TURBODB_ROOT}" _turboscript_TURBODB_ROOT)
+    find_package(TurboDB CONFIG REQUIRED PATHS "${_turboscript_TURBODB_ROOT}"
+                 NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
     set(TURBOSCRIPT_HAS_TURBODB ON)
   endif()
 endif()
