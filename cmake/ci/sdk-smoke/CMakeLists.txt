@@ -1,6 +1,12 @@
 cmake_minimum_required(VERSION 3.20)
 project(turboscript_sdk_smoke LANGUAGES C CXX)
-find_package(TurboScript CONFIG REQUIRED)
+if(NOT IS_DIRECTORY "$ENV{TURBOSCRIPT_ROOT}")
+  message(FATAL_ERROR "TURBOSCRIPT_ROOT must name the relocated SDK under test")
+endif()
+unset(TurboScript_DIR CACHE)
+unset(TurboScript_DIR)
+find_package(TurboScript CONFIG REQUIRED PATHS "$ENV{TURBOSCRIPT_ROOT}"
+             NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 add_executable(turboscript_sdk_smoke main.c)
 target_link_libraries(turboscript_sdk_smoke PRIVATE TurboScript::TurboScript)
 add_executable(turboscript_sdk_smoke_cpp main.cpp)

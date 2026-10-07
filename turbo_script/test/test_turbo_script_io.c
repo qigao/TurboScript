@@ -1,7 +1,7 @@
 #include "../src/turbo_script_internal.h"
 #include "exprtk_types.h"
 #include "tinytest.h"
-#include "salts_fs.h"
+#include "cmeta_fs.h"
 #include "turbo_script.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -536,16 +536,16 @@ spec("turbo_script_io") {
       char line_path[96];
       char token_path[96];
       char script[2048];
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
       int res;
 
       ts_test_make_name(line_path, sizeof(line_path), "_test_stream_file_lines", ".txt");
       ts_test_make_name(token_path, sizeof(token_path), "_test_stream_file_tokens", ".txt");
 
-      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
-      check((salts_fs_write_file(line_path, &buf)) == (0));
-      buf = salts_fs_buf_init((char *)token_text, strlen(token_text));
-      check((salts_fs_write_file(token_path, &buf)) == (0));
+      buf = cmeta_fs_buf_init((char *)line_text, strlen(line_text));
+      check((cmeta_fs_write_file(line_path, &buf)) == (0));
+      buf = cmeta_fs_buf_init((char *)token_text, strlen(token_text));
+      check((cmeta_fs_write_file(token_path, &buf)) == (0));
 
       snprintf(script, sizeof(script),
           "var line_total = stream.text(io.read_file(\"%s\"))"
@@ -567,8 +567,8 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "line_total")) - (double)(6.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "token_total")) - (double)(12.0)) <= (double)(0.001));
       check(fabs((double)(ts_get_num(ctx, "score")) - (double)(18.0)) <= (double)(0.001));
-      salts_fs_unlink(line_path);
-      salts_fs_unlink(token_path);
+      cmeta_fs_unlink(line_path);
+      cmeta_fs_unlink(token_path);
       turbo_script_free(ctx);
     }
 
@@ -578,14 +578,14 @@ spec("turbo_script_io") {
       const char *line_text = "a\r\nb\n";
       char line_path[96];
       char script[1024];
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
 
       check_not_null(interp);
       check_not_null(jit);
       ts_test_make_name(line_path, sizeof(line_path),
                         "_test_cflow_text_lines", ".txt");
-      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
-      check_equal(salts_fs_write_file(line_path, &buf), 0);
+      buf = cmeta_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(cmeta_fs_write_file(line_path, &buf), 0);
 
       snprintf(script, sizeof(script),
                "line_count = stream.text(io.read_file(\"%s\")).lines().count();"
@@ -615,7 +615,7 @@ spec("turbo_script_io") {
       check(strcmp(ts_get_str(interp, "last_line"), "") == 0);
       check(strcmp(ts_get_str(jit, "last_line"), "") == 0);
 
-      salts_fs_unlink(line_path);
+      cmeta_fs_unlink(line_path);
       turbo_script_free(jit);
       turbo_script_free(interp);
     }
@@ -626,14 +626,14 @@ spec("turbo_script_io") {
       const char *line_text = "a\nbb\n";
       char line_path[96];
       char script[1024];
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
 
       check_not_null(interp);
       check_not_null(jit);
       ts_test_make_name(line_path, sizeof(line_path),
                         "_test_cflow_text_line_lengths", ".txt");
-      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
-      check_equal(salts_fs_write_file(line_path, &buf), 0);
+      buf = cmeta_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(cmeta_fs_write_file(line_path, &buf), 0);
 
       snprintf(script, sizeof(script),
                "lengths = stream.text(io.read_file(\"%s\")).lines()"
@@ -656,7 +656,7 @@ spec("turbo_script_io") {
       check(fabs(ts_get_num(interp, "last_length") - 0.0) <= 1e-9);
       check(fabs(ts_get_num(jit, "last_length") - 0.0) <= 1e-9);
 
-      salts_fs_unlink(line_path);
+      cmeta_fs_unlink(line_path);
       turbo_script_free(jit);
       turbo_script_free(interp);
     }
@@ -667,14 +667,14 @@ spec("turbo_script_io") {
       const char *line_text = "a\n\nbb\n";
       char line_path[96];
       char script[1400];
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
 
       check_not_null(interp);
       check_not_null(jit);
       ts_test_make_name(line_path, sizeof(line_path),
                         "_test_cflow_text_nonempty_filter", ".txt");
-      buf = salts_fs_buf_init((char *)line_text, strlen(line_text));
-      check_equal(salts_fs_write_file(line_path, &buf), 0);
+      buf = cmeta_fs_buf_init((char *)line_text, strlen(line_text));
+      check_equal(cmeta_fs_write_file(line_path, &buf), 0);
 
       snprintf(script, sizeof(script),
                "nonempty_count = stream.text(io.read_file(\"%s\")).lines()"
@@ -702,7 +702,7 @@ spec("turbo_script_io") {
       check(strcmp(ts_get_str(interp, "second_line"), "bb") == 0);
       check(strcmp(ts_get_str(jit, "second_line"), "bb") == 0);
 
-      salts_fs_unlink(line_path);
+      cmeta_fs_unlink(line_path);
       turbo_script_free(jit);
       turbo_script_free(interp);
     }
@@ -713,14 +713,14 @@ spec("turbo_script_io") {
       const char *token_text = ",A,,B,";
       char token_path[96];
       char script[1280];
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
 
       check_not_null(interp);
       check_not_null(jit);
       ts_test_make_name(token_path, sizeof(token_path),
                         "_test_cflow_text_split", ".txt");
-      buf = salts_fs_buf_init((char *)token_text, strlen(token_text));
-      check_equal(salts_fs_write_file(token_path, &buf), 0);
+      buf = cmeta_fs_buf_init((char *)token_text, strlen(token_text));
+      check_equal(cmeta_fs_write_file(token_path, &buf), 0);
 
       snprintf(script, sizeof(script),
                "token_count = stream.text(io.read_file(\"%s\")).split(\",\").count();"
@@ -755,7 +755,7 @@ spec("turbo_script_io") {
       check(strcmp(ts_get_str(interp, "last_token"), "") == 0);
       check(strcmp(ts_get_str(jit, "last_token"), "") == 0);
 
-      salts_fs_unlink(token_path);
+      cmeta_fs_unlink(token_path);
       turbo_script_free(jit);
       turbo_script_free(interp);
     }
@@ -848,8 +848,8 @@ spec("turbo_script_io") {
       check(strcmp((ts_get_str(ctx, "copied")), ("abcdef")) == 0);
       check(strcmp((ts_get_str(ctx, "truncated")), ("abc")) == 0);
 
-      salts_fs_unlink(src_path);
-      salts_fs_unlink(dst_path);
+      cmeta_fs_unlink(src_path);
+      cmeta_fs_unlink(dst_path);
       turbo_script_free(ctx);
     }
 
@@ -961,9 +961,9 @@ spec("turbo_script_io") {
       char script[900];
 
       ts_test_make_name(root_dir, sizeof(root_dir), "_test_recursive_io", "");
-      salts_fs_path_join(mid_dir, sizeof(mid_dir), root_dir, "a");
-      salts_fs_path_join(nested_dir, sizeof(nested_dir), mid_dir, "b");
-      salts_fs_path_join(file_path, sizeof(file_path), nested_dir, "data.txt");
+      cmeta_fs_path_join(mid_dir, sizeof(mid_dir), root_dir, "a");
+      cmeta_fs_path_join(nested_dir, sizeof(nested_dir), mid_dir, "b");
+      cmeta_fs_path_join(file_path, sizeof(file_path), nested_dir, "data.txt");
 
       snprintf(script, sizeof(script),
                "var mid = path_join(\"%s\", \"a\"); "
@@ -987,10 +987,10 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "gone")) - (double)(0.0)) <= (double)(0.1));
 
       if (ts_get_num(ctx, "rm") != 0.0) {
-        salts_fs_unlink(file_path);
-        salts_fs_rmdir(nested_dir);
-        salts_fs_rmdir(mid_dir);
-        salts_fs_rmdir(root_dir);
+        cmeta_fs_unlink(file_path);
+        cmeta_fs_rmdir(nested_dir);
+        cmeta_fs_rmdir(mid_dir);
+        cmeta_fs_rmdir(root_dir);
       }
       turbo_script_free(ctx);
     }
@@ -1018,9 +1018,9 @@ spec("turbo_script_io") {
       char script[1400];
 
       ts_test_make_name(dir_name, sizeof(dir_name), "_test_glob_io", "");
-      salts_fs_path_join(a_path, sizeof(a_path), dir_name, "a.txt");
-      salts_fs_path_join(b_path, sizeof(b_path), dir_name, "b.txt");
-      salts_fs_path_join(c_path, sizeof(c_path), dir_name, "c.log");
+      cmeta_fs_path_join(a_path, sizeof(a_path), dir_name, "a.txt");
+      cmeta_fs_path_join(b_path, sizeof(b_path), dir_name, "b.txt");
+      cmeta_fs_path_join(c_path, sizeof(c_path), dir_name, "c.log");
 
       snprintf(script, sizeof(script),
                "var r = mkdir(\"%s\"); "
@@ -1044,10 +1044,10 @@ spec("turbo_script_io") {
       check(fabs((double)(ts_get_num(ctx, "entry_score")) - (double)(6.0)) <= (double)(0.1));
       check(fabs((double)(ts_get_num(ctx, "glob_score")) - (double)(4.0)) <= (double)(0.1));
 
-      salts_fs_unlink(a_path);
-      salts_fs_unlink(b_path);
-      salts_fs_unlink(c_path);
-      salts_fs_rmdir(dir_name);
+      cmeta_fs_unlink(a_path);
+      cmeta_fs_unlink(b_path);
+      cmeta_fs_unlink(c_path);
+      cmeta_fs_rmdir(dir_name);
       turbo_script_free(ctx);
     }
   }

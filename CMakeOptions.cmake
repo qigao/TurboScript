@@ -9,6 +9,8 @@ option(ENABLE_TESTS "Enable the tests" ON)
 #     add_compile_options(/bigobj)
 # endif()
 
+option(TURBOSCRIPT_BUILD_HOST_TOOLS_ONLY "Build only native parser generators for cross compilation" OFF)
+
 option(BUILD_EXAMPLES "Build example programs" ON)
 option(BUILD_TESTS "Build test suite" ON)
 option(TURBOSCRIPT_BUILD_HOST_TESTS "Build Host ABI contract suites without bundled modules" OFF)

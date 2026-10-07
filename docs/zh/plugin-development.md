@@ -19,7 +19,7 @@ Salts::Plugin registry
   load -> start -> acquire lease
    |
    v
-salts_plugin_manifest
+cmeta_plugin_manifest
    |
    +--> FUNCTION
    |      CMeta FunctionDesc
@@ -54,8 +54,8 @@ import("fin");
 ```
 
 TurboScript 根据平台解析插件文件，然后通过
-`salts_plugin_registry_*` 加载。DSO 必须发布当前 ABI 的
-`salts_plugin_query`，并返回合法 manifest。
+`cmeta_plugin_registry_*` 加载。DSO 必须发布当前 ABI 的
+`cmeta_plugin_query`，并返回合法 manifest。
 
 典型文件名：
 
@@ -93,7 +93,7 @@ double my_double(double value) {
     return value * 2.0;
 }
 
-static bool SALTS_PLUGIN_CALL my_double_invoke(
+static bool CMETA_PLUGIN_CALL my_double_invoke(
     void *context,
     void *return_storage,
     void *const *params,
@@ -107,13 +107,13 @@ static bool SALTS_PLUGIN_CALL my_double_invoke(
     return true;
 }
 
-static salts_plugin_export exports[1];
+static cmeta_plugin_export exports[1];
 static salts_once_t exports_once = SALTS_ONCE_INIT;
 
 static void init_exports(void) {
-    exports[0] = (salts_plugin_export){
-        .struct_size = SALTS_PLUGIN_EXPORT_SIZE,
-        .kind = SALTS_PLUGIN_EXPORT_FUNCTION,
+    exports[0] = (cmeta_plugin_export){
+        .struct_size = CMETA_PLUGIN_EXPORT_SIZE,
+        .kind = CMETA_PLUGIN_EXPORT_FUNCTION,
         .contract_version = 1u,
         .export_id = "math.double",
         .contract_id = "example.math",
@@ -126,18 +126,18 @@ static void init_exports(void) {
     };
 }
 
-static const salts_plugin_manifest manifest = {
-    .struct_size = SALTS_PLUGIN_MANIFEST_SIZE,
-    .abi_version = SALTS_PLUGIN_ABI_VERSION,
+static const cmeta_plugin_manifest manifest = {
+    .struct_size = CMETA_PLUGIN_MANIFEST_SIZE,
+    .abi_version = CMETA_PLUGIN_ABI_VERSION,
     .plugin_id = "my_math",
     .version = {1u, 0u, 0u},
     .exports = exports,
     .export_count = 1u,
 };
 
-SALTS_PLUGIN_QUERY_EXPORT const salts_plugin_manifest *SALTS_PLUGIN_CALL
-salts_plugin_query(uint32_t host_abi) {
-    if (host_abi != SALTS_PLUGIN_ABI_VERSION) return NULL;
+CMETA_PLUGIN_QUERY_EXPORT const cmeta_plugin_manifest *CMETA_PLUGIN_CALL
+cmeta_plugin_query(uint32_t host_abi) {
+    if (host_abi != CMETA_PLUGIN_ABI_VERSION) return NULL;
     salts_once(&exports_once, init_exports);
     return &manifest;
 }
@@ -264,7 +264,7 @@ struct。
 
 ### symbol/ABI 阶段失败
 
-确认 DSO 发布 `salts_plugin_query`，并使用当前 Salts Plugin ABI 重新构建。
+确认 DSO 发布 `cmeta_plugin_query`，并使用当前 Salts Plugin ABI 重新构建。
 
 不存在旧 TurboScript 私有 Plugin ABI fallback。
 

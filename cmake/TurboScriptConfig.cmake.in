@@ -3,8 +3,26 @@
 include(CMakeFindDependencyMacro)
 
 find_dependency(Threads)
-find_dependency(Salts CONFIG REQUIRED PATHS "$ENV{SALTS_ROOT}" NO_CMAKE_FIND_ROOT_PATH)
-find_dependency(SaltsUtils CONFIG REQUIRED PATHS "$ENV{SALTS_UTILS_ROOT}" NO_CMAKE_FIND_ROOT_PATH)
+foreach(_root IN ITEMS SALTS_ROOT SALTS_UTILS_ROOT)
+  if(NOT DEFINED ENV{${_root}} OR NOT IS_DIRECTORY "$ENV{${_root}}")
+    set(TurboScript_FOUND FALSE)
+    set(TurboScript_NOT_FOUND_MESSAGE "${_root} must name the matching installed SDK")
+    return()
+  endif()
+  file(TO_CMAKE_PATH "$ENV{${_root}}" _turboscript_${_root})
+endforeach()
+foreach(_package IN ITEMS Salts SaltsUtils)
+  unset(${_package}_DIR CACHE)
+  unset(${_package}_DIR)
+endforeach()
+find_dependency(Salts CONFIG REQUIRED PATHS "${_turboscript_SALTS_ROOT}"
+                NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+find_dependency(SaltsUtils CONFIG REQUIRED PATHS "${_turboscript_SALTS_UTILS_ROOT}"
+                NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
+unset(_root)
+unset(_package)
+unset(_turboscript_SALTS_ROOT)
+unset(_turboscript_SALTS_UTILS_ROOT)
 
 set_and_check(TurboScript_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 set_and_check(TurboScript_LIBRARY_DIR "@PACKAGE_CMAKE_INSTALL_LIBDIR@")

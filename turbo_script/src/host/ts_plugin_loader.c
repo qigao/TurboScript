@@ -39,8 +39,8 @@ typedef union ts_plugin_scalar_storage_u {
 } ts_plugin_scalar_storage_t;
 
 typedef struct ts_plugin_function_binding_s {
-  const salts_plugin_export *entry;
-  salts_plugin_function_invoke_fn invoke;
+  const cmeta_plugin_export *entry;
+  cmeta_plugin_function_invoke_fn invoke;
   void *context;
   size_t param_count;
   ts_plugin_scalar_kind_t param_kinds[TS_PLUGIN_MAX_SCALAR_PARAMS];
@@ -66,14 +66,14 @@ static ts_plugin_scalar_kind_t plugin_scalar_kind(
 }
 
 static int plugin_function_scalar_binding(
-    const salts_plugin_export *entry,
+    const cmeta_plugin_export *entry,
     ts_plugin_function_binding_t *binding) {
   const cmeta_function_desc *desc;
   const cmeta_function_abi_desc *abi;
   ts_plugin_scalar_kind_t return_kind;
 
   if (!entry || !binding ||
-      entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION)
+      entry->kind != CMETA_PLUGIN_EXPORT_FUNCTION)
     return 0;
 
   desc = entry->value.function.desc;
@@ -348,7 +348,7 @@ static int plugin_bind_function_exports(
                             "plugin function binding requires a manifest and environment");
 
   for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
-    if (handle->manifest->exports[i].kind == SALTS_PLUGIN_EXPORT_FUNCTION)
+    if (handle->manifest->exports[i].kind == CMETA_PLUGIN_EXPORT_FUNCTION)
       ++function_count;
   }
   if (function_count == 0u) return TS_PLUGIN_ERROR_NONE;
@@ -366,14 +366,14 @@ static int plugin_bind_function_exports(
   }
 
   for (size_t i = 0u; i < handle->manifest->export_count; ++i) {
-    const salts_plugin_export *entry = &handle->manifest->exports[i];
+    const cmeta_plugin_export *entry = &handle->manifest->exports[i];
     void *databind_binding;
-    salts_plugin_status status;
-    if (entry->kind != SALTS_PLUGIN_EXPORT_FUNCTION) continue;
+    cmeta_plugin_status status;
+    if (entry->kind != CMETA_PLUGIN_EXPORT_FUNCTION) continue;
 
-    status = salts_plugin_export_require_function(
+    status = cmeta_plugin_export_require_function(
         entry, entry->contract_id, entry->contract_version, 0u);
-    if (status != SALTS_PLUGIN_OK) {
+    if (status != CMETA_PLUGIN_OK) {
       free(registrations);
       free(bindings);
       return plugin_error_set(
@@ -729,27 +729,27 @@ static char *plugin_resolve_path(const char *path, ts_plugin_error_t *error) {
 }
 
 static int plugin_error_from_salts(ts_plugin_error_t *error,
-                                   salts_plugin_status status,
+                                   cmeta_plugin_status status,
                                    const char *path) {
   ts_plugin_error_code_t code = TS_PLUGIN_ERROR_DESCRIPTOR;
   ts_plugin_error_stage_t stage = TS_PLUGIN_STAGE_ABI;
-  const char *detail = salts_plugin_status_string(status);
+  const char *detail = cmeta_plugin_status_string(status);
 
   switch (status) {
-    case SALTS_PLUGIN_LOAD_FAILED:
+    case CMETA_PLUGIN_LOAD_FAILED:
       code = TS_PLUGIN_ERROR_OPEN;
       stage = TS_PLUGIN_STAGE_OPEN;
       break;
-    case SALTS_PLUGIN_QUERY_MISSING:
+    case CMETA_PLUGIN_QUERY_MISSING:
       code = TS_PLUGIN_ERROR_SYMBOL;
       stage = TS_PLUGIN_STAGE_SYMBOL;
       break;
-    case SALTS_PLUGIN_QUERY_REJECTED:
-    case SALTS_PLUGIN_UNSUPPORTED_ABI:
+    case CMETA_PLUGIN_QUERY_REJECTED:
+    case CMETA_PLUGIN_UNSUPPORTED_ABI:
       code = TS_PLUGIN_ERROR_ABI;
       stage = TS_PLUGIN_STAGE_ABI;
       break;
-    case SALTS_PLUGIN_ALLOCATION_FAILED:
+    case CMETA_PLUGIN_ALLOCATION_FAILED:
       code = TS_PLUGIN_ERROR_OUT_OF_MEMORY;
       stage = TS_PLUGIN_STAGE_OPEN;
       break;
@@ -759,13 +759,13 @@ static int plugin_error_from_salts(ts_plugin_error_t *error,
       break;
   }
 
-  if (status == SALTS_PLUGIN_QUERY_MISSING) {
+  if (status == CMETA_PLUGIN_QUERY_MISSING) {
     return plugin_error_set(error, code, stage, (uint32_t)status, path,
                             "required symbol '%s' was not found",
-                            SALTS_PLUGIN_QUERY_SYMBOL);
+                            CMETA_PLUGIN_QUERY_SYMBOL);
   }
-  if (status == SALTS_PLUGIN_UNSUPPORTED_ABI ||
-      status == SALTS_PLUGIN_QUERY_REJECTED) {
+  if (status == CMETA_PLUGIN_UNSUPPORTED_ABI ||
+      status == CMETA_PLUGIN_QUERY_REJECTED) {
     return plugin_error_set(error, code, stage, (uint32_t)status, path,
                             "plugin ABI mismatch: %s", detail);
   }
@@ -773,43 +773,43 @@ static int plugin_error_from_salts(ts_plugin_error_t *error,
                           "Salts plugin admission failed: %s", detail);
 }
 
-static void plugin_registry_cleanup_loaded(salts_plugin_registry *registry,
-                                           salts_plugin_ref ref,
-                                           salts_plugin_lease *lease,
+static void plugin_registry_cleanup_loaded(cmeta_plugin_registry *registry,
+                                           cmeta_plugin_ref ref,
+                                           cmeta_plugin_lease *lease,
                                            int started) {
   bool quiescent = false;
 
   if (!registry || !registry->impl) return;
-  if (lease && salts_plugin_lease_valid(*lease))
-    (void)salts_plugin_registry_release(registry, lease);
+  if (lease && cmeta_plugin_lease_valid(*lease))
+    (void)cmeta_plugin_registry_release(registry, lease);
 
-  if (salts_plugin_ref_valid(ref)) {
+  if (cmeta_plugin_ref_valid(ref)) {
     if (started) {
-      salts_plugin_status status =
-          salts_plugin_registry_request_stop(registry, ref);
-      if (status == SALTS_PLUGIN_OK || status == SALTS_PLUGIN_ALREADY)
-        (void)salts_plugin_registry_poll_quiescent(
+      cmeta_plugin_status status =
+          cmeta_plugin_registry_request_stop(registry, ref);
+      if (status == CMETA_PLUGIN_OK || status == CMETA_PLUGIN_ALREADY)
+        (void)cmeta_plugin_registry_poll_quiescent(
             registry, ref, &quiescent);
       if (quiescent)
-        (void)salts_plugin_registry_unload(registry, ref);
+        (void)cmeta_plugin_registry_unload(registry, ref);
     } else {
-      (void)salts_plugin_registry_unload(registry, ref);
+      (void)cmeta_plugin_registry_unload(registry, ref);
     }
   }
-  (void)salts_plugin_registry_destroy(registry);
+  (void)cmeta_plugin_registry_destroy(registry);
 }
 
 int ts_plugin_load_ex(const char *path, const char *expected_name,
                       ts_plugin_handle_t **out, ts_plugin_error_t *error) {
   char *resolved = NULL;
-  salts_plugin_registry registry = {0};
-  salts_plugin_registry_config config = {.capacity = 1u};
-  salts_plugin_ref ref = {0};
-  salts_plugin_lease lease = {0};
-  const salts_plugin_manifest *manifest = NULL;
-  const salts_plugin_export *module_export = NULL;
+  cmeta_plugin_registry registry = {0};
+  cmeta_plugin_registry_config config = {.capacity = 1u};
+  cmeta_plugin_ref ref = {0};
+  cmeta_plugin_lease lease = {0};
+  const cmeta_plugin_manifest *manifest = NULL;
+  const cmeta_plugin_export *module_export = NULL;
   ts_plugin_module *module = NULL;
-  salts_plugin_status status;
+  cmeta_plugin_status status;
   ts_plugin_handle_t *handle = NULL;
   int started = 0;
 
@@ -823,22 +823,22 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   resolved = plugin_resolve_path(path, error);
   if (!resolved) return error ? error->code : TS_PLUGIN_ERROR_OPEN;
 
-  status = salts_plugin_registry_init(&registry, &config);
-  if (status != SALTS_PLUGIN_OK) {
+  status = cmeta_plugin_registry_init(&registry, &config);
+  if (status != CMETA_PLUGIN_OK) {
     free(resolved);
     return plugin_error_from_salts(error, status, path);
   }
 
-  status = salts_plugin_registry_load(&registry, resolved, &ref);
-  if (status != SALTS_PLUGIN_OK) {
+  status = cmeta_plugin_registry_load(&registry, resolved, &ref);
+  if (status != CMETA_PLUGIN_OK) {
     int result = plugin_error_from_salts(error, status, resolved);
     free(resolved);
-    (void)salts_plugin_registry_destroy(&registry);
+    (void)cmeta_plugin_registry_destroy(&registry);
     return result;
   }
 
-  status = salts_plugin_registry_start(&registry, ref);
-  if (status != SALTS_PLUGIN_OK) {
+  status = cmeta_plugin_registry_start(&registry, ref);
+  if (status != CMETA_PLUGIN_OK) {
     int result = plugin_error_from_salts(error, status, resolved);
     free(resolved);
     plugin_registry_cleanup_loaded(&registry, ref, &lease, 0);
@@ -846,8 +846,8 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
   }
   started = 1;
 
-  status = salts_plugin_registry_acquire(&registry, ref, &lease, &manifest);
-  if (status != SALTS_PLUGIN_OK) {
+  status = cmeta_plugin_registry_acquire(&registry, ref, &lease, &manifest);
+  if (status != CMETA_PLUGIN_OK) {
     int result = plugin_error_from_salts(error, status, resolved);
     free(resolved);
     plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
@@ -875,13 +875,13 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
     return TS_PLUGIN_ERROR_NAME;
   }
 
-  status = salts_plugin_manifest_find_export(
+  status = cmeta_plugin_manifest_find_export(
       manifest, TS_PLUGIN_MODULE_EXPORT_ID, &module_export);
-  if (status == SALTS_PLUGIN_OK) {
-    if (salts_plugin_export_require_interface(
+  if (status == CMETA_PLUGIN_OK) {
+    if (cmeta_plugin_export_require_interface(
             module_export, TS_PLUGIN_MODULE_CONTRACT_ID,
             TS_PLUGIN_MODULE_CONTRACT_VERSION, 0u,
-            ts_plugin_module_interface()) != SALTS_PLUGIN_OK) {
+            ts_plugin_module_interface()) != CMETA_PLUGIN_OK) {
       plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR, TS_PLUGIN_STAGE_ABI,
                        (uint32_t)status, resolved,
                        "TurboScript module interface export is invalid");
@@ -899,11 +899,11 @@ int ts_plugin_load_ex(const char *path, const char *expected_name,
       plugin_registry_cleanup_loaded(&registry, ref, &lease, started);
       return TS_PLUGIN_ERROR_DESCRIPTOR;
     }
-  } else if (status == SALTS_PLUGIN_UNKNOWN_EXPORT) {
+  } else if (status == CMETA_PLUGIN_UNKNOWN_EXPORT) {
     size_t function_count = 0u;
     module_export = NULL;
     for (size_t i = 0u; i < manifest->export_count; ++i) {
-      if (manifest->exports[i].kind == SALTS_PLUGIN_EXPORT_FUNCTION)
+      if (manifest->exports[i].kind == CMETA_PLUGIN_EXPORT_FUNCTION)
         ++function_count;
     }
     if (function_count == 0u) {
@@ -967,7 +967,7 @@ int ts_plugin_find_bound_function(
   bindings =
       (const ts_plugin_function_binding_t *)handle->function_bindings;
   for (size_t i = 0u; i < handle->function_binding_count; ++i) {
-    const salts_plugin_export *entry = bindings[i].entry;
+    const cmeta_plugin_export *entry = bindings[i].entry;
     if (entry && entry->export_id &&
         strcmp(entry->export_id, export_id) == 0) {
       out->entry = entry;
@@ -1066,21 +1066,21 @@ void ts_plugin_unload(ts_plugin_handle_t *handle) {
   handle->function_binding_count = 0u;
   handle->initialized = 0;
 
-  if (salts_plugin_lease_valid(handle->lease))
-    (void)salts_plugin_registry_release(&handle->registry, &handle->lease);
+  if (cmeta_plugin_lease_valid(handle->lease))
+    (void)cmeta_plugin_registry_release(&handle->registry, &handle->lease);
 
-  if (salts_plugin_ref_valid(handle->plugin_ref)) {
-    salts_plugin_status status =
-        salts_plugin_registry_request_stop(&handle->registry,
+  if (cmeta_plugin_ref_valid(handle->plugin_ref)) {
+    cmeta_plugin_status status =
+        cmeta_plugin_registry_request_stop(&handle->registry,
                                            handle->plugin_ref);
-    if (status == SALTS_PLUGIN_OK || status == SALTS_PLUGIN_ALREADY)
-      (void)salts_plugin_registry_poll_quiescent(
+    if (status == CMETA_PLUGIN_OK || status == CMETA_PLUGIN_ALREADY)
+      (void)cmeta_plugin_registry_poll_quiescent(
           &handle->registry, handle->plugin_ref, &quiescent);
     if (quiescent)
-      (void)salts_plugin_registry_unload(&handle->registry,
+      (void)cmeta_plugin_registry_unload(&handle->registry,
                                          handle->plugin_ref);
   }
 
-  (void)salts_plugin_registry_destroy(&handle->registry);
+  (void)cmeta_plugin_registry_destroy(&handle->registry);
   free(handle);
 }

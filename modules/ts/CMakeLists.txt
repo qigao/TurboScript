@@ -48,4 +48,6 @@ set_target_properties(
 cmake_install_headers(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
                       DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/ts)
 
-add_subdirectory(test)
+if(BUILD_TESTING)
+  add_subdirectory(test)
+endif()

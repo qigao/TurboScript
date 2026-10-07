@@ -13,7 +13,7 @@ upstream license terms continue to apply.
 | Monocypher | `vendor/turbo_crypto/monocypher/` | BSD-2-Clause OR CC0-1.0 | License notice is embedded in the upstream source headers. |
 | sha-2 (SHA-256) | `vendor/turbo_crypto/sha2/` | Unlicense OR 0BSD | Derived from `amosnier/sha-2`; upstream license copied to `vendor/turbo_crypto/sha2/LICENSE.md`. |
 | xxtea-c | `vendor/turbo_crypto/xxtea/` | MIT | See `vendor/turbo_crypto/xxtea/LICENSE.md`. |
-| SQLite Lemon parser generator | `tools/lemon/` | Public-domain dedication | The source headers explicitly disclaim copyright. |
+| SQLite Lemon parser generator | `tools/lemon/` | Public-domain dedication | The source headers explicitly disclaim copyright. Local fix: skip sorting an empty macro-definition list to avoid passing NULL to `qsort`. |
 
 External dependencies resolved through vcpkg or system package managers are
 not bundled as TurboScript source and remain governed by their own licenses.

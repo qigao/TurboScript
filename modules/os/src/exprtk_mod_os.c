@@ -6,10 +6,10 @@
 #include "exprtk.h"
 #include "platform.h"
 #include "tlog.h"
-#include "salts_error.h"
-#include "salts_process.h"
+#include "cmeta_error.h"
+#include "cmeta_process.h"
 #include "tstr.h"
-#include "salts_thread.h"
+#include "cmeta_thread.h"
 #include "salts_cron.h"
 
 #include <math.h>
@@ -29,7 +29,7 @@
 #define OS_CRON_EXPRESSION_SIZE 128U
 
 typedef struct {
-    salts_process_t *process;
+    cmeta_process_t *process;
 } os_process_slot_t;
 
 typedef struct {
@@ -63,7 +63,7 @@ typedef struct {
 typedef struct os_module_s {
     os_process_slot_t processes[OS_MAX_PROCESS_HANDLES];
     os_power_schedule_slot_t schedules[OS_MAX_POWER_SCHEDULES];
-    salts_mutex_t schedule_mutex;
+    cmeta_mutex_t schedule_mutex;
 } os_module_t;
 
 static exprtk_value_t os_empty(void) { return exprtk_val_num(0); }
@@ -120,7 +120,7 @@ static int os_u64_arg(const exprtk_value_t *value, uint64_t *out) {
     return 1;
 }
 
-static salts_process_t *os_process_get(os_module_t *module, int64_t id) {
+static cmeta_process_t *os_process_get(os_module_t *module, int64_t id) {
     if (!module || id < 1 || id > (int64_t)OS_MAX_PROCESS_HANDLES) return NULL;
     return module->processes[(size_t)id - 1U].process;
 }
@@ -142,8 +142,8 @@ static int os_map_put(exprtk_value_t *map, const char *key, exprtk_value_t value
 static exprtk_value_t os_process_result_map(os_module_t *module, int64_t id,
                                             int wait_code) {
     exprtk_value_t map;
-    salts_process_t *process;
-    salts_process_result_t result;
+    cmeta_process_t *process;
+    cmeta_process_result_t result;
     int poll_code;
     int64_t pid;
 
@@ -154,19 +154,19 @@ static exprtk_value_t os_process_result_map(os_module_t *module, int64_t id,
     result.exit_code = -1;
     result.term_signal = -1;
     result.error_code = 0;
-    poll_code = salts_process_poll(process, &result);
+    poll_code = cmeta_process_poll(process, &result);
     if (poll_code != SALTS_OK) {
-        result.state = salts_process_state(process);
+        result.state = cmeta_process_state(process);
     }
-    pid = (int64_t)salts_process_pid(process);
+    pid = (int64_t)cmeta_process_pid(process);
 
     map = exprtk_val_map();
     if (!os_map_put(&map, "id", exprtk_val_int(id)) ||
         !os_map_put(&map, "pid", exprtk_val_int(pid)) ||
         !os_map_put(&map, "state", exprtk_val_str(vstr_from_cstr(
-                         salts_process_state_name(result.state)))) ||
+                         cmeta_process_state_name(result.state)))) ||
         !os_map_put(&map, "running", exprtk_val_num(
-                         salts_process_is_running(process) ? 1.0 : 0.0)) ||
+                         cmeta_process_is_running(process) ? 1.0 : 0.0)) ||
         !os_map_put(&map, "exit_code", exprtk_val_int(result.exit_code)) ||
         !os_map_put(&map, "term_signal", exprtk_val_int(result.term_signal)) ||
         !os_map_put(&map, "error_code", exprtk_val_int(result.error_code)) ||
@@ -181,7 +181,7 @@ static exprtk_value_t os_fn_platform_name(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_os_name)
+    return argc == 0 && env ? os_platform_text(&env->arena, cmeta_platform_os_name)
                             : os_empty();
 }
 
@@ -189,7 +189,7 @@ static exprtk_value_t os_fn_platform_version(size_t argc, exprtk_value_t *args,
                                              exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_os_version)
+    return argc == 0 && env ? os_platform_text(&env->arena, cmeta_platform_os_version)
                             : os_empty();
 }
 
@@ -197,14 +197,14 @@ static exprtk_value_t os_fn_arch(size_t argc, exprtk_value_t *args,
                                  exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_arch) : os_empty();
+    return argc == 0 && env ? os_platform_text(&env->arena, cmeta_platform_arch) : os_empty();
 }
 
 static exprtk_value_t os_fn_hostname(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_hostname)
+    return argc == 0 && env ? os_platform_text(&env->arena, cmeta_platform_hostname)
                             : os_empty();
 }
 
@@ -212,7 +212,7 @@ static exprtk_value_t os_fn_username(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, void *user_data) {
     (void)args;
     (void)user_data;
-    return argc == 0 && env ? os_platform_text(&env->arena, salts_platform_username)
+    return argc == 0 && env ? os_platform_text(&env->arena, cmeta_platform_username)
                             : os_empty();
 }
 
@@ -221,7 +221,7 @@ static exprtk_value_t os_fn_pid(size_t argc, exprtk_value_t *args,
     (void)args;
     (void)env;
     (void)user_data;
-    return argc == 0 ? exprtk_val_int((int64_t)salts_getpid()) : os_empty();
+    return argc == 0 ? exprtk_val_int((int64_t)cmeta_getpid()) : os_empty();
 }
 
 static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
@@ -229,7 +229,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
     const char *level_name;
     const char *message;
     const char *component = NULL;
-    salts_log_level_t level;
+    cmeta_log_level_t level;
     tlog_t *logger;
     size_t message_length;
     size_t component_length = 0;
@@ -249,7 +249,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
     for (i = 0; i < sizeof(level_names) / sizeof(level_names[0]); ++i) {
         if (strlen(level_names[i]) == level_length &&
             strncmp(level_names[i], level_name, level_length) == 0) {
-            level = (salts_log_level_t)i;
+            level = (cmeta_log_level_t)i;
             break;
         }
     }
@@ -257,7 +257,7 @@ static exprtk_value_t os_fn_log(size_t argc, exprtk_value_t *args,
 
     logger = tlog_get_default();
     if (!logger) return os_empty();
-    salts_log_str(logger, level, vstr_from_buf(component, component_length),
+    cmeta_log_str(logger, level, vstr_from_buf(component, component_length),
                   vstr_from_cstr(__FILE__), __LINE__, vstr_from_buf(message, message_length));
     return exprtk_val_num(1);
 }
@@ -266,7 +266,7 @@ static exprtk_value_t os_fn_log_set_level(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     const char *level_name;
     size_t level_length;
-    salts_log_level_t level;
+    cmeta_log_level_t level;
     tlog_t *logger;
     static const char *const level_names[] = {"DEBUG", "INFO", "WARN", "ERROR", "FATAL"};
     size_t i;
@@ -283,7 +283,7 @@ static exprtk_value_t os_fn_log_set_level(size_t argc, exprtk_value_t *args,
 
     logger = tlog_get_default();
     if (!logger) return os_empty();
-    level = (salts_log_level_t)i;
+    level = (cmeta_log_level_t)i;
     return exprtk_val_num(tlog_set_level_ex(logger, level) == SALTS_OK ? 1 : 0);
 }
 
@@ -296,15 +296,15 @@ static exprtk_value_t os_fn_log_level(size_t argc, exprtk_value_t *args,
     (void)user_data;
     if (argc != 0) return os_empty();
     logger = tlog_get_default();
-    return logger ? exprtk_val_str(vstr_from_cstr(salts_log_level_name(
+    return logger ? exprtk_val_str(vstr_from_cstr(cmeta_log_level_name(
                            tlog_get_level(logger)))) : os_empty();
 }
 
 static exprtk_value_t os_fn_process_start(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    salts_process_options_t options;
-    salts_process_t *process = NULL;
+    cmeta_process_options_t options;
+    cmeta_process_t *process = NULL;
     const char *program;
     const char **child_args;
     int slot;
@@ -324,10 +324,10 @@ static exprtk_value_t os_fn_process_start(size_t argc, exprtk_value_t *args,
     }
     child_args[argc - 1U] = NULL;
 
-    salts_process_options_init(&options);
+    cmeta_process_options_init(&options);
     options.program = program;
     options.args = child_args;
-    if (salts_process_spawn(&options, &process) != SALTS_OK || !process) return os_empty();
+    if (cmeta_process_spawn(&options, &process) != SALTS_OK || !process) return os_empty();
     module->processes[(size_t)slot].process = process;
     return exprtk_val_int((int64_t)slot + 1);
 }
@@ -347,8 +347,8 @@ static exprtk_value_t os_fn_process_poll(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    salts_process_t *process;
-    salts_process_result_t result;
+    cmeta_process_t *process;
+    cmeta_process_result_t result;
     uint64_t timeout;
     uint64_t raw_id;
     int64_t id;
@@ -362,9 +362,9 @@ static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
     if (!process) return os_empty();
     if (argc == 2) {
         if (!os_u64_arg(&args[1], &timeout)) return os_empty();
-        wait_code = salts_process_wait_for(process, timeout, &result);
+        wait_code = cmeta_process_wait_for(process, timeout, &result);
     } else {
-        wait_code = salts_process_wait(process, &result);
+        wait_code = cmeta_process_wait(process, &result);
     }
     return os_process_result_map(module, id, wait_code);
 }
@@ -372,7 +372,7 @@ static exprtk_value_t os_fn_process_wait(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_fn_process_terminate(size_t argc, exprtk_value_t *args,
                                               exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    salts_process_t *process;
+    cmeta_process_t *process;
     uint64_t raw_id;
     int64_t id;
 
@@ -381,14 +381,14 @@ static exprtk_value_t os_fn_process_terminate(size_t argc, exprtk_value_t *args,
         return os_empty();
     id = (int64_t)raw_id;
     process = os_process_get(module, id);
-    return process ? exprtk_val_num(salts_process_terminate(process) == SALTS_OK ? 1 : 0)
+    return process ? exprtk_val_num(cmeta_process_terminate(process) == SALTS_OK ? 1 : 0)
                    : os_empty();
 }
 
 static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
                                           exprtk_env_t *env, void *user_data) {
     os_module_t *module = (os_module_t *)user_data;
-    salts_process_t *process;
+    cmeta_process_t *process;
     uint64_t raw_id;
     int64_t id;
 
@@ -398,7 +398,7 @@ static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
     id = (int64_t)raw_id;
     process = os_process_get(module, id);
     if (!process) return os_empty();
-    salts_process_destroy(process);
+    cmeta_process_destroy(process);
     module->processes[(size_t)id - 1U].process = NULL;
     return exprtk_val_num(1);
 }
@@ -406,7 +406,7 @@ static exprtk_value_t os_fn_process_close(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_process_read(os_module_t *module, size_t argc,
                                       exprtk_value_t *args, exprtk_env_t *env,
                                       int stderr_stream) {
-    salts_process_t *process;
+    cmeta_process_t *process;
     uint64_t requested = OS_DEFAULT_OUTPUT_READ;
     size_t read = 0;
     char *buffer;
@@ -426,8 +426,8 @@ static exprtk_value_t os_process_read(os_module_t *module, size_t argc,
     buffer = (char *)mem_alloc(&env->arena, (size_t)requested + 1U);
     if (!buffer) return os_empty();
     code = stderr_stream
-                ? salts_process_read_stderr(process, buffer, (size_t)requested, &read)
-                : salts_process_read_stdout(process, buffer, (size_t)requested, &read);
+                ? cmeta_process_read_stderr(process, buffer, (size_t)requested, &read)
+                : cmeta_process_read_stdout(process, buffer, (size_t)requested, &read);
     if (code != SALTS_OK && code != SALTS_EOF) return os_empty();
     buffer[read] = '\0';
     return exprtk_val_str(vstr_from_buf(buffer, read));
@@ -443,7 +443,7 @@ static exprtk_value_t os_fn_process_read_stderr(size_t argc, exprtk_value_t *arg
     return os_process_read((os_module_t *)user_data, argc, args, env, 1);
 }
 
-static size_t os_read_stream(salts_process_t *process, int stderr_stream,
+static size_t os_read_stream(cmeta_process_t *process, int stderr_stream,
                              char *buffer, size_t capacity) {
     size_t total = 0;
     size_t read = 0;
@@ -453,9 +453,9 @@ static size_t os_read_stream(salts_process_t *process, int stderr_stream,
     while (total + 1U < capacity) {
         read = 0;
         code = stderr_stream
-                   ? salts_process_read_stderr(process, buffer + total, capacity - total - 1U,
+                   ? cmeta_process_read_stderr(process, buffer + total, capacity - total - 1U,
                                                &read)
-                   : salts_process_read_stdout(process, buffer + total, capacity - total - 1U,
+                   : cmeta_process_read_stdout(process, buffer + total, capacity - total - 1U,
                                                &read);
         total += read;
         if (code == SALTS_EOF || code != SALTS_OK || read == 0) break;
@@ -522,9 +522,9 @@ static exprtk_value_t os_action_map(const char *action, int success, int availab
 static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
                                            exprtk_env_t *env, void *user_data) {
     const char *service_name;
-    salts_process_options_t options;
-    salts_process_result_t result;
-    salts_process_t *process = NULL;
+    cmeta_process_options_t options;
+    cmeta_process_result_t result;
+    cmeta_process_t *process = NULL;
     const char *process_args[3];
     char output[OS_SERVICE_OUTPUT_SIZE];
     size_t service_length;
@@ -542,26 +542,26 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
     process_args[0] = "query";
     process_args[1] = service_name;
     process_args[2] = NULL;
-    salts_process_options_init(&options);
+    cmeta_process_options_init(&options);
     options.program = "sc.exe";
 #else
     process_args[0] = "is-active";
     process_args[1] = service_name;
     process_args[2] = NULL;
-    salts_process_options_init(&options);
+    cmeta_process_options_init(&options);
     options.program = "systemctl";
 #endif
     options.args = process_args;
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
-    spawn_code = salts_process_spawn(&options, &process);
+    spawn_code = cmeta_process_spawn(&options, &process);
     if (spawn_code != SALTS_OK || !process)
         return os_service_map(0, 0, "unavailable", -1, spawn_code, "");
 
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    (void)salts_process_wait(process, &result);
+    (void)cmeta_process_wait(process, &result);
     os_read_stream(process, 0, output, sizeof(output));
     if (output[0] == '\0') os_read_stream(process, 1, output, sizeof(output));
 
@@ -589,7 +589,7 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
     {
         exprtk_value_t map = os_service_map(1, active, state, result.exit_code,
                                             result.error_code, output);
-        salts_process_destroy(process);
+        cmeta_process_destroy(process);
         return map;
     }
 }
@@ -597,9 +597,9 @@ static exprtk_value_t os_fn_service_status(size_t argc, exprtk_value_t *args,
 static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
                                             const char *action) {
     const char *service_name;
-    salts_process_options_t options;
-    salts_process_result_t result;
-    salts_process_t *process = NULL;
+    cmeta_process_options_t options;
+    cmeta_process_result_t result;
+    cmeta_process_t *process = NULL;
     const char *process_args[3];
     char output[OS_SERVICE_OUTPUT_SIZE];
     size_t service_length;
@@ -615,7 +615,7 @@ static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
     process_args[0] = action;
     process_args[1] = service_name;
     process_args[2] = NULL;
-    salts_process_options_init(&options);
+    cmeta_process_options_init(&options);
 #ifdef _WIN32
     options.program = "sc.exe";
 #else
@@ -625,15 +625,15 @@ static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
 
-    spawn_code = salts_process_spawn(&options, &process);
+    spawn_code = cmeta_process_spawn(&options, &process);
     if (spawn_code != SALTS_OK || !process)
         return os_action_map(action, 0, 0, state, -1, spawn_code, spawn_code, "");
 
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    wait_code = salts_process_wait(process, &result);
-    state = salts_process_state_name(result.state);
+    wait_code = cmeta_process_wait(process, &result);
+    state = cmeta_process_state_name(result.state);
     os_read_stream(process, 0, output, sizeof(output));
     if (output[0] == '\0') os_read_stream(process, 1, output, sizeof(output));
     success = wait_code == SALTS_OK && result.exit_code == 0 && result.error_code == 0;
@@ -641,7 +641,7 @@ static exprtk_value_t os_fn_service_control(size_t argc, exprtk_value_t *args,
     {
         exprtk_value_t map = os_action_map(
             action, success, 1, state, result.exit_code, result.error_code, wait_code, output);
-        salts_process_destroy(process);
+        cmeta_process_destroy(process);
         return map;
     }
 }
@@ -669,9 +669,9 @@ static void os_action_result_init(os_action_result_t *result) {
 }
 
 static int os_run_power_action(const char *action, os_action_result_t *out) {
-    salts_process_options_t options;
-    salts_process_result_t result;
-    salts_process_t *process = NULL;
+    cmeta_process_options_t options;
+    cmeta_process_result_t result;
+    cmeta_process_t *process = NULL;
     const char *process_args[4] = {NULL, NULL, NULL, NULL};
     int spawn_code;
     const char *program;
@@ -695,13 +695,13 @@ static int os_run_power_action(const char *action, os_action_result_t *out) {
     process_args[1] = "now";
 #endif
 
-    salts_process_options_init(&options);
+    cmeta_process_options_init(&options);
     options.program = program;
     options.args = process_args;
     options.timeout_ms = OS_SERVICE_TIMEOUT_MS;
     options.max_output_bytes = OS_SERVICE_OUTPUT_SIZE;
 
-    spawn_code = salts_process_spawn(&options, &process);
+    spawn_code = cmeta_process_spawn(&options, &process);
     if (spawn_code != SALTS_OK || !process) {
         out->error_code = spawn_code;
         out->wait_code = spawn_code;
@@ -711,17 +711,17 @@ static int os_run_power_action(const char *action, os_action_result_t *out) {
     memset(&result, 0, sizeof(result));
     result.exit_code = -1;
     result.error_code = 0;
-    out->wait_code = salts_process_wait(process, &result);
+    out->wait_code = cmeta_process_wait(process, &result);
     out->available = 1;
     out->success = out->wait_code == SALTS_OK && result.exit_code == 0 &&
                    result.error_code == 0;
     out->exit_code = result.exit_code;
     out->error_code = result.error_code;
     (void)snprintf(out->state, sizeof(out->state), "%s",
-                   salts_process_state_name(result.state));
+                   cmeta_process_state_name(result.state));
     os_read_stream(process, 0, out->output, sizeof(out->output));
     if (out->output[0] == '\0') os_read_stream(process, 1, out->output, sizeof(out->output));
-    salts_process_destroy(process);
+    cmeta_process_destroy(process);
     return out->success ? SALTS_OK : SALTS_EPERM;
 }
 
@@ -760,7 +760,7 @@ static void os_power_schedule_callback(const salts_cron_expr_t *expression,
     if (!slot || !slot->owner) return;
     (void)os_run_power_action(slot->action, &result);
 
-    salts_mutex_lock(&slot->owner->schedule_mutex);
+    cmeta_mutex_lock(&slot->owner->schedule_mutex);
     if (slot->allocated) {
         slot->fire_count++;
         slot->last_success = result.success;
@@ -770,7 +770,7 @@ static void os_power_schedule_callback(const salts_cron_expr_t *expression,
         (void)snprintf(slot->last_state, sizeof(slot->last_state), "%s", result.state);
         (void)snprintf(slot->last_output, sizeof(slot->last_output), "%s", result.output);
     }
-    salts_mutex_unlock(&slot->owner->schedule_mutex);
+    cmeta_mutex_unlock(&slot->owner->schedule_mutex);
 }
 
 static int os_schedule_copy_arg(const exprtk_value_t *value, char *buffer,
@@ -825,7 +825,7 @@ static exprtk_value_t os_fn_power_schedule(size_t argc, exprtk_value_t *args,
         (strcmp(action, "reboot") != 0 && strcmp(action, "shutdown") != 0))
         return os_empty();
 
-    salts_mutex_lock(&module->schedule_mutex);
+    cmeta_mutex_lock(&module->schedule_mutex);
     for (i = 0; i < OS_MAX_POWER_SCHEDULES; ++i) {
         if (!module->schedules[i].allocated) {
             slot = &module->schedules[i];
@@ -839,26 +839,26 @@ static exprtk_value_t os_fn_power_schedule(size_t argc, exprtk_value_t *args,
             break;
         }
     }
-    salts_mutex_unlock(&module->schedule_mutex);
+    cmeta_mutex_unlock(&module->schedule_mutex);
     if (!slot) return os_empty();
 
     runner = salts_cron_runner_create(expression, os_power_schedule_callback, slot);
     if (!runner) {
-        salts_mutex_lock(&module->schedule_mutex);
+        cmeta_mutex_lock(&module->schedule_mutex);
         memset(slot, 0, sizeof(*slot));
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
 
-    salts_mutex_lock(&module->schedule_mutex);
+    cmeta_mutex_lock(&module->schedule_mutex);
     slot->runner = runner;
     slot->active = 1;
-    salts_mutex_unlock(&module->schedule_mutex);
+    cmeta_mutex_unlock(&module->schedule_mutex);
     if (salts_cron_runner_start(runner) != SALTS_CRON_OK) {
         salts_cron_runner_destroy(runner);
-        salts_mutex_lock(&module->schedule_mutex);
+        cmeta_mutex_lock(&module->schedule_mutex);
         memset(slot, 0, sizeof(*slot));
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
     return exprtk_val_int((int64_t)id);
@@ -877,22 +877,22 @@ static exprtk_value_t os_fn_power_schedule_cancel(size_t argc, exprtk_value_t *a
         return os_empty();
 
     slot = &module->schedules[(size_t)raw_id - 1U];
-    salts_mutex_lock(&module->schedule_mutex);
+    cmeta_mutex_lock(&module->schedule_mutex);
     if (!slot->allocated) {
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
         return exprtk_val_num(0);
     }
     slot->active = 0;
     runner = slot->runner;
-    salts_mutex_unlock(&module->schedule_mutex);
+    cmeta_mutex_unlock(&module->schedule_mutex);
 
     if (runner) {
         (void)salts_cron_runner_stop(runner);
         salts_cron_runner_destroy(runner);
     }
-    salts_mutex_lock(&module->schedule_mutex);
+    cmeta_mutex_lock(&module->schedule_mutex);
     memset(slot, 0, sizeof(*slot));
-    salts_mutex_unlock(&module->schedule_mutex);
+    cmeta_mutex_unlock(&module->schedule_mutex);
     return exprtk_val_num(1);
 }
 
@@ -908,13 +908,13 @@ static exprtk_value_t os_fn_power_schedule_status(size_t argc, exprtk_value_t *a
         raw_id == 0 || raw_id > OS_MAX_POWER_SCHEDULES)
         return os_empty();
     index = (size_t)raw_id - 1U;
-    salts_mutex_lock(&module->schedule_mutex);
+    cmeta_mutex_lock(&module->schedule_mutex);
     if (!module->schedules[index].allocated) {
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
         return os_empty();
     }
     snapshot = module->schedules[index];
-    salts_mutex_unlock(&module->schedule_mutex);
+    cmeta_mutex_unlock(&module->schedule_mutex);
     return os_power_schedule_map(&snapshot, (int64_t)raw_id);
 }
 
@@ -924,35 +924,35 @@ static exprtk_value_t os_static_platform_name(size_t argc, exprtk_value_t *args,
                                               exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, salts_platform_os_name) : os_empty();
+    return argc == 0 ? os_platform_text(arena, cmeta_platform_os_name) : os_empty();
 }
 
 static exprtk_value_t os_static_platform_version(size_t argc, exprtk_value_t *args,
                                                  exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, salts_platform_os_version) : os_empty();
+    return argc == 0 ? os_platform_text(arena, cmeta_platform_os_version) : os_empty();
 }
 
 static exprtk_value_t os_static_arch(size_t argc, exprtk_value_t *args,
                                      exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, salts_platform_arch) : os_empty();
+    return argc == 0 ? os_platform_text(arena, cmeta_platform_arch) : os_empty();
 }
 
 static exprtk_value_t os_static_hostname(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, salts_platform_hostname) : os_empty();
+    return argc == 0 ? os_platform_text(arena, cmeta_platform_hostname) : os_empty();
 }
 
 static exprtk_value_t os_static_username(size_t argc, exprtk_value_t *args,
                                          exprtk_env_t *env, mem_pool_t *arena) {
     (void)args;
     (void)env;
-    return argc == 0 ? os_platform_text(arena, salts_platform_username) : os_empty();
+    return argc == 0 ? os_platform_text(arena, cmeta_platform_username) : os_empty();
 }
 
 static exprtk_value_t os_static_pid(size_t argc, exprtk_value_t *args,
@@ -960,7 +960,7 @@ static exprtk_value_t os_static_pid(size_t argc, exprtk_value_t *args,
     (void)args;
     (void)env;
     (void)arena;
-    return argc == 0 ? exprtk_val_int((int64_t)salts_getpid()) : os_empty();
+    return argc == 0 ? exprtk_val_int((int64_t)cmeta_getpid()) : os_empty();
 }
 
 static const exprtk_func_entry_t os_entries[] = {
@@ -982,7 +982,7 @@ const exprtk_module_t *exprtk_module_os(void) { return &os_module; }
 
 void *os_module_create(void) {
     os_module_t *module = (os_module_t *)calloc(1, sizeof(os_module_t));
-    if (module) salts_mutex_init(&module->schedule_mutex);
+    if (module) cmeta_mutex_init(&module->schedule_mutex);
     return module;
 }
 
@@ -1027,24 +1027,24 @@ void os_module_destroy(void *opaque_module) {
 
     if (!module) return;
     for (i = 0; i < OS_MAX_POWER_SCHEDULES; ++i) {
-        salts_mutex_lock(&module->schedule_mutex);
+        cmeta_mutex_lock(&module->schedule_mutex);
         runner = module->schedules[i].runner;
         module->schedules[i].active = 0;
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
         if (runner) {
             (void)salts_cron_runner_stop(runner);
             salts_cron_runner_destroy(runner);
         }
-        salts_mutex_lock(&module->schedule_mutex);
+        cmeta_mutex_lock(&module->schedule_mutex);
         memset(&module->schedules[i], 0, sizeof(module->schedules[i]));
-        salts_mutex_unlock(&module->schedule_mutex);
+        cmeta_mutex_unlock(&module->schedule_mutex);
     }
     for (i = 0; i < OS_MAX_PROCESS_HANDLES; ++i) {
         if (module->processes[i].process) {
-            salts_process_destroy(module->processes[i].process);
+            cmeta_process_destroy(module->processes[i].process);
             module->processes[i].process = NULL;
         }
     }
-    salts_mutex_destroy(&module->schedule_mutex);
+    cmeta_mutex_destroy(&module->schedule_mutex);
     free(module);
 }

@@ -5,8 +5,10 @@
 
 #ifdef __cplusplus
 #define ABI_ASSERT static_assert
+#define ABI_CAST(type, value) static_cast<type>(value)
 #else
 #define ABI_ASSERT _Static_assert
+#define ABI_CAST(type, value) ((type)(value))
 #endif
 ABI_ASSERT(TURBO_SCRIPT_HOST_ABI_VERSION == 1u, "Host ABI version");
 ABI_ASSERT(sizeof(turbo_script_status_t) == 4, "Fixed-width status");
@@ -24,7 +26,7 @@ static turbo_script_string_view_t view(const char *text) {
 
 static turbo_script_status_t echo_host(void *user, const turbo_script_value_view_t *args,
                                        size_t count, turbo_script_host_result_builder_t *builder) {
-  unsigned *calls = (unsigned *)user;
+  unsigned *calls = ABI_CAST(unsigned *, user);
   if (count != 1) return TURBO_SCRIPT_STATUS_INVALID_ARGUMENT;
   ++*calls;
   return turbo_script_host_result_set_value(builder, &args[0]);
@@ -40,7 +42,7 @@ static turbo_script_status_t fail_host(void *user, const turbo_script_value_view
 
 static int is_number(const turbo_script_value_view_t *value, int expected) {
   if (value->kind == TURBO_SCRIPT_VALUE_INT64) return value->as.integer == expected;
-  return value->kind == TURBO_SCRIPT_VALUE_NUMBER && value->as.number == (double)expected;
+  return value->kind == TURBO_SCRIPT_VALUE_NUMBER && value->as.number >= expected && value->as.number <= expected;
 }
 
 #define REQUIRE(condition) do { \
@@ -70,7 +72,7 @@ static int exercise(turbo_script_execution_mode_t mode) {
   turbo_script_value_view_t input, output;
   turbo_script_export_handle_t next_one = 0, next_two = 0, echo = 0, callback = 0, failure = 0;
   turbo_script_status_t status;
-  char text[] = {'A', '\0', (char)0xe4, (char)0xb8, (char)0xad};
+  char text[] = {'A', '\0', ABI_CAST(char, 0xe4), ABI_CAST(char, 0xb8), ABI_CAST(char, 0xad)};
   unsigned callback_count = 0;
   int failed = 0;
 
@@ -123,7 +125,7 @@ static int exercise(turbo_script_execution_mode_t mode) {
   REQUIRE(turbo_script_result_get_value(result, &output) == TURBO_SCRIPT_STATUS_OK);
   REQUIRE(output.kind == TURBO_SCRIPT_VALUE_STRING && output.as.string.size == sizeof(text));
   REQUIRE(output.as.string.data[0] == 'A' && output.as.string.data[1] == '\0');
-  REQUIRE((unsigned char)output.as.string.data[2] == 0xe4);
+  REQUIRE(ABI_CAST(unsigned char, output.as.string.data[2]) == 0xe4);
 
   REQUIRE(turbo_script_instance_resolve_export(one, view("callback"), result, &callback) == TURBO_SCRIPT_STATUS_OK);
   memset(&input, 0, sizeof(input));
@@ -151,7 +153,7 @@ cleanup:
   }
   if (result) turbo_script_result_destroy(result);
   if (ctx) turbo_script_free(ctx);
-  if (!failed) printf("Installed Host ABI v1 passed: mode=%u; two isolated instances; owned values; callbacks and errors\n", (unsigned)mode);
+  if (!failed) printf("Installed Host ABI v1 passed: mode=%u; two isolated instances; owned values; callbacks and errors\n", ABI_CAST(unsigned, mode));
   return failed;
 }
 

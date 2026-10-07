@@ -8,7 +8,7 @@
 #include "exprtk_module.h"
 #include "platform.h"
 #include "datetime_parser.h"
-#include "salts_fs.h"
+#include "cmeta_fs.h"
 
 #ifdef _WIN32
 #include <io.h>
@@ -140,8 +140,8 @@ static exprtk_value_t io_format_date_value(size_t argc, exprtk_value_t *args, me
     if (!fmt)
       return io_fail_empty();
 
-    if ((use_utc ? salts_strftime_utc(t, fmt, buf, sizeof(buf))
-                 : salts_strftime_local(t, fmt, buf, sizeof(buf))) > 0) {
+    if ((use_utc ? cmeta_strftime_utc(t, fmt, buf, sizeof(buf))
+                 : cmeta_strftime_local(t, fmt, buf, sizeof(buf))) > 0) {
       size_t len = strlen(buf);
       return io_make_string_value(arena, buf, len);
     }
@@ -161,10 +161,10 @@ static exprtk_value_t fn_read_file(size_t argc, exprtk_value_t *args, exprtk_env
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_buf_t buf = {0};
-      if (salts_fs_read_file(path, &buf) == 0) {
+      cmeta_fs_buf_t buf = {0};
+      if (cmeta_fs_read_file(path, &buf) == 0) {
         exprtk_value_t result = io_make_string_value(arena, buf.base, buf.len);
-        salts_fs_buf_free(&buf);
+        cmeta_fs_buf_free(&buf);
         if (result.type == EXPRTK_VAL_STRING)
           return result;
       }
@@ -180,10 +180,10 @@ static exprtk_value_t fn_write_file(size_t argc, exprtk_value_t *args, exprtk_en
   if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_buf_t buf;
+      cmeta_fs_buf_t buf;
       buf.base = (char *)args[1].data.string.data;
       buf.len = args[1].data.string.len;
-      return exprtk_val_num((double)salts_fs_write_file(path, &buf));
+      return exprtk_val_num((double)cmeta_fs_write_file(path, &buf));
     }
   }
   return io_fail_status();
@@ -196,12 +196,12 @@ static exprtk_value_t fn_append_file(size_t argc, exprtk_value_t *args, exprtk_e
   if (argc == 2 && args[0].type == EXPRTK_VAL_STRING && args[1].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_file_t fd = salts_fs_open(
+      cmeta_file_t fd = cmeta_fs_open(
           path, SALTS_FS_O_WRONLY | SALTS_FS_O_CREAT | SALTS_FS_O_APPEND, SALTS_FS_DEFAULT_MODE);
       if (fd == SALTS_INVALID_FILE)
         return io_fail_status();
-      int res = salts_fs_write(fd, args[1].data.string.data, args[1].data.string.len);
-      salts_fs_close(fd);
+      int res = cmeta_fs_write(fd, args[1].data.string.data, args[1].data.string.len);
+      cmeta_fs_close(fd);
       return exprtk_val_num(res >= 0 ? 0.0 : (double)res);
     }
   }
@@ -216,11 +216,11 @@ static exprtk_value_t fn_copy_file(size_t argc, exprtk_value_t *args, exprtk_env
     char *src_path = vstr_to_arena(args[0].data.string, arena);
     char *dst_path = vstr_to_arena(args[1].data.string, arena);
     if (src_path && dst_path) {
-      salts_fs_buf_t buf = {0};
-      int rc = salts_fs_read_file(src_path, &buf);
+      cmeta_fs_buf_t buf = {0};
+      int rc = cmeta_fs_read_file(src_path, &buf);
       if (rc == 0) {
-        rc = salts_fs_write_file(dst_path, &buf);
-        salts_fs_buf_free(&buf);
+        rc = cmeta_fs_write_file(dst_path, &buf);
+        cmeta_fs_buf_free(&buf);
       }
       return exprtk_val_num((double)rc);
     }
@@ -239,12 +239,12 @@ static exprtk_value_t fn_file_truncate(size_t argc, exprtk_value_t *args, exprtk
                          ? args[1].data.integer
                          : (int64_t)args[1].data.number;
     if (path && length >= 0) {
-      salts_file_t fd = salts_fs_open(path, SALTS_FS_O_WRONLY, SALTS_FS_DEFAULT_MODE);
+      cmeta_file_t fd = cmeta_fs_open(path, SALTS_FS_O_WRONLY, SALTS_FS_DEFAULT_MODE);
       int rc;
       if (fd == SALTS_INVALID_FILE)
         return io_fail_status();
-      rc = salts_fs_ftruncate(fd, length);
-      salts_fs_close(fd);
+      rc = cmeta_fs_ftruncate(fd, length);
+      cmeta_fs_close(fd);
       return exprtk_val_num((double)rc);
     }
   }
@@ -262,8 +262,8 @@ static exprtk_value_t fn_file_exists(size_t argc, exprtk_value_t *args, exprtk_e
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_stat_t st;
-      return io_bool(salts_fs_stat(path, &st) == 0);
+      cmeta_fs_stat_t st;
+      return io_bool(cmeta_fs_stat(path, &st) == 0);
     }
   }
   return io_bool(0);
@@ -276,8 +276,8 @@ static exprtk_value_t fn_file_size(size_t argc, exprtk_value_t *args, exprtk_env
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_stat_t st;
-      if (salts_fs_stat(path, &st) == 0)
+      cmeta_fs_stat_t st;
+      if (cmeta_fs_stat(path, &st) == 0)
         return exprtk_val_num((double)st.size);
     }
   }
@@ -291,8 +291,8 @@ static exprtk_value_t fn_file_stat(size_t argc, exprtk_value_t *args, exprtk_env
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_stat_t st;
-      if (salts_fs_stat(path, &st) == 0) {
+      cmeta_fs_stat_t st;
+      if (cmeta_fs_stat(path, &st) == 0) {
         double *out = MEM_ALLOC_ARRAY(arena, double, 4);
         if (out) {
           out[0] = (double)st.size;
@@ -314,8 +314,8 @@ static exprtk_value_t fn_is_file(size_t argc, exprtk_value_t *args, exprtk_env_t
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_stat_t st;
-      if (salts_fs_stat(path, &st) == 0)
+      cmeta_fs_stat_t st;
+      if (cmeta_fs_stat(path, &st) == 0)
         return io_bool(st.is_file);
     }
   }
@@ -329,8 +329,8 @@ static exprtk_value_t fn_is_dir(size_t argc, exprtk_value_t *args, exprtk_env_t 
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
-      salts_fs_stat_t st;
-      if (salts_fs_stat(path, &st) == 0)
+      cmeta_fs_stat_t st;
+      if (cmeta_fs_stat(path, &st) == 0)
         return io_bool(st.is_directory);
     }
   }
@@ -348,7 +348,7 @@ static exprtk_value_t fn_file_remove(size_t argc, exprtk_value_t *args, exprtk_e
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path)
-      return exprtk_val_num((double)salts_fs_unlink(path));
+      return exprtk_val_num((double)cmeta_fs_unlink(path));
   }
   return io_fail_status();
 }
@@ -361,7 +361,7 @@ static exprtk_value_t fn_file_rename(size_t argc, exprtk_value_t *args, exprtk_e
     char *old_path = vstr_to_arena(args[0].data.string, arena);
     char *new_path = vstr_to_arena(args[1].data.string, arena);
     if (old_path && new_path)
-      return exprtk_val_num((double)salts_fs_rename(old_path, new_path));
+      return exprtk_val_num((double)cmeta_fs_rename(old_path, new_path));
   }
   return io_fail_status();
 }
@@ -378,7 +378,7 @@ static exprtk_value_t fn_mkdir(size_t argc, exprtk_value_t *args, exprtk_env_t *
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
       int mode = (argc >= 2 && args[1].type == EXPRTK_VAL_NUMBER) ? (int)args[1].data.number : 0755;
-      return exprtk_val_num((double)salts_fs_mkdir(path, mode));
+      return exprtk_val_num((double)cmeta_fs_mkdir(path, mode));
     }
   }
   return io_fail_status();
@@ -391,7 +391,7 @@ static exprtk_value_t fn_rmdir(size_t argc, exprtk_value_t *args, exprtk_env_t *
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path)
-      return exprtk_val_num((double)salts_fs_rmdir(path));
+      return exprtk_val_num((double)cmeta_fs_rmdir(path));
   }
   return io_fail_status();
 }
@@ -401,8 +401,8 @@ static int io_path_sep(char ch) {
 }
 
 static int io_dir_exists(const char *path) {
-  salts_fs_stat_t st;
-  return path && salts_fs_stat(path, &st) == 0 && st.is_directory;
+  cmeta_fs_stat_t st;
+  return path && cmeta_fs_stat(path, &st) == 0 && st.is_directory;
 }
 
 static int io_mkdir_recursive_path(const char *path, int mode) {
@@ -434,7 +434,7 @@ static int io_mkdir_recursive_path(const char *path, int mode) {
     saved = current[i];
     current[i] = '\0';
     if (current[0] != '\0') {
-      int rc = salts_fs_mkdir(current, mode);
+      int rc = cmeta_fs_mkdir(current, mode);
       if (rc != 0 && !io_dir_exists(current)) {
         current[i] = saved;
         return rc;
@@ -450,27 +450,27 @@ static int io_mkdir_recursive_path(const char *path, int mode) {
 }
 
 static int io_rmdir_recursive_path(const char *path) {
-  salts_fs_stat_t st;
-  salts_fs_dir_t *dir = NULL;
+  cmeta_fs_stat_t st;
+  cmeta_fs_dir_t *dir = NULL;
   int result = 0;
 
-  if (!path || salts_fs_lstat(path, &st) != 0 || !st.is_directory || st.is_symlink)
+  if (!path || cmeta_fs_lstat(path, &st) != 0 || !st.is_directory || st.is_symlink)
     return -1;
 
-  if (salts_fs_opendir(path, &dir) != 0)
+  if (cmeta_fs_opendir(path, &dir) != 0)
     return -1;
 
   for (;;) {
     char child[SALTS_FS_MAX_PATH * 2];
-    salts_fs_stat_t child_st;
-    salts_fs_dirent_t entry;
-    int read_result = salts_fs_readdir(dir, &entry);
+    cmeta_fs_stat_t child_st;
+    cmeta_fs_dirent_t entry;
+    int read_result = cmeta_fs_readdir(dir, &entry);
 
     if (read_result == 0)
       break;
     if (read_result < 0 ||
-        salts_fs_path_join(child, sizeof(child), path, entry.name) != 0 ||
-        salts_fs_lstat(child, &child_st) != 0) {
+        cmeta_fs_path_join(child, sizeof(child), path, entry.name) != 0 ||
+        cmeta_fs_lstat(child, &child_st) != 0) {
       result = -1;
       break;
     }
@@ -479,16 +479,16 @@ static int io_rmdir_recursive_path(const char *path) {
         result = -1;
         break;
       }
-    } else if (salts_fs_unlink(child) != 0) {
+    } else if (cmeta_fs_unlink(child) != 0) {
       result = -1;
       break;
     }
   }
 
-  if (salts_fs_closedir(dir) != 0)
+  if (cmeta_fs_closedir(dir) != 0)
     result = -1;
 
-  return result == 0 ? salts_fs_rmdir(path) : result;
+  return result == 0 ? cmeta_fs_rmdir(path) : result;
 }
 
 /** mkdir_recursive(path [, mode]) → 0 on success */
@@ -523,7 +523,7 @@ static exprtk_value_t fn_tmpdir(size_t argc, exprtk_value_t *args, exprtk_env_t 
   (void)args;
   (void)env;
   char buf[SALTS_FS_MAX_PATH];
-  if (salts_fs_get_tmpdir(buf, sizeof(buf)) == 0) {
+  if (cmeta_fs_get_tmpdir(buf, sizeof(buf)) == 0) {
     size_t len = strlen(buf);
     return io_make_string_value(arena, buf, len);
   }
@@ -542,27 +542,27 @@ static exprtk_value_t fn_listdir(size_t argc, exprtk_value_t *args, exprtk_env_t
   if (!path)
     return io_fail_empty();
 
-  salts_fs_dir_t *dir = NULL;
-  if (salts_fs_opendir(path, &dir) != 0)
+  cmeta_fs_dir_t *dir = NULL;
+  if (cmeta_fs_opendir(path, &dir) != 0)
     return io_fail_empty();
 
   exprtk_value_t *entries = MEM_ALLOC_ARRAY(arena, exprtk_value_t, IO_MAX_DIRECTORY_ENTRIES);
   if (!entries) {
-    salts_fs_closedir(dir);
+    cmeta_fs_closedir(dir);
     return io_fail_empty();
   }
 
   size_t count = 0;
   int read_result = 0;
   while (count < IO_MAX_DIRECTORY_ENTRIES) {
-    salts_fs_dirent_t entry;
-    read_result = salts_fs_readdir(dir, &entry);
+    cmeta_fs_dirent_t entry;
+    read_result = cmeta_fs_readdir(dir, &entry);
     if (read_result <= 0)
       break;
     entries[count++] = io_make_string_value(arena, entry.name, strlen(entry.name));
   }
 
-  int close_result = salts_fs_closedir(dir);
+  int close_result = cmeta_fs_closedir(dir);
   if (read_result < 0 || close_result != 0)
     return io_fail_empty();
 
@@ -679,7 +679,7 @@ static exprtk_value_t fn_path_join(size_t argc, exprtk_value_t *args, exprtk_env
     char *rel = vstr_to_arena(args[1].data.string, arena);
     if (base && rel) {
       char buf[SALTS_FS_MAX_PATH * 2];
-      if (salts_fs_path_join(buf, sizeof(buf), base, rel) == 0) {
+      if (cmeta_fs_path_join(buf, sizeof(buf), base, rel) == 0) {
         size_t len = strlen(buf);
         return io_make_string_value(arena, buf, len);
       }
@@ -696,7 +696,7 @@ static exprtk_value_t fn_path_dirname(size_t argc, exprtk_value_t *args, exprtk_
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
       char buf[SALTS_FS_MAX_PATH];
-      if (salts_fs_path_dirname(path, buf, sizeof(buf)) == 0) {
+      if (cmeta_fs_path_dirname(path, buf, sizeof(buf)) == 0) {
         size_t len = strlen(buf);
         return io_make_string_value(arena, buf, len);
       }
@@ -713,7 +713,7 @@ static exprtk_value_t fn_path_basename(size_t argc, exprtk_value_t *args, exprtk
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path) {
       char buf[SALTS_FS_MAX_PATH];
-      if (salts_fs_path_basename(path, buf, sizeof(buf)) == 0) {
+      if (cmeta_fs_path_basename(path, buf, sizeof(buf)) == 0) {
         size_t len = strlen(buf);
         return io_make_string_value(arena, buf, len);
       }
@@ -729,7 +729,7 @@ static exprtk_value_t fn_path_is_absolute(size_t argc, exprtk_value_t *args, exp
   if (argc == 1 && args[0].type == EXPRTK_VAL_STRING) {
     char *path = vstr_to_arena(args[0].data.string, arena);
     if (path)
-      return io_bool(salts_fs_path_is_absolute(path));
+      return io_bool(cmeta_fs_path_is_absolute(path));
   }
   return io_bool(0);
 }
@@ -771,7 +771,7 @@ static exprtk_value_t fn_date_utc(size_t argc, exprtk_value_t *args, exprtk_env_
     struct tm tm_info;
     char *ds = vstr_to_arena(args[0].data.string, arena);
     if (ds && io_parse_utc_datetime(ds, &tm_info) == 0) {
-      time_t t = salts_timegm(&tm_info);
+      time_t t = cmeta_timegm(&tm_info);
       if (t != (time_t)-1)
         return exprtk_val_num((double)t);
     }
@@ -888,7 +888,7 @@ static exprtk_value_t fn_date_components(size_t argc, exprtk_value_t *args, expr
                               args[0].data.integer : args[0].data.number);
   
   struct tm tm_info;
-  if (salts_localtime(timestamp, &tm_info) != 0)
+  if (cmeta_localtime(timestamp, &tm_info) != 0)
     return io_fail_empty();
   
   double *out = MEM_ALLOC_ARRAY(arena, double, 7);
@@ -973,7 +973,7 @@ static exprtk_value_t fn_date_from_parts(size_t argc, exprtk_value_t *args, expr
   
   tm_info.tm_isdst = -1;  /* Auto-detect DST */
   
-  time_t timestamp = salts_mktime(&tm_info);
+  time_t timestamp = cmeta_mktime(&tm_info);
   if (timestamp == (time_t)-1)
     return io_fail_empty();
   
@@ -996,7 +996,7 @@ static exprtk_value_t fn_weekday(size_t argc, exprtk_value_t *args, exprtk_env_t
                               args[0].data.integer : args[0].data.number);
   
   struct tm tm_info;
-  if (salts_localtime(timestamp, &tm_info) != 0)
+  if (cmeta_localtime(timestamp, &tm_info) != 0)
     return io_fail_empty();
   
   return exprtk_val_num((double)tm_info.tm_wday);
@@ -1018,7 +1018,7 @@ static exprtk_value_t fn_year_day(size_t argc, exprtk_value_t *args, exprtk_env_
                               args[0].data.integer : args[0].data.number);
   
   struct tm tm_info;
-  if (salts_localtime(timestamp, &tm_info) != 0)
+  if (cmeta_localtime(timestamp, &tm_info) != 0)
     return io_fail_empty();
   
   return exprtk_val_num((double)(tm_info.tm_yday + 1));
@@ -1053,7 +1053,7 @@ static exprtk_value_t fn_pid(size_t argc, exprtk_value_t *args, exprtk_env_t *en
   (void)args;
   (void)env;
   (void)arena;
-  return exprtk_val_num((double)salts_getpid());
+  return exprtk_val_num((double)cmeta_getpid());
 }
 
 /** uptime_ms() → milliseconds since process start */
@@ -1063,7 +1063,7 @@ static exprtk_value_t fn_uptime_ms(size_t argc, exprtk_value_t *args, exprtk_env
   (void)args;
   (void)env;
   (void)arena;
-  return exprtk_val_num((double)salts_uptime_ms());
+  return exprtk_val_num((double)cmeta_uptime_ms());
 }
 
 /** monotonic_ms() → monotonic clock in milliseconds (never goes backward) */
@@ -1073,7 +1073,7 @@ static exprtk_value_t fn_monotonic_ms(size_t argc, exprtk_value_t *args, exprtk_
   (void)args;
   (void)env;
   (void)arena;
-  return exprtk_val_num((double)salts_monotonic_ms());
+  return exprtk_val_num((double)cmeta_monotonic_ms());
 }
 
 /* ═══════════════════════════════════════════════════════════════════

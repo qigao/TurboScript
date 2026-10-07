@@ -16,8 +16,8 @@
 #define TS_DATABIND_MAX_ITEMS 4096u
 
 typedef struct ts_plugin_databind_binding_s {
-  const salts_plugin_export *entry;
-  salts_plugin_function_invoke_fn invoke;
+  const cmeta_plugin_export *entry;
+  cmeta_plugin_function_invoke_fn invoke;
   void *context;
   DataBindPluginOperationBinding operation;
   DataBindServiceNativeBinding native;
@@ -639,31 +639,31 @@ void ts_plugin_databind_clear(
 int ts_plugin_databind_prepare(
     struct ts_plugin_handle_s *handle,
     char *error, size_t error_size) {
-  const salts_plugin_export *catalog_entry = NULL;
+  const cmeta_plugin_export *catalog_entry = NULL;
   data_bind_plugin_catalog *catalog;
   DataBind *codec = NULL;
   DataBindError bind_error = DATA_BIND_ERROR_INIT;
   ts_plugin_databind_binding_t *bindings = NULL;
   size_t count;
-  salts_plugin_status plugin_status;
+  cmeta_plugin_status plugin_status;
 
   if (!handle || !handle->manifest) {
     ts_databind_error(error, error_size, "invalid Plugin handle");
     return 0;
   }
 
-  plugin_status = salts_plugin_manifest_find_export(
+  plugin_status = cmeta_plugin_manifest_find_export(
       handle->manifest, DATA_BIND_PLUGIN_CATALOG_EXPORT_ID,
       &catalog_entry);
-  if (plugin_status == SALTS_PLUGIN_UNKNOWN_EXPORT)
+  if (plugin_status == CMETA_PLUGIN_UNKNOWN_EXPORT)
     return 1;
-  if (plugin_status != SALTS_PLUGIN_OK || !catalog_entry ||
-      salts_plugin_export_require_interface(
+  if (plugin_status != CMETA_PLUGIN_OK || !catalog_entry ||
+      cmeta_plugin_export_require_interface(
           catalog_entry,
           DATA_BIND_PLUGIN_CATALOG_CONTRACT_ID,
           DATA_BIND_PLUGIN_CATALOG_CONTRACT_VERSION,
           0u, data_bind_plugin_catalog_interface()) !=
-          SALTS_PLUGIN_OK) {
+          CMETA_PLUGIN_OK) {
     ts_databind_error(
         error, error_size,
         "invalid DataBind Service catalog Interface export");
@@ -706,7 +706,7 @@ int ts_plugin_databind_prepare(
 
   for (size_t i = 0u; i < count; ++i) {
     ts_plugin_databind_binding_t *binding = &bindings[i];
-    const salts_plugin_export *function_export = NULL;
+    const cmeta_plugin_export *function_export = NULL;
     DataBindBindingPlanDiagnostic diagnostic =
         DATA_BIND_BINDING_PLAN_DIAGNOSTIC_INIT;
 
@@ -727,15 +727,15 @@ int ts_plugin_databind_prepare(
       goto fail;
     }
 
-    if (salts_plugin_manifest_find_export(
+    if (cmeta_plugin_manifest_find_export(
             handle->manifest, binding->operation.export_id,
-            &function_export) != SALTS_PLUGIN_OK ||
+            &function_export) != CMETA_PLUGIN_OK ||
         !function_export ||
-        function_export->kind != SALTS_PLUGIN_EXPORT_FUNCTION ||
-        salts_plugin_export_require_function(
+        function_export->kind != CMETA_PLUGIN_EXPORT_FUNCTION ||
+        cmeta_plugin_export_require_function(
             function_export, function_export->contract_id,
             function_export->contract_version, 0u) !=
-            SALTS_PLUGIN_OK ||
+            CMETA_PLUGIN_OK ||
         !cmeta_function_desc_equal(
             binding->operation.function,
             function_export->value.function.desc)) {
