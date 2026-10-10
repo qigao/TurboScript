@@ -249,6 +249,16 @@ TurboScript context 在插件 callback、descriptor、Interface 或 CFlow callab
 
 销毁 context 时，先销毁脚本侧引用，再 release lease，最后停止/卸载 DSO。
 
+内置 net 保留当前 `void unload` Interface 契约。脚本调用 `ws.close()` 时，
+如果 CHttp destroy 失败，会返回 `0` 并保留 client，允许再次关闭；重新连接也
+不能覆盖销毁失败的 client。context 最终销毁无法向调用方返回清理失败，
+因此 drain 失败时会终止进程，避免释放仍存活的资源或继续卸载插件。
+
+DataBind Service 的输出由 BindingPlan 的 begin/write/commit/abort 事务管理。
+参数校验失败前不创建结果 map；拒绝非零参数数量配合空参数存储。
+原生值编码使用 provider 给出的实际存储长度，由 DataBind 验证描述符与存储
+是否匹配。连续调用的结果各自拥有其 map，不共享可变的响应暂存区。
+
 ## 构建
 
 插件应直接使用安装好的/current Salts Plugin 与 CMeta headers，不复制 ABI

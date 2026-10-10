@@ -1,4 +1,5 @@
 #include "../src/turbo_script_internal.h"
+#include "../src/host/ts_plugin_databind.h"
 #include "exprtk.h"
 #include "tinytest.h"
 
@@ -30,6 +31,77 @@ static int map_string(
 }
 
 spec("TurboScript generated DataBind Service Plugin binding") {
+  it("rejects invalid bindings without staging output storage") {
+    exprtk_env_t env;
+    exprtk_env_init(&env);
+    /* Repetition makes this early-return path visible to leak sanitizers. */
+    for (size_t i = 0u; i < 128u; ++i) {
+      exprtk_value_t result =
+          ts_plugin_databind_call(0u, NULL, &env, NULL);
+      check_equal(result.type, EXPRTK_VAL_NUMBER);
+      check_equal(result.data.number, 0.0);
+      check_true(env.aborted);
+      check_contains(env.error_msg, "invalid DataBind Service binding");
+      exprtk_value_destroy(&result);
+    }
+    exprtk_env_free(&env);
+  }
+
+  it("rejects missing argument storage before invoking the Service") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    void *binding;
+    exprtk_value_t result;
+    check_not_null(ctx);
+    check_equal(turbo_script_run(ctx, "import(\"Image.ImageProcessor\");"), 0);
+    check_equal(ctx->plugin_count, 1u);
+    binding = ts_plugin_databind_find(ctx->plugins[0], "Image.Codec.Decode");
+    check_not_null(binding);
+    result = ts_plugin_databind_call(1u, NULL, &ctx->env, binding);
+    check_equal(result.type, EXPRTK_VAL_NUMBER);
+    check_true(ctx->env.aborted);
+    check_contains(ctx->env.error_msg, "argument storage is missing");
+    exprtk_value_destroy(&result);
+    turbo_script_free(ctx);
+  }
+
+  it("rejects an invalid argument shape without allocating a result map") {
+    turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+    void *binding;
+    exprtk_value_t argument = exprtk_val_int(12);
+    check_not_null(ctx);
+    check_equal(turbo_script_run(ctx, "import(\"Image.ImageProcessor\");"), 0);
+    binding = ts_plugin_databind_find(ctx->plugins[0], "Image.Codec.Decode");
+    check_not_null(binding);
+    for (size_t i = 0u; i < 128u; ++i) {
+      exprtk_value_t result =
+          ts_plugin_databind_call(1u, &argument, &ctx->env, binding);
+      check_equal(result.type, EXPRTK_VAL_NUMBER);
+      check_contains(ctx->env.error_msg, "expects one map/object argument");
+      exprtk_value_destroy(&result);
+    }
+    turbo_script_free(ctx);
+  }
+
+  it("keeps earlier results independent of later Service calls") {
+    const char *source =
+        "import(\"Image.ImageProcessor\");"
+        "first=Image.Codec.Decode(map {width:12});"
+        "second=Image.Codec.Decode(map {width:7,scale:3});";
+    for (int use_jit = 0; use_jit != 2; ++use_jit) {
+      turbo_script_ctx_t *ctx = turbo_script_init(TURBO_SCRIPT_INIT_BARE);
+      exprtk_value_t first;
+      exprtk_value_t second;
+      check_not_null(ctx);
+      check_equal(use_jit ? turbo_script_run_jit(ctx, source)
+                          : turbo_script_run(ctx, source), 0);
+      first = exprtk_env_get(&ctx->env, "first");
+      second = exprtk_env_get(&ctx->env, "second");
+      check_true(map_integer(&first, "pixels", 48));
+      check_true(map_integer(&second, "pixels", 21));
+      turbo_script_free(ctx);
+    }
+  }
+
   it("binds a generated Service with defaults in interpreter and JIT") {
     const char *source =
         "import(\"Image.ImageProcessor\");"

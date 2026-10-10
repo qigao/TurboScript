@@ -11,6 +11,7 @@
 
 #include <string.h>
 #include <stdlib.h>
+#include <stdint.h>
 
 #define NET_WS_TASK_CONNECTION_CAPACITY 256
 
@@ -40,8 +41,12 @@ typedef struct {
 chttp_client *net_ctx_ensure_client(net_ctx_t *ctx);
 
 static inline char *net_arena_cstr(mem_pool_t *a, vstr sv) {
+    if (!a || sv.len == SIZE_MAX || (!sv.data && sv.len != 0u)) return NULL;
     char *buf = mem_alloc(a, sv.len + 1);
-    if (buf) { memcpy(buf, sv.data, sv.len); buf[sv.len] = '\0'; }
+    if (buf) {
+        if (sv.len != 0u) memcpy(buf, sv.data, sv.len);
+        buf[sv.len] = '\0';
+    }
     return buf;
 }
 

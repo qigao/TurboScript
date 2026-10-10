@@ -41,6 +41,20 @@ Count: 6
 - `ws.consume`
 - `ws.send`
 
+`ws.consume(timeout_ms, callback)` accepts a positive integral timeout up to
+`UINT32_MAX` milliseconds. The native entry accepts both integer and number
+values; fractional timeouts are rejected.
+
+`ws.close()` returns `1` after the client is destroyed, including repeated calls
+with no client. If destruction fails it returns `0`, keeps the client owned by
+the context, and preserves the diagnostic so closure can be retried. A failed
+destroy during reconnection likewise keeps the existing client.
+
+The module Interface still has a `void unload` contract. Context teardown
+terminates the process if a client cannot drain; it must not free live client
+storage or allow its plugin code to be unloaded. This does not add a retryable
+host unload API.
+
 ## db plugin (`db`)
 
 Count: 4

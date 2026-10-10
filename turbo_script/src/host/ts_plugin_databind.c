@@ -294,7 +294,6 @@ static int ts_databind_native_value(
       DATA_BIND_NATIVE_DIAGNOSTIC_INIT;
   unsigned char workspace[4096];
   DataBindStatus status;
-  (void)source_bytes;
 
   if (out) *out = ts_databind_null_value();
   if (!env || !data || !source || !out) return 0;
@@ -315,7 +314,7 @@ static int ts_databind_native_value(
 
   status = data_bind_native_encode(
       &options, data, source,
-      data->storage_type ? data->storage_type->size : 0u,
+      source_bytes,
       &writer, &diagnostic);
   if (status == DATA_BIND_OK &&
       cserde_writer_finish(&writer) != CSERDE_OK)
@@ -855,7 +854,9 @@ exprtk_value_t ts_plugin_databind_call(
   int native_status = 0;
   int response_initialized = 0;
   int request_bound = 0;
-  exprtk_value_t result = exprtk_val_map();
+  /* Output is allocated transactionally by begin_output after admission.
+   * Invalid bindings/arguments must not allocate an unreachable result map. */
+  exprtk_value_t result = ts_databind_null_value();
   ts_databind_provider_t provider_state = {0};
   DataBindBindingProvider provider =
       DATA_BIND_BINDING_PROVIDER_INIT;
@@ -875,6 +876,12 @@ exprtk_value_t ts_plugin_databind_call(
   if (!binding || !binding->plan || !binding->invoke || !env) {
     ts_databind_set_env_error(
         env, "invalid DataBind Service binding", NULL);
+    return exprtk_val_num(0.0);
+  }
+
+  if (argc != 0u && !args) {
+    ts_databind_set_env_error(
+        env, "DataBind Service argument storage is missing", NULL);
     return exprtk_val_num(0.0);
   }
 

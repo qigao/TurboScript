@@ -95,16 +95,19 @@ void net_ctx_destroy(void *p) {
   size_t i;
   if (!ctx) return;
   if (ctx->client) {
-    (void)chttp_client_destroy(ctx->client, 10000u);
+    /* The void module unload contract cannot transfer a failed drain to a
+     * caller. Never free a live client or return permission to unload its DSO. */
+    if (chttp_client_destroy(ctx->client, 10000u) != SALTS_OK) abort();
     free(ctx->client);
   }
   if (ctx->ws_client) {
-    (void)chttp_websocket_client_destroy(ctx->ws_client, 10000u);
+    if (chttp_websocket_client_destroy(ctx->ws_client, 10000u) != SALTS_OK) abort();
     free(ctx->ws_client);
   }
   for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
     if (ctx->ws_task_connections[i].client) {
-      (void)chttp_websocket_client_destroy(ctx->ws_task_connections[i].client, 10000u);
+      if (chttp_websocket_client_destroy(
+              ctx->ws_task_connections[i].client, 10000u) != SALTS_OK) abort();
       free(ctx->ws_task_connections[i].client);
     }
   }
@@ -167,25 +170,29 @@ static chttp_websocket_client **net_ctx_ws_slot(net_ctx_t *ctx, const void *owne
   return &free_slot->client;
 }
 
-static void net_ctx_clear_ws_slot(net_ctx_t *ctx, const void *owner,
+static int net_ctx_clear_ws_slot(net_ctx_t *ctx, const void *owner,
                                   chttp_websocket_client **slot) {
   size_t i;
 
-  if (!ctx || !slot) return;
+  if (!ctx || !slot) return 0;
   if (*slot) {
-    (void)chttp_websocket_client_destroy(*slot, 10000u);
+    if (chttp_websocket_client_destroy(*slot, 10000u) != SALTS_OK) {
+      net_set_error(ctx, "CHTTP WebSocket destroy failed; retry ws.close");
+      return 0;
+    }
     free(*slot);
   }
   *slot = NULL;
-  if (!owner) return;
+  if (!owner) return 1;
 
   for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
     net_ws_task_connection_t *entry = &ctx->ws_task_connections[i];
     if (&entry->client != slot) continue;
     entry->owner = NULL;
     if (ctx->ws_task_connection_count > 0) ctx->ws_task_connection_count--;
-    return;
+    return 1;
   }
+  return 1;
 }
 
 static chttp_websocket_client *net_ctx_recreate_ws_client(net_ctx_t *ctx, const void *owner) {
@@ -198,7 +205,7 @@ static chttp_websocket_client *net_ctx_recreate_ws_client(net_ctx_t *ctx, const 
     net_set_error(ctx, "ws task connection capacity exhausted");
     return NULL;
   }
-  if (*slot) net_ctx_clear_ws_slot(ctx, owner, slot);
+  if (*slot && !net_ctx_clear_ws_slot(ctx, owner, slot)) return NULL;
   slot = net_ctx_ws_slot(ctx, owner, 1);
   if (!slot) return NULL;
 
@@ -210,7 +217,10 @@ static chttp_websocket_client *net_ctx_recreate_ws_client(net_ctx_t *ctx, const 
       *slot = NULL;
     }
   }
-  if (!*slot) net_ctx_clear_ws_slot(ctx, owner, slot);
+  if (!*slot) {
+    net_ctx_clear_ws_slot(ctx, owner, slot);
+    net_set_error(ctx, "CHTTP WebSocket client initialization failed");
+  }
   return *slot;
 }
 
@@ -819,10 +829,7 @@ static exprtk_value_t fn_ws_connect(size_t argc, exprtk_value_t *args, exprtk_en
   }
   owner = net_ws_owner();
   client = net_ctx_recreate_ws_client(ud->ctx, owner);
-  if (!client) {
-    net_set_error(ud->ctx, "CHTTP WebSocket client initialization failed");
-    return NET_ZERO;
-  }
+  if (!client) return NET_ZERO;
   options = (chttp_websocket_connect_options){.size = sizeof(options),
                                                .uri = url,
                                                .timeout_ms = 10000u,
@@ -875,7 +882,7 @@ static exprtk_value_t fn_ws_consume(size_t argc, exprtk_value_t *args, exprtk_en
   int64_t timeout_ms;
   int status;
 
-  if (!ud || !ud->ctx || !env || argc != 2u || args[0].type != EXPRTK_VAL_NUMBER ||
+  if (!ud || !ud->ctx || !env || argc != 2u ||
       args[1].type != EXPRTK_VAL_FUNCTION || !net_positive_i64_value(&args[0], &timeout_ms) ||
       timeout_ms > UINT32_MAX)
     return NET_ZERO;
@@ -921,7 +928,7 @@ static exprtk_value_t fn_ws_close(size_t argc, exprtk_value_t *args, exprtk_env_
   slot = net_ctx_ws_slot(ud->ctx, owner, 0);
   if (slot && *slot) {
     (void)chttp_websocket_client_close(*slot, 1000u, NULL, 0u, 10000u);
-    net_ctx_clear_ws_slot(ud->ctx, owner, slot);
+    if (!net_ctx_clear_ws_slot(ud->ctx, owner, slot)) return NET_ZERO;
   }
   net_set_error(ud->ctx, "");
   return NET_ONE;
