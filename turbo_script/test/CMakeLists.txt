@@ -135,6 +135,8 @@ if(NOT CMAKE_CROSSCOMPILING)
     COMPONENT "Image.ImageProcessor"
     VERSION "1.0.0"
     ARTIFACT_NAME "Image.ImageProcessor"
+    # These fixtures exercise the DataBind codec/catalog plugin boundary.
+    BINARY_CODEC
     ARTIFACTS PLUGIN
     SOURCES
       "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service_business.c")
@@ -145,6 +147,7 @@ if(NOT CMAKE_CROSSCOMPILING)
     COMPONENT "ErrorPlugin.StorePlugin"
     VERSION "1.0.0"
     ARTIFACT_NAME "ErrorPlugin.StorePlugin"
+    BINARY_CODEC
     ARTIFACTS PLUGIN
     SOURCES
       "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/databind_service_error_business.c")
