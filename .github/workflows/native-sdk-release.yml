@@ -76,7 +76,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@mir-jit-1.0.0-port3
         with:
           mode: read
       - uses: actions/setup-dotnet@v4
@@ -114,7 +114,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@mir-jit-1.0.0-port3
         with:
           mode: read
       - uses: actions/setup-dotnet@v4
@@ -151,7 +151,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@mir-jit-1.0.0-port3
         with:
           mode: read
       - uses: actions/setup-dotnet@v4
@@ -209,7 +209,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@master
+      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@mir-jit-1.0.0-port3
         with:
           mode: read
       - uses: actions/setup-dotnet@v4

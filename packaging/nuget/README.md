@@ -14,8 +14,11 @@ Android 使用 NDK API 26、c++_shared，验证 C/C++ 消费端交叉链接；
 不把交叉编译成功当作设备运行验证。应用需自行部署 libc++_shared.so 和依赖动态库。
 
 正式发布采用与 Salts 相同的 tag contract：`CMakeLists.txt`、root `vcpkg.json`、
-公开头文件、Git tag 和 NuGet package 使用同一个版本。本版本为 `3.0.8`，只有
-`v3.0.8` tag 可以发布 `TurboScript.Native 3.0.8`；master push 只做 qualification。
+公开头文件、Git tag 和 NuGet package 使用同一个版本。本版本为 `3.0.9`，只有
+`v3.0.9` tag 可以发布 `TurboScript.Native 3.0.9`；master push 只做 qualification。
+
+3.0.9 修复 net 资源清理的所有权与失败路径，并收紧 DataBind 调用的结果清理和存储边界。
+发布构建使用 `vcpkg-cache` 的 `mir-jit-1.0.0-port3`，保留现有 SDK 平台范围。
 
 3.0.8 适配当前 Salts / SaltsUtils 的 CMeta、协程 executor 和 plugin API；依赖仍浮动选择最新版本。
 TLS 使用 CNet 提供的 GmSSL 实现，TurboScript 不链接 Lua / QuickJS。
@@ -32,7 +35,7 @@ Plugin lease / manifest / export / interface lifetime boundary保持不变；Tur
 污染 TurboScript 自己的运行时，同时保留 3.0.5 的 DataBind Service Plugin binding、
 多段 qualified native call、cooperative interrupt 和现有 import/plugin/.tbs 语义。
 
-PR/master qualification 使用唯一的 `3.0.8-ci.<run>.<attempt>` 构建版本，但只作为
+PR/master qualification 使用唯一的 `3.0.9-ci.<run>.<attempt>` 构建版本，但只作为
 CI artifact，不推送到 GitHub Packages。每个 SDK 内的 manifest 记录实际源码提交、
 依赖版本和构建配置。
 
