@@ -1,6 +1,6 @@
 {
   "name": "turboscript",
-  "version-semver": "3.0.9",
+  "version-semver": "3.0.10",
   "dependencies": [
     {
       "name": "xxhash",

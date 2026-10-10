@@ -4,7 +4,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 # TurboScript Project - A Simple DSL with MIR JIT Backend
 project(
   TurboScript
-  VERSION 3.0.9
+  VERSION 3.0.10
   LANGUAGES C CXX)
 
 # Project configuration - output directories
