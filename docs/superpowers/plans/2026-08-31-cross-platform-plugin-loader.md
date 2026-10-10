@@ -1,5 +1,8 @@
 # Cross-Platform Plugin Loader Implementation Plan
 
+Historical plan: its ABI-1 publication details are superseded by the
+[Salts Plugin migration](../../PLUGIN_SYSTEM.md). The path-discovery policy remains relevant.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Load TurboScript native modules deterministically from a `plugins` directory beside the executable on Windows, Linux, and macOS, with actionable errors and compatible lifecycle behavior.

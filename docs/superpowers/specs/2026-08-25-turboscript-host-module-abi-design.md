@@ -4,6 +4,7 @@
 - 日期：2026-08-25
 - 跟踪：[qigao/TurboScript#1](https://github.com/qigao/TurboScript/issues/1)
 - 首个消费者：FlexUI controller adapter
+- 2026-10-10 修订：CMeta 声明层与 SDK 集成边界；原宿主 ABI 的发布门槛继续有效。
 
 ## 1. 背景
 
@@ -17,10 +18,11 @@ TurboScript 已有 MIR interpreter 和 JIT 两种执行路径。本设计不为�
 而是在同一 module、export、value、error、host callback 和 limits ABI 下提供两个固定模式的
 instance。FlexUI 只选择模式，不感知 exprtk/MIR 内部对象。
 
-当前 Windows Debug 基线还有一个独立环境前置条件：`win-dev-user` 要求
-`C:/projects/cpp/external/pkgs/turbohttp/debug`，本机仍安装在旧布局
-`turbohttp-debug`。实施测试前必须安装或迁移匹配 profile 的 Salts package；不得在
-preset 或 CMake 中增加旧路径 fallback。
+上述背景描述原始提案时的缺口。当前 checkout 已在 `turbo_script/src/host/` 实施
+module、instance、result、registry 和 limits，但宿主声明仍位于
+`turbo_script_host_api_internal.h`，不能把内部实现等同于已安装、已发布的公共 ABI。
+构建依赖以当前 `CMakeUserPresets.json` 和显式 SDK roots 为准；Release 包不能用于
+声称 Debug/ASan 已验证，也不再沿用旧 TurboHttp 安装路径。
 
 ## 2. 目标与非目标
 
@@ -66,6 +68,117 @@ tests 通过后改为兼容包装。这一方案把不可变编译事实与可�
 
 ## 4. 架构与所有权
 
+### 4.1 CMeta 声明层
+
+本次选择 CMeta 的 `Schema/Replay` 生成机械声明，保留现有 runtime 和 C ABI。
+`exprtk/include/exprtk_value_schema.h` 分开描述三种稳定概念：
+
+- `EXPRTK_VALUE_TAG_SCHEMA`：既有 0–27 tag 编号及诊断名称，生成
+  `exprtk_value_type_t` 与 `type_name()` 的 switch。28 行用两个顺序的 `Schema`
+  展开满足每批 16 行上限；编号显式指定，调整行顺序不能改变 ABI。
+- `EXPRTK_DIRECT_VALUE_SCHEMA`：可直接赋值的 payload 类型、union 成员及构造器名称，
+  同时生成存储声明和内联构造器。它不是完整类型生命周期表，不包含 owner、deleter 或调度。
+- `EXPRTK_TYPED_ARRAY_KIND_SCHEMA`：typed array 独立的 1–4 kind 编号、native 元素类型和
+  kind 名称，生成既有 enum 与内部的元素宽度/名称查询。它与 `EXPRTK_VAL_*` tag 不是同一编号空间。
+  数值转换和整数/浮点 boxing 仍在显式 runtime adapter 中，Schema 不决定转换策略。
+
+bool 归一化、bigint 的嵌套字段、enum/flags 的组合、typed array 的 ownership 参数、
+容器和闭包继续使用显式适配器。`typeof()` 消费诊断名称，但独立保留脚本策略：
+bound method 返回 `function`，coroutine 仍返回 `unknown`，无参数返回 `null`。
+既有 arena 分配和失败返回值不变。不要为了统一名称改变脚本或错误消息。
+
+typed array 的创建和复制共享内部 `exprtk_typed_array_byte_size()` 检查：只接受已声明的
+kind，要求 `count <= SIZE_MAX / sizeof(element)`，成功后才发布字节数；失败不修改输出。
+创建路径原先直接计算 `count * element_size`，现在在调用 allocator 前拒绝溢出。
+创建失败仍返回 null value，copy-to-pool 失败仍返回 -1 且不发布半成品；copy-to-env
+继续按原边界设置 aborted/error。零长度允许，但不能使未知 kind 获得准入。
+
+此路径保持现有单线程 owner 协议：创建结果借用当前 arena；跨 env/pool 的复制在目标 pool
+获得独立 buffer，并由原有 retain/release 管理。源视图必须覆盖复制期间，结果存储必须按
+既有协议释放后再销毁 owner。既有同 pool retain 快路径、配额、heap_owned 语义和关闭顺序不变；
+kind/宽度查询不分配、不 retain，也不提供跨线程同步。
+
+`exprtk_syntax` 公开链接 `Salts::CMeta`，因为其安装头文件使用 `<cmeta/pp.h>`；
+下游通过正式 CMake target 继承这个依赖。Schema/helper 的替换发生在使用处，公共
+schema 不能在头文件末尾提前 undef；每次展开专用的 mapper 可以在展开后 undef。
+
+未采用的方案及理由：
+
+- 用 `cmeta_struct` 重建 `exprtk_value_t`：它是有现存 native ABI 的 tagged union，
+  含 borrowed view、retained buffer、容器和闭包，不能以普通字段值语义替代。
+- 把全部 tag、存储、脚本转换、宿主转换和释放函数合并成通用大表：这些关系不是一一对应；
+  OBJECT/MAP、ENUM/FLAGS 等共用存储，宿主 value 也只接纳独立的有限类型集合。
+- 仅为获得元数据增加 `cmeta_reflect_value`：反射可见性不授予复制、构造或销毁权限。
+  如后续确需 native record 检查，先评估只读 `cmeta_reflect_data`，由 runtime 保持原 owner。
+
+这次只生成声明，不注册另一套 RTTI，不新增动态反射或 native thunk API。
+`exprtk_value_t` 的 tag、成员类型、结构字段顺序和所有权协议保持不变；union 成员仍处于
+同一 payload 偏移。header-local 元数据若后续引入，必须按 `cmeta_type_equal` 等语义查询
+比较，不能以不同翻译单元中的描述符地址作为类型身份。
+
+### 4.2 宿主调用与版本边界
+
+宿主 value 的 `uint32_t kind`、`int32_t status`、struct_size/reserved、export handle
+和 callback ABI 独立于 exprtk tag，也独立于 CMeta Reflection ABI。不能把它们替换成
+CMeta descriptor 指针、native address 或编译器决定宽度的 enum。
+
+当前 callback 注册和动态脚本调用继续使用已有精确 C 签名。若未来添加反射 native binding，
+按 `FunctionInvokeDecl` / `Function0InvokeDecl` 从一份声明生成精确 adapter，在注册阶段
+完成 signature/ABI admission，再由宿主 value adapter 显式执行类型、范围、配额及错误转换。
+不能把 script 的可变参数调用等同于任意 native signature，也不能强转函数指针绕过 admission。
+借用的 binding 不 retain provider；需要 DSO 的调用仍须由原 loader/lease owner 保活。
+这属于后续独立实现，不是本次已提供的入口。
+
+新增跨 DSO descriptor 协议前，必须在读取任何 descriptor 前协商 provider 编译时的
+Reflection ABI epoch；包版本、host ABI、native plugin ABI 和数据格式版本分别核对。
+`TURBO_SCRIPT_HOST_ABI_VERSION == 1` 独立于插件发布协议。Schema 重构前的 TurboScript
+native plugin ABI 为 1；本次选定 Salts SDK 的 `CMETA_PLUGIN_ABI_VERSION` 为 5。
+下面的插件迁移使用独立的 TurboScript module contract 2，不把这些版本混为一谈。
+
+### 4.3 SDK 基线与可选集成
+
+下列发布说明用于本次设计核对，不能把上游验证当作 TurboScript 回归结果：
+
+| 库 | 本次版本与角色 | 集成限制 |
+| --- | --- | --- |
+| [Salts](https://github.com/qigao/salts/releases/tag/v2.3.0-rc.4) | 2.3.0-rc.4；CMeta、Core、CSTL、Coroutine 等现有基础能力 | rc.4 修复 ManagedDial close admission 重试；不改变 TurboScript 的 runtime owner |
+| [SaltsUtils](https://github.com/qigao/salts-utils/releases/tag/v4.3.0-rc.2) | 4.3.0-rc.2；现有 DataBind、DateTimeParser、Mustache、Cron | Unicode 由 Salts 独占；显式恢复兼容 SDK，不能混用旧的重复 Unicode export |
+| [CHttp](https://github.com/qigao/chttp/releases/tag/v2.1.0-rc.1) | 2.1.0-rc.1；现有 net 模块 HTTP 能力 | Service/Web 合并为 `CHttp::App`；当前 HTTP 消费者不因该发布说明自动迁移为 App 服务 |
+| [TurboWasm](https://github.com/qigao/turbowasm/releases/tag/v0.2.0) | 0.2.0；未来显式选择的 Wasm 适配器 | NuGet 仅 Runtime + Component，不含 MIR/JIT、WASI 等；不能作为现有 JIT 的隐式 fallback |
+| [TurboDB](https://github.com/qigao/turbodb/releases/tag/v2.3.2) | 2.3.2；未来数据库适配器候选 | 当前 sqlite 模块继续归现有 sqlite owner；不能仅因版本升级替换其 handle、事务或插件契约 |
+| [SaltsNet](https://github.com/qigao/salts-net/releases/tag/v1.1.0-rc.1) | 1.1.0-rc.1；未来非 HTTP 协议适配器候选 | legacy 同步 STUN cleanup 缺陷仍存在；需要可重试清理的集成必须另行设计显式 Owner 路径 |
+
+恢复脚本明确选择本次三个直接依赖版本；后三项没有当前调用点，不添加空 adapter 或强制链接。
+这些 native 包不保证 NuGet 自动恢复全部兼容依赖；同一 RID/profile 的 headers、libraries、
+runtime binaries 必须来自核对过的组合。发布说明中以 rc.2/rc.3 构建的下游包与本次 rc.4
+组合仍需本工程验证，不能仅凭 CMake 数值版本推断其 ABI 一定兼容。
+
+### 4.4 迁移、验证与回滚
+
+迁移只替换声明生成和类型名称消费，不更换 AST、MIR、host registry、allocator 或清理路径。
+正式 `test_exprtk_value_schema` 固定检查全部历史 tag 数值、诊断策略、构造器 payload/借用状态，
+并用独立 C11/C++17 翻译单元传递值。相邻验证覆盖 exprtk、宿主 result/registry、MIR 与模块
+测试；实际执行范围在交付中单列。没有性能收益声明，也不因本次重构修改执行算法。
+
+本次 Windows x64/MSVC Release 记录：用上述三个版本的 GitHub Release nupkg，校验发布
+摘要后分别提供 `SALTS_ROOT`、`SALTS_UTILS_ROOT`、`CHTTP_ROOT`，在 VsDevCmd 环境运行
+`cmake --preset ci-win-release-user`、`cmake --build --preset ci-win-release-user` 和
+`ctest --preset ci-win-release-user --output-on-failure`。完整构建成功，CTest **59/59**
+通过（包括新的 C11/C++17 测试）；先行的 exprtk/host 定向回归 **9/9** 通过。
+继续验证时在忽略的 `build/cmeta-sdk/dotnet` 安装了 .NET SDK 8.0.425，再运行正式恢复脚本；
+GitHub Packages 返回 403/NU1301，当前凭据不能下载包，故不声明该恢复路径已通过。
+Linux、macOS、移动端、Debug/ASan 和 installed-consumer 验证未在本次执行。
+
+typed array 后续定向验证复用同一正式测试 executable，覆盖四种存储的独立复制、native 极值
+读取、脚本 kind/构造/索引、无效 kind 和字节数边界；不把脚本原有 double 转换策略改为新的
+隐式精度或截断规则。与 `test_exprtk`、`test_turbo_script_mir_core` 一起运行时 **3/3** 通过。
+
+回滚 Schema 改动不需要迁移数据或递增 ABI；恢复手写声明时必须保留相同编号和行为。
+SDK 回滚需停止运行中的实例，整体恢复原依赖组合并重建消费方，不能混用旧 DLL 与新头文件。
+host ABI 的正式公开仍需后文完整的双 backend 验收，不因本次声明层测试通过而提前开放。
+
+### 4.5 运行时所有权
+
 ```mermaid
 flowchart TD
     Ctx[turbo_script_ctx_t\nowner thread + host registry]
@@ -98,6 +211,48 @@ flowchart TD
 module 首版不得跨 context 使用。module 可在同一 owner thread 创建多个 instance，但 instance
 之间不共享 mutable globals/closures。传给 `module_compile` 的 source/module-name view 只在调用
 期间借用；成功时 module 在自身 quota 内复制诊断、source map 和后续执行所需的全部内容。
+
+### 4.6 全部内置插件迁移至 Salts Plugin
+
+用户选择整体迁移并重建旧插件。`import()`、模块名和脚本函数保持不变；不再加载仅导出
+`ts_api_create` 的旧 DLL。发布方链接 `Salts::PluginABI`，宿主链接 `Salts::Plugin`。
+每个 DSO 用显式 `CMETA_PLUGIN_DECLARE` 发布两个精确 Function：open(env, scratch)
+返回可为空的 instance，close(instance) 返回清理状态。两者共用版本 2 的 module contract，
+通过 Function ABI 语义兼容性校验后调用生成 adapter，不强转原生函数地址。
+
+instance 是须用 close 归还的逻辑拥有句柄；不授权宿主 free。stateless 模块可用 env 作为
+该句柄，stateful 模块拥有自身 context。DLL manifest 是 passive：每个 TurboScript context
+的资源归 instance，不能放进跨 context 共享的静态 manifest self。每个加载 handle 有容量 1
+的 registry 和一份长期 lease；既有 context 插件数量上限继续约束总量。registry 是 DSO
+状态/lease 的事实源，module slot 只保存经过准入的借用 export 和 instance。
+
+保留项目原有路径发现和 Windows 依赖目录策略：先按受限搜索打开候选文件，取得确切路径，
+再交给 Salts registry 准入；成功取得 registry 的 OS 引用后释放临时引用。临时引用仅用于
+安全加载和依赖解析，不读取插件 metadata、不自行注册插件。当前 SDK 无接管已有 OS handle
+的公开 API，这一短暂双引用避免降低 Windows 搜索约束；发布文件在加载期间必须保持不变。
+不改 Salts SDK 私有实现，不恢复裸文件名的系统搜索。
+
+关闭前宿主停止 task/timer/JIT 调用并释放 env 中借用插件代码的数据。随后关闭新 lease 准入，
+调用 instance close；失败保留 instance、registry 和 lease，显式 unload_ex 可重试。全部
+资源清理成功后 release lease、检查 quiescence、unload、destroy registry。旧 void unload
+包装器无法返回失败，采用 fail-fast，不能在仍有 native I/O 时继续 free 或卸载 DLL。
+HTTP/WebSocket 的 destroy 失败保留 client owner，已完成清理的 client 清空后不重复销毁。
+
+候选方案：只换宏而沿用裸符号 loader 不能提供 lease 保活；同时支持新旧 ABI 会扩大维护面且
+不符合整体迁移选择；进程全局 registry 会混合多个 context 的资源权威。选择每 handle 的
+有界 registry，以明确隔离和有限元数据开销换取关闭/失败协议的可验证性。
+
+正式测试须覆盖全部内置插件的真实 DSO 准入与 open/close、错误 ABI/contract/signature、
+旧入口拒绝、初始化失败、close 失败后保留 lease 并重试，以及 HTTP/WS 相邻回归。此前 59 项
+通过不代表此迁移已验证，也不代表默认跳过的公网 HTTP 场景已运行。回滚必须同时恢复宿主和
+整套旧插件产物，不能混装；本节设计的实施结果以随后验证记录为准。
+
+实施验证：Windows x64/MSVC Release 完整构建成功，正式 C11/C++17 头文件测试及
+plugin-loader/builtins/net 定向测试 **4/4** 通过，全量 CTest **60/60** 通过。
+`test_ts_builtin_plugins` 实际加载 11 个插件，各自在两个 context 中创建 instance，
+销毁一个 context 后继续调用另一个的 net 函数。失败重试通过正式 loader fixture 覆盖，
+未注入真实 CHttp drain timeout；公网 HTTPS/WS、其他平台、Debug/ASan 未在本次执行。
+可重复入口仍为 `ci-win-release-user` 的 configure/build/CTest；不改变原 SDK 恢复 403 的限制。
 
 ## 5. Public ABI 轮廓
 
@@ -397,7 +552,7 @@ module API 的兼容包装，但不得改变现有 stdout/REPL 或 context varia
 | HIGH | 推论 | JIT interrupt guard 漏插会让 UI 无法按预算终止 | 共享 MIR safe-point contract + long-loop tests |
 | HIGH | 推论 | 跨 DLL value ownership 不清会 UAF/double-free | borrowed input + TurboScript-owned result |
 | HIGH | 推论 | callback reentrancy 会破坏 globals、arena 和 error 状态 | instance state guard，首版禁止任何嵌套 instance call |
-| MED | 事实 | Debug package layout 当前不满足 preset | 先安装匹配 profile package，不添加 fallback |
+| MED | 验证边界 | 本次下载的发布 SDK 为 Release，不证明 Debug/ASan 兼容 | 使用匹配 profile 的 SDK 单独验证，不添加 fallback |
 | MED | 推论 | legacy wrappers 可能改变 stdout/context side effects | wrapper 切换前后 snapshot/compat tests |
 | MED | 推论 | module 内 MIR 与 context registry 漂移 | registry freeze while module/instance exists |
 | LOW | 推论 | 新 ABI 增加 header 与部署测试维护成本 | 单一 public header、data-driven consumer suite |

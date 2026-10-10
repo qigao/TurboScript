@@ -237,7 +237,7 @@ static void wide_path_to_utf8(const wchar_t *path, char *out, size_t out_size) {
     out[0] = '\0';
 }
 
-static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
+static void *pl_open_native(const char *path, ts_plugin_error_t *error) {
   void *module = NULL;
   DWORD native_error = ERROR_SUCCESS;
   wchar_t *wide_path;
@@ -297,15 +297,27 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   return module;
 }
 
-static void *pl_dlsym(void *h, const char *name) {
-  return (void *)GetProcAddress((HMODULE)h, name);
+static void pl_dlclose(void *h) { if (!FreeLibrary((HMODULE)h)) abort(); }
+
+static void *pl_dlopen(const char *path, char **resolved, ts_plugin_error_t *error) {
+  wchar_t wide[CMETA_PLUGIN_PATH_MAX + 1u];
+  DWORD length;
+  void *module = pl_open_native(path, error);
+  if (!module) return NULL;
+  *resolved = (char *)malloc(CMETA_PLUGIN_PATH_MAX + 1u);
+  length = GetModuleFileNameW((HMODULE)module, wide, CMETA_PLUGIN_PATH_MAX + 1u);
+  if (!*resolved || !length || length > CMETA_PLUGIN_PATH_MAX ||
+      WideCharToMultiByte(CP_UTF8, 0, wide, -1, *resolved,
+          CMETA_PLUGIN_PATH_MAX + 1u, NULL, NULL) <= 0) {
+    free(*resolved);
+    *resolved = NULL;
+    pl_dlclose(module);
+    plugin_error_set(error, TS_PLUGIN_ERROR_OPEN, TS_PLUGIN_STAGE_OPEN,
+        0, path, "cannot resolve plugin path within Salts Plugin path capacity");
+    return NULL;
+  }
+  return module;
 }
-static int pl_symbol_error(ts_plugin_error_t *error, const char *path, const char *name) {
-  DWORD native_error = GetLastError();
-  return plugin_error_set(error, TS_PLUGIN_ERROR_SYMBOL, TS_PLUGIN_STAGE_SYMBOL,
-                          native_error, path, "required symbol '%s' was not found", name);
-}
-static void pl_dlclose(void *h) { FreeLibrary((HMODULE)h); }
 #else
   #include <dlfcn.h>
   #include <limits.h>
@@ -390,12 +402,21 @@ static char *join_path_posix(const char *directory, const char *leaf) {
   return path;
 }
 
-static void *open_exact_posix(const char *path) {
+static void *open_exact_posix(const char *path, char **resolved) {
+  void *module;
   (void)dlerror();
-  return dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  module = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+  if (module) {
+    *resolved = realpath(path, NULL);
+    if (!*resolved) {
+      if (dlclose(module) != 0) abort();
+      return NULL;
+    }
+  }
+  return module;
 }
 
-static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
+static void *pl_dlopen(const char *path, char **resolved, ts_plugin_error_t *error) {
   void *module = NULL;
   const char *detail = NULL;
   char *exe_dir;
@@ -403,7 +424,7 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   char *candidate;
 
   if (has_path_separator(path)) {
-    module = open_exact_posix(path);
+    module = open_exact_posix(path, resolved);
     if (!module) {
       detail = dlerror();
       plugin_error_set(error, TS_PLUGIN_ERROR_OPEN, TS_PLUGIN_STAGE_OPEN, 0,
@@ -419,12 +440,12 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   }
   plugins_dir = join_path_posix(exe_dir, "plugins");
   candidate = plugins_dir ? join_path_posix(plugins_dir, path) : NULL;
-  if (candidate) module = open_exact_posix(candidate);
+  if (candidate) module = open_exact_posix(candidate, resolved);
   free(candidate);
   free(plugins_dir);
   if (!module) {
     candidate = join_path_posix(exe_dir, path);
-    if (candidate) module = open_exact_posix(candidate);
+    if (candidate) module = open_exact_posix(candidate, resolved);
     if (!module) {
       detail = dlerror();
       plugin_error_set(error, TS_PLUGIN_ERROR_OPEN, TS_PLUGIN_STAGE_OPEN, 0,
@@ -437,105 +458,128 @@ static void *pl_dlopen(const char *path, ts_plugin_error_t *error) {
   return module;
 }
 
-static void *pl_dlsym(void *h, const char *name) {
-  (void)dlerror();
-  return dlsym(h, name);
-}
-static int pl_symbol_error(ts_plugin_error_t *error, const char *path, const char *name) {
-  const char *detail = dlerror();
-  return plugin_error_set(error, TS_PLUGIN_ERROR_SYMBOL, TS_PLUGIN_STAGE_SYMBOL, 0,
-                          path, "required symbol '%s' was not found: %s", name,
-                          detail ? detail : "dlsym failed");
-}
-static void pl_dlclose(void *h) { dlclose(h); }
+static void pl_dlclose(void *h) { if (dlclose(h) != 0) abort(); }
 #endif
+
+static int plugin_salts_error(ts_plugin_error_t *error, cmeta_plugin_status status,
+                              ts_plugin_error_stage_t stage, const char *path) {
+  ts_plugin_error_code_t code = TS_PLUGIN_ERROR_CONTRACT;
+  if (status == CMETA_PLUGIN_QUERY_MISSING) code = TS_PLUGIN_ERROR_SYMBOL;
+  else if (status == CMETA_PLUGIN_UNSUPPORTED_ABI || status == CMETA_PLUGIN_QUERY_REJECTED)
+    code = TS_PLUGIN_ERROR_ABI;
+  else if (status == CMETA_PLUGIN_ALLOCATION_FAILED) code = TS_PLUGIN_ERROR_OUT_OF_MEMORY;
+  else if (stage == TS_PLUGIN_STAGE_CLOSE) code = TS_PLUGIN_ERROR_CLOSE;
+  else if (status == CMETA_PLUGIN_LOAD_FAILED) code = TS_PLUGIN_ERROR_OPEN;
+  return plugin_error_set(error, code, stage, (uint32_t)status, path,
+      "Salts Plugin (%s): %s", CMETA_PLUGIN_QUERY_SYMBOL, cmeta_plugin_status_string(status));
+}
 
 int ts_plugin_load_ex(const char *path, const char *expected_name,
                       ts_plugin_handle_t **out, ts_plugin_error_t *error) {
-  void *dl;
-  ts_api_create_fn create_fn;
-  const ts_plugin_t *plugin;
+  void *bootstrap;
+  char *resolved = NULL;
   ts_plugin_handle_t *h;
+  const cmeta_plugin_manifest *manifest = NULL;
+  const cmeta_plugin_registry_config config = {1u};
+  cmeta_plugin_status status;
+  int result;
 
   plugin_error_clear(error);
   if (out) *out = NULL;
   if (!path || !*path || !out)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
-                            TS_PLUGIN_STAGE_ARGUMENT, 0, path,
-                            "plugin path and output handle are required");
+        TS_PLUGIN_STAGE_ARGUMENT, 0, path, "plugin path and output handle are required");
 
-  dl = pl_dlopen(path, error);
-  if (!dl) return error ? error->code : TS_PLUGIN_ERROR_OPEN;
-
-  create_fn = (ts_api_create_fn)pl_dlsym(dl, "ts_api_create");
-  if (!create_fn) {
-    int result = pl_symbol_error(error, path, "ts_api_create");
-    pl_dlclose(dl);
-    return result;
-  }
-
-  plugin = create_fn();
-  if (!plugin || !plugin->name || !*plugin->name || !plugin->load) {
-    pl_dlclose(dl);
-    return plugin_error_set(error, TS_PLUGIN_ERROR_DESCRIPTOR,
-                            TS_PLUGIN_STAGE_ABI, 0, path,
-                            "plugin descriptor is incomplete");
-  }
-  if (plugin->version != TS_PLUGIN_ABI_VERSION) {
-    uint32_t actual_version = plugin->version;
-    pl_dlclose(dl);
-    return plugin_error_set(error, TS_PLUGIN_ERROR_ABI, TS_PLUGIN_STAGE_ABI,
-                            0, path, "plugin ABI mismatch: expected %u, got %u",
-                            (unsigned)TS_PLUGIN_ABI_VERSION, (unsigned)actual_version);
-  }
-  if (expected_name && strcmp(plugin->name, expected_name) != 0) {
-    char actual_name[128];
-    snprintf(actual_name, sizeof(actual_name), "%s", plugin->name);
-    pl_dlclose(dl);
-    return plugin_error_set(error, TS_PLUGIN_ERROR_NAME, TS_PLUGIN_STAGE_ABI,
-                            0, path, "plugin name mismatch: expected '%s', got '%s'",
-                            expected_name, actual_name);
-  }
-
+  /* Keep the project's restricted dependency search. This temporary OS
+   * reference reads no metadata; the registry owns admission and steady life. */
+  bootstrap = pl_dlopen(path, &resolved, error);
+  if (!bootstrap) return error ? error->code : TS_PLUGIN_ERROR_OPEN;
   h = (ts_plugin_handle_t *)calloc(1, sizeof(*h));
   if (!h) {
-    pl_dlclose(dl);
+    pl_dlclose(bootstrap);
+    free(resolved);
     return plugin_error_set(error, TS_PLUGIN_ERROR_OUT_OF_MEMORY,
-                            TS_PLUGIN_STAGE_OPEN, 0, path,
-                            "out of memory while creating plugin handle");
+        TS_PLUGIN_STAGE_OPEN, 0, path, "out of memory creating plugin registry");
   }
-
-  h->dl_handle = dl;
-  h->plugin = plugin;
-  h->instance = NULL;
+  status = cmeta_plugin_registry_init(&h->registry, &config);
+  if (status == CMETA_PLUGIN_OK)
+    status = cmeta_plugin_registry_load(&h->registry, resolved, &h->ref);
+  pl_dlclose(bootstrap);
+  free(resolved);
+  if (status != CMETA_PLUGIN_OK) {
+    result = plugin_salts_error(error, status,
+        status == CMETA_PLUGIN_QUERY_MISSING ? TS_PLUGIN_STAGE_SYMBOL : TS_PLUGIN_STAGE_ABI, path);
+    ts_plugin_unload(h);
+    return result;
+  }
+  status = cmeta_plugin_registry_start(&h->registry, h->ref);
+  if (status == CMETA_PLUGIN_OK)
+    status = cmeta_plugin_registry_acquire(&h->registry, h->ref, &h->lease, &manifest);
+  if (status != CMETA_PLUGIN_OK) goto rejected;
+  h->name = manifest->plugin_id;
+  if (expected_name && strcmp(h->name, expected_name) != 0) {
+    result = plugin_error_set(error, TS_PLUGIN_ERROR_NAME, TS_PLUGIN_STAGE_ABI,
+        0, path, "plugin name mismatch: expected '%s', got '%s'", expected_name, h->name);
+    ts_plugin_unload(h);
+    return result;
+  }
+  /* TurboScript owns per-context instances. Managed DSO-global resources are
+   * outside this module contract and must not bypass the host close protocol. */
+  if (manifest->self || manifest->start || manifest->request_stop ||
+      manifest->is_quiescent || manifest->destroy) {
+    status = CMETA_PLUGIN_INCOMPATIBLE_CONTRACT;
+    goto rejected;
+  }
+  status = cmeta_plugin_manifest_find_export(manifest, TS_PLUGIN_OPEN_EXPORT, &h->open_export);
+  if (status == CMETA_PLUGIN_OK)
+    status = cmeta_plugin_manifest_find_export(manifest, TS_PLUGIN_CLOSE_EXPORT, &h->close_export);
+  if (status == CMETA_PLUGIN_OK)
+    status = cmeta_plugin_export_require_function(h->open_export,
+        TS_PLUGIN_CONTRACT_ID, TS_PLUGIN_ABI_VERSION, 0);
+  if (status == CMETA_PLUGIN_OK)
+    status = cmeta_plugin_export_require_function(h->close_export,
+        TS_PLUGIN_CONTRACT_ID, TS_PLUGIN_ABI_VERSION, 0);
+  if (status == CMETA_PLUGIN_OK &&
+      (!cmeta_function_abi_contract_compatible(FunctionAbi(ts_plugin_open),
+          h->open_export->value.function.abi) ||
+       !cmeta_function_abi_contract_compatible(FunctionAbi(ts_plugin_close),
+          h->close_export->value.function.abi)))
+    status = CMETA_PLUGIN_INCOMPATIBLE_CONTRACT;
+  if (status != CMETA_PLUGIN_OK) goto rejected;
   *out = h;
-  plugin_error_clear(error);
   return TS_PLUGIN_ERROR_NONE;
+
+rejected:
+  result = plugin_salts_error(error, status, TS_PLUGIN_STAGE_ABI, path);
+  ts_plugin_unload(h);
+  return result;
 }
 
 ts_plugin_handle_t *ts_plugin_load(const char *path) {
   ts_plugin_handle_t *handle = NULL;
-  if (ts_plugin_load_ex(path, NULL, &handle, NULL) != TS_PLUGIN_ERROR_NONE)
-    return NULL;
+  if (ts_plugin_load_ex(path, NULL, &handle, NULL) != TS_PLUGIN_ERROR_NONE) return NULL;
   return handle;
 }
 
 int ts_plugin_init_ex(ts_plugin_handle_t *h, void *env, void *scratch,
                       ts_plugin_error_t *error) {
+  void *params[] = {&env, &scratch};
+  void *instance = NULL;
+  cmeta_plugin_lifecycle_info info;
   plugin_error_clear(error);
-  if (!h || !h->plugin || !h->plugin->load)
+  if (!h || !h->open_export || !cmeta_plugin_lease_valid(h->lease) || !env || !scratch)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
-                            TS_PLUGIN_STAGE_ARGUMENT, 0, NULL,
-                            "validated plugin handle is required");
-  if (h->instance)
+        TS_PLUGIN_STAGE_ARGUMENT, 0, NULL, "admitted plugin, env and scratch are required");
+  if (h->instance ||
+      cmeta_plugin_registry_get_lifecycle(&h->registry, h->ref, &info) != CMETA_PLUGIN_OK ||
+      info.state != CMETA_PLUGIN_LIFECYCLE_STARTED)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INVALID_ARGUMENT,
-                            TS_PLUGIN_STAGE_INITIALIZE, 0, NULL,
-                            "plugin is already initialized");
-  h->instance = h->plugin->load(env, scratch);
-  if (!h->instance)
+        TS_PLUGIN_STAGE_INITIALIZE, 0, NULL, "plugin is initialized or stopping");
+  if (!h->open_export->value.function.invoke(h->open_export->value.function.context,
+          &instance, params, 2u) || !instance)
     return plugin_error_set(error, TS_PLUGIN_ERROR_INITIALIZE,
-                            TS_PLUGIN_STAGE_INITIALIZE, 0, NULL,
-                            "plugin initialization returned no instance");
+        TS_PLUGIN_STAGE_INITIALIZE, 0, NULL, "plugin initialization returned no instance");
+  h->instance = instance;
   return TS_PLUGIN_ERROR_NONE;
 }
 
@@ -543,12 +587,52 @@ int ts_plugin_init(ts_plugin_handle_t *h, void *env, void *scratch) {
   return ts_plugin_init_ex(h, env, scratch, NULL) == TS_PLUGIN_ERROR_NONE ? 0 : -1;
 }
 
-void ts_plugin_unload(ts_plugin_handle_t *h) {
-  if (!h)
-    return;
-  if (h->instance && h->plugin && h->plugin->unload)
-    h->plugin->unload(h->instance);
-  if (h->dl_handle)
-    pl_dlclose(h->dl_handle);
+int ts_plugin_unload_ex(ts_plugin_handle_t *h, ts_plugin_error_t *error) {
+  cmeta_plugin_status status;
+  cmeta_plugin_lifecycle_info info;
+  bool quiet = false;
+  plugin_error_clear(error);
+  if (!h) return TS_PLUGIN_ERROR_NONE;
+  if (cmeta_plugin_ref_valid(h->ref)) {
+    status = cmeta_plugin_registry_get_lifecycle(&h->registry, h->ref, &info);
+    if (status != CMETA_PLUGIN_OK) goto failed;
+    if (info.state != CMETA_PLUGIN_LIFECYCLE_LOADED) {
+      status = cmeta_plugin_registry_request_stop(&h->registry, h->ref);
+      if (status != CMETA_PLUGIN_OK && status != CMETA_PLUGIN_ALREADY) goto failed;
+      if (h->instance) {
+        int32_t close_status = -1;
+        void *params[] = {&h->instance};
+        if (!h->close_export->value.function.invoke(h->close_export->value.function.context,
+                &close_status, params, 1u) || close_status != 0)
+          return plugin_error_set(error, TS_PLUGIN_ERROR_CLOSE, TS_PLUGIN_STAGE_CLOSE,
+              (uint32_t)close_status, NULL, "plugin close failed; instance and lease retained");
+        h->instance = NULL;
+      }
+      if (cmeta_plugin_lease_valid(h->lease)) {
+        status = cmeta_plugin_registry_release(&h->registry, &h->lease);
+        if (status != CMETA_PLUGIN_OK) goto failed;
+        h->name = NULL;
+        h->open_export = h->close_export = NULL;
+      }
+      status = cmeta_plugin_registry_poll_quiescent(&h->registry, h->ref, &quiet);
+      if (status != CMETA_PLUGIN_OK) goto failed;
+      if (!quiet) { status = CMETA_PLUGIN_BUSY; goto failed; }
+    }
+    status = cmeta_plugin_registry_unload(&h->registry, h->ref);
+    if (status != CMETA_PLUGIN_OK) goto failed;
+    memset(&h->ref, 0, sizeof(h->ref));
+  }
+  if (h->registry.impl) {
+    status = cmeta_plugin_registry_destroy(&h->registry);
+    if (status != CMETA_PLUGIN_OK) goto failed;
+  }
   free(h);
+  return TS_PLUGIN_ERROR_NONE;
+failed:
+  return plugin_salts_error(error, status, TS_PLUGIN_STAGE_CLOSE, NULL);
+}
+
+void ts_plugin_unload(ts_plugin_handle_t *h) {
+  /* Void context destruction cannot transfer a retry obligation. */
+  if (ts_plugin_unload_ex(h, NULL) != TS_PLUGIN_ERROR_NONE) abort();
 }

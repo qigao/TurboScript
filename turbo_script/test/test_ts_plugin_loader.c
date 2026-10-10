@@ -38,8 +38,8 @@ spec("plugin loader") {
 
       check_not_null(handle);
       if (handle) {
-        check_not_null(handle->plugin);
-        check_equal(handle->plugin->name, "loader_fixture");
+        check_not_null(handle->open_export);
+        check_equal(handle->name, "loader_fixture");
         ts_plugin_unload(handle);
       }
     }
@@ -56,8 +56,8 @@ spec("plugin loader") {
 
       check_not_null(handle);
       if (handle) {
-        check_not_null(handle->plugin);
-        check_equal(handle->plugin->name, "loader_fixture");
+        check_not_null(handle->open_export);
+        check_equal(handle->name, "loader_fixture");
         ts_plugin_unload(handle);
       }
     }
@@ -82,7 +82,7 @@ spec("plugin loader") {
                   TS_PLUGIN_ERROR_ABI);
       check_null(handle);
       check_equal(error.stage, TS_PLUGIN_STAGE_ABI);
-      check_not_null(strstr(error.message, "ABI"));
+      check_not_null(strstr(error.message, "Salts Plugin"));
     }
 
     it("rejects a descriptor whose name differs from the requested plugin") {
@@ -104,7 +104,7 @@ spec("plugin loader") {
                   TS_PLUGIN_ERROR_SYMBOL);
       check_null(handle);
       check_equal(error.stage, TS_PLUGIN_STAGE_SYMBOL);
-      check_not_null(strstr(error.message, "ts_api_create"));
+      check_not_null(strstr(error.message, CMETA_PLUGIN_QUERY_SYMBOL));
     }
   }
 
@@ -124,6 +124,57 @@ spec("plugin loader") {
         ts_plugin_unload(handle);
       }
       check_equal(failed_init_unload_count, 0);
+    }
+  }
+
+  describe("Salts admission and lease lifetime") {
+    static ts_plugin_handle_t *handle;
+    static int attempts;
+    before_each() { handle = NULL; attempts = 0; }
+    after_each() {
+      if (handle) {
+        /* Allow cleanup even after a fatal assertion in the retry test. */
+        attempts = 1;
+        ts_plugin_unload(handle);
+      }
+    }
+
+    it("rejects a different module contract before initializing") {
+      check_equal(ts_plugin_load_ex(LOADER_BAD_CONTRACT_FILE, NULL, &handle, NULL),
+                  TS_PLUGIN_ERROR_CONTRACT);
+      check_null(handle);
+    }
+
+    it("rejects a correct contract ID with a different native signature") {
+      check_equal(ts_plugin_load_ex(LOADER_BAD_SIGNATURE_FILE, NULL, &handle, NULL),
+                  TS_PLUGIN_ERROR_CONTRACT);
+      check_null(handle);
+    }
+
+    it("retains the instance and lease after failed close and permits retry") {
+      cmeta_plugin_lifecycle_info info;
+      cmeta_plugin_lease extra = {0};
+      const cmeta_plugin_manifest *manifest = NULL;
+      check_equal(ts_plugin_load_ex(LOADER_CLOSE_FAILURE_FILE, NULL, &handle, NULL), 0);
+      check_equal(ts_plugin_init(handle, &attempts, &attempts), 0);
+      check_equal(cmeta_plugin_registry_get_lifecycle(&handle->registry, handle->ref, &info),
+                  CMETA_PLUGIN_OK);
+      check_equal(info.active_leases, (size_t)1);
+      check_equal(cmeta_plugin_registry_unload(&handle->registry, handle->ref), CMETA_PLUGIN_BUSY);
+      check_equal(ts_plugin_unload_ex(handle, NULL), TS_PLUGIN_ERROR_CLOSE);
+      check_equal(attempts, 1);
+      check(handle->instance == &attempts);
+      check(cmeta_plugin_lease_valid(handle->lease));
+      check_equal(cmeta_plugin_registry_get_lifecycle(&handle->registry, handle->ref, &info),
+                  CMETA_PLUGIN_OK);
+      check_equal(info.active_leases, (size_t)1);
+      check_equal(info.state, CMETA_PLUGIN_LIFECYCLE_STOPPING);
+      check_equal(cmeta_plugin_registry_acquire(&handle->registry, handle->ref, &extra, &manifest),
+                  CMETA_PLUGIN_INVALID_STATE);
+      check_equal(ts_plugin_init(handle, &attempts, &attempts), -1);
+      check_equal(ts_plugin_unload_ex(handle, NULL), 0);
+      handle = NULL;
+      check_equal(attempts, 2);
     }
   }
 }

@@ -8,6 +8,7 @@
 
 #include "exprtk_module.h"
 #include "exprtk_internal.h"
+#include "exprtk_typed_array_internal.h"
 #include <ctype.h>
 #include <errno.h>
 #include <math.h>
@@ -29,7 +30,7 @@ static exprtk_value_t core_fail(exprtk_env_t *env, const char *message) {
 static int core_uuid_text(exprtk_value_t value, char *out, size_t out_size) {
     if (!out || out_size == 0) return 0;
     if (value.type == EXPRTK_VAL_UUID)
-        return salts_uuid_format(&value.data.uuid, out, out_size) == SALTS_OK;
+        return cmeta_uuid_format(&value.data.uuid, out, out_size) == SALTS_OK;
     if (value.type == EXPRTK_VAL_STRING) {
         size_t len = value.data.string.len < out_size - 1 ? value.data.string.len : out_size - 1;
         if (!value.data.string.data) return 0;
@@ -434,21 +435,11 @@ static int core_offset_datetime_text(exprtk_offset_datetime_t value,
                     sign, offset / 60, offset % 60) > 0;
 }
 
-static size_t core_typed_array_element_size(exprtk_typed_array_kind_t kind) {
-    switch (kind) {
-        case EXPRTK_TYPED_I32: return sizeof(int32_t);
-        case EXPRTK_TYPED_I64: return sizeof(int64_t);
-        case EXPRTK_TYPED_F32: return sizeof(float);
-        case EXPRTK_TYPED_F64: return sizeof(double);
-        default: return 0;
-    }
-}
-
 static exprtk_value_t core_typed_array_create(exprtk_typed_array_kind_t kind,
                                               size_t argc, exprtk_value_t *args,
                                               mem_pool_t *arena) {
     size_t count = argc;
-    size_t elem_size = core_typed_array_element_size(kind);
+    size_t byte_size;
     void *data;
     exprtk_value_t source = argc == 1 ? args[0] : core_null_value();
 
@@ -460,8 +451,8 @@ static exprtk_value_t core_typed_array_create(exprtk_typed_array_kind_t kind,
     } else if (argc == 1 && source.type == EXPRTK_VAL_TYPED_ARRAY) {
         return source;
     }
-    if (elem_size == 0) return core_null_value();
-    data = mem_alloc(arena, count * elem_size);
+    if (exprtk_typed_array_byte_size(kind, count, &byte_size) != 0) return core_null_value();
+    data = mem_alloc(arena, byte_size);
     if (!data && count > 0) return core_null_value();
 
     for (size_t i = 0; i < count; ++i) {
@@ -943,36 +934,10 @@ static exprtk_value_t fn_typeof(size_t argc, exprtk_value_t *args,
     size_t len = 4;
 
     if (argc > 0) {
-        switch (args[0].type) {
-            case EXPRTK_VAL_NUMBER: name = "number"; len = 6; break;
-            case EXPRTK_VAL_INTEGER: name = "int64"; len = 5; break;
-            case EXPRTK_VAL_BOOL:   name = "bool";   len = 4; break;
-            case EXPRTK_VAL_STRING: name = "string"; len = 6; break;
-            case EXPRTK_VAL_BYTES:  name = "bytes";  len = 5; break;
-            case EXPRTK_VAL_UUID:   name = "uuid";   len = 4; break;
-            case EXPRTK_VAL_DATETIME: name = "datetime"; len = 8; break;
-            case EXPRTK_VAL_DATE:   name = "date";   len = 4; break;
-            case EXPRTK_VAL_TIME:   name = "time";   len = 4; break;
-            case EXPRTK_VAL_DURATION: name = "duration"; len = 8; break;
-            case EXPRTK_VAL_DECIMAL: name = "decimal"; len = 7; break;
-            case EXPRTK_VAL_BIGINT: name = "bigint"; len = 6; break;
-            case EXPRTK_VAL_MONEY: name = "money"; len = 5; break;
-            case EXPRTK_VAL_ENUM: name = "enum"; len = 4; break;
-            case EXPRTK_VAL_FLAGS: name = "flags"; len = 5; break;
-            case EXPRTK_VAL_SET: name = "set"; len = 3; break;
-            case EXPRTK_VAL_OFFSET_DATETIME: name = "offset_datetime"; len = 15; break;
-            case EXPRTK_VAL_TYPED_ARRAY: name = "typed_array"; len = 11; break;
-            case EXPRTK_VAL_VECTOR: name = "vector"; len = 6; break;
-            case EXPRTK_VAL_MAP:    name = "map";    len = 3; break;
-            case EXPRTK_VAL_OBJECT: name = "object"; len = 6; break;
-            case EXPRTK_VAL_NULL:   name = "null";   len = 4; break;
-            case EXPRTK_VAL_LIST:   name = "list";   len = 4; break;
-            case EXPRTK_VAL_FUNCTION: name = "function"; len = 8; break;
-            case EXPRTK_VAL_CLASS:  name = "class";  len = 5; break;
-            case EXPRTK_VAL_INSTANCE: name = "instance"; len = 8; break;
-            case EXPRTK_VAL_BOUND_METHOD: name = "function"; len = 8; break;
-            default:                name = "unknown"; len = 7; break;
-        }
+        /* Script typeof treats bound methods as functions; diagnostics keep
+         * their distinct name. Unknown/coroutine tags retain existing policy. */
+        name = args[0].type == EXPRTK_VAL_BOUND_METHOD ? "function" : type_name(args[0].type);
+        len = strlen(name);
     }
 
     char *buf = (char *)mem_alloc(arena, len + 1);
@@ -1097,11 +1062,11 @@ static exprtk_value_t fn_uuid(size_t argc, exprtk_value_t *args,
                               exprtk_env_t *env, mem_pool_t *arena) {
     (void)env; (void)arena;
     char text[SALTS_UUID_STRING_SIZE];
-    salts_uuid_t id;
+    cmeta_uuid_t id;
 
     if (argc != 1 || args[0].type != EXPRTK_VAL_STRING ||
         !core_uuid_text(args[0], text, sizeof(text)) ||
-        salts_uuid_parse(text, &id) != SALTS_OK)
+        cmeta_uuid_parse(text, &id) != SALTS_OK)
         return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
@@ -1109,16 +1074,16 @@ static exprtk_value_t fn_uuid(size_t argc, exprtk_value_t *args,
 static exprtk_value_t fn_uuid4(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, mem_pool_t *arena) {
     (void)argc; (void)args; (void)env; (void)arena;
-    salts_uuid_t id;
-    if (salts_uuid_v4_generate(&id) != SALTS_OK) return exprtk_val_num(0);
+    cmeta_uuid_t id;
+    if (cmeta_uuid_v4_generate(&id) != SALTS_OK) return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
 
 static exprtk_value_t fn_uuid7(size_t argc, exprtk_value_t *args,
                                exprtk_env_t *env, mem_pool_t *arena) {
     (void)argc; (void)args; (void)env; (void)arena;
-    salts_uuid_t id;
-    if (salts_uuid_v7_generate(&id) != SALTS_OK) return exprtk_val_num(0);
+    cmeta_uuid_t id;
+    if (cmeta_uuid_v7_generate(&id) != SALTS_OK) return exprtk_val_num(0);
     return exprtk_val_uuid(id);
 }
 

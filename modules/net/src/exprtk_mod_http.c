@@ -90,25 +90,39 @@ chttp_client *net_ctx_ensure_client(net_ctx_t *ctx) {
   return client;
 }
 
-void net_ctx_destroy(void *p) {
+int net_ctx_try_destroy(void *p) {
   net_ctx_t *ctx = (net_ctx_t *)p;
   size_t i;
-  if (!ctx) return;
+  int status;
+  if (!ctx) return SALTS_OK;
   if (ctx->client) {
-    (void)chttp_client_destroy(ctx->client, 10000u);
+    status = chttp_client_destroy(ctx->client, 10000u);
+    if (status != SALTS_OK) return status;
     free(ctx->client);
+    ctx->client = NULL;
   }
   if (ctx->ws_client) {
-    (void)chttp_websocket_client_destroy(ctx->ws_client, 10000u);
+    status = chttp_websocket_client_destroy(ctx->ws_client, 10000u);
+    if (status != SALTS_OK) return status;
     free(ctx->ws_client);
+    ctx->ws_client = NULL;
   }
   for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
     if (ctx->ws_task_connections[i].client) {
-      (void)chttp_websocket_client_destroy(ctx->ws_task_connections[i].client, 10000u);
+      status = chttp_websocket_client_destroy(ctx->ws_task_connections[i].client, 10000u);
+      if (status != SALTS_OK) return status;
       free(ctx->ws_task_connections[i].client);
+      ctx->ws_task_connections[i].client = NULL;
+      ctx->ws_task_connections[i].owner = NULL;
+      if (ctx->ws_task_connection_count) --ctx->ws_task_connection_count;
     }
   }
   free(ctx);
+  return SALTS_OK;
+}
+
+void net_ctx_destroy(void *p) {
+  if (net_ctx_try_destroy(p) != SALTS_OK) abort();
 }
 
 /* == Helpers ============================================================== */
@@ -167,25 +181,30 @@ static chttp_websocket_client **net_ctx_ws_slot(net_ctx_t *ctx, const void *owne
   return &free_slot->client;
 }
 
-static void net_ctx_clear_ws_slot(net_ctx_t *ctx, const void *owner,
+static int net_ctx_clear_ws_slot(net_ctx_t *ctx, const void *owner,
                                   chttp_websocket_client **slot) {
   size_t i;
 
-  if (!ctx || !slot) return;
+  if (!ctx || !slot) return SALTS_EINVAL;
   if (*slot) {
-    (void)chttp_websocket_client_destroy(*slot, 10000u);
+    int status = chttp_websocket_client_destroy(*slot, 10000u);
+    if (status != SALTS_OK) {
+      net_set_error(ctx, "WebSocket drain failed; connection retained for retry");
+      return status;
+    }
     free(*slot);
   }
   *slot = NULL;
-  if (!owner) return;
+  if (!owner) return SALTS_OK;
 
   for (i = 0; i < NET_WS_TASK_CONNECTION_CAPACITY; ++i) {
     net_ws_task_connection_t *entry = &ctx->ws_task_connections[i];
     if (&entry->client != slot) continue;
     entry->owner = NULL;
     if (ctx->ws_task_connection_count > 0) ctx->ws_task_connection_count--;
-    return;
+    return SALTS_OK;
   }
+  return SALTS_OK;
 }
 
 static chttp_websocket_client *net_ctx_recreate_ws_client(net_ctx_t *ctx, const void *owner) {
@@ -198,7 +217,7 @@ static chttp_websocket_client *net_ctx_recreate_ws_client(net_ctx_t *ctx, const 
     net_set_error(ctx, "ws task connection capacity exhausted");
     return NULL;
   }
-  if (*slot) net_ctx_clear_ws_slot(ctx, owner, slot);
+  if (*slot && net_ctx_clear_ws_slot(ctx, owner, slot) != SALTS_OK) return NULL;
   slot = net_ctx_ws_slot(ctx, owner, 1);
   if (!slot) return NULL;
 
@@ -921,7 +940,7 @@ static exprtk_value_t fn_ws_close(size_t argc, exprtk_value_t *args, exprtk_env_
   slot = net_ctx_ws_slot(ud->ctx, owner, 0);
   if (slot && *slot) {
     (void)chttp_websocket_client_close(*slot, 1000u, NULL, 0u, 10000u);
-    net_ctx_clear_ws_slot(ud->ctx, owner, slot);
+    if (net_ctx_clear_ws_slot(ud->ctx, owner, slot) != SALTS_OK) return NET_ZERO;
   }
   net_set_error(ud->ctx, "");
   return NET_ONE;

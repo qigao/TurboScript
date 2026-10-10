@@ -10,7 +10,7 @@
 #define EXPRTK_MODULE_H
 
 #include "exprtk_types.h"
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,19 +39,17 @@ struct exprtk_module_s {
  * Value constructors (inline helpers for module implementations)
  * ========================================================================= */
 
-static inline exprtk_value_t exprtk_val_num(double v) {
-    exprtk_value_t val = {0};
-    val.type = EXPRTK_VAL_NUMBER;
-    val.data.number = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_int(int64_t v) {
-    exprtk_value_t val = {0};
-    val.type = EXPRTK_VAL_INTEGER;
-    val.data.integer = v;
-    return val;
-}
+/* Mechanical constructors preserve the native tag, payload and borrowed state. */
+#define EXPRTK_DECLARE_VALUE_CONSTRUCTOR(tag_value, storage_type, member_name, constructor) \
+    static inline exprtk_value_t constructor(storage_type value_) { \
+        exprtk_value_t result; \
+        memset(&result, 0, sizeof(result)); \
+        result.type = tag_value; \
+        result.data.member_name = value_; \
+        return result; \
+    }
+Replay(EXPRTK_DIRECT_VALUE_SCHEMA, EXPRTK_DECLARE_VALUE_CONSTRUCTOR)
+#undef EXPRTK_DECLARE_VALUE_CONSTRUCTOR
 
 static inline exprtk_value_t exprtk_val_bool(int v) {
     exprtk_value_t val = {0};
@@ -68,81 +66,11 @@ static inline exprtk_value_t exprtk_val_vec(double *data, size_t size) {
     return val;
 }
 
-static inline exprtk_value_t exprtk_val_str(vstr v) {
-    exprtk_value_t val = {0};
-    val.type = EXPRTK_VAL_STRING;
-    val.data.string = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_bytes(vstr v) {
-    exprtk_value_t val = {0};
-    val.type = EXPRTK_VAL_BYTES;
-    val.data.bytes = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_uuid(salts_uuid_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_UUID;
-    val.data.uuid = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_datetime(datetime_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_DATETIME;
-    val.data.datetime = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_date(exprtk_date_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_DATE;
-    val.data.date = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_time(exprtk_time_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_TIME;
-    val.data.time = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_duration(int64_t ms) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_DURATION;
-    val.data.duration_ms = ms;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_decimal(exprtk_decimal_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_DECIMAL;
-    val.data.decimal = v;
-    return val;
-}
-
 static inline exprtk_value_t exprtk_val_bigint(vstr v) {
     exprtk_value_t val;
     memset(&val, 0, sizeof(val));
     val.type = EXPRTK_VAL_BIGINT;
     val.data.bigint.text = v;
-    return val;
-}
-
-static inline exprtk_value_t exprtk_val_money(exprtk_money_t v) {
-    exprtk_value_t val;
-    memset(&val, 0, sizeof(val));
-    val.type = EXPRTK_VAL_MONEY;
-    val.data.money = v;
     return val;
 }
 

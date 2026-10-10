@@ -4,6 +4,7 @@
  */
 
 #include "exprtk_module.h"
+#include "exprtk_typed_array_internal.h"
 #include <cstl.h>
 
 #include <stdint.h>
@@ -176,22 +177,17 @@ int exprtk_value_copy_to_pool(exprtk_value_t value, mem_pool_t *pool,
             }
             break;
         case EXPRTK_VAL_TYPED_ARRAY: {
-            size_t element_size;
-            switch (value.data.typed_array.kind) {
-                case EXPRTK_TYPED_I32: element_size = sizeof(int32_t); break;
-                case EXPRTK_TYPED_I64: element_size = sizeof(int64_t); break;
-                case EXPRTK_TYPED_F32: element_size = sizeof(float); break;
-                case EXPRTK_TYPED_F64: element_size = sizeof(double); break;
-                default: return -1;
-            }
+            size_t byte_size;
+            if (exprtk_typed_array_byte_size(value.data.typed_array.kind,
+                                             value.data.typed_array.count, &byte_size) != 0)
+                return -1;
             copied.data.typed_array.data = NULL;
             copied.data.typed_array.heap_owned = 0;
             if (value.data.typed_array.count > 0) {
                 if (!value.data.typed_array.data) return -1;
-                if (value.data.typed_array.count > SIZE_MAX / element_size) return -1;
                 if (exprtk_copy_payload(
                         pool, value.data.typed_array.data,
-                        value.data.typed_array.count * element_size, &copied.storage,
+                        byte_size, &copied.storage,
                         &copied.data.typed_array.data) != 0)
                     return -1;
             }

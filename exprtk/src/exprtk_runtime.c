@@ -6,6 +6,7 @@
 #include "exprtk.h"
 #include "exprtk_internal.h"
 #include "exprtk_runtime_internal.h"
+#include "exprtk_typed_array_internal.h"
 #include "exprtk_class.h"
 #include <cstl.h>
 #include <ctype.h>
@@ -1331,33 +1332,10 @@ exprtk_value_t throw_error(exprtk_env_t *env, const exprtk_node_t *node, const c
 // Type name helper (Phase 2)
 const char* type_name(int type) {
     switch (type) {
-        case EXPRTK_VAL_NUMBER: return "number";
-        case EXPRTK_VAL_INTEGER: return "int64";
-        case EXPRTK_VAL_BOOL: return "bool";
-        case EXPRTK_VAL_STRING: return "string";
-        case EXPRTK_VAL_BYTES: return "bytes";
-        case EXPRTK_VAL_VECTOR: return "vector";
-        case EXPRTK_VAL_MAP: return "map";
-        case EXPRTK_VAL_OBJECT: return "object";
-        case EXPRTK_VAL_NULL: return "null";
-        case EXPRTK_VAL_LIST: return "list";
-        case EXPRTK_VAL_SET: return "set";
-        case EXPRTK_VAL_FUNCTION: return "function";
-        case EXPRTK_VAL_CLASS: return "class";
-        case EXPRTK_VAL_INSTANCE: return "instance";
-        case EXPRTK_VAL_BOUND_METHOD: return "bound_method";
-        case EXPRTK_VAL_UUID: return "uuid";
-        case EXPRTK_VAL_DATETIME: return "datetime";
-        case EXPRTK_VAL_DATE: return "date";
-        case EXPRTK_VAL_TIME: return "time";
-        case EXPRTK_VAL_DURATION: return "duration";
-        case EXPRTK_VAL_DECIMAL: return "decimal";
-        case EXPRTK_VAL_BIGINT: return "bigint";
-        case EXPRTK_VAL_MONEY: return "money";
-        case EXPRTK_VAL_ENUM: return "enum";
-        case EXPRTK_VAL_FLAGS: return "flags";
-        case EXPRTK_VAL_OFFSET_DATETIME: return "offset_datetime";
-        case EXPRTK_VAL_TYPED_ARRAY: return "typed_array";
+#define EXPRTK_VALUE_DIAGNOSTIC_CASE(tag_value, abi_value, diagnostic_name) \
+        case tag_value: return diagnostic_name;
+        Replay(EXPRTK_VALUE_TAG_SCHEMA, EXPRTK_VALUE_DIAGNOSTIC_CASE)
+#undef EXPRTK_VALUE_DIAGNOSTIC_CASE
         default: return "unknown";
     }
 }
@@ -3292,7 +3270,7 @@ exprtk_value_t eval_uuid_method(mc_ctx_t *mc) {
 
     if (strcmp(mc->method, "toString") != 0 && strcmp(mc->method, "to_string") != 0)
         return unknown_method_error(mc, "uuid");
-    if (salts_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != SALTS_OK)
+    if (cmeta_uuid_format(&mc->obj.data.uuid, text, sizeof(text)) != SALTS_OK)
         return exprtk_val_num(0);
     len = strlen(text);
     buf = (char *)mem_alloc(mc->arena, len + 1);
@@ -3551,16 +3529,6 @@ int exprtk_enum_member_get(exprtk_value_t value, const char *member, exprtk_valu
     return 1;
 }
 
-static const char *runtime_typed_array_kind_name(exprtk_typed_array_kind_t kind) {
-    switch (kind) {
-        case EXPRTK_TYPED_I32: return "i32";
-        case EXPRTK_TYPED_I64: return "i64";
-        case EXPRTK_TYPED_F32: return "f32";
-        case EXPRTK_TYPED_F64: return "f64";
-        default: return "";
-    }
-}
-
 exprtk_value_t exprtk_typed_array_get_value(exprtk_value_t value, size_t index) {
     if (value.type != EXPRTK_VAL_TYPED_ARRAY || !value.data.typed_array.data ||
         index >= value.data.typed_array.count)
@@ -3585,7 +3553,7 @@ int exprtk_typed_array_member_get(exprtk_value_t value, const char *member,
     if (strcmp(member, "length") == 0 || strcmp(member, "size") == 0)
         *out = exprtk_val_int((int64_t)value.data.typed_array.count);
     else if (strcmp(member, "kind") == 0)
-        *out = exprtk_val_str(vstr_from_cstr(runtime_typed_array_kind_name(value.data.typed_array.kind)));
+        *out = exprtk_val_str(vstr_from_cstr(exprtk_typed_array_kind_name(value.data.typed_array.kind)));
     else return 0;
     return 1;
 }
@@ -3596,7 +3564,7 @@ exprtk_value_t eval_typed_array_method(mc_ctx_t *mc) {
         return exprtk_val_int((int64_t)mc->obj.data.typed_array.count);
     if (strcmp(m, "kind") == 0)
         return runtime_string_value(mc->arena,
-                                    runtime_typed_array_kind_name(mc->obj.data.typed_array.kind));
+                                    exprtk_typed_array_kind_name(mc->obj.data.typed_array.kind));
     if (strcmp(m, "toList") == 0 || strcmp(m, "to_list") == 0) {
         exprtk_value_t list = exprtk_val_list_empty();
         for (size_t i = 0; i < mc->obj.data.typed_array.count; ++i)

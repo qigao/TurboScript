@@ -7,7 +7,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_fixture PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(test_plugin_loader_fixture PRIVATE Salts::Core)
+target_link_libraries(test_plugin_loader_fixture PRIVATE Salts::PluginABI)
 set_target_properties(
   test_plugin_loader_fixture
   PROPERTIES PREFIX ""
@@ -22,7 +22,7 @@ function(add_plugin_loader_fixture target output_name)
     OUTPUT_NAME ${output_name}
     PLUGIN)
   target_include_directories(${target} PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-  target_link_libraries(${target} PRIVATE Salts::Core)
+  target_link_libraries(${target} PRIVATE Salts::PluginABI)
   set_target_properties(
     ${target}
     PROPERTIES PREFIX ""
@@ -42,6 +42,13 @@ target_compile_definitions(
 add_plugin_loader_fixture(test_plugin_loader_wrong_name loader_wrong_name)
 target_compile_definitions(
   test_plugin_loader_wrong_name PRIVATE FIXTURE_PLUGIN_NAME="different_name")
+
+add_plugin_loader_fixture(test_plugin_loader_bad_contract loader_bad_contract)
+target_compile_definitions(test_plugin_loader_bad_contract PRIVATE FIXTURE_BAD_CONTRACT)
+add_plugin_loader_fixture(test_plugin_loader_bad_signature loader_bad_signature)
+target_compile_definitions(test_plugin_loader_bad_signature PRIVATE FIXTURE_BAD_SIGNATURE)
+add_plugin_loader_fixture(test_plugin_loader_close_failure loader_close_failure)
+target_compile_definitions(test_plugin_loader_close_failure PRIVATE FIXTURE_CLOSE_FAILURE)
 
 add_plugin_loader_fixture(test_plugin_loader_init_failure loader_init_failure)
 target_compile_definitions(
@@ -80,7 +87,7 @@ cmake_config_target(
   PLUGIN)
 target_include_directories(
   test_plugin_loader_missing_entry PRIVATE ${CMAKE_SOURCE_DIR}/exprtk/include)
-target_link_libraries(test_plugin_loader_missing_entry PRIVATE Salts::Core)
+target_link_libraries(test_plugin_loader_missing_entry PRIVATE Salts::PluginABI)
 set_target_properties(
   test_plugin_loader_missing_entry
   PROPERTIES PREFIX ""
@@ -90,15 +97,21 @@ set_target_properties(
 cmake_add_test(
   TARGET test_ts_plugin_loader
   SOURCES test_ts_plugin_loader.c
-  LIBS turbo_script_plugin_loader Salts::TinyTest
+  LIBS turbo_script_plugin_loader Salts::Plugin Salts::TinyTest
   INCLUDES ${CMAKE_SOURCE_DIR}/exprtk/include
   DEPENDS test_plugin_loader_fixture test_plugin_loader_bad_abi
           test_plugin_loader_prefixed_conflict
           test_plugin_loader_wrong_name test_plugin_loader_missing_entry
           test_plugin_loader_init_failure test_plugin_loader_legacy
           test_plugin_loader_cwd_only test_plugin_loader_package
+          test_plugin_loader_bad_contract test_plugin_loader_bad_signature
+          test_plugin_loader_close_failure
   FOLDER turbo_script
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+target_compile_definitions(test_ts_plugin_loader PRIVATE
+  LOADER_BAD_CONTRACT_FILE="$<TARGET_FILE:test_plugin_loader_bad_contract>"
+  LOADER_BAD_SIGNATURE_FILE="$<TARGET_FILE:test_plugin_loader_bad_signature>"
+  LOADER_CLOSE_FAILURE_FILE="$<TARGET_FILE:test_plugin_loader_close_failure>")
 set_tests_properties(
   test_ts_plugin_loader
   PROPERTIES ENVIRONMENT
@@ -113,6 +126,14 @@ macro(add_ts_test TARGET_NAME SOURCE_FILE)
     DEPENDS mapper_tbs fin_tbs ta_tbs ts_tbs net_tbs
     FOLDER turbo_script)
 endmacro()
+
+cmake_add_test(
+  TARGET test_ts_builtin_plugins
+  SOURCES test_ts_builtin_plugins.c
+  LIBS turbo_script Salts::TinyTest
+  DEPENDS net_tbs ta_tbs fin_tbs ts_tbs sqlite_tbs mapper_tbs img_tbs
+          crypto_tbs hash_tbs fuzzy_tbs os_tbs
+  FOLDER turbo_script)
 
 # Interpreter test suites (split by module)
 add_ts_test(test_turbo_script_basics     test_turbo_script_basics.c)

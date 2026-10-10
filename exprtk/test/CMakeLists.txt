@@ -2,6 +2,14 @@ set(EXPRTK_TEST_LIBS exprtk Salts::TinyTest)
 set(EXPRTK_TEST_INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
 cmake_add_test(
+  TARGET test_exprtk_value_schema
+  SOURCES test_exprtk_value_schema.c exprtk_value_schema_cpp.cpp
+  LIBS ${EXPRTK_TEST_LIBS}
+  INCLUDES ${EXPRTK_TEST_INCLUDES} ${CMAKE_CURRENT_SOURCE_DIR}/../src
+  FOLDER exprtk
+  RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
+
+cmake_add_test(
   TARGET test_exprtk_syntax
   SOURCES test_exprtk_syntax.c
   LIBS TurboScript::ExprTkSyntax Salts::TinyTest

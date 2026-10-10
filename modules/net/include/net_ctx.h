@@ -6,7 +6,7 @@
 #define NET_CTX_H
 
 #include "exprtk.h"
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include <http_client/http.h>
 
 #include <string.h>
@@ -46,6 +46,8 @@ static inline char *net_arena_cstr(mem_pool_t *a, vstr sv) {
 }
 
 void *net_ctx_create(void);
+/* Success consumes ctx; failure preserves all unfinished client owners for retry. */
+int net_ctx_try_destroy(void *ctx);
 void net_ctx_destroy(void *ctx);
 void net_load(void *ctx, void *env, void *scratch);
 

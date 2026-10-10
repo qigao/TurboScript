@@ -1,5 +1,5 @@
 {
-  "name": "vcpkg-turbonet",
+  "name": "turboscript",
   "version-semver": "0.1.0",
   "dependencies": [
     {
@@ -8,22 +8,20 @@
     },
     {
       "name": "tiny-aes-c"
-    }, 
-    {
-      "name": "boringssl"
-    }, 
+    },
     {
       "name": "stb"
-    }, 
+    },
     {
-      "name": "pkgconf"
+      "name": "pkgconf",
+      "host": true
     },
     {
       "name": "zstd"
     },
     {
       "name": "simde"
-    }, 
+    },
     {
       "name": "sqlite3",
       "version>=": "3.49.0",

@@ -14,7 +14,7 @@
 #define EXPRTK_CLASS_H
 
 #include "exprtk_types.h"
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include <stddef.h>
 
 #ifdef __cplusplus

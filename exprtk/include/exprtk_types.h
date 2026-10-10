@@ -1,10 +1,11 @@
 #ifndef exprtk_TYPES_H
 #define exprtk_TYPES_H
 
-#include "salts_buffer.h"
+#include "cmeta_buffer.h"
 #include "datetime_parser.h"
 #include "vstr.h"
-#include "salts_uuid.h"
+#include "cmeta_uuid.h"
+#include "exprtk_value_schema.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -300,10 +301,10 @@ typedef struct {
 } exprtk_offset_datetime_t;
 
 typedef enum {
-  EXPRTK_TYPED_I32 = 1,
-  EXPRTK_TYPED_I64 = 2,
-  EXPRTK_TYPED_F32 = 3,
-  EXPRTK_TYPED_F64 = 4
+#define EXPRTK_DECLARE_ARRAY_KIND(kind_value, abi_value, storage_type, kind_name) \
+  kind_value = abi_value,
+  Replay(EXPRTK_TYPED_ARRAY_KIND_SCHEMA, EXPRTK_DECLARE_ARRAY_KIND)
+#undef EXPRTK_DECLARE_ARRAY_KIND
 } exprtk_typed_array_kind_t;
 
 typedef struct {
@@ -318,35 +319,9 @@ struct exprtk_map_entry_s;
 struct exprtk_map_s;
 
 typedef enum {
-  EXPRTK_VAL_NUMBER,
-  EXPRTK_VAL_STRING,
-  EXPRTK_VAL_INTEGER,
-  EXPRTK_VAL_BOOL,
-  EXPRTK_VAL_BYTES,
-  EXPRTK_VAL_VECTOR,
-  EXPRTK_VAL_MAP,
-  EXPRTK_VAL_OBJECT,        // Plain object (JS/TS-style dynamic object)
-  EXPRTK_VAL_NULL,
-  EXPRTK_VAL_LIST,
-  EXPRTK_VAL_FUNCTION,
-  EXPRTK_VAL_COROUTINE,     // 协程对象
-  // OOP value types
-  EXPRTK_VAL_CLASS,         // 类对象
-  EXPRTK_VAL_INSTANCE,      // 实例对象
-  EXPRTK_VAL_BOUND_METHOD,  // 绑定了 this 的方法
-  EXPRTK_VAL_UUID,
-  EXPRTK_VAL_DATETIME,
-  EXPRTK_VAL_DATE,
-  EXPRTK_VAL_TIME,
-  EXPRTK_VAL_DURATION,
-  EXPRTK_VAL_DECIMAL,
-  EXPRTK_VAL_BIGINT,
-  EXPRTK_VAL_MONEY,
-  EXPRTK_VAL_ENUM,
-  EXPRTK_VAL_FLAGS,
-  EXPRTK_VAL_SET,
-  EXPRTK_VAL_OFFSET_DATETIME,
-  EXPRTK_VAL_TYPED_ARRAY
+#define EXPRTK_DECLARE_VALUE_TAG(tag_value, abi_value, diagnostic_name) tag_value = abi_value,
+  Replay(EXPRTK_VALUE_TAG_SCHEMA, EXPRTK_DECLARE_VALUE_TAG)
+#undef EXPRTK_DECLARE_VALUE_TAG
 } exprtk_value_type_t;
 
 typedef enum {
@@ -373,19 +348,12 @@ typedef struct exprtk_value_s {
   mem_buffer_t *storage_aux;
   exprtk_value_ownership_t ownership;
   union {
-    double number;
-    vstr string;
-    int64_t integer;
+#define EXPRTK_DECLARE_VALUE_MEMBER(tag_value, storage_type, member_name, constructor) \
+    storage_type member_name;
+    Replay(EXPRTK_DIRECT_VALUE_SCHEMA, EXPRTK_DECLARE_VALUE_MEMBER)
+#undef EXPRTK_DECLARE_VALUE_MEMBER
     int boolean;
-    vstr bytes;
-    salts_uuid_t uuid;
-    datetime_t datetime;
-    exprtk_date_t date;
-    exprtk_time_t time;
-    int64_t duration_ms;
-    exprtk_decimal_t decimal;
     exprtk_bigint_t bigint;
-    exprtk_money_t money;
     exprtk_enum_value_t enum_val;
     exprtk_offset_datetime_t offset_datetime;
     exprtk_typed_array_t typed_array;

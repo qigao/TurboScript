@@ -1,118 +1,81 @@
-/**
- * @file ts_plugin.h
- * @brief TurboScript plugin ABI — zero dependencies.
- *
- * Every plugin DLL exports exactly one function: ts_api_create().
- * It returns a pointer to a static ts_plugin_t descriptor.
- *
- * Two convenience macros eliminate boilerplate for common patterns:
- *   TS_PLUGIN_MODULE   — stateless plugin that registers an exprtk_module_t
- *   TS_PLUGIN_STATEFUL — stateful plugin with create/load/destroy lifecycle
+/** TurboScript native module contract, published through Salts Plugin.
+ * Providers must be rebuilt for contract 2; ts_api_create is retired.
+ * The passive manifest does not own per-context resources. Each open creates
+ * a logical instance released only by successful close on its owner thread.
  */
 #ifndef TS_PLUGIN_H
 #define TS_PLUGIN_H
 
-#include "platform.h"
-#include <stddef.h>
-#include <stdint.h>
-
-/* ExprTk is statically embedded in TurboScript and plugins. */
-#ifndef EXPRTK_C_API
-#define EXPRTK_C_API
-#endif
+#include <salts/plugin_decl.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Forward declarations — avoids pulling in exprtk.h / salts_buffer.h */
 typedef struct exprtk_env_s exprtk_env_t;
-typedef struct mem_pool_s mem_pool_t;
 typedef struct exprtk_module_s exprtk_module_t;
-EXPRTK_C_API void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
+void exprtk_env_add_module(exprtk_env_t *env, const exprtk_module_t *mod);
 
-#define TS_PLUGIN_ABI_VERSION 1U
+#define TS_PLUGIN_ABI_VERSION 2U
+#define TS_PLUGIN_CONTRACT_ID "qigao.turboscript.module"
+#define TS_PLUGIN_OPEN_EXPORT "open"
+#define TS_PLUGIN_CLOSE_EXPORT "close"
 
-typedef struct ts_plugin_s {
-  const char *name; /* "ta", "csv", "vec", ... */
-  uint32_t version; /* ABI version (1) */
+/* env and scratch are borrowed until close succeeds. A non-null instance
+ * carries a close obligation even when a stateless provider aliases env.
+ * NULL reports initialization failure without publishing an instance.
+ * close returns 0 on success; otherwise the instance stays owned and retryable.
+ * No calls or borrowed module values may remain when close begins. */
+FunctionInvokeDeclAsAbiResult(fallible, void *, &cmeta_type_void_ptr,
+    CMETA_ABI_OBJECT_POINTER, CMETA_RESULT_OWNED | CMETA_RESULT_NULLABLE,
+    ts_plugin_open,
+    (void *, env, CMETA_PARAM_IN | CMETA_PARAM_BORROWED,
+        &cmeta_type_void_ptr, CMETA_ABI_OBJECT_POINTER),
+    (void *, scratch, CMETA_PARAM_IN | CMETA_PARAM_BORROWED,
+        &cmeta_type_void_ptr, CMETA_ABI_OBJECT_POINTER));
+FunctionInvokeDeclAsAbiResult(fallible, int32_t, &cmeta_type_int32,
+    CMETA_ABI_SCALAR, CMETA_RESULT_VALUE, ts_plugin_close,
+    (void *, instance, CMETA_PARAM_IN | CMETA_PARAM_BORROWED,
+        &cmeta_type_void_ptr, CMETA_ABI_OBJECT_POINTER));
 
-  /**
-   * Called by turbo_script when import("<name>") is executed.
-   * Plugin registers its functions into env.
-   * @param env     exprtk_env_t*  — register functions here
-   * @param scratch mem_pool_t* — temp allocator
-   * @return opaque plugin instance (passed to unload), or NULL
-   */
-  void *(*load)(void *env, void *scratch);
+#define TS_PLUGIN_EXPORTS(X) \
+    X(function, ts_plugin_open, TS_PLUGIN_OPEN_EXPORT, TS_PLUGIN_CONTRACT_ID, TS_PLUGIN_ABI_VERSION, 0) \
+    X(function, ts_plugin_close, TS_PLUGIN_CLOSE_EXPORT, TS_PLUGIN_CONTRACT_ID, TS_PLUGIN_ABI_VERSION, 0)
 
-  /**
-   * Called when turbo_script context is freed.
-   * @param instance — the value returned by load()
-   */
-  void (*unload)(void *instance);
-} ts_plugin_t;
+/* Custom providers define the exact open/close functions above, then publish. */
+#define TS_PLUGIN_PUBLISH(plugin_name) \
+    CMETA_PLUGIN_DECLARE(ts_module, plugin_name, (2, 0, 0), \
+        TS_PLUGIN_EXPORTS, CMETA_PLUGIN_PASSIVE());
 
-/* Every plugin DLL exports exactly this function */
-typedef const ts_plugin_t *(*ts_api_create_fn)(void);
+#define TS_PLUGIN_MODULE(plugin_name, module_fn) \
+    void *ts_plugin_open(void *env, void *scratch) { \
+        const exprtk_module_t *mod = module_fn(); \
+        (void)scratch; \
+        if (!env || !mod) return NULL; \
+        exprtk_env_add_module((exprtk_env_t *)env, mod); \
+        return env; \
+    } \
+    int32_t ts_plugin_close(void *instance) { (void)instance; return 0; } \
+    TS_PLUGIN_PUBLISH(#plugin_name)
 
-/* Plugin entry points are always exported by the plugin binary itself. */
-#if defined(_WIN32) || defined(__CYGWIN__)
-#define TS_PLUGIN_API __declspec(dllexport)
-#elif defined(__GNUC__) && __GNUC__ >= 4
-#define TS_PLUGIN_API __attribute__((visibility("default")))
-#else
-#define TS_PLUGIN_API
-#endif
+/* Use CHECKED when cleanup can fail (for example native I/O drain). */
+#define TS_PLUGIN_STATEFUL_CHECKED(plugin_name, create_fn, loader_fn, close_fn) \
+    void *ts_plugin_open(void *env, void *scratch) { \
+        void *ctx; \
+        if (!env || !scratch) return NULL; \
+        ctx = (void *)create_fn(); \
+        if (!ctx) return NULL; \
+        loader_fn(ctx, env, scratch); \
+        return ctx; \
+    } \
+    int32_t ts_plugin_close(void *instance) { return instance ? close_fn(instance) : 0; } \
+    TS_PLUGIN_PUBLISH(#plugin_name)
 
-#ifdef __cplusplus
-#define TS_PLUGIN_C_API extern "C" TS_PLUGIN_API
-#else
-#define TS_PLUGIN_C_API TS_PLUGIN_API
-#endif
-
-/* ── Stateless plugin: registers one exprtk_module_t, no instance ── */
-#define TS_PLUGIN_MODULE(plugin_name, module_fn)                                                   \
-  static void *ts__##plugin_name##_load(void *env, void *scratch) {                                \
-    (void)scratch;                                                                                 \
-    const exprtk_module_t *mod = module_fn();                                                      \
-    if (!env || !mod)                                                                              \
-      return NULL;                                                                                 \
-    exprtk_env_add_module((exprtk_env_t *)env, mod);                                               \
-    return env;                                                                                    \
-  }                                                                                                \
-  static void ts__##plugin_name##_unload(void *inst) { (void)inst; }                               \
-  static const ts_plugin_t g_##plugin_name = {                                                     \
-      .name = #plugin_name,                                                                        \
-      .version = TS_PLUGIN_ABI_VERSION,                                                            \
-      .load = ts__##plugin_name##_load,                                                            \
-      .unload = ts__##plugin_name##_unload,                                                        \
-  };                                                                                               \
-  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
-
-/* ── Stateful plugin: create ctx → register funcs → destroy ctx ──── */
-#define TS_PLUGIN_STATEFUL(plugin_name, create_fn, loader_fn, destroy_fn)                          \
-  static void *ts__##plugin_name##_load(void *env, void *scratch) {                                \
-    void *ctx = (void *)create_fn();                                                               \
-    if (!ctx)                                                                                      \
-      return NULL;                                                                                 \
-    loader_fn(ctx, env, scratch);                                                                  \
-    return ctx;                                                                                    \
-  }                                                                                                \
-  static void ts__##plugin_name##_unload(void *inst) {                                             \
-    if (inst)                                                                                      \
-      destroy_fn(inst);                                                                            \
-  }                                                                                                \
-  static const ts_plugin_t g_##plugin_name = {                                                     \
-      .name = #plugin_name,                                                                        \
-      .version = TS_PLUGIN_ABI_VERSION,                                                            \
-      .load = ts__##plugin_name##_load,                                                            \
-      .unload = ts__##plugin_name##_unload,                                                        \
-  };                                                                                               \
-  TS_PLUGIN_C_API const ts_plugin_t *ts_api_create(void) { return &g_##plugin_name; }
+#define TS_PLUGIN_STATEFUL(plugin_name, create_fn, loader_fn, destroy_fn) \
+    static int ts_module_close(void *instance) { destroy_fn(instance); return 0; } \
+    TS_PLUGIN_STATEFUL_CHECKED(plugin_name, create_fn, loader_fn, ts_module_close)
 
 #ifdef __cplusplus
 }
 #endif
-
-#endif /* TS_PLUGIN_H */
+#endif
