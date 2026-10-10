@@ -2,7 +2,7 @@
 
 嵌入式 C/C++ SDK，保留 MIR 解释器和 JIT，包含原生扩展模块（含 Praktor 需要的 os/net），不附带 CLI。
 SDK 目录：`sdk/linux-x64`、`sdk/macos-arm64`、`sdk/android-arm64-v8a`。
-依赖 GitHub 发布的 `Salts.Native`、`SaltsUtils.Native`、`CHttp.Native`，消费时始终选择最新可用版本，不在 consumer 侧写死任何版本号。
+依赖 GitHub 发布的 `Salts.Native`、`SaltsUtils.Native`、`CHttp.Native`，通过 `*-*` 解析最新版本（包括 RC），不在 consumer 侧写死版本号。Salts 2.3 / SaltsUtils 4.3 / CHttp 2.1 的 SDK 必须一起重建和部署；旧 TurboScript 3.0.9 Unix 包依赖 Salts `.2`，不能与新 `.2.3` 动态库混用。
 
 还原包后设置对应平台的 `SALTS_ROOT`、`SALTS_UTILS_ROOT`、`CHTTP_ROOT` 和 `TURBOSCRIPT_ROOT`。
 通过 `find_package(TurboScript CONFIG REQUIRED PATHS "$ENV{TURBOSCRIPT_ROOT}" NO_DEFAULT_PATH)`

@@ -21,9 +21,9 @@ New-Item -ItemType Directory -Path $restoreRoot -Force | Out-Null
     <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
   </PropertyGroup>
   <ItemGroup>
-    <PackageReference Include="Salts.Native" Version="*" />
-    <PackageReference Include="SaltsUtils.Native" Version="*" />
-    <PackageReference Include="CHttp.Native" Version="*" />
+    <PackageReference Include="Salts.Native" Version="*-*" />
+    <PackageReference Include="SaltsUtils.Native" Version="*-*" />
+    <PackageReference Include="CHttp.Native" Version="*-*" />
     <PackageReference Include="TurboDB.Native" Version="*" />
     <PackageReference Include="Qigao.Re2c.Binary" Version="*" />
   </ItemGroup>
