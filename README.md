@@ -41,6 +41,8 @@ All native modules now publish through Salts Plugin (TurboScript module contract
 2). Rebuild every plugin with the matching SDK; legacy `ts_api_create` binaries
 are rejected. Script imports are unchanged. See the
 [plugin publication and lifetime contract](docs/PLUGIN_SYSTEM.md).
+This branch's [release preparation notes](docs/releases/cmeta-plugin-migration.md)
+record validation and the deferred reconciliation with upstream 3.0.8.
 
 Prerequisites: CMake 3.25 or newer (preset schema 6), Ninja, PowerShell 7,
 .NET SDK 8, a vcpkg checkout, and `GITHUB_TOKEN` with `read:packages` access
