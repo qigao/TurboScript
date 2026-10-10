@@ -9,6 +9,11 @@ on:
 permissions:
   contents: read
   packages: read
+env:
+  CCACHE_DIR: ${{ github.workspace }}/.cache/ccache
+  CCACHE_BASEDIR: ${{ github.workspace }}
+  CCACHE_COMPILERCHECK: content
+  CCACHE_MAXSIZE: 1G
 concurrency:
   group: turboscript-sdk-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -87,7 +92,16 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+          sudo apt-get install -y --no-install-recommends ccache ninja-build pkg-config nasm
+      - uses: actions/cache/restore@v4
+        id: ccache
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
       - name: Restore latest native SDKs
         shell: pwsh
         run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
@@ -100,6 +114,17 @@ jobs:
           ctest --preset ci-linux-release-user --no-tests=error --output-on-failure --timeout 180
       - name: Run CFlow qualification benchmark through CTest
         run: ctest --preset ci-linux-benchmark-user --no-tests=error --output-on-failure
+
+      - name: Report compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null; then ccache --show-stats; fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.ccache.outcome == 'success' && steps.ccache.outputs.cache-primary-key != steps.ccache.outputs.cache-matched-key
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
   host-sanitizer:
     name: Linux Host MIR / ASan+UBSan+LSan
@@ -125,7 +150,16 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+          sudo apt-get install -y --no-install-recommends ccache ninja-build pkg-config nasm
+      - uses: actions/cache/restore@v4
+        id: ccache
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
       - name: Restore latest native SDKs
         shell: pwsh
         run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
@@ -136,6 +170,17 @@ jobs:
           cmake --preset ci-linux-sanitizer-user
           cmake --build --preset ci-linux-sanitizer-user --parallel 2
           ctest --preset ci-linux-sanitizer-user --no-tests=error --output-on-failure --timeout 180
+
+      - name: Report compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null; then ccache --show-stats; fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.ccache.outcome == 'success' && steps.ccache.outputs.cache-primary-key != steps.ccache.outputs.cache-matched-key
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
   host-abi:
     name: Linux installed Host ABI v1
@@ -162,7 +207,16 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ninja-build pkg-config nasm
+          sudo apt-get install -y --no-install-recommends ccache ninja-build pkg-config nasm
+      - uses: actions/cache/restore@v4
+        id: ccache
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
       - name: Restore latest native SDKs
         shell: pwsh
         run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
@@ -182,6 +236,17 @@ jobs:
           cmake --preset ci-installed-host-abi-user
           cmake --build --preset ci-installed-host-abi-user --parallel 2
           ctest --preset ci-installed-host-abi-user --no-tests=error --output-on-failure
+
+      - name: Report compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null; then ccache --show-stats; fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.ccache.outcome == 'success' && steps.ccache.outputs.cache-primary-key != steps.ccache.outputs.cache-matched-key
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
 
   build:
     needs: metadata
@@ -221,11 +286,20 @@ jobs:
           set -euo pipefail
           if [[ "$RUNNER_OS" == Linux ]]; then
             sudo apt-get update
-            sudo apt-get install -y ninja-build pkg-config nasm
+            sudo apt-get install -y ccache ninja-build pkg-config nasm
           else
-            brew install ninja nasm
+            brew install ccache ninja nasm
           fi
           if [[ "$RID" == macos-arm64 ]]; then test "$(uname -m)" = arm64; fi
+      - uses: actions/cache/restore@v4
+        id: ccache
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
+      - name: Reset compiler cache statistics
+        run: ccache --zero-stats
       - name: Restore latest native SDKs
         shell: pwsh
         run: ./cmake/ci/restore-native-sdks.ps1 -Rid '${{ matrix.rid }}'
@@ -296,6 +370,17 @@ jobs:
           name: turboscript-sdk-${{ matrix.rid }}
           path: dist/*.tar.gz
           if-no-files-found: error
+      - name: Report compiler cache statistics
+        if: always()
+        shell: bash
+        run: |
+          if command -v ccache >/dev/null; then ccache --show-stats; fi
+      - uses: actions/cache/save@v4
+        if: always() && steps.ccache.outcome == 'success' && steps.ccache.outputs.cache-primary-key != steps.ccache.outputs.cache-matched-key
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ${{ steps.ccache.outputs.cache-primary-key }}
+
   pack:
     needs: [metadata, source-test, host-sanitizer, host-abi, build]
     if: >-
