@@ -21,7 +21,7 @@ target_include_directories(
                         $<INSTALL_INTERFACE:include>)
 
 target_link_libraries(${TARGET_NAME} PUBLIC exprtk Salts::Core
-                                            TurboScript::Tre)
+                                            unofficial::tre::tre)
 
 add_library(${TARGET_NAME_PLUGIN} SHARED ${FUZZY_PLUGIN_SOURCES})
 

@@ -62,6 +62,7 @@ find_package(SaltsUtils CONFIG REQUIRED PATHS "${_turboscript_SALTS_UTILS_ROOT}"
 find_package(Chttp CONFIG REQUIRED PATHS "${_turboscript_CHTTP_ROOT}"
              NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)
 find_package(xxHash CONFIG REQUIRED)
+find_package(unofficial-tre 0.9.0 CONFIG REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_path(SIMDE_INCLUDE_DIRS "simde/arm/neon.h")
 
@@ -79,6 +80,9 @@ add_subdirectory(modules)
 include(CMakePackageConfigHelpers)
 
 # Project-owned installation policy
+install(FILES "${unofficial-tre_DIR}/../tre/copyright"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/TurboScript"
+        RENAME tre-copyright)
 install(
   TARGETS turbo_script exprtk exprtk_syntax miniblas_linalg
   EXPORT TurboScriptTargets
