@@ -29,6 +29,16 @@ libraries, including MIR, come from `vcpkg.json` and the shared
 require Lua or QuickJS. CNet supplies HTTP TLS through GmSSL; this project no
 longer installs BoringSSL.
 
+TRE is supplied by the shared `vcpkg-cache` overlay through the `tre` manifest
+dependency and `unofficial::tre::tre` CMake target. It retains the previous
+0.9.0 engine, static linkage, wide-character and approximate matching support;
+the source snapshot and existing Windows alignment patch are maintained in
+the shared port. Update the cache checkout before configuring this migration.
+For local port development, configure with the usual user preset plus
+`-DVCPKG_OVERLAY_PORTS=<vcpkg-cache-checkout>/ports`.
+Native CI pins a shared setup action revision containing this overlay in
+`.github/workflows/native-sdk-release.yml`.
+
 The current MIR port supports Linux, macOS and Android. It explicitly rejects
 Windows; the Windows presets retained in this repository cannot currently build
 the latest source tree. Earlier Windows test results do not apply to this tree.
