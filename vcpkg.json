@@ -2,6 +2,7 @@
   "name": "turboscript",
   "version-semver": "3.0.10",
   "dependencies": [
+    "gmssl",
     {
       "name": "xxhash",
       "version>=": "0.8.3"
