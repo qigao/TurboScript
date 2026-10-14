@@ -19,7 +19,7 @@ foreach(_mode IN ITEMS --undefined-only --defined-only)
   endif()
   string(REPLACE "\n" ";" _lines "${_symbols}")
   foreach(_line IN LISTS _lines)
-    if(_line MATCHES "^[ \t]*[A-Za-z][ \t]+hash_bytes(@.*)?$")
+    if(_line MATCHES "^[ \t]*([0-9a-fA-F]+[ \t]+)?[A-Za-z][ \t]+hash_bytes(@.*)?$")
       message(FATAL_ERROR
         "Mapper violates image-local CSTL symbol policy (${_mode}): ${_line}")
     endif()
