@@ -144,47 +144,25 @@ return ts_mir_call_runtime_helper(c, "value_expr", node);
 
 **核心职责**：
 - 识别可优化的热点模式
-- 生成快速路径代码
-- 管理指针缓存（向量、Map、OOP）
+- 为可证明安全的模式生成快速路径
+- 不把环境拥有的容器/实例裸指针缓存到 MIR 生命周期之外
 
 **优化策略**：
 
 #### 3.1 数值循环优化
 ```typescript
-// 源码
 for (i = 0; i < 1000000; i += 1) {
   sum += sin(i);
 }
-
-// 优化路径：
-// - i, sum 使用寄存器
-// - sin() 直接调用 C 标准库
-// - 无动态查表
 ```
 
-#### 3.2 向量指针缓存
-```typescript
-// 源码
-for (i = 0; i < vec.length; i += 1) {
-  sum += vec[i];
-}
+- `i`、`sum` 使用寄存器
+- `sin()` 直接调用 C 标准库
+- 不做动态查表
 
-// 优化路径：
-// - 缓存 vec 的 double* 指针
-// - 使用原生指针访问（避免 runtime 调用）
-```
+#### 3.2 向量与 Map 访问
 
-**实现**：
-```c
-typedef struct {
-  const char *name;      // 向量变量名
-  MIR_reg_t ptr_reg;     // 缓存的指针寄存器
-} ts_mir_vec_ptr_entry_t;
-
-// 获取或创建向量指针缓存
-MIR_reg_t ts_mir_get_or_add_vec_ptr(ts_mir_compiler_t *c, 
-                                    const char *vec_name);
-```
+Vector indexing 和 Map numeric reads 在每次访问时通过 runtime helper 解析当前环境值。不能在函数 prologue 缓存其数据/字段地址，因为变量可能在同一次执行中被重新赋值，Map 插入还可能导致哈希表扩容。未来如需恢复直接指针路径，必须先建立有明确所有权的快照，并证明快照在所有退出边上都会被清理。
 
 #### 3.3 OOP 数值字段快路径
 
@@ -214,7 +192,7 @@ Do not retain an `exprtk_instance_t *` in a compiled callsite cache: script vari
 | **环境操作** | `ts_mir_load_var`, `ts_mir_store_var` | 变量加载/存储 |
 | **函数调用** | `ts_mir_call0..calln`, `ts_mir_call_native` | 动态函数调用 |
 | **向量操作** | `ts_mir_vec_get`, `ts_mir_vec_assign` | 向量索引读写 |
-| **Map 操作** | `ts_mir_map_get_key`, `ts_mir_map_assign` | Map 键值读写 |
+| **Map/Object 字段操作** | `ts_mir_member_get`, `ts_mir_map_assign` | 动态字段读取与 Map 写入 |
 | **OOP 操作** | `ts_mir_oop_new`, `ts_mir_oop_member_call` | 对象创建、方法调用 |
 | **字符串/模板** | `ts_mir_string_assign`, `ts_mir_template_assign` | 字符串操作 |
 
@@ -482,8 +460,8 @@ TS_JIT_STATS=1 ./your_program
 A: 优化脚本结构：
 1. **数值密集代码**：使用 `number` 类型，避免类型混合
 2. **避免嵌套闭包**：改用类或数据结构
-3. **预绑定向量**：使用 `ts_bind_vec()` 绑定 double[] 数组
-4. **缓存对象字段**：重复访问的字段会触发 slot cache
+3. **向量访问**：使用标准索引语义；当前实现会在每次访问时解析环境值，避免复用旧数据指针
+4. **对象字段**：public numeric 字段的直接访问每次都先校验当前实例及 CMeta DataDesc；不缓存裸实例指针
 
 ### Q: JIT 缓存何时失效？
 A: 以下情况会触发缓存清空：

@@ -1277,6 +1277,87 @@ spec("turbo_script_mir_core") {
     }
   }
 
+  describe("container pointer lifetime across reassignment") {
+
+    it("should resolve the current vector after reassignment in a reused context") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+
+      check((turbo_script_run(ctx_interp, "v = [1, 2];")) == (0));
+      check((turbo_script_run_jit(ctx_jit, "v = [1, 2];")) == (0));
+      check((turbo_script_run(ctx_interp, "v = [7, 8]; result = v[0];")) == (0));
+      check((turbo_script_run_jit(ctx_jit, "v = [7, 8]; result = v[0];")) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(7.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should iterate the current vector after reassignment in a reused context") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "v = [7, 8];"
+          "total = 0;"
+          "for (item in v) { total += item; }"
+          "result = total;";
+
+      check((turbo_script_run(ctx_interp, "v = [1, 2];")) == (0));
+      check((turbo_script_run_jit(ctx_jit, "v = [1, 2];")) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(15.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should resolve the current map after reassignment in a reused context") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "m = map {x: 7}; result = m.x;";
+
+      check((turbo_script_run(ctx_interp, "m = map {x: 1};")) == (0));
+      check((turbo_script_run_jit(ctx_jit, "m = map {x: 1};")) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(7.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should preserve member semantics when a map variable is reassigned to an instance") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *setup =
+          "class Point { x: number = 9.0; };"
+          "m = map {x: 1};";
+      const char *script = "m = Point(); result = m.x;";
+
+      check((turbo_script_run(ctx_interp, setup)) == (0));
+      check((turbo_script_run_jit(ctx_jit, setup)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(9.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+  }
+
   /* ===== Phase 6: User-defined function tests ===== */
 
 }

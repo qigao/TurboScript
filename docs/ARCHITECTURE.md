@@ -49,7 +49,7 @@ Variables persist across runs on the same context because the environment is the
 - Parses and validates source.
 - Lowers AST nodes to MIR instructions.
 - Emits runtime helper calls for dynamic values, OOP, maps, strings, parser/data binding, and other non-scalar operations.
-- Emits optimized paths for numeric expressions, loops, direct math calls, pre-bound vectors, map numeric pointers, OOP method call caches, and public numeric instance field slots.
+- Emits optimized paths for numeric expressions, loops, direct math calls, OOP method call caches, and public numeric instance fields after validating the current receiver through CMeta. Vector indexing and map reads resolve the current environment value at each access rather than caching pointers into mutable containers.
 - Executes the same MIR through either MIR interpreter or MIR JIT.
 
 `turbo_script_run()` and `turbo_script_run_jit()` share this pipeline. They differ only in the final MIR execution mode.

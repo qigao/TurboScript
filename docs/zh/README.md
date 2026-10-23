@@ -60,7 +60,7 @@ TurboScript 面向需要内嵌脚本能力的宿主应用，而不是完整替�
 - **模块化**：清晰的命名空间分离（`csv.*`、`json.*`、`ta.*`、`strategy.*`）
 - **统一 MIR 后端**：`turbo_script_run()` 执行生成后的 MIR 解释模式，`turbo_script_run_jit()` 使用同一份 IR 生成原生代码
 - **纯 MIR 执行契约**：未覆盖的 lowering 形式由 MIR pipeline 显式报错
-- **热路径优化**：直接数学调用、预绑定向量访问、map 数值指针、单态 OOP 方法 lowering、`super.method(...)` inline、public numeric instance field slot 访问
+- **热路径优化**：直接数学调用、单态 OOP 方法 lowering、`super.method(...)` inline、经 CMeta 校验的 public numeric instance field 访问。向量索引与 Map 读取在每次使用时解析当前环境值，避免悬空指针。
 - **零拷贝 FFI**：与宿主应用程序高效数据交换
 
 ---
