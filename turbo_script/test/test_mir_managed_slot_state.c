@@ -217,6 +217,29 @@ spec("TurboScript MIR managed slot ownership state") {
     ts_mir_managed_slot_snapshot_destroy(&entry_state);
   }
 
+  it("rejects a loop control edge with a live branch-local slot") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    loop_frame_t *frame;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 0u, &entry_state));
+    frame = &compiler.loop_stack[0];
+    frame->first_managed_slot = 0u;
+    frame->entry_state = &entry_state;
+    compiler.loop_depth = 1;
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+
+    check_false(ts_mir_managed_slot_record_loop_edge(&compiler, 0));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "leaves branch with live cleanup obligation"));
+
+    ts_mir_loop_edge_states_destroy(frame);
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+  }
+
   it("rejects a break edge that changes a pre-existing slot state") {
     ts_mir_compiler_t compiler;
     turbo_script_ctx_t runtime;
