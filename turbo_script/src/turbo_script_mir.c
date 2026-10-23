@@ -2075,6 +2075,36 @@ static void ts_compile_branch_true(ts_mir_compiler_t *c, exprtk_node_t *node,
  * Statement Compiler (Phase 1-5)
  * ========================================================================= */
 
+static loop_frame_t *ts_mir_push_loop_frame(
+    ts_mir_compiler_t *c, MIR_label_t break_label, MIR_label_t continue_label,
+    size_t first_slot, ts_mir_managed_slot_snapshot_t *entry_state) {
+  loop_frame_t *frame;
+
+  if (!c || !entry_state || c->loop_depth < 0 ||
+      c->loop_depth >= TS_MIR_MAX_LOOP_DEPTH) {
+    if (c) ts_mir_fail(c, "MIR lowering error: maximum loop nesting depth exceeded");
+    return NULL;
+  }
+  frame = &c->loop_stack[c->loop_depth];
+  memset(frame, 0, sizeof(*frame));
+  frame->break_label = break_label;
+  frame->continue_label = continue_label;
+  frame->first_managed_slot = first_slot;
+  frame->entry_state = entry_state;
+  c->loop_depth++;
+  return frame;
+}
+
+static void ts_mir_pop_loop_frame(
+    ts_mir_compiler_t *c, loop_frame_t *frame, int previous_depth) {
+  if (!c) return;
+  if (frame) {
+    ts_mir_loop_edge_states_destroy(frame);
+    memset(frame, 0, sizeof(*frame));
+  }
+  c->loop_depth = previous_depth;
+}
+
 static int ts_mir_validate_loop_backedge(
     ts_mir_compiler_t *c, size_t first_slot,
     const ts_mir_managed_slot_snapshot_t *entry_state) {
