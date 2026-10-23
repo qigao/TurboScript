@@ -491,6 +491,7 @@ int ts_mir_managed_slot_validate_loop_edges(
     const ts_mir_managed_slot_snapshot_t *continue_expected);
 void ts_mir_loop_edge_states_destroy(loop_frame_t *frame);
 int ts_mir_managed_slots_require_terminal_at_return(ts_mir_compiler_t *c);
+int ts_mir_managed_slots_require_terminal_at_throw(ts_mir_compiler_t *c);
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot);
 void ts_mir_managed_slot_snapshot_destroy(ts_mir_managed_slot_snapshot_t *snapshot);
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
