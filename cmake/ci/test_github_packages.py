@@ -175,6 +175,18 @@ class PackagesTests(unittest.TestCase):
             )
         self.assertEqual(destination.read_text(), "{}")
 
+    def test_export_writes_real_github_environment_lines(self):
+        environment = self.root / "env"
+        with patch.dict(
+            os.environ, {"GITHUB_ENV": str(environment)}, clear=False
+        ):
+            packages.export({"FIRST": "one", "SECOND": "two"})
+        self.assertEqual(
+            environment.read_text().splitlines(),
+            ["FIRST=one", "SECOND=two"],
+        )
+        self.assertNotIn("\\n", environment.read_text())
+
     def test_environment_is_atomic_on_missing_rid(self):
         dependencies = (
             ("Salts.Native", "Salts", "2.3.0-rc.17"),
