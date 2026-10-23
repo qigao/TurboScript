@@ -137,9 +137,13 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
       ctx->env.error_value = copied_error;
     }
     cmeta_data_value_destroy(exprtk_value_cmeta_data(), out_value);
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), &value);
     exprtk_env_free(&local_env);
     return -1;
   }
+  /* The published result/error owns its copy. Release a literal container
+   * before the local arena; borrowed local values remain owned by the env. */
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &value);
   exprtk_env_free(&local_env);
   return 0;
 }

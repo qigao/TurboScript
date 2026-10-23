@@ -17,7 +17,11 @@ static const char k_call_source[] =
     "func sum16(a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p){"
     "return a+b+c+d+e+f+g+h+i+j+k+l+m+n+o+p;};"
     "func next(){counter=counter+1;return counter;};"
-    "export(\"echo\");export(\"zero\");export(\"sum16\");export(\"next\");";
+    "func owned_record(){return map {items:list(map {text:\"Saved\"})};};"
+    "func borrowed_record(){saved=map {items:list(map {text:\"Saved\"})};return saved;};"
+    "func throwing_record(){throw map {items:list(map {text:\"Failed\"})};};"
+    "export(\"echo\");export(\"zero\");export(\"sum16\");export(\"next\");"
+    "export(\"owned_record\");export(\"borrowed_record\");export(\"throwing_record\");";
 
 typedef struct host_call_fixture_s {
   turbo_script_ctx_t *ctx;
@@ -308,7 +312,56 @@ static void run_resolved_slot_without_name_lookup(turbo_script_execution_mode_t 
   host_call_fixture_close(&fixture);
 }
 
+static void run_owned_result_lifetimes(turbo_script_execution_mode_t mode) {
+  static const turbo_script_record_entry_view_t text[] = {
+      {{"text", 4}, {.kind = TURBO_SCRIPT_VALUE_STRING, .as.string = {"Saved", 5}}}};
+  static const turbo_script_value_view_t items[] = {
+      {.kind = TURBO_SCRIPT_VALUE_RECORD, .as.record = {text, 1}}};
+  static const turbo_script_record_entry_view_t fields[] = {
+      {{"items", 5}, {.kind = TURBO_SCRIPT_VALUE_ARRAY, .as.array = {items, 1}}}};
+  static const turbo_script_value_view_t expected = {
+      .kind = TURBO_SCRIPT_VALUE_RECORD, .as.record = {fields, 1}};
+  const char *exports[] = {"owned_record", "borrowed_record"};
+  enum { repeat_calls = 8 };
+  host_call_fixture_t fixture;
+  host_call_fixture_open(&fixture, mode);
+  for (size_t index = 0; index < sizeof(exports) / sizeof(exports[0]); ++index) {
+    turbo_script_export_handle_t handle = host_call_resolve(&fixture, exports[index]);
+    for (size_t call = 0; call < repeat_calls; ++call) {
+      turbo_script_value_view_t actual = host_call(&fixture, handle, NULL, 0);
+      check_value_equal(&actual, &expected);
+      turbo_script_result_reset(fixture.result);
+    }
+  }
+  host_call_fixture_close(&fixture);
+}
+
+static void run_owned_error_lifetime(turbo_script_execution_mode_t mode) {
+  host_call_fixture_t fixture;
+  turbo_script_error_info_t error = {.struct_size = sizeof(error)};
+  host_call_fixture_open(&fixture, mode);
+  turbo_script_export_handle_t handle = host_call_resolve(&fixture, "throwing_record");
+  check_equal(turbo_script_instance_call(fixture.instance, handle, NULL, 0,
+                                         &fixture.options, fixture.result),
+              TURBO_SCRIPT_STATUS_RUNTIME_ERROR);
+  check_equal(turbo_script_result_get_error(fixture.result, &error), TURBO_SCRIPT_STATUS_OK);
+  check_equal(error.phase, TURBO_SCRIPT_ERROR_PHASE_CALL);
+  host_call_fixture_close(&fixture);
+}
+
 spec("TurboScript generic Host export calls") {
+  it("releases an owned thrown record after interpreter error publication") {
+    run_owned_error_lifetime(TURBO_SCRIPT_EXEC_INTERPRETER);
+  }
+  it("releases an owned thrown record after JIT error publication") {
+    run_owned_error_lifetime(TURBO_SCRIPT_EXEC_JIT);
+  }
+  it("releases literal results while preserving borrowed local results in the interpreter") {
+    run_owned_result_lifetimes(TURBO_SCRIPT_EXEC_INTERPRETER);
+  }
+  it("releases literal results while preserving borrowed local results in the JIT") {
+    run_owned_result_lifetimes(TURBO_SCRIPT_EXEC_JIT);
+  }
   it("marks only type-stable number exports for native MIR calls") {
     host_call_fixture_t fixture;
     host_call_fixture_open(&fixture, TURBO_SCRIPT_EXEC_JIT);
