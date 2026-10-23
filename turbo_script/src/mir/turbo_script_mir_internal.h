@@ -272,6 +272,11 @@ typedef struct {
   ts_mir_managed_slot_state_t state;
 } ts_mir_managed_slot_entry_t;
 
+typedef struct ts_mir_managed_slot_snapshot_s {
+  size_t count;
+  ts_mir_managed_slot_state_t *states;
+} ts_mir_managed_slot_snapshot_t;
+
 /* =========================================================================
  * Compile frame (for nested function compilation)
  * ========================================================================= */
@@ -457,6 +462,15 @@ int ts_mir_managed_slot_publish(ts_mir_compiler_t *c, MIR_reg_t slot);
 int ts_mir_managed_slot_require_readable(ts_mir_compiler_t *c, MIR_reg_t slot);
 int ts_mir_managed_slot_move(ts_mir_compiler_t *c, MIR_reg_t slot);
 int ts_mir_managed_slot_cleanup(ts_mir_compiler_t *c, MIR_reg_t slot);
+int ts_mir_managed_slot_snapshot_capture(
+    ts_mir_compiler_t *c, size_t count, ts_mir_managed_slot_snapshot_t *snapshot);
+int ts_mir_managed_slot_snapshot_restore(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *snapshot);
+int ts_mir_managed_slot_snapshot_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *left,
+    const ts_mir_managed_slot_snapshot_t *right);
+int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot);
+void ts_mir_managed_slot_snapshot_destroy(ts_mir_managed_slot_snapshot_t *snapshot);
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);
