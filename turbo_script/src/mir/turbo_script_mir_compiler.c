@@ -1165,6 +1165,26 @@ void ts_mir_loop_edge_states_destroy(loop_frame_t *frame) {
   frame->first_managed_slot = 0u;
 }
 
+int ts_mir_managed_slots_require_terminal_at_return(ts_mir_compiler_t *c) {
+  if (!c || c->failed) return 0;
+
+  for (size_t i = 0; i < (size_t)c->managed_slot_count; ++i) {
+    switch (c->managed_slots[i].state) {
+      case TS_MIR_MANAGED_SLOT_ZERO:
+      case TS_MIR_MANAGED_SLOT_MOVED:
+      case TS_MIR_MANAGED_SLOT_CLEANED:
+        break;
+      case TS_MIR_MANAGED_SLOT_LIVE:
+        ts_mir_fail(c, "MIR lowering error: managed value slot leaves function through return with live cleanup obligation");
+        return 0;
+      default:
+        ts_mir_fail(c, "MIR lowering error: invalid managed value slot state at return");
+        return 0;
+    }
+  }
+  return 1;
+}
+
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot) {
   if (!c || first_slot > (size_t)c->managed_slot_count) {
     if (c) ts_mir_fail(c, "MIR lowering error: invalid managed slot branch range");

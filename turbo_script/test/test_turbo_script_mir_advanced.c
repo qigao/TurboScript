@@ -287,6 +287,36 @@ spec("turbo_script_mir_advanced") {
     }
   }
 
+  describe("managed slot return edges") {
+
+    it("should clean managed expression slots before early script-function returns") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "func early_return(flag) {"
+          "  string.upper(\"before-return\");"
+          "  if (flag) { return 7; }"
+          "  string.upper(\"fallthrough\");"
+          "  return 9;"
+          "}"
+          "func implicit_return() { string.upper(\"before-implicit-return\"); }"
+          "first = early_return(1);"
+          "second = early_return(0);"
+          "implicit_return();"
+          "result = first + second;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(16.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+  }
+
   /* ===== Phase 7: Null and member access ===== */
 
   describe("null literal") {

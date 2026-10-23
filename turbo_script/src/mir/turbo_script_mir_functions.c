@@ -578,12 +578,15 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
   ts_compile_stmt(c, body);
   ts_emit_managed_slot_prologue(c);
 
-  /* Default return 0.0 (in case body doesn't return) */
-  MIR_reg_t ret_reg = ts_mir_new_temp_reg(c);
-  MIR_append_insn(c->ctx, new_func,
-                  MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, ret_reg),
-                               MIR_new_double_op(c->ctx, 0.0)));
-  MIR_append_insn(c->ctx, new_func, MIR_new_ret_insn(c->ctx, 1, MIR_new_reg_op(c->ctx, ret_reg)));
+  /* Default return is also a control-flow exit and must not abandon a LIVE slot. */
+  if (ts_mir_managed_slots_require_terminal_at_return(c)) {
+    MIR_reg_t ret_reg = ts_mir_new_temp_reg(c);
+    MIR_append_insn(c->ctx, new_func,
+                    MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, ret_reg),
+                                 MIR_new_double_op(c->ctx, 0.0)));
+    MIR_append_insn(c->ctx, new_func,
+                    MIR_new_ret_insn(c->ctx, 1, MIR_new_reg_op(c->ctx, ret_reg)));
+  }
 
   MIR_finish_func(c->ctx);
 
