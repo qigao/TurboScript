@@ -1427,13 +1427,24 @@ double ts_mir_oop_member_set(void *ctx_ptr, const char *object_name, const char 
   return ts_mir_numeric_value(result);
 }
 
-void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *member_name,
-                         void *object_node, int64_t create_if_missing, void *slot_cache_ptr) {
+void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name,
+                         const char *member_name, int64_t create_if_missing) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  ts_mir_oop_slot_cache_t *slot_cache = (ts_mir_oop_slot_cache_t *)slot_cache_ptr;
-  if (!ctx || !object_name || !member_name || !slot_cache) return NULL;
+  exprtk_instance_t *instance;
+  exprtk_value_t object;
+  exprtk_class_t *field_owner = NULL;
+  const cmeta_data_desc *class_data;
+  const cmeta_data_struct_shape *shape;
+  const cmeta_data_field_desc *field;
+  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
+  exprtk_value_t *slot;
+  int access;
 
-  exprtk_value_t object = exprtk_env_get(&ctx->env, object_name);
+  if (!ctx || !object_name || !member_name ||
+      (create_if_missing != 0 && create_if_missing != 1))
+    return NULL;
+
+  object = exprtk_env_get(&ctx->env, object_name);
   if (object.type != EXPRTK_VAL_INSTANCE || !object.data.instance_val.instance) {
     ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
     snprintf(ctx->error_msg, sizeof(ctx->error_msg),
@@ -1443,18 +1454,13 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     ctx->env.aborted = 1;
     return NULL;
   }
+  instance = object.data.instance_val.instance;
 
-  exprtk_instance_t *instance = object.data.instance_val.instance;
-  exprtk_class_t *field_owner = NULL;
-  const cmeta_data_desc *class_data;
-  const cmeta_data_struct_shape *shape;
-  const cmeta_data_field_desc *field;
-  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
-  int access;
-
-  /* Direct slot access is admitted only for an explicit public CMeta double
-   * field. Dynamic/untyped fields remain on the generic value bridge even if
-   * their current runtime value happens to be numeric. */
+  /*
+   * Resolve the current instance for every access. The prior implementation
+   * cached an exprtk_instance_t pointer in MIR-immediate memory, then reused it
+   * after the script variable could be reassigned and the old instance freed.
+   */
   access = exprtk_class_get_instance_field_access(
       instance->klass, member_name, &field_owner);
   if (access != EXPRTK_ACCESS_PUBLIC ||
@@ -1486,21 +1492,25 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
   }
   cmeta_object_release(&reflected);
 
-  exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
+  slot = exprtk_instance_get_field_slot(instance, member_name);
   if (!slot && create_if_missing) {
     exprtk_instance_set_field(instance, member_name, exprtk_val_num(0.0));
     slot = exprtk_instance_get_field_slot(instance, member_name);
   }
-  uintptr_t slot_addr = (uintptr_t)slot;
-  uintptr_t slots_begin = (uintptr_t)instance->field_slots;
-  uintptr_t slots_end = slots_begin + instance->field_slot_count * sizeof(*instance->field_slots);
-  if (!slot || !instance->field_slots || slot_addr < slots_begin || slot_addr >= slots_end) {
-    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
-    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
-             "JIT runtime error: instance has no numeric slot field '%s'", member_name);
-    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
-    ctx->env.aborted = 1;
-    return NULL;
+  {
+    uintptr_t slot_addr = (uintptr_t)slot;
+    uintptr_t slots_begin = (uintptr_t)instance->field_slots;
+    uintptr_t slots_end =
+        slots_begin + instance->field_slot_count * sizeof(*instance->field_slots);
+    if (!slot || !instance->field_slots ||
+        slot_addr < slots_begin || slot_addr >= slots_end) {
+      ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+      snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+               "JIT runtime error: instance has no numeric slot field '%s'", member_name);
+      snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+      ctx->env.aborted = 1;
+      return NULL;
+    }
   }
 
   if (slot->type != EXPRTK_VAL_NUMBER) {
@@ -1513,11 +1523,8 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     return NULL;
   }
 
-  (void)object_node;
   (void)field_owner;
-  slot_cache->instance = instance;
-  slot_cache->index = (size_t)(slot - instance->field_slots);
-  return instance;
+  return slot;
 }
 
 double ts_mir_oop_instanceof(void *ctx_ptr, const char *object_name, const char *class_name) {
