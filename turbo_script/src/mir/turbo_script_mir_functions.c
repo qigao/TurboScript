@@ -576,6 +576,7 @@ static void ts_compile_script_func_with_aliases(ts_mir_compiler_t *c, const char
 
   /* Compile the function body */
   ts_compile_stmt(c, body);
+  ts_emit_managed_slot_prologue(c);
 
   /* Default return 0.0 (in case body doesn't return) */
   MIR_reg_t ret_reg = ts_mir_new_temp_reg(c);
