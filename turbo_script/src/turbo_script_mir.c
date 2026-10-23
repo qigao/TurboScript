@@ -2075,6 +2075,25 @@ static void ts_compile_branch_true(ts_mir_compiler_t *c, exprtk_node_t *node,
  * Statement Compiler (Phase 1-5)
  * ========================================================================= */
 
+static int ts_mir_validate_loop_backedge(
+    ts_mir_compiler_t *c, size_t first_slot,
+    const ts_mir_managed_slot_snapshot_t *entry_state) {
+  ts_mir_managed_slot_snapshot_t backedge_state = {0};
+  int valid = 0;
+
+  if (!c || c->failed || !entry_state || first_slot != entry_state->count) return 0;
+  if (!ts_mir_managed_slots_require_terminal_since(c, first_slot)) goto done;
+  if (!ts_mir_managed_slot_snapshot_capture(c, entry_state->count, &backedge_state))
+    goto done;
+  if (!ts_mir_managed_slot_snapshot_loop_join(c, entry_state, &backedge_state))
+    goto done;
+  valid = 1;
+
+done:
+  ts_mir_managed_slot_snapshot_destroy(&backedge_state);
+  return valid;
+}
+
 void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   if (!c || c->failed || !node) return;
 
@@ -2156,8 +2175,14 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   case EXPRTK_NODE_WHILE: {
     MIR_label_t loop_label = MIR_new_label(c->ctx);
     MIR_label_t end_label = MIR_new_label(c->ctx);
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    size_t first_slot = (size_t)c->managed_slot_count;
+    int loop_depth_before = c->loop_depth;
 
-    /* Push loop frame for break/continue */
+    if (!ts_mir_managed_slot_snapshot_capture(c, first_slot, &entry_state))
+      goto while_state_cleanup;
+
+    /* Push loop frame for break/continue. */
     if (c->loop_depth < TS_MIR_MAX_LOOP_DEPTH) {
       c->loop_stack[c->loop_depth].break_label = end_label;
       c->loop_stack[c->loop_depth].continue_label = loop_label;
@@ -2165,28 +2190,38 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
     }
 
     MIR_append_insn(c->ctx, c->func, loop_label);
-
-    /*  direct branch */
     ts_compile_branch_false(c, node->data.while_loop.condition, end_label);
+    if (!c->failed && node->data.while_loop.body)
+      ts_compile_stmt(c, node->data.while_loop.body);
+    if (!c->failed)
+      (void)ts_mir_validate_loop_backedge(c, first_slot, &entry_state);
 
-    if (node->data.while_loop.body) ts_compile_stmt(c, node->data.while_loop.body);
-
-    MIR_append_insn(c->ctx, c->func,
-                    MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
+    if (!c->failed)
+      MIR_append_insn(c->ctx, c->func,
+                      MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
     MIR_append_insn(c->ctx, c->func, end_label);
 
-    if (c->loop_depth > 0) c->loop_depth--;
+  while_state_cleanup:
+    c->loop_depth = loop_depth_before;
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
     break;
   }
 
   case EXPRTK_NODE_FOR: {
     if (node->data.for_loop.init) ts_compile_stmt(c, node->data.for_loop.init);
+    if (c->failed) break;
 
     MIR_label_t loop_label = MIR_new_label(c->ctx);
     MIR_label_t continue_label = MIR_new_label(c->ctx);
     MIR_label_t end_label = MIR_new_label(c->ctx);
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    size_t first_slot = (size_t)c->managed_slot_count;
+    int loop_depth_before = c->loop_depth;
 
-    /* Push loop frame: continue jumps to post, break jumps to end */
+    if (!ts_mir_managed_slot_snapshot_capture(c, first_slot, &entry_state))
+      goto for_state_cleanup;
+
+    /* Push loop frame: continue jumps to post, break jumps to end. */
     if (c->loop_depth < TS_MIR_MAX_LOOP_DEPTH) {
       c->loop_stack[c->loop_depth].break_label = end_label;
       c->loop_stack[c->loop_depth].continue_label = continue_label;
@@ -2194,22 +2229,25 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
     }
 
     MIR_append_insn(c->ctx, c->func, loop_label);
-
-    if (node->data.for_loop.condition) {
-      /*  direct branch */
+    if (node->data.for_loop.condition)
       ts_compile_branch_false(c, node->data.for_loop.condition, end_label);
-    }
-
-    if (node->data.for_loop.body) ts_compile_stmt(c, node->data.for_loop.body);
+    if (!c->failed && node->data.for_loop.body)
+      ts_compile_stmt(c, node->data.for_loop.body);
 
     MIR_append_insn(c->ctx, c->func, continue_label);
-    if (node->data.for_loop.post) ts_compile_stmt(c, node->data.for_loop.post);
+    if (!c->failed && node->data.for_loop.post)
+      ts_compile_stmt(c, node->data.for_loop.post);
+    if (!c->failed)
+      (void)ts_mir_validate_loop_backedge(c, first_slot, &entry_state);
 
-    MIR_append_insn(c->ctx, c->func,
-                    MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
+    if (!c->failed)
+      MIR_append_insn(c->ctx, c->func,
+                      MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
     MIR_append_insn(c->ctx, c->func, end_label);
 
-    if (c->loop_depth > 0) c->loop_depth--;
+  for_state_cleanup:
+    c->loop_depth = loop_depth_before;
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
     break;
   }
 
@@ -2217,6 +2255,12 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   case EXPRTK_NODE_DO_WHILE: {
     MIR_label_t loop_label = MIR_new_label(c->ctx);
     MIR_label_t end_label = MIR_new_label(c->ctx);
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    size_t first_slot = (size_t)c->managed_slot_count;
+    int loop_depth_before = c->loop_depth;
+
+    if (!ts_mir_managed_slot_snapshot_capture(c, first_slot, &entry_state))
+      goto do_while_state_cleanup;
 
     if (c->loop_depth < TS_MIR_MAX_LOOP_DEPTH) {
       c->loop_stack[c->loop_depth].break_label = end_label;
@@ -2225,15 +2269,17 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
     }
 
     MIR_append_insn(c->ctx, c->func, loop_label);
-
     if (node->data.do_while.body) ts_compile_stmt(c, node->data.do_while.body);
-
-    /*  direct branch back when condition is true */
-    ts_compile_branch_true(c, node->data.do_while.condition, loop_label);
+    if (!c->failed)
+      ts_compile_branch_true(c, node->data.do_while.condition, loop_label);
+    if (!c->failed)
+      (void)ts_mir_validate_loop_backedge(c, first_slot, &entry_state);
 
     MIR_append_insn(c->ctx, c->func, end_label);
 
-    if (c->loop_depth > 0) c->loop_depth--;
+  do_while_state_cleanup:
+    c->loop_depth = loop_depth_before;
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
     break;
   }
 
