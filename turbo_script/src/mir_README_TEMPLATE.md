@@ -192,7 +192,7 @@ Do not retain an `exprtk_instance_t *` in a compiled callsite cache: script vari
 | **环境操作** | `ts_mir_load_var`, `ts_mir_store_var` | 变量加载/存储 |
 | **函数调用** | `ts_mir_call0..calln`, `ts_mir_call_native` | 动态函数调用 |
 | **向量操作** | `ts_mir_vec_get`, `ts_mir_vec_assign` | 向量索引读写 |
-| **Map 操作** | `ts_mir_map_get_key`, `ts_mir_map_assign` | Map 键值读写 |
+| **Map/Object 字段操作** | `ts_mir_member_get`, `ts_mir_map_assign` | 动态字段读取与 Map 写入 |
 | **OOP 操作** | `ts_mir_oop_new`, `ts_mir_oop_member_call` | 对象创建、方法调用 |
 | **字符串/模板** | `ts_mir_string_assign`, `ts_mir_template_assign` | 字符串操作 |
 
