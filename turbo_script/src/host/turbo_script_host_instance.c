@@ -287,6 +287,7 @@ static size_t ts_host_instance_retained_bytes(const turbo_script_ctx_t *runtime)
 
 static void ts_host_instance_runtime_destroy(turbo_script_ctx_t *runtime) {
   if (!runtime) return;
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &runtime->env.error_value);
   exprtk_env_free(&runtime->env);
   free(runtime);
 }

@@ -137,9 +137,13 @@ int64_t ts_mir_host_export_call(void *ctx_ptr, size_t export_index, const exprtk
       ctx->env.error_value = copied_error;
     }
     cmeta_data_value_destroy(exprtk_value_cmeta_data(), out_value);
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), &value);
     exprtk_env_free(&local_env);
     return -1;
   }
+  /* The published result/error owns its copy. Release a literal container
+   * before the local arena; borrowed local values remain owned by the env. */
+  cmeta_data_value_destroy(exprtk_value_cmeta_data(), &value);
   exprtk_env_free(&local_env);
   return 0;
 }
@@ -1520,13 +1524,10 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env, expr
         !ts_mir_runtime_value_arg(node->data.assignment.value, env, out)) {
       return 0;
     }
-    {
-      int destroy_container = out->ownership == EXPRTK_VALUE_OWNED &&
-                              (out->type == EXPRTK_VAL_MAP || out->type == EXPRTK_VAL_OBJECT ||
-                               out->type == EXPRTK_VAL_LIST || out->type == EXPRTK_VAL_SET);
-      exprtk_env_set(env, node->data.assignment.name, *out);
-      if (destroy_container) cmeta_data_value_destroy(exprtk_value_cmeta_data(), out);
-    }
+    /* Borrow into the destination so same-arena payloads are retained,
+     * then release the evaluated owner regardless of the destination scope. */
+    exprtk_env_set(env, node->data.assignment.name, exprtk_value_borrow(*out));
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), out);
     *out = exprtk_env_get(env, node->data.assignment.name);
     return 1;
 
@@ -1535,13 +1536,10 @@ static int ts_mir_runtime_value_arg(exprtk_node_t *node, exprtk_env_t *env, expr
         !ts_mir_runtime_value_arg(node->data.assignment.value, env, out)) {
       return 0;
     }
-    {
-      int destroy_container = out->ownership == EXPRTK_VALUE_OWNED &&
-                              (out->type == EXPRTK_VAL_MAP || out->type == EXPRTK_VAL_OBJECT ||
-                               out->type == EXPRTK_VAL_LIST || out->type == EXPRTK_VAL_SET);
-      exprtk_env_set_constant(env, node->data.assignment.name, *out);
-      if (destroy_container) cmeta_data_value_destroy(exprtk_value_cmeta_data(), out);
-    }
+    /* Borrow into the destination so same-arena payloads are retained,
+     * then release the evaluated owner regardless of the destination scope. */
+    exprtk_env_set_constant(env, node->data.assignment.name, exprtk_value_borrow(*out));
+    cmeta_data_value_destroy(exprtk_value_cmeta_data(), out);
     *out = exprtk_env_get(env, node->data.assignment.name);
     return 1;
 
