@@ -50,7 +50,6 @@ spec("TurboScript MIR managed slot ownership state") {
     const cmeta_data_desc *data = exprtk_value_cmeta_data();
     exprtk_value_t source = exprtk_val_num(42.0);
     exprtk_value_t destination;
-    bool source_zero = false;
 
     state_fixture(&compiler, &runtime, &entry);
     check_equal(cmeta_data_value_init_zero(data, &destination), CMETA_OK);
@@ -60,8 +59,9 @@ spec("TurboScript MIR managed slot ownership state") {
     check_equal(cmeta_data_value_move(data, &destination, &source), CMETA_OK);
     check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
     check_equal(entry.state, TS_MIR_MANAGED_SLOT_MOVED);
-    check_equal(cmeta_data_value_is_zero(data, &source, &source_zero), CMETA_OK);
-    check_true(source_zero);
+    /* exprtk_value_cmeta_data intentionally does not advertise a generic
+     * is_zero query; semantic zero after move is the canonical NULL value. */
+    check_equal(source.type, EXPRTK_VAL_NULL);
     check_equal(destination.type, EXPRTK_VAL_NUMBER);
     check_equal(destination.data.number, 42.0);
 
