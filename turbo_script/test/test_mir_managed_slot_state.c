@@ -2,6 +2,7 @@
 
 #include "../src/mir/turbo_script_mir_internal.h"
 
+#include <stdbool.h>
 #include <string.h>
 
 static void state_fixture(
@@ -42,18 +43,37 @@ spec("TurboScript MIR managed slot ownership state") {
     check_false(compiler.failed);
   }
 
-  it("tracks LIVE to MOVED and rejects use after move") {
+  it("moves through canonical CMeta and rejects source cleanup") {
     ts_mir_compiler_t compiler;
     turbo_script_ctx_t runtime;
     ts_mir_managed_slot_entry_t entry;
-    state_fixture(&compiler, &runtime, &entry);
+    const cmeta_data_desc *data = exprtk_value_cmeta_data();
+    exprtk_value_t source = exprtk_val_num(42.0);
+    exprtk_value_t destination;
+    bool source_zero = false;
 
+    state_fixture(&compiler, &runtime, &entry);
+    check_equal(cmeta_data_value_init_zero(data, &destination), CMETA_OK);
     check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_require_readable(&compiler, entry.ptr_reg));
+
+    check_equal(cmeta_data_value_move(data, &destination, &source), CMETA_OK);
     check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
     check_equal(entry.state, TS_MIR_MANAGED_SLOT_MOVED);
+    check_equal(cmeta_data_value_is_zero(data, &source, &source_zero), CMETA_OK);
+    check_true(source_zero);
+    check_equal(destination.type, EXPRTK_VAL_NUMBER);
+    check_equal(destination.data.number, 42.0);
+
     check_false(ts_mir_managed_slot_require_readable(&compiler, entry.ptr_reg));
     check(compiler.failed);
     check_not_null(strstr(runtime.error_msg, "used after move"));
+    reset_failure(&compiler, &runtime);
+    check_false(ts_mir_managed_slot_cleanup(&compiler, entry.ptr_reg));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "cleanup after move"));
+
+    cmeta_data_value_destroy(data, &destination);
   }
 
   it("rejects double publication") {
