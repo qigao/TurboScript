@@ -65,9 +65,16 @@ typedef struct ts_mir_lowering_policy_s {
  * Loop stack for break/continue
  * ========================================================================= */
 
+typedef struct ts_mir_managed_slot_snapshot_s ts_mir_managed_slot_snapshot_t;
+typedef struct ts_mir_loop_edge_state_s ts_mir_loop_edge_state_t;
+
 typedef struct {
   MIR_label_t break_label;
   MIR_label_t continue_label;
+  size_t first_managed_slot;
+  ts_mir_managed_slot_snapshot_t *entry_state;
+  ts_mir_loop_edge_state_t *break_edges;
+  ts_mir_loop_edge_state_t *continue_edges;
 } loop_frame_t;
 
 /* =========================================================================
@@ -272,10 +279,15 @@ typedef struct {
   ts_mir_managed_slot_state_t state;
 } ts_mir_managed_slot_entry_t;
 
-typedef struct ts_mir_managed_slot_snapshot_s {
+struct ts_mir_managed_slot_snapshot_s {
   size_t count;
   ts_mir_managed_slot_state_t *states;
-} ts_mir_managed_slot_snapshot_t;
+};
+
+struct ts_mir_loop_edge_state_s {
+  ts_mir_managed_slot_snapshot_t *snapshot;
+  ts_mir_loop_edge_state_t *next;
+};
 
 /* =========================================================================
  * Compile frame (for nested function compilation)
@@ -469,6 +481,15 @@ int ts_mir_managed_slot_snapshot_restore(
 int ts_mir_managed_slot_snapshot_join(
     ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *left,
     const ts_mir_managed_slot_snapshot_t *right);
+int ts_mir_managed_slot_snapshot_loop_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *entry,
+    const ts_mir_managed_slot_snapshot_t *backedge);
+int ts_mir_managed_slot_record_loop_edge(ts_mir_compiler_t *c, int is_continue);
+int ts_mir_managed_slot_validate_loop_edges(
+    ts_mir_compiler_t *c, const loop_frame_t *frame,
+    const ts_mir_managed_slot_snapshot_t *entry_state,
+    const ts_mir_managed_slot_snapshot_t *continue_expected);
+void ts_mir_loop_edge_states_destroy(loop_frame_t *frame);
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot);
 void ts_mir_managed_slot_snapshot_destroy(ts_mir_managed_slot_snapshot_t *snapshot);
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);

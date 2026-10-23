@@ -1018,6 +1018,153 @@ int ts_mir_managed_slot_snapshot_join(
   return 1;
 }
 
+int ts_mir_managed_slot_snapshot_loop_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *entry,
+    const ts_mir_managed_slot_snapshot_t *backedge) {
+  if (!c || !entry || !backedge || entry->count != backedge->count ||
+      (entry->count > 0u && (!entry->states || !backedge->states))) {
+    if (c) ts_mir_fail(c, "MIR lowering error: incompatible managed slot loop snapshots");
+    return 0;
+  }
+  for (size_t i = 0; i < entry->count; ++i) {
+    if (entry->states[i] != backedge->states[i]) {
+      ts_mir_fail(c, "MIR lowering error: managed value slot ownership state mismatch at loop backedge");
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static int ts_mir_managed_slot_snapshot_edge_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *expected,
+    const ts_mir_managed_slot_snapshot_t *edge, const char *edge_name) {
+  if (!c || !expected || !edge || !edge_name || expected->count != edge->count ||
+      (expected->count > 0u && (!expected->states || !edge->states))) {
+    if (c) ts_mir_fail(c, "MIR lowering error: incompatible managed slot %s snapshot", 
+                       edge_name ? edge_name : "control-edge");
+    return 0;
+  }
+  for (size_t i = 0; i < expected->count; ++i) {
+    if (expected->states[i] != edge->states[i]) {
+      ts_mir_fail(c, "MIR lowering error: managed value slot ownership state mismatch at %s",
+                  edge_name);
+      return 0;
+    }
+  }
+  return 1;
+}
+
+int ts_mir_managed_slot_record_loop_edge(ts_mir_compiler_t *c, int is_continue) {
+  loop_frame_t *frame;
+  ts_mir_loop_edge_state_t *edge;
+  ts_mir_loop_edge_state_t **head;
+
+  if (!c || c->failed || c->loop_depth <= 0 ||
+      (is_continue != 0 && is_continue != 1)) {
+    if (c && !c->failed)
+      ts_mir_fail(c, "MIR lowering error: invalid managed slot loop control edge");
+    return 0;
+  }
+  frame = &c->loop_stack[c->loop_depth - 1];
+  if (!frame->entry_state ||
+      frame->first_managed_slot != frame->entry_state->count) {
+    ts_mir_fail(c, "MIR lowering error: missing managed slot loop-entry snapshot");
+    return 0;
+  }
+  if (!ts_mir_managed_slots_require_terminal_since(c, frame->first_managed_slot))
+    return 0;
+
+  edge = (ts_mir_loop_edge_state_t *)calloc(1u, sizeof(*edge));
+  if (!edge) {
+    ts_mir_fail(c, "MIR lowering error: out of memory recording loop control edge");
+    return 0;
+  }
+  edge->snapshot = (ts_mir_managed_slot_snapshot_t *)calloc(1u, sizeof(*edge->snapshot));
+  if (!edge->snapshot) {
+    free(edge);
+    ts_mir_fail(c, "MIR lowering error: out of memory recording loop edge state");
+    return 0;
+  }
+  if (!ts_mir_managed_slot_snapshot_capture(c, frame->first_managed_slot,
+                                             edge->snapshot)) {
+    ts_mir_managed_slot_snapshot_destroy(edge->snapshot);
+    free(edge->snapshot);
+    free(edge);
+    return 0;
+  }
+
+  head = is_continue ? &frame->continue_edges : &frame->break_edges;
+  if (!*head) {
+    *head = edge;
+  } else {
+    ts_mir_loop_edge_state_t *tail = *head;
+    while (tail->next) tail = tail->next;
+    tail->next = edge;
+  }
+  return 1;
+}
+
+int ts_mir_managed_slot_validate_loop_edges(
+    ts_mir_compiler_t *c, const loop_frame_t *frame,
+    const ts_mir_managed_slot_snapshot_t *entry_state,
+    const ts_mir_managed_slot_snapshot_t *continue_expected) {
+  const ts_mir_loop_edge_state_t *edge;
+  const ts_mir_managed_slot_snapshot_t *continue_state =
+      continue_expected ? continue_expected : entry_state;
+
+  if (!c || c->failed || !frame || !entry_state ||
+      frame->first_managed_slot != entry_state->count ||
+      (frame->entry_state && frame->entry_state->count != entry_state->count) ||
+      !continue_state || continue_state->count != entry_state->count) {
+    if (c && !c->failed)
+      ts_mir_fail(c, "MIR lowering error: invalid managed slot loop-edge join");
+    return 0;
+  }
+
+  for (edge = frame->break_edges; edge; edge = edge->next) {
+    if (!ts_mir_managed_slot_snapshot_edge_join(
+            c, entry_state, edge->snapshot, "loop exit"))
+      return 0;
+  }
+  for (edge = frame->continue_edges; edge; edge = edge->next) {
+    if (!ts_mir_managed_slot_snapshot_edge_join(
+            c, continue_state, edge->snapshot, "continue target"))
+      return 0;
+  }
+  return 1;
+}
+
+void ts_mir_loop_edge_states_destroy(loop_frame_t *frame) {
+  ts_mir_loop_edge_state_t *edge;
+  if (!frame) return;
+
+  edge = frame->break_edges;
+  while (edge) {
+    ts_mir_loop_edge_state_t *next = edge->next;
+    if (edge->snapshot) {
+      ts_mir_managed_slot_snapshot_destroy(edge->snapshot);
+      free(edge->snapshot);
+    }
+    free(edge);
+    edge = next;
+  }
+  frame->break_edges = NULL;
+
+  edge = frame->continue_edges;
+  while (edge) {
+    ts_mir_loop_edge_state_t *next = edge->next;
+    if (edge->snapshot) {
+      ts_mir_managed_slot_snapshot_destroy(edge->snapshot);
+      free(edge->snapshot);
+    }
+    free(edge);
+    edge = next;
+  }
+  frame->continue_edges = NULL;
+  frame->entry_state = NULL;
+  frame->first_managed_slot = 0u;
+}
+
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot) {
   if (!c || first_slot > (size_t)c->managed_slot_count) {
     if (c) ts_mir_fail(c, "MIR lowering error: invalid managed slot branch range");

@@ -153,6 +153,148 @@ spec("TurboScript MIR managed slot ownership state") {
     ts_mir_managed_slot_snapshot_destroy(&else_state);
   }
 
+  it("accepts an unchanged managed slot state at a loop backedge") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    ts_mir_managed_slot_snapshot_t backedge_state = {0};
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &entry_state));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &backedge_state));
+    check(ts_mir_managed_slot_snapshot_loop_join(&compiler, &entry_state, &backedge_state));
+    check_false(compiler.failed);
+
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+    ts_mir_managed_slot_snapshot_destroy(&backedge_state);
+  }
+
+  it("rejects a changed managed slot state at a loop backedge") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    ts_mir_managed_slot_snapshot_t backedge_state = {0};
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &entry_state));
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &backedge_state));
+    check_false(ts_mir_managed_slot_snapshot_loop_join(
+        &compiler, &entry_state, &backedge_state));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "state mismatch at loop backedge"));
+
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+    ts_mir_managed_slot_snapshot_destroy(&backedge_state);
+  }
+
+  it("accepts break and continue edges that preserve loop-entry state") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    loop_frame_t *frame;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &entry_state));
+    frame = &compiler.loop_stack[0];
+    frame->first_managed_slot = 1u;
+    frame->entry_state = &entry_state;
+    compiler.loop_depth = 1;
+
+    check(ts_mir_managed_slot_record_loop_edge(&compiler, 0));
+    check(ts_mir_managed_slot_record_loop_edge(&compiler, 1));
+    check(ts_mir_managed_slot_validate_loop_edges(
+        &compiler, frame, &entry_state, &entry_state));
+    check_false(compiler.failed);
+
+    ts_mir_loop_edge_states_destroy(frame);
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+  }
+
+  it("rejects a loop control edge with a live branch-local slot") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    loop_frame_t *frame;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 0u, &entry_state));
+    frame = &compiler.loop_stack[0];
+    frame->first_managed_slot = 0u;
+    frame->entry_state = &entry_state;
+    compiler.loop_depth = 1;
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+
+    check_false(ts_mir_managed_slot_record_loop_edge(&compiler, 0));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "leaves branch with live cleanup obligation"));
+
+    ts_mir_loop_edge_states_destroy(frame);
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+  }
+
+  it("rejects a break edge that changes a pre-existing slot state") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    loop_frame_t *frame;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &entry_state));
+    frame = &compiler.loop_stack[0];
+    frame->first_managed_slot = 1u;
+    frame->entry_state = &entry_state;
+    compiler.loop_depth = 1;
+
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_record_loop_edge(&compiler, 0));
+    check_false(ts_mir_managed_slot_validate_loop_edges(
+        &compiler, frame, &entry_state, &entry_state));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "state mismatch at loop exit"));
+
+    ts_mir_loop_edge_states_destroy(frame);
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+  }
+
+  it("rejects a continue edge that disagrees with the continue target state") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t entry_state = {0};
+    ts_mir_managed_slot_snapshot_t continue_state = {0};
+    loop_frame_t *frame;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &entry_state));
+    frame = &compiler.loop_stack[0];
+    frame->first_managed_slot = 1u;
+    frame->entry_state = &entry_state;
+    compiler.loop_depth = 1;
+
+    check(ts_mir_managed_slot_record_loop_edge(&compiler, 1));
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &continue_state));
+    check_false(ts_mir_managed_slot_validate_loop_edges(
+        &compiler, frame, &entry_state, &continue_state));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "state mismatch at continue target"));
+
+    ts_mir_loop_edge_states_destroy(frame);
+    ts_mir_managed_slot_snapshot_destroy(&entry_state);
+    ts_mir_managed_slot_snapshot_destroy(&continue_state);
+  }
+
   it("rejects a branch-local slot that leaves a live cleanup obligation") {
     ts_mir_compiler_t compiler;
     turbo_script_ctx_t runtime;
