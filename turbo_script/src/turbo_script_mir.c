@@ -2254,6 +2254,7 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   /*  do-while loop */
   case EXPRTK_NODE_DO_WHILE: {
     MIR_label_t loop_label = MIR_new_label(c->ctx);
+    MIR_label_t continue_label = MIR_new_label(c->ctx);
     MIR_label_t end_label = MIR_new_label(c->ctx);
     ts_mir_managed_slot_snapshot_t entry_state = {0};
     size_t first_slot = (size_t)c->managed_slot_count;
@@ -2264,12 +2265,14 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
 
     if (c->loop_depth < TS_MIR_MAX_LOOP_DEPTH) {
       c->loop_stack[c->loop_depth].break_label = end_label;
-      c->loop_stack[c->loop_depth].continue_label = loop_label;
+      /* A do-while continue must evaluate the condition before looping. */
+      c->loop_stack[c->loop_depth].continue_label = continue_label;
       c->loop_depth++;
     }
 
     MIR_append_insn(c->ctx, c->func, loop_label);
     if (node->data.do_while.body) ts_compile_stmt(c, node->data.do_while.body);
+    MIR_append_insn(c->ctx, c->func, continue_label);
     if (!c->failed)
       ts_compile_branch_true(c, node->data.do_while.condition, loop_label);
     if (!c->failed)
