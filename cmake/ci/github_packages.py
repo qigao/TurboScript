@@ -395,19 +395,18 @@ def host_rid():
 
 def export(values, path=None):
     for value in values.values():
-        if "\\n" in str(value) or "\\r" in str(value):
+        if "\n" in str(value) or "\r" in str(value):
             raise ValueError("invalid environment value")
     github_env = os.environ.get("GITHUB_ENV")
     if github_env:
         with open(github_env, "a", encoding="utf-8") as output:
             for key, value in values.items():
-                output.write(key + "=" + str(value) + "\\n")
+                output.write(key + "=" + str(value) + "\n")
     if path and os.environ.get("GITHUB_PATH"):
         with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as output:
-            output.write(str(path) + "\\n")
+            output.write(str(path) + "\n")
     for key, value in values.items():
         print(key + "=" + str(value), flush=True)
-
 
 def restore(rid, package_root):
     feed = Packages()
