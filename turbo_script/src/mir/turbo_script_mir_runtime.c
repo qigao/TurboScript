@@ -1002,17 +1002,14 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     c->ext.oop_member_set_import = MIR_new_import(ctx, "ts_mir_oop_member_set");
   }
 
-  /* ts_mir_oop_num_ptr(void *ctx, const char *object, const char *member,
-   *                    void *object_node, i64 create, void *slot_cache) -> void* */
+  /* ts_mir_oop_num_ptr(ctx, object, member, create_if_missing) -> current field slot */
   {
     MIR_type_t res = MIR_T_I64;
-    MIR_var_t args[6] = {{MIR_T_P, "ctx", 0},
+    MIR_var_t args[4] = {{MIR_T_P, "ctx", 0},
                          {MIR_T_P, "object_name", 0},
                          {MIR_T_P, "member_name", 0},
-                         {MIR_T_P, "object_node", 0},
-                         {MIR_T_I64, "create_if_missing", 0},
-                         {MIR_T_P, "slot_cache", 0}};
-    c->ext.oop_num_ptr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_num_ptr"), 1, &res, 6, args);
+                         {MIR_T_I64, "create_if_missing", 0}};
+    c->ext.oop_num_ptr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_oop_num_ptr"), 1, &res, 4, args);
     c->ext.oop_num_ptr_import = MIR_new_import(ctx, "ts_mir_oop_num_ptr");
   }
 
