@@ -1335,6 +1335,27 @@ spec("turbo_script_mir_core") {
       turbo_script_free(ctx_interp);
       turbo_script_free(ctx_jit);
     }
+
+    it("should preserve member semantics when a map variable is reassigned to an instance") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *setup =
+          "class Point { x: number = 9.0; };"
+          "m = map {x: 1};";
+      const char *script = "m = Point(); result = m.x;";
+
+      check((turbo_script_run(ctx_interp, setup)) == (0));
+      check((turbo_script_run_jit(ctx_jit, setup)) == (0));
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(9.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
   }
 
   /* ===== Phase 6: User-defined function tests ===== */
