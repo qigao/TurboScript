@@ -2403,55 +2403,72 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
         if (ptr_reg) {
           MIR_reg_t iter_reg = ts_mir_get_or_create_reg(c, iter_name);
           MIR_reg_t i_reg = ts_mir_new_temp_ireg(c);
-
-          /* i = 0 */
-          MIR_append_insn(c->ctx, c->func,
-                          MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, i_reg),
-                                       MIR_new_int_op(c->ctx, 0)));
-
           MIR_label_t loop_label = MIR_new_label(c->ctx);
           MIR_label_t continue_label = MIR_new_label(c->ctx);
           MIR_label_t end_label = MIR_new_label(c->ctx);
+          ts_mir_managed_slot_snapshot_t entry_state = {0};
+          ts_mir_managed_slot_snapshot_t body_state = {0};
+          size_t first_slot = (size_t)c->managed_slot_count;
+          int loop_depth_before = c->loop_depth;
+          loop_frame_t *loop_frame = NULL;
 
-          if (c->loop_depth < TS_MIR_MAX_LOOP_DEPTH) {
-            c->loop_stack[c->loop_depth].break_label = end_label;
-            c->loop_stack[c->loop_depth].continue_label = continue_label;
-            c->loop_depth++;
+          if (!ts_mir_managed_slot_snapshot_capture(c, first_slot, &entry_state)) {
+            ts_mir_managed_slot_snapshot_destroy(&body_state);
+            ts_mir_managed_slot_snapshot_destroy(&entry_state);
+            break;
           }
+          loop_frame = ts_mir_push_loop_frame(
+              c, end_label, continue_label, first_slot, &entry_state);
 
-          MIR_append_insn(c->ctx, c->func, loop_label);
+          if (loop_frame) {
+            /* i = 0 */
+            MIR_append_insn(c->ctx, c->func,
+                            MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, i_reg),
+                                         MIR_new_int_op(c->ctx, 0)));
+            MIR_append_insn(c->ctx, c->func, loop_label);
 
-          /* if (i >= len) goto end */
-          MIR_append_insn(c->ctx, c->func,
-                          MIR_new_insn(c->ctx, MIR_BGE, MIR_new_label_op(c->ctx, end_label),
-                                       MIR_new_reg_op(c->ctx, i_reg), MIR_new_int_op(c->ctx, len)));
+            /* if (i >= len) goto end */
+            MIR_append_insn(c->ctx, c->func,
+                            MIR_new_insn(c->ctx, MIR_BGE, MIR_new_label_op(c->ctx, end_label),
+                                         MIR_new_reg_op(c->ctx, i_reg), MIR_new_int_op(c->ctx, len)));
 
-          /* iter_var = data[i] — native memory load */
-          MIR_append_insn(c->ctx, c->func,
-                          MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, iter_reg),
-                                       MIR_new_mem_op(c->ctx, MIR_T_D, 0, ptr_reg, i_reg, 8)));
+            /* iter_var = data[i] — native memory load */
+            MIR_append_insn(c->ctx, c->func,
+                            MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, iter_reg),
+                                         MIR_new_mem_op(c->ctx, MIR_T_D, 0, ptr_reg, i_reg, 8)));
 
-          /* compile body */
-          if (node->data.for_in.body) ts_compile_stmt(c, node->data.for_in.body);
+            /* compile body */
+            if (node->data.for_in.body) ts_compile_stmt(c, node->data.for_in.body);
+            if (!c->failed)
+              (void)ts_mir_managed_slot_snapshot_capture(c, first_slot, &body_state);
 
-          /* continue target: i++ */
-          MIR_append_insn(c->ctx, c->func, continue_label);
-          MIR_append_insn(c->ctx, c->func,
-                          MIR_new_insn(c->ctx, MIR_ADD, MIR_new_reg_op(c->ctx, i_reg),
-                                       MIR_new_reg_op(c->ctx, i_reg), MIR_new_int_op(c->ctx, 1)));
+            /* continue target: i++ */
+            MIR_append_insn(c->ctx, c->func, continue_label);
+            MIR_append_insn(c->ctx, c->func,
+                            MIR_new_insn(c->ctx, MIR_ADD, MIR_new_reg_op(c->ctx, i_reg),
+                                         MIR_new_reg_op(c->ctx, i_reg), MIR_new_int_op(c->ctx, 1)));
 
-          MIR_append_insn(c->ctx, c->func,
-                          MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
-          MIR_append_insn(c->ctx, c->func, end_label);
+            if (!c->failed)
+              (void)ts_mir_managed_slot_validate_loop_edges(
+                  c, loop_frame, &entry_state, &body_state);
+            if (!c->failed)
+              (void)ts_mir_validate_loop_backedge(c, first_slot, &entry_state);
 
-          if (c->loop_depth > 0) c->loop_depth--;
+            if (!c->failed)
+              MIR_append_insn(c->ctx, c->func,
+                              MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, loop_label)));
+            MIR_append_insn(c->ctx, c->func, end_label);
+          }
+          ts_mir_pop_loop_frame(c, loop_frame, loop_depth_before);
+          ts_mir_managed_slot_snapshot_destroy(&body_state);
+          ts_mir_managed_slot_snapshot_destroy(&entry_state);
         } else {
           native = 0;
         }
       }
     }
 
-    if (!native) {
+    if (!native && !c->failed) {
       if (iter_name) (void)ts_mir_get_or_create_reg(c, iter_name);
       ts_register_helper_written_vars(c, node->data.for_in.body);
       (void)ts_emit_runtime_value_node(c, node);
