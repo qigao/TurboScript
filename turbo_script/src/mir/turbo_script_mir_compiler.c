@@ -113,52 +113,6 @@ static int ts_mir_ensure_compiled_func_capacity(ts_mir_compiler_t *c, int needed
   return 1;
 }
 
-static int ts_mir_ensure_vec_ptr_capacity(ts_mir_compiler_t *c, int needed) {
-  ts_mir_vec_ptr_entry_t *new_entries = NULL;
-  int new_capacity = 0;
-
-  if (needed <= c->vec_ptr_capacity)
-    return 1;
-
-  new_capacity = c->vec_ptr_capacity > 0 ? c->vec_ptr_capacity * 2 : 16;
-  if (new_capacity < needed)
-    new_capacity = needed;
-
-  new_entries =
-      (ts_mir_vec_ptr_entry_t *)realloc(c->vec_ptrs, (size_t)new_capacity * sizeof(*new_entries));
-  if (!new_entries) {
-    ts_mir_fail(c, "JIT compile error: out of memory growing vector pointer cache");
-    return 0;
-  }
-
-  c->vec_ptrs = new_entries;
-  c->vec_ptr_capacity = new_capacity;
-  return 1;
-}
-
-static int ts_mir_ensure_map_ptr_capacity(ts_mir_compiler_t *c, int needed) {
-  ts_mir_map_ptr_entry_t *new_entries = NULL;
-  int new_capacity = 0;
-
-  if (needed <= c->map_ptr_capacity)
-    return 1;
-
-  new_capacity = c->map_ptr_capacity > 0 ? c->map_ptr_capacity * 2 : 16;
-  if (new_capacity < needed)
-    new_capacity = needed;
-
-  new_entries =
-      (ts_mir_map_ptr_entry_t *)realloc(c->map_ptrs, (size_t)new_capacity * sizeof(*new_entries));
-  if (!new_entries) {
-    ts_mir_fail(c, "JIT compile error: out of memory growing map pointer cache");
-    return 0;
-  }
-
-  c->map_ptrs = new_entries;
-  c->map_ptr_capacity = new_capacity;
-  return 1;
-}
-
 static int ts_mir_ensure_builtin_admission_capacity(
     ts_mir_compiler_t *c, int needed) {
   ts_mir_builtin_admission_t *grown = NULL;
@@ -532,44 +486,6 @@ const char *ts_mir_new_hidden_receiver_name(ts_mir_compiler_t *c) {
   return ts_mir_retain_string(c, name);
 }
 
-MIR_reg_t ts_mir_get_or_add_vec_ptr(ts_mir_compiler_t *c, const char *name) {
-  MIR_reg_t ptr_reg = 0;
-
-  for (int i = 0; i < c->vec_ptr_count; i++) {
-    if (strcmp(c->vec_ptrs[i].name, name) == 0)
-      return c->vec_ptrs[i].ptr_reg;
-  }
-
-  if (!ts_mir_ensure_vec_ptr_capacity(c, c->vec_ptr_count + 1))
-    return 0;
-
-  ptr_reg = ts_mir_new_temp_ireg(c);
-  c->vec_ptrs[c->vec_ptr_count].name = name;
-  c->vec_ptrs[c->vec_ptr_count].ptr_reg = ptr_reg;
-  c->vec_ptr_count++;
-  return ptr_reg;
-}
-
-MIR_reg_t ts_mir_get_or_add_map_ptr(ts_mir_compiler_t *c, const char *obj_name,
-                                    const char *key_name) {
-  MIR_reg_t ptr_reg = 0;
-
-  for (int i = 0; i < c->map_ptr_count; i++) {
-    if (c->map_ptrs[i].obj_name == obj_name && strcmp(c->map_ptrs[i].key_name, key_name) == 0)
-      return c->map_ptrs[i].ptr_reg;
-  }
-
-  if (!ts_mir_ensure_map_ptr_capacity(c, c->map_ptr_count + 1))
-    return 0;
-
-  ptr_reg = ts_mir_new_temp_ireg(c);
-  c->map_ptrs[c->map_ptr_count].obj_name = obj_name;
-  c->map_ptrs[c->map_ptr_count].key_name = key_name;
-  c->map_ptrs[c->map_ptr_count].ptr_reg = ptr_reg;
-  c->map_ptr_count++;
-  return ptr_reg;
-}
-
 ts_compiled_func_t *ts_find_compiled_func(ts_mir_compiler_t *c, const char *name) {
   if (!c || !name) return NULL;
   for (int i = 0; i < c->compiled_func_count; i++) {
@@ -628,22 +544,6 @@ static void ts_mir_destroy_compiled_funcs(ts_mir_compiler_t *c) {
   c->compiled_funcs = NULL;
   c->compiled_func_count = 0;
   c->compiled_func_capacity = 0;
-}
-
-static void ts_mir_destroy_pointer_caches(ts_mir_compiler_t *c) {
-  if (!c)
-    return;
-
-  free(c->vec_ptrs);
-  c->vec_ptrs = NULL;
-  c->vec_ptr_count = 0;
-  c->vec_ptr_capacity = 0;
-
-  free(c->map_ptrs);
-  c->map_ptrs = NULL;
-  c->map_ptr_count = 0;
-  c->map_ptr_capacity = 0;
-
 }
 
 static void ts_mir_destroy_builtin_admissions(ts_mir_compiler_t *c) {
@@ -706,7 +606,6 @@ void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c) {
   ts_mir_discard_current_vars(c);
   ts_mir_discard_managed_slots(c);
   ts_mir_destroy_compiled_funcs(c);
-  ts_mir_destroy_pointer_caches(c);
   ts_mir_destroy_builtin_admissions(c);
   ts_mir_destroy_class_names(c);
   ts_mir_discard_class_types(c);
@@ -733,8 +632,6 @@ ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c) {
   frame.managed_slots = c->managed_slots;
   frame.managed_slot_count = c->managed_slot_count;
   frame.managed_slot_capacity = c->managed_slot_capacity;
-  frame.vec_ptr_count = c->vec_ptr_count;
-  frame.map_ptr_count = c->map_ptr_count;
   frame.class_names = c->class_names;
   frame.class_name_count = c->class_name_count;
   frame.class_name_capacity = c->class_name_capacity;
@@ -760,8 +657,6 @@ void ts_mir_begin_isolated_compile(ts_mir_compiler_t *c) {
   c->managed_slots = NULL;
   c->managed_slot_count = 0;
   c->managed_slot_capacity = 0;
-  c->vec_ptr_count = 0;
-  c->map_ptr_count = 0;
   c->class_names = NULL;
   c->class_name_count = 0;
   c->class_name_capacity = 0;
@@ -791,8 +686,6 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
   c->managed_slots = frame->managed_slots;
   c->managed_slot_count = frame->managed_slot_count;
   c->managed_slot_capacity = frame->managed_slot_capacity;
-  c->vec_ptr_count = frame->vec_ptr_count;
-  c->map_ptr_count = frame->map_ptr_count;
   c->class_names = frame->class_names;
   c->class_name_count = frame->class_name_count;
   c->class_name_capacity = frame->class_name_capacity;
@@ -1198,30 +1091,5 @@ void ts_emit_var_epilogue(ts_mir_compiler_t *c) {
                                       MIR_new_reg_op(c->ctx, c->ctx_reg),
                                       MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)c->vars[i]->name),
                                       MIR_new_reg_op(c->ctx, c->vars[i]->reg)));
-  }
-}
-
-void ts_emit_vec_prologue(ts_mir_compiler_t *c) {
-  for (int i = c->vec_ptr_count - 1; i >= 0; i--) {
-    MIR_prepend_insn(
-        c->ctx, c->func,
-        MIR_new_call_insn(c->ctx, 5, MIR_new_ref_op(c->ctx, c->ext.vec_data_proto),
-                          MIR_new_ref_op(c->ctx, c->ext.vec_data_import),
-                          MIR_new_reg_op(c->ctx, c->vec_ptrs[i].ptr_reg),
-                          MIR_new_reg_op(c->ctx, c->ctx_reg),
-                          MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)c->vec_ptrs[i].name)));
-  }
-}
-
-void ts_emit_map_prologue(ts_mir_compiler_t *c) {
-  for (int i = c->map_ptr_count - 1; i >= 0; i--) {
-    MIR_prepend_insn(
-        c->ctx, c->func,
-        MIR_new_call_insn(c->ctx, 6, MIR_new_ref_op(c->ctx, c->ext.map_num_ptr_proto),
-                          MIR_new_ref_op(c->ctx, c->ext.map_num_ptr_import),
-                          MIR_new_reg_op(c->ctx, c->map_ptrs[i].ptr_reg),
-                          MIR_new_reg_op(c->ctx, c->ctx_reg),
-                          MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)c->map_ptrs[i].obj_name),
-                          MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)c->map_ptrs[i].key_name)));
   }
 }
