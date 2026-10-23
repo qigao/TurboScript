@@ -1,0 +1,192 @@
+#!/usr/bin/env python3
+"""Offline admission tests for the curl-only GitHub Packages restore path."""
+import base64
+import io
+import json
+import os
+from pathlib import Path
+import tempfile
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import unittest
+from unittest.mock import patch
+import zipfile
+
+import github_packages as packages
+
+
+class Feed:
+    def __init__(self):
+        self.documents = {}
+        feed = self
+
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                expected = "Basic " + base64.b64encode(b"qigao:test-token").decode()
+                if self.headers.get("Authorization") != expected:
+                    self.send_error(401)
+                    return
+                if self.path not in feed.documents:
+                    self.send_error(404)
+                    return
+                value = feed.documents[self.path]
+                if not isinstance(value, bytes):
+                    value = json.dumps(value).encode()
+                self.send_response(200)
+                self.send_header("Content-Length", str(len(value)))
+                self.end_headers()
+                self.wfile.write(value)
+
+            def log_message(self, *_):
+                pass
+
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        self.base = "http://127.0.0.1:" + str(self.server.server_port)
+        self.documents["/index.json"] = {
+            "resources": [
+                {
+                    "@id": self.base + "/flat/",
+                    "@type": "PackageBaseAddress/3.0.0",
+                }
+            ]
+        }
+        self.thread = threading.Thread(target=self.server.serve_forever)
+        self.thread.start()
+
+    def close(self):
+        self.server.shutdown()
+        self.thread.join()
+        self.server.server_close()
+
+    def add(self, package, version, files, spec_id=None):
+        identity = package.lower()
+        index = self.documents.setdefault(
+            "/flat/" + identity + "/index.json", {"versions": []}
+        )
+        index["versions"].append(version)
+        output = io.BytesIO()
+        with zipfile.ZipFile(output, "w") as archive:
+            archive.writestr(
+                identity + ".nuspec",
+                '<package xmlns="urn:nuget"><metadata><id>'
+                + (spec_id or package)
+                + "</id><version>" + version
+                + "</version></metadata></package>",
+            )
+            archive.writestr("[Content_Types].xml", "metadata")
+            for name, value in files.items():
+                archive.writestr(name, value)
+        path = (
+            "/flat/" + identity + "/" + version.lower() + "/"
+            + identity + "." + version.lower() + ".nupkg"
+        )
+        self.documents[path] = output.getvalue()
+
+
+class PackagesTests(unittest.TestCase):
+    def setUp(self):
+        self.feed = Feed()
+        self.temp = tempfile.TemporaryDirectory()
+        self.root = Path(self.temp.name)
+        self.packages = packages.Packages(
+            self.feed.base + "/index.json", token="test-token"
+        )
+
+    def tearDown(self):
+        self.feed.close()
+        self.temp.cleanup()
+
+    def test_version_selection_matches_restore_policy(self):
+        for version in (
+            "2.3.0-rc.16", "2.3.0-rc.17", "2.2.9", "2.3.0", "2.4.0-rc.1"
+        ):
+            self.feed.add(
+                "Salts.Native", version, {"sdk/linux-x64/file": "x"}
+            )
+        self.assertEqual(
+            self.packages.select("Salts.Native"), "2.4.0-rc.1"
+        )
+        self.assertEqual(
+            self.packages.select("Salts.Native", stable=True), "2.3.0"
+        )
+
+    def test_identity_and_archive_path_are_validated(self):
+        self.feed.add(
+            "Good.Native", "1.0.0", {"sdk/linux-x64/config": "okay"}
+        )
+        root = self.packages.extract("Good.Native", "1.0.0", self.root)
+        self.assertEqual(
+            (root / "sdk/linux-x64/config").read_text(), "okay"
+        )
+        self.feed.add("Bad.Native", "1.0.0", {"../escape": "bad"})
+        with self.assertRaisesRegex(ValueError, "unsafe"):
+            self.packages.extract("Bad.Native", "1.0.0", self.root)
+        self.assertFalse((self.root / "escape").exists())
+
+    @patch.dict(os.environ, {"GITHUB_TOKEN": "secret-token"}, clear=False)
+    def test_token_is_passed_on_stdin_not_argv(self):
+        destination = self.root / "response"
+        with patch.object(packages.subprocess, "run") as run:
+            def fake(args, **kwargs):
+                self.assertNotIn("secret-token", " ".join(args))
+                self.assertIn(
+                    'user = "qigao:secret-token"', kwargs["input"]
+                )
+                Path(args[args.index("--output") + 1]).write_text("{}")
+
+                class Result:
+                    returncode = 0
+                return Result()
+
+            run.side_effect = fake
+            client = packages.Packages(
+                "https://nuget.pkg.github.com/qigao/index.json"
+            )
+            client.download(
+                "https://nuget.pkg.github.com/qigao/index.json",
+                destination,
+            )
+        self.assertEqual(destination.read_text(), "{}")
+
+    def test_environment_is_atomic_on_missing_rid(self):
+        dependencies = (
+            ("Salts.Native", "Salts", "2.3.0-rc.17"),
+            ("SaltsUtils.Native", "SaltsUtils", "4.3.0-rc.11"),
+            ("CHttp.Native", "Chttp", "2.1.0-rc.6"),
+            ("TurboDB.Native", "TurboDB", "4.1.18"),
+        )
+        for package, cmake, version in dependencies:
+            self.feed.add(
+                package,
+                version,
+                {
+                    "sdk/linux-x64/lib/cmake/" + cmake + "/"
+                    + cmake + "Config.cmake": ""
+                },
+            )
+        self.feed.add(
+            "Qigao.Re2c.Binary",
+            "4.3.1",
+            {"tools/linux-x64/bin/re2c": "#!/bin/sh\nexit 0\n"},
+        )
+        environment = self.root / "env"
+        with patch.object(
+            packages, "Packages", return_value=self.packages
+        ), patch.dict(
+            os.environ,
+            {
+                "GITHUB_ENV": str(environment),
+                "RUNNER_OS": "Linux",
+                "RUNNER_ARCH": "X64",
+            },
+            clear=False,
+        ):
+            with self.assertRaisesRegex(ValueError, "does not provide SDK"):
+                packages.restore(
+                    "android-arm64-v8a", self.root / "restore"
+                )
+        self.assertFalse(environment.exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
