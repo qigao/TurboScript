@@ -19,9 +19,11 @@ static const char k_call_source[] =
     "func next(){counter=counter+1;return counter;};"
     "func owned_record(){return map {items:list(map {text:\"Saved\"})};};"
     "func borrowed_record(){saved=map {items:list(map {text:\"Saved\"})};return saved;};"
+    "func assigned_text(){first=\"Sa\"+\"ved\";second=\"Other\"+\"text\";return first;};"
     "func throwing_record(){throw map {items:list(map {text:\"Failed\"})};};"
     "export(\"echo\");export(\"zero\");export(\"sum16\");export(\"next\");"
-    "export(\"owned_record\");export(\"borrowed_record\");export(\"throwing_record\");";
+    "export(\"owned_record\");export(\"borrowed_record\");export(\"throwing_record\");"
+    "export(\"assigned_text\");";
 
 typedef struct host_call_fixture_s {
   turbo_script_ctx_t *ctx;
@@ -330,6 +332,16 @@ static void run_owned_result_lifetimes(turbo_script_execution_mode_t mode) {
     for (size_t call = 0; call < repeat_calls; ++call) {
       turbo_script_value_view_t actual = host_call(&fixture, handle, NULL, 0);
       check_value_equal(&actual, &expected);
+      turbo_script_result_reset(fixture.result);
+    }
+  }
+  {
+    const turbo_script_value_view_t expected_text = {
+        .kind = TURBO_SCRIPT_VALUE_STRING, .as.string = {"Saved", 5}};
+    turbo_script_export_handle_t handle = host_call_resolve(&fixture, "assigned_text");
+    for (size_t call = 0; call < repeat_calls; ++call) {
+      turbo_script_value_view_t actual = host_call(&fixture, handle, NULL, 0);
+      check_value_equal(&actual, &expected_text);
       turbo_script_result_reset(fixture.result);
     }
   }
