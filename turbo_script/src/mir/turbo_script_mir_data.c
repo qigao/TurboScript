@@ -165,16 +165,23 @@ MIR_reg_t ts_emit_template_string_assign(ts_mir_compiler_t *c, const char *targe
 /* --- Access helpers: member/index fast path + runtime helpers --- */
 MIR_reg_t ts_emit_member_access(ts_mir_compiler_t *c, const char *obj_name,
                                        const char *member, exprtk_node_t *object_node) {
+  exprtk_value_t compile_value = exprtk_env_get(&c->ts_ctx->env, obj_name);
   MIR_reg_t oop_slot = ts_try_emit_oop_member_get_slot(c, obj_name, member, object_node);
   if (oop_slot) return oop_slot;
 
   /*
    * The variable may change from a map/object to an instance between compile
    * time and execution. Keep generic member semantics at the access site;
-   * compile-time map classification is not a valid runtime type guarantee.
+   * compile-time map classification is not a runtime type guarantee.
+   *
+   * Map reads do not need a field cache. If the variable later becomes an
+   * instance, the generic checked helper supports a NULL cache as well.
    */
-  exprtk_oop_field_cache_t *cache =
-      (exprtk_oop_field_cache_t *)calloc(1, sizeof(exprtk_oop_field_cache_t));
+  exprtk_oop_field_cache_t *cache = NULL;
+  if (!(exprtk_value_is_object_like(&compile_value) &&
+        exprtk_map_has(&compile_value, member))) {
+    cache = (exprtk_oop_field_cache_t *)calloc(1, sizeof(*cache));
+  }
   MIR_reg_t res = ts_mir_new_temp_reg(c);
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_call_insn(c->ctx, 8, MIR_new_ref_op(c->ctx, c->ext.member_get_proto),
