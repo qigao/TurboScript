@@ -93,13 +93,13 @@ MIR_reg_t ts_emit_value_expr_assign(ts_mir_compiler_t *c, const char *target_nam
 
 static MIR_reg_t ts_emit_value_expr(ts_mir_compiler_t *c, exprtk_node_t *expr_node) {
   MIR_reg_t res = ts_mir_new_temp_reg(c);
-  MIR_reg_t slot = ts_mir_new_managed_slot(c, sizeof(exprtk_value_t));
+  MIR_reg_t slot =
+      ts_mir_new_managed_slot(c, exprtk_value_cmeta_data());
 
   /*
-   * Register managed storage during lowering, then allocate it once in the
-   * function-entry prologue. Loop execution reuses the same per-call slot.
-   * Runtime publishes a promoted value into canonical-zero storage; the
-   * compiler owns the final cleanup point after the numeric projection.
+   * Register the canonical lifecycle during lowering, then allocate its
+   * storage once in the function-entry prologue. Runtime publication performs
+   * canonical init+move; compiler state tracks only the obligation timing.
    */
   if (slot == 0) return res;
 
@@ -113,12 +113,15 @@ static MIR_reg_t ts_emit_value_expr(ts_mir_compiler_t *c, exprtk_node_t *expr_no
                         MIR_new_reg_op(c->ctx, c->ctx_reg),
                         MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)expr_node),
                         MIR_new_reg_op(c->ctx, slot)));
+  if (!ts_mir_managed_slot_publish(c, slot)) return res;
+  if (!ts_mir_managed_slot_require_readable(c, slot)) return res;
   MIR_append_insn(
       c->ctx, c->func,
       MIR_new_call_insn(c->ctx, 3,
                         MIR_new_ref_op(c->ctx, c->ext.value_slot_destroy_proto),
                         MIR_new_ref_op(c->ctx, c->ext.value_slot_destroy_import),
                         MIR_new_reg_op(c->ctx, slot)));
+  if (!ts_mir_managed_slot_cleanup(c, slot)) return res;
   ts_emit_reload_from_env(c);
   return res;
 }

@@ -2208,6 +2208,13 @@ double ts_mir_value_expr(void *ctx_ptr, void *node_ptr, exprtk_value_t *out_valu
 
   if (!ctx || !node || !out_value) return 0.0;
   if (cmeta_data_value_init_zero(value_data, out_value) != CMETA_OK) {
+    /*
+     * CMeta guarantees failed initialization leaves storage acceptable to
+     * restore_zero, not necessarily byte-for-byte or semantically zero.
+     * Restore the caller-owned slot before reporting failure so the emitted
+     * cleanup remains idempotent and the out contract is failure-atomic.
+     */
+    cmeta_data_value_destroy(value_data, out_value);
     ctx->env.aborted = 1;
     snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg),
              "MIR runtime error: initialize managed value slot");

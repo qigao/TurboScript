@@ -864,20 +864,103 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
   c->class_type_capacity = frame->class_type_capacity;
 }
 
-MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, size_t size) {
-  MIR_reg_t ptr_reg;
+static ts_mir_managed_slot_entry_t *ts_mir_find_managed_slot(
+    ts_mir_compiler_t *c, MIR_reg_t slot) {
+  if (!c || slot == 0) return NULL;
+  for (int i = 0; i < c->managed_slot_count; ++i) {
+    if (c->managed_slots[i].ptr_reg == slot) return &c->managed_slots[i];
+  }
+  return NULL;
+}
 
-  if (!c || size == 0u) {
-    if (c) ts_mir_fail(c, "JIT compile error: invalid managed slot size");
+MIR_reg_t ts_mir_new_managed_slot(
+    ts_mir_compiler_t *c, const cmeta_data_desc *data) {
+  MIR_reg_t ptr_reg;
+  size_t size;
+
+  if (!c || !cmeta_data_desc_valid(data) || data->storage_type == NULL ||
+      !cmeta_type_desc_valid(data->storage_type) ||
+      data->storage_type->size == 0u ||
+      !cmeta_data_value_move_supported(data)) {
+    if (c) ts_mir_fail(c, "JIT compile error: invalid managed slot CMeta lifecycle");
     return 0;
   }
   if (!ts_mir_ensure_managed_slot_capacity(c, c->managed_slot_count + 1))
     return 0;
 
+  size = data->storage_type->size;
   ptr_reg = ts_mir_new_temp_preg(c);
   c->managed_slots[c->managed_slot_count++] =
-      (ts_mir_managed_slot_entry_t){ptr_reg, size};
+      (ts_mir_managed_slot_entry_t){
+          ptr_reg, data, size, TS_MIR_MANAGED_SLOT_ZERO};
   return ptr_reg;
+}
+
+int ts_mir_managed_slot_publish(ts_mir_compiler_t *c, MIR_reg_t slot) {
+  ts_mir_managed_slot_entry_t *entry = ts_mir_find_managed_slot(c, slot);
+  if (!entry) {
+    if (c) ts_mir_fail(c, "JIT compile error: unknown managed value slot");
+    return 0;
+  }
+  if (entry->state != TS_MIR_MANAGED_SLOT_ZERO) {
+    ts_mir_fail(c, "JIT compile error: managed value slot published while not zero");
+    return 0;
+  }
+  entry->state = TS_MIR_MANAGED_SLOT_LIVE;
+  return 1;
+}
+
+int ts_mir_managed_slot_require_readable(ts_mir_compiler_t *c, MIR_reg_t slot) {
+  ts_mir_managed_slot_entry_t *entry = ts_mir_find_managed_slot(c, slot);
+  if (!entry) {
+    if (c) ts_mir_fail(c, "JIT compile error: unknown managed value slot");
+    return 0;
+  }
+  if (entry->state == TS_MIR_MANAGED_SLOT_MOVED) {
+    ts_mir_fail(c, "JIT compile error: managed value slot used after move");
+    return 0;
+  }
+  if (entry->state != TS_MIR_MANAGED_SLOT_LIVE) {
+    ts_mir_fail(c, "JIT compile error: managed value slot read while not live");
+    return 0;
+  }
+  return 1;
+}
+
+int ts_mir_managed_slot_move(ts_mir_compiler_t *c, MIR_reg_t slot) {
+  ts_mir_managed_slot_entry_t *entry = ts_mir_find_managed_slot(c, slot);
+  if (!entry) {
+    if (c) ts_mir_fail(c, "JIT compile error: unknown managed value slot");
+    return 0;
+  }
+  if (entry->state != TS_MIR_MANAGED_SLOT_LIVE) {
+    ts_mir_fail(c, "JIT compile error: managed value slot moved while not live");
+    return 0;
+  }
+  entry->state = TS_MIR_MANAGED_SLOT_MOVED;
+  return 1;
+}
+
+int ts_mir_managed_slot_cleanup(ts_mir_compiler_t *c, MIR_reg_t slot) {
+  ts_mir_managed_slot_entry_t *entry = ts_mir_find_managed_slot(c, slot);
+  if (!entry) {
+    if (c) ts_mir_fail(c, "JIT compile error: unknown managed value slot");
+    return 0;
+  }
+  if (entry->state == TS_MIR_MANAGED_SLOT_CLEANED) {
+    ts_mir_fail(c, "JIT compile error: managed value slot cleaned twice");
+    return 0;
+  }
+  if (entry->state == TS_MIR_MANAGED_SLOT_MOVED) {
+    ts_mir_fail(c, "JIT compile error: managed value slot cleanup after move");
+    return 0;
+  }
+  if (entry->state != TS_MIR_MANAGED_SLOT_LIVE) {
+    ts_mir_fail(c, "JIT compile error: managed value slot cleaned while not live");
+    return 0;
+  }
+  entry->state = TS_MIR_MANAGED_SLOT_CLEANED;
+  return 1;
 }
 
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c) {
