@@ -60,7 +60,7 @@ It is not a full TypeScript implementation and does not try to replace Pandas/Nu
 - **Module-based**: Clean namespace separation (`mapper.*`, `ta.*`, `strategy.*`)
 - **Unified MIR backend**: `turbo_script_run()` executes generated MIR with MIR's interpreter; `turbo_script_run_jit()` uses the same IR and asks MIR to generate native code
 - **Pure MIR execution contract**: unsupported lowering forms report errors from the MIR pipeline
-- **Optimized hot paths**: direct math calls, pre-bound vector access, map numeric pointers, monomorphic OOP method lowering, `super.method(...)` inline, and public numeric instance field slot access
+- **Optimized hot paths**: direct math calls, monomorphic OOP method lowering, `super.method(...)` inline, and CMeta-validated public numeric instance field access. Vector indexing and map reads resolve the current environment value at each use to avoid stale pointers.
 - **Typed host API**: Bind scalars, strings and vectors and register native callbacks
 
 ---
