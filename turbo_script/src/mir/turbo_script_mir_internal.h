@@ -138,8 +138,6 @@ struct ts_mir_externals_s {
   MIR_item_t member_get_proto, member_get_import;
   MIR_item_t member_get_assign_proto, member_get_assign_import;
 
-  // Map access by key
-  MIR_item_t map_get_key_proto, map_get_key_import;
   MIR_item_t map_assign_proto, map_assign_import;
   MIR_item_t map_value_assign_proto, map_value_assign_import;
   MIR_item_t map_rest_assign_proto, map_rest_assign_import;
@@ -595,7 +593,6 @@ double ts_mir_member_get(void *ctx_ptr, const char *obj_name, const char *member
                          void *object_node);
 double ts_mir_member_get_assign(void *ctx_ptr, const char *target_name, const char *obj_name,
                                 const char *member, void *cache_ptr, void *object_node);
-double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key);
 double ts_mir_map_assign(void *ctx_ptr, const char *target, void *node, int64_t count,
                          double *values);
 double ts_mir_map_value_assign(void *ctx_ptr, const char *target, void *node);
