@@ -2289,11 +2289,13 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   /*  break/continue/return */
   case EXPRTK_NODE_FLOW: {
     if (node->data.flow.type == exprtk_TOKEN_BREAK && c->loop_depth > 0) {
+      if (!ts_mir_managed_slot_record_loop_edge(c, 0)) break;
       MIR_append_insn(
           c->ctx, c->func,
           MIR_new_insn(c->ctx, MIR_JMP,
                        MIR_new_label_op(c->ctx, c->loop_stack[c->loop_depth - 1].break_label)));
     } else if (node->data.flow.type == exprtk_TOKEN_CONTINUE && c->loop_depth > 0) {
+      if (!ts_mir_managed_slot_record_loop_edge(c, 1)) break;
       MIR_append_insn(
           c->ctx, c->func,
           MIR_new_insn(c->ctx, MIR_JMP,
