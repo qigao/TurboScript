@@ -686,7 +686,7 @@
       "configurePreset": "ci-linux-sanitizer-user",
       "filter": {
         "include": {
-          "name": "^(test_turbo_script_host_module|test_turbo_script_cflow_mir_kernel|test_turbo_script_cflow_lower|test_turbo_script_cflow_qualification)$"
+          "name": "^(test_turbo_script_host_(result|registry|module|instance|call|state|limits)|test_turbo_script_cflow_(mir_kernel|lower|qualification))$"
         }
       }
     },
