@@ -20,7 +20,7 @@ file(READ "${api}" api_content)
 file(READ "${functions}" functions_content)
 
 foreach(marker IN ITEMS
-    "ts_mir_new_managed_slot(c, sizeof(exprtk_value_t))"
+    "ts_mir_new_managed_slot(c, exprtk_value_cmeta_data())"
     "value_expr_proto"
     "value_slot_destroy_proto")
   string(FIND "${emitter_content}" "${marker}" found)
@@ -45,6 +45,12 @@ endforeach()
 
 foreach(marker IN ITEMS
     "MIR_reg_t ts_mir_new_managed_slot"
+    "const cmeta_data_desc *data"
+    "TS_MIR_MANAGED_SLOT_ZERO"
+    "ts_mir_managed_slot_publish"
+    "ts_mir_managed_slot_require_readable"
+    "ts_mir_managed_slot_move"
+    "ts_mir_managed_slot_cleanup"
     "void ts_emit_managed_slot_prologue"
     "MIR_prepend_insn"
     "MIR_ALLOCA")
