@@ -397,16 +397,6 @@ double ts_mir_member_get_assign(void *ctx_ptr, const char *target_name, const ch
   return ts_mir_numeric_value(value);
 }
 
-double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key) {
-  turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  exprtk_value_t obj = exprtk_env_get(&ctx->env, obj_name);
-  if (exprtk_value_is_object_like(&obj)) {
-    exprtk_value_t val = exprtk_map_get(&obj, key);
-    return ts_mir_numeric_value(val);
-  }
-  return 0.0;
-}
-
 void ts_mir_init_externals(ts_mir_compiler_t *c) {
   MIR_context_t ctx = c->ctx;
 
@@ -742,13 +732,6 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
   }
 
   /* ts_mir_map_get_key(void *ctx, const char *obj_name, const char *key) -> double */
-  {
-    MIR_type_t res = MIR_T_D;
-    MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "obj_name", 0}, {MIR_T_P, "key", 0}};
-    c->ext.map_get_key_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_get_key"), 1, &res, 3, args);
-    c->ext.map_get_key_import = MIR_new_import(ctx, "ts_mir_map_get_key");
-  }
-
   /* ts_mir_map_assign(void *ctx, const char *target, void *node, int64_t count,
    *                   double *values) -> double */
   {
