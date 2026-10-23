@@ -306,6 +306,13 @@ add_test(
           -DTURBOSCRIPT_SOURCE_ROOT=${CMAKE_SOURCE_DIR}
           -P ${CMAKE_CURRENT_SOURCE_DIR}/test_mir_managed_value_slot_contract.cmake)
 
+cmake_add_test(
+  TARGET test_turbo_script_mir_managed_slot_state
+  SOURCES test_mir_managed_slot_state.c
+  LIBS turbo_script_lib Salts::TinyTest Salts::CSTL exprtk MIR::MIR
+  INCLUDES ${CMAKE_CURRENT_SOURCE_DIR}/../src/mir
+  FOLDER turbo_script)
+
 # MIR / JIT test suites (split by module)
 macro(add_mir_test TARGET_NAME SOURCE_FILE)
   cmake_add_test(
