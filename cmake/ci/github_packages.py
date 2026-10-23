@@ -7,17 +7,20 @@ NuGet v3 metadata is used only for version selection and payload URLs.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 from pathlib import Path, PurePosixPath
 import platform
 import re
 import shutil
+import socketserver
 import stat
 import subprocess
 import tempfile
 import threading
-from urllib.parse import quote, urlsplit
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import quote, unquote, urlsplit
 import xml.etree.ElementTree as ET
 import zipfile
 
@@ -211,24 +214,32 @@ class Packages:
             raise PackageMissing("no matching version for " + package)
         return max(candidates, key=version_key)
 
+    def package(self, package, version, destination):
+        catalog = self.versions(package)
+        if version not in catalog:
+            raise PackageMissing(
+                "package version is absent: " + package + "/" + version
+            )
+        destination = Path(destination)
+        self.download(catalog[version], destination)
+        with zipfile.ZipFile(destination) as archive:
+            list(safe_members(archive))
+            verify_package(archive, package, version)
+        return destination
+
     def extract(self, package, version, root):
         root = Path(root)
         target = root / package.lower() / version
         target.parent.mkdir(parents=True, exist_ok=True)
         with tempfile.TemporaryDirectory(dir=target.parent) as temporary:
             temporary = Path(temporary)
-            archive_path = temporary / "package.nupkg"
-            catalog = self.versions(package)
-            if version not in catalog:
-                raise PackageMissing(
-                    "package version is absent: " + package + "/" + version
-                )
-            self.download(catalog[version], archive_path)
+            archive_path = self.package(
+                package, version, temporary / "package.nupkg"
+            )
             unpacked = temporary / "unpacked"
             unpacked.mkdir()
             with zipfile.ZipFile(archive_path) as archive:
                 members = list(safe_members(archive))
-                verify_package(archive, package, version)
                 for member in members:
                     archive.extract(member, unpacked)
                     mode = member.external_attr >> 16
@@ -240,6 +251,130 @@ class Packages:
         print("Resolved " + package + "/" + version, flush=True)
         return target
 
+
+
+class BinaryCache:
+    def __init__(self, packages, cache):
+        self.packages = packages
+        self.cache = Path(cache)
+        self.lock = threading.Lock()
+
+    def get(self, name, triplet, abi):
+        if (
+            not IDENTIFIER.fullmatch(name)
+            or not IDENTIFIER.fullmatch(triplet)
+            or not re.fullmatch(r"[0-9a-f]{64}", abi)
+        ):
+            raise ValueError("invalid vcpkg cache identity")
+        destination = self.cache / abi[:2] / (abi + ".zip")
+        with self.lock:
+            if destination.is_file():
+                return destination
+            package = name + "_" + triplet
+            candidates = [
+                version
+                for version in self.packages.versions(package)
+                if version.endswith("-vcpkg" + abi)
+            ]
+            if len(candidates) != 1:
+                raise PackageMissing("no unique binary package for exact ABI")
+            with tempfile.TemporaryDirectory() as temporary:
+                source = self.packages.package(
+                    package, candidates[0], Path(temporary) / "binary.nupkg"
+                )
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                partial = destination.with_suffix(".tmp")
+                try:
+                    with zipfile.ZipFile(source) as archive, zipfile.ZipFile(
+                        partial, "w", zipfile.ZIP_DEFLATED
+                    ) as output:
+                        members = list(safe_members(archive))
+                        evidence = archive.read(
+                            "share/" + name + "/vcpkg_abi_info.txt"
+                        )
+                        if hashlib.sha256(evidence).hexdigest() != abi:
+                            raise ValueError(
+                                "binary package ABI evidence mismatch"
+                            )
+                        for member in members:
+                            filename = member.filename
+                            lower = filename.lower()
+                            if (
+                                lower == "[content_types].xml"
+                                or lower == ".signature.p7s"
+                                or (lower.endswith(".nuspec") and "/" not in lower)
+                                or lower.startswith(("_rels/", "package/"))
+                            ):
+                                continue
+                            with archive.open(member) as source_file:
+                                output.writestr(member, source_file.read())
+                    partial.replace(destination)
+                finally:
+                    partial.unlink(missing_ok=True)
+            print(
+                "curl restored " + package + " ABI " + abi,
+                flush=True,
+            )
+            return destination
+
+
+class LoopbackServer(ThreadingHTTPServer):
+    def server_bind(self):
+        # Numeric loopback avoids reverse-DNS stalls on macOS runners.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name = "127.0.0.1"
+        self.server_port = self.server_address[1]
+
+
+def cache_server(cache):
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.respond(True)
+
+        def do_HEAD(self):
+            self.respond(False)
+
+        def respond(self, body):
+            parts = [
+                unquote(part)
+                for part in urlsplit(self.path).path.strip("/").split("/")
+            ]
+            try:
+                if len(parts) != 4:
+                    raise ValueError("invalid cache request")
+                name, triplet, _version, abi = parts
+                path = cache.get(name, triplet, abi)
+                self.send_response(200)
+                self.send_header("Content-Length", str(path.stat().st_size))
+                self.end_headers()
+                if body:
+                    with path.open("rb") as source:
+                        shutil.copyfileobj(source, self.wfile)
+            except PackageMissing:
+                self.send_error(404, "exact ABI is not cached")
+            except Exception as error:
+                print(
+                    type(error).__name__ + ": binary cache request failed",
+                    flush=True,
+                )
+                self.send_error(502, "binary cache download failed")
+
+        def log_message(self, *_):
+            pass
+
+    return LoopbackServer(("127.0.0.1", 0), Handler)
+
+
+def serve_cache(package_root, ready):
+    server = cache_server(BinaryCache(Packages(), package_root))
+    ready = Path(ready)
+    partial = ready.with_suffix(".tmp")
+    partial.write_text(
+        json.dumps({"port": server.server_port, "pid": os.getpid()}),
+        encoding="utf-8",
+    )
+    partial.replace(ready)
+    server.serve_forever()
 
 def host_rid():
     runner_os = os.environ.get("RUNNER_OS")
@@ -258,15 +393,18 @@ def host_rid():
     return os_name + "-" + arch
 
 
-def publish_environment(values):
+def export(values, path=None):
     for value in values.values():
-        if "\n" in str(value) or "\r" in str(value):
+        if "\\n" in str(value) or "\\r" in str(value):
             raise ValueError("invalid environment value")
     github_env = os.environ.get("GITHUB_ENV")
     if github_env:
         with open(github_env, "a", encoding="utf-8") as output:
             for key, value in values.items():
-                output.write(key + "=" + str(value) + "\n")
+                output.write(key + "=" + str(value) + "\\n")
+    if path and os.environ.get("GITHUB_PATH"):
+        with open(os.environ["GITHUB_PATH"], "a", encoding="utf-8") as output:
+            output.write(str(path) + "\\n")
     for key, value in values.items():
         print(key + "=" + str(value), flush=True)
 
@@ -323,7 +461,7 @@ def restore(rid, package_root):
         values["TURBODB_SDK_RELEASE"] = ""
 
     # Fail closed: publish roots only after every selected RID payload validates.
-    publish_environment(values)
+    export(values, re2c_root.resolve() / "bin")
 
 
 def main():
@@ -339,8 +477,14 @@ def main():
         ),
     )
     command.add_argument("--packages", type=Path, required=True)
+    serve = subparsers.add_parser("serve-cache")
+    serve.add_argument("--packages", type=Path, required=True)
+    serve.add_argument("--ready", type=Path, required=True)
     args = parser.parse_args()
-    restore(args.rid, args.packages)
+    if args.command == "restore":
+        restore(args.rid, args.packages)
+    else:
+        serve_cache(args.packages, args.ready)
 
 
 if __name__ == "__main__":
