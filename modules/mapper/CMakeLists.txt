@@ -35,7 +35,14 @@ target_include_directories(${TARGET_NAME_PLUGIN}
 target_link_libraries(${TARGET_NAME_PLUGIN}
   PRIVATE ${TARGET_NAME}
   PUBLIC exprtk Salts::Core Salts::DataBind Salts::JsonParser Salts::CYaml
-         Salts::CYamlJsonAdapter Salts::XmlParser)
+         Salts::CYamlJsonAdapter Salts::XmlParser
+  # This DSO must own the CSTL hash_bytes implementation used by static ExprTk.
+  # No borrowed hidden-static function may be resolved from another image.
+  PRIVATE Salts::CSTL)
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  # Catch new cross-DSO imports at the producer link, not in Praktor consumers.
+  target_link_options(${TARGET_NAME_PLUGIN} PRIVATE "LINKER:-z,defs")
+endif()
 set_target_properties(${TARGET_NAME_PLUGIN}
   PROPERTIES PREFIX "" VERSION ${PROJECT_VERSION} SOVERSION ${PROJECT_VERSION_MAJOR})
 
