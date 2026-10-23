@@ -594,12 +594,21 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
         MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_call_value_assign"), 1, &res, 4, args);
     c->ext.call_value_assign_import = MIR_new_import(ctx, "ts_mir_call_value_assign");
   }
-  /* ts_mir_value_expr(void *ctx, void *node) -> double */
+  /* ts_mir_value_expr(void *ctx, void *node, exprtk_value_t *out) -> double */
   {
     MIR_type_t res = MIR_T_D;
-    MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "node", 0}};
-    c->ext.value_expr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_value_expr"), 1, &res, 2, args);
+    MIR_var_t args[3] = {
+        {MIR_T_P, "ctx", 0}, {MIR_T_P, "node", 0}, {MIR_T_P, "out_value", 0}};
+    c->ext.value_expr_proto =
+        MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_value_expr"), 1, &res, 3, args);
     c->ext.value_expr_import = MIR_new_import(ctx, "ts_mir_value_expr");
+  }
+  /* ts_mir_value_slot_destroy(exprtk_value_t *value) -> void */
+  {
+    MIR_var_t args[1] = {{MIR_T_P, "value", 0}};
+    c->ext.value_slot_destroy_proto = MIR_new_proto_arr(
+        ctx, ts_mir_prefixed_item_name(c, "p_value_slot_destroy"), 0, NULL, 1, args);
+    c->ext.value_slot_destroy_import = MIR_new_import(ctx, "ts_mir_value_slot_destroy");
   }
   /* ts_mir_value_expr_assign(void *ctx, const char *target, void *node) -> double */
   {
@@ -1065,6 +1074,7 @@ void ts_mir_load_externals(MIR_context_t ctx) {
   MIR_load_external(ctx, "ts_mir_call_assign", (void *)ts_mir_call_assign);
   MIR_load_external(ctx, "ts_mir_call_value_assign", (void *)ts_mir_call_value_assign);
   MIR_load_external(ctx, "ts_mir_value_expr", (void *)ts_mir_value_expr);
+  MIR_load_external(ctx, "ts_mir_value_slot_destroy", (void *)ts_mir_value_slot_destroy);
   MIR_load_external(ctx, "ts_mir_value_expr_assign", (void *)ts_mir_value_expr_assign);
   MIR_load_external(ctx, "ts_mir_await_value", (void *)ts_mir_await_value);
   MIR_load_external(ctx, "ts_mir_await_assign", (void *)ts_mir_await_assign);
