@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Offline admission tests for the curl-only GitHub Packages restore path."""
 import base64
+import hashlib
 import io
 import json
 import os
@@ -122,6 +123,32 @@ class PackagesTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "unsafe"):
             self.packages.extract("Bad.Native", "1.0.0", self.root)
         self.assertFalse((self.root / "escape").exists())
+
+    def test_binary_cache_requires_exact_abi_evidence(self):
+        evidence = b"compiler exact\\nport exact\\n"
+        abi = hashlib.sha256(evidence).hexdigest()
+        self.feed.add(
+            "test_x64-linux",
+            "1.0.0-vcpkg" + abi,
+            {
+                "share/test/vcpkg_abi_info.txt": evidence,
+                "lib/libtest.a": b"archive",
+                "_rels/.rels": "NuGet metadata",
+            },
+        )
+        cache = packages.BinaryCache(self.packages, self.root / "cache")
+        result = cache.get("test", "x64-linux", abi)
+        with zipfile.ZipFile(result) as archive:
+            self.assertEqual(archive.read("lib/libtest.a"), b"archive")
+            self.assertFalse(
+                any(
+                    name.startswith(("_rels/", "package/"))
+                    or name.endswith(".nuspec")
+                    for name in archive.namelist()
+                )
+            )
+        with self.assertRaises(packages.PackageMissing):
+            cache.get("test", "x64-linux", "0" * 64)
 
     @patch.dict(os.environ, {"GITHUB_TOKEN": "secret-token"}, clear=False)
     def test_token_is_passed_on_stdin_not_argv(self):
