@@ -2349,6 +2349,9 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
                         MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, ret_val),
                                      MIR_new_double_op(c->ctx, 0.0)));
       }
+      /* Return edges may not abandon any compiler-owned cleanup obligation. */
+      if (!ts_mir_managed_slots_require_terminal_at_return(c)) break;
+
       /* Store all variables back to env before returning (skip in compiled functions) */
       if (c->ctx_reg) {
         for (int i = 0; i < c->var_count; i++) {
