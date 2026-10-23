@@ -881,7 +881,7 @@ Current OOP contract:
 - Property-style getter/setter syntax is intentionally not supported; use ordinary `get()` / `set(value)` methods.
 - Type-based overload resolution is limited to declared class and interface parameter types.
 - Non-variable receiver assignment such as `Factory().make().value = 1` is intentionally not supported in JIT.
-- JIT/MIR lowers OOP operations through runtime helpers with monomorphic method helpers, callsite method caches, and instance field slot caches. Unsupported non-OOP nodes are rejected rather than silently falling back to the interpreter.
+- JIT/MIR lowers OOP operations through runtime helpers, monomorphic method helpers and callsite method caches. Public typed numeric fields use a CMeta-validated fast path that resolves the current receiver and field slot on each access; it never retains an instance pointer across variable reassignment. Unsupported non-OOP nodes are rejected rather than silently falling back to the interpreter.
 
 ---
 

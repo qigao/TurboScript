@@ -1005,77 +1005,45 @@ static MIR_reg_t ts_emit_oop_member_set_reg(ts_mir_compiler_t *c, const char *ob
   return res;
 }
 
-static MIR_reg_t ts_emit_oop_slot_cache_instance(ts_mir_compiler_t *c, MIR_reg_t cache_reg) {
-  MIR_reg_t instance_reg = ts_mir_new_temp_preg(c);
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, instance_reg),
-                               MIR_new_mem_op(c->ctx, MIR_T_I64,
-                                              (int64_t)offsetof(ts_mir_oop_slot_cache_t, instance),
-                                              cache_reg, 0, 1)));
-  return instance_reg;
-}
-
-static void ts_emit_oop_slot_cache_init(ts_mir_compiler_t *c, MIR_reg_t cache_reg,
-                                        const char *object_name, const char *member_name,
-                                        exprtk_node_t *object_node, int create_if_missing,
-                                        MIR_label_t missing_label) {
-  MIR_label_t ready_label = MIR_new_label(c->ctx);
-  MIR_reg_t instance_reg = ts_emit_oop_slot_cache_instance(c, cache_reg);
-
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_BNE, MIR_new_label_op(c->ctx, ready_label),
-                               MIR_new_reg_op(c->ctx, instance_reg), MIR_new_int_op(c->ctx, 0)));
+/* Resolve the current receiver on every access. The returned slot is
+ * borrowed only for the immediately following MIR load/store; never retain an
+ * exprtk_instance_t pointer across script assignments or invocations. */
+static MIR_reg_t ts_emit_oop_numeric_slot(
+    ts_mir_compiler_t *c, const char *object_name, const char *member_name,
+    int create_if_missing, MIR_label_t missing_label) {
+  MIR_reg_t slot_reg = ts_mir_new_temp_preg(c);
   MIR_append_insn(
       c->ctx, c->func,
-      MIR_new_call_insn(c->ctx, 9, MIR_new_ref_op(c->ctx, c->ext.oop_num_ptr_proto),
+      MIR_new_call_insn(c->ctx, 7, MIR_new_ref_op(c->ctx, c->ext.oop_num_ptr_proto),
                         MIR_new_ref_op(c->ctx, c->ext.oop_num_ptr_import),
-                        MIR_new_reg_op(c->ctx, instance_reg), MIR_new_reg_op(c->ctx, c->ctx_reg),
+                        MIR_new_reg_op(c->ctx, slot_reg), MIR_new_reg_op(c->ctx, c->ctx_reg),
                         MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)object_name),
                         MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)member_name),
-                        MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)object_node),
-                        MIR_new_int_op(c->ctx, create_if_missing ? 1 : 0),
-                        MIR_new_reg_op(c->ctx, cache_reg)));
+                        MIR_new_int_op(c->ctx, create_if_missing ? 1 : 0)));
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_insn(c->ctx, MIR_BEQ, MIR_new_label_op(c->ctx, missing_label),
-                               MIR_new_reg_op(c->ctx, instance_reg), MIR_new_int_op(c->ctx, 0)));
-  MIR_append_insn(c->ctx, c->func, ready_label);
+                               MIR_new_reg_op(c->ctx, slot_reg), MIR_new_int_op(c->ctx, 0)));
+  return slot_reg;
 }
 
 MIR_reg_t ts_try_emit_oop_member_get_slot(ts_mir_compiler_t *c, const char *object_name,
                                                  const char *member_name,
                                                  exprtk_node_t *object_node) {
+  (void)object_node;
   if (!ts_oop_member_can_use_num_slot(c, object_name, member_name)) return 0;
-
-  MIR_reg_t cache_reg = ts_mir_get_or_add_oop_ptr(c, object_name, member_name);
-  if (!cache_reg) return 0;
 
   MIR_label_t missing_label = MIR_new_label(c->ctx);
   MIR_label_t done_label = MIR_new_label(c->ctx);
   MIR_reg_t res = ts_mir_new_temp_reg(c);
 
   ts_emit_sync_var_to_env(c, object_name);
-  ts_emit_oop_slot_cache_init(c, cache_reg, object_name, member_name, object_node, 0,
-                              missing_label);
-
-  MIR_reg_t instance_reg = ts_emit_oop_slot_cache_instance(c, cache_reg);
-  MIR_reg_t slots_reg = ts_mir_new_temp_preg(c);
-  MIR_reg_t index_reg = ts_mir_new_temp_ireg(c);
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, slots_reg),
-                               MIR_new_mem_op(c->ctx, MIR_T_I64,
-                                              (int64_t)offsetof(exprtk_instance_t, field_slots),
-                                              instance_reg, 0, 1)));
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, index_reg),
-                               MIR_new_mem_op(c->ctx, MIR_T_I64,
-                                              (int64_t)offsetof(ts_mir_oop_slot_cache_t, index),
-                                              cache_reg, 0, 1)));
+  MIR_reg_t slot_reg =
+      ts_emit_oop_numeric_slot(c, object_name, member_name, 0, missing_label);
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_insn(c->ctx, MIR_DMOV, MIR_new_reg_op(c->ctx, res),
                                MIR_new_mem_op(c->ctx, MIR_T_D,
                                               (int64_t)offsetof(exprtk_value_t, data.number),
-                                              slots_reg, index_reg,
-                                              (int64_t)sizeof(exprtk_value_t))));
+                                              slot_reg, 0, 1)));
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, done_label)));
 
@@ -1091,37 +1059,20 @@ static MIR_reg_t ts_try_emit_oop_member_set_slot(ts_mir_compiler_t *c, const cha
                                                  const char *member_name,
                                                  exprtk_node_t *object_node,
                                                  MIR_reg_t value_reg) {
+  (void)object_node;
   if (!ts_oop_member_can_use_num_slot(c, object_name, member_name)) return 0;
-
-  MIR_reg_t cache_reg = ts_mir_get_or_add_oop_ptr(c, object_name, member_name);
-  if (!cache_reg) return 0;
 
   MIR_label_t missing_label = MIR_new_label(c->ctx);
   MIR_label_t done_label = MIR_new_label(c->ctx);
 
   ts_emit_sync_var_to_env(c, object_name);
-  ts_emit_oop_slot_cache_init(c, cache_reg, object_name, member_name, object_node, 1,
-                              missing_label);
-
-  MIR_reg_t instance_reg = ts_emit_oop_slot_cache_instance(c, cache_reg);
-  MIR_reg_t slots_reg = ts_mir_new_temp_preg(c);
-  MIR_reg_t index_reg = ts_mir_new_temp_ireg(c);
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, slots_reg),
-                               MIR_new_mem_op(c->ctx, MIR_T_I64,
-                                              (int64_t)offsetof(exprtk_instance_t, field_slots),
-                                              instance_reg, 0, 1)));
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, index_reg),
-                               MIR_new_mem_op(c->ctx, MIR_T_I64,
-                                              (int64_t)offsetof(ts_mir_oop_slot_cache_t, index),
-                                              cache_reg, 0, 1)));
+  MIR_reg_t slot_reg =
+      ts_emit_oop_numeric_slot(c, object_name, member_name, 1, missing_label);
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_insn(c->ctx, MIR_DMOV,
                                MIR_new_mem_op(c->ctx, MIR_T_D,
                                               (int64_t)offsetof(exprtk_value_t, data.number),
-                                              slots_reg, index_reg,
-                                              (int64_t)sizeof(exprtk_value_t)),
+                                              slot_reg, 0, 1),
                                MIR_new_reg_op(c->ctx, value_reg)));
   MIR_append_insn(c->ctx, c->func,
                   MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, done_label)));
@@ -1476,13 +1427,24 @@ double ts_mir_oop_member_set(void *ctx_ptr, const char *object_name, const char 
   return ts_mir_numeric_value(result);
 }
 
-void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *member_name,
-                         void *object_node, int64_t create_if_missing, void *slot_cache_ptr) {
+void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name,
+                         const char *member_name, int64_t create_if_missing) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  ts_mir_oop_slot_cache_t *slot_cache = (ts_mir_oop_slot_cache_t *)slot_cache_ptr;
-  if (!ctx || !object_name || !member_name || !slot_cache) return NULL;
+  exprtk_instance_t *instance;
+  exprtk_value_t object;
+  exprtk_class_t *field_owner = NULL;
+  const cmeta_data_desc *class_data;
+  const cmeta_data_struct_shape *shape;
+  const cmeta_data_field_desc *field;
+  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
+  exprtk_value_t *slot;
+  int access;
 
-  exprtk_value_t object = exprtk_env_get(&ctx->env, object_name);
+  if (!ctx || !object_name || !member_name ||
+      (create_if_missing != 0 && create_if_missing != 1))
+    return NULL;
+
+  object = exprtk_env_get(&ctx->env, object_name);
   if (object.type != EXPRTK_VAL_INSTANCE || !object.data.instance_val.instance) {
     ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
     snprintf(ctx->error_msg, sizeof(ctx->error_msg),
@@ -1492,18 +1454,13 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     ctx->env.aborted = 1;
     return NULL;
   }
+  instance = object.data.instance_val.instance;
 
-  exprtk_instance_t *instance = object.data.instance_val.instance;
-  exprtk_class_t *field_owner = NULL;
-  const cmeta_data_desc *class_data;
-  const cmeta_data_struct_shape *shape;
-  const cmeta_data_field_desc *field;
-  cmeta_object_ref reflected = CMETA_OBJECT_REF_INIT;
-  int access;
-
-  /* Direct slot access is admitted only for an explicit public CMeta double
-   * field. Dynamic/untyped fields remain on the generic value bridge even if
-   * their current runtime value happens to be numeric. */
+  /*
+   * Resolve the current instance for every access. The prior implementation
+   * cached an exprtk_instance_t pointer in MIR-immediate memory, then reused it
+   * after the script variable could be reassigned and the old instance freed.
+   */
   access = exprtk_class_get_instance_field_access(
       instance->klass, member_name, &field_owner);
   if (access != EXPRTK_ACCESS_PUBLIC ||
@@ -1535,21 +1492,25 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
   }
   cmeta_object_release(&reflected);
 
-  exprtk_value_t *slot = exprtk_instance_get_field_slot(instance, member_name);
+  slot = exprtk_instance_get_field_slot(instance, member_name);
   if (!slot && create_if_missing) {
     exprtk_instance_set_field(instance, member_name, exprtk_val_num(0.0));
     slot = exprtk_instance_get_field_slot(instance, member_name);
   }
-  uintptr_t slot_addr = (uintptr_t)slot;
-  uintptr_t slots_begin = (uintptr_t)instance->field_slots;
-  uintptr_t slots_end = slots_begin + instance->field_slot_count * sizeof(*instance->field_slots);
-  if (!slot || !instance->field_slots || slot_addr < slots_begin || slot_addr >= slots_end) {
-    ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
-    snprintf(ctx->error_msg, sizeof(ctx->error_msg),
-             "JIT runtime error: instance has no numeric slot field '%s'", member_name);
-    snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
-    ctx->env.aborted = 1;
-    return NULL;
+  {
+    uintptr_t slot_addr = (uintptr_t)slot;
+    uintptr_t slots_begin = (uintptr_t)instance->field_slots;
+    uintptr_t slots_end =
+        slots_begin + instance->field_slot_count * sizeof(*instance->field_slots);
+    if (!slot || !instance->field_slots ||
+        slot_addr < slots_begin || slot_addr >= slots_end) {
+      ctx->error_code = TURBO_SCRIPT_ERROR_RUNTIME;
+      snprintf(ctx->error_msg, sizeof(ctx->error_msg),
+               "JIT runtime error: instance has no numeric slot field '%s'", member_name);
+      snprintf(ctx->env.error_msg, sizeof(ctx->env.error_msg), "%s", ctx->error_msg);
+      ctx->env.aborted = 1;
+      return NULL;
+    }
   }
 
   if (slot->type != EXPRTK_VAL_NUMBER) {
@@ -1562,11 +1523,8 @@ void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *object_name, const char *mem
     return NULL;
   }
 
-  (void)object_node;
   (void)field_owner;
-  slot_cache->instance = instance;
-  slot_cache->index = (size_t)(slot - instance->field_slots);
-  return instance;
+  return slot;
 }
 
 double ts_mir_oop_instanceof(void *ctx_ptr, const char *object_name, const char *class_name) {

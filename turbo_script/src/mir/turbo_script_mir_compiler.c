@@ -159,29 +159,6 @@ static int ts_mir_ensure_map_ptr_capacity(ts_mir_compiler_t *c, int needed) {
   return 1;
 }
 
-static int ts_mir_ensure_oop_ptr_capacity(ts_mir_compiler_t *c, int needed) {
-  ts_mir_oop_ptr_entry_t *new_entries = NULL;
-  int new_capacity = 0;
-
-  if (needed <= c->oop_ptr_capacity)
-    return 1;
-
-  new_capacity = c->oop_ptr_capacity > 0 ? c->oop_ptr_capacity * 2 : 16;
-  if (new_capacity < needed)
-    new_capacity = needed;
-
-  new_entries =
-      (ts_mir_oop_ptr_entry_t *)realloc(c->oop_ptrs, (size_t)new_capacity * sizeof(*new_entries));
-  if (!new_entries) {
-    ts_mir_fail(c, "JIT compile error: out of memory growing OOP pointer cache");
-    return 0;
-  }
-
-  c->oop_ptrs = new_entries;
-  c->oop_ptr_capacity = new_capacity;
-  return 1;
-}
-
 static int ts_mir_ensure_builtin_admission_capacity(
     ts_mir_compiler_t *c, int needed) {
   ts_mir_builtin_admission_t *grown = NULL;
@@ -593,38 +570,6 @@ MIR_reg_t ts_mir_get_or_add_map_ptr(ts_mir_compiler_t *c, const char *obj_name,
   return ptr_reg;
 }
 
-MIR_reg_t ts_mir_get_or_add_oop_ptr(ts_mir_compiler_t *c, const char *obj_name,
-                                    const char *member_name) {
-  MIR_reg_t ptr_reg = 0;
-
-  for (int i = 0; i < c->oop_ptr_count; i++) {
-    if (strcmp(c->oop_ptrs[i].obj_name, obj_name) == 0 &&
-        strcmp(c->oop_ptrs[i].member_name, member_name) == 0) {
-      return c->oop_ptrs[i].ptr_reg;
-    }
-  }
-
-  if (!ts_mir_ensure_oop_ptr_capacity(c, c->oop_ptr_count + 1))
-    return 0;
-
-  ptr_reg = ts_mir_new_temp_preg(c);
-  void *cache = calloc(1, sizeof(ts_mir_oop_slot_cache_t));
-  if (!cache) {
-    ts_mir_fail(c, "JIT compile error: out of memory allocating OOP slot cache");
-    return 0;
-  }
-  c->oop_ptrs[c->oop_ptr_count].obj_name = obj_name;
-  c->oop_ptrs[c->oop_ptr_count].member_name = member_name;
-  c->oop_ptrs[c->oop_ptr_count].ptr_reg = ptr_reg;
-  c->oop_ptrs[c->oop_ptr_count].cache = cache;
-  c->oop_ptr_count++;
-
-  MIR_append_insn(c->ctx, c->func,
-                  MIR_new_insn(c->ctx, MIR_MOV, MIR_new_reg_op(c->ctx, ptr_reg),
-                               MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)cache)));
-  return ptr_reg;
-}
-
 ts_compiled_func_t *ts_find_compiled_func(ts_mir_compiler_t *c, const char *name) {
   if (!c || !name) return NULL;
   for (int i = 0; i < c->compiled_func_count; i++) {
@@ -699,11 +644,6 @@ static void ts_mir_destroy_pointer_caches(ts_mir_compiler_t *c) {
   c->map_ptr_count = 0;
   c->map_ptr_capacity = 0;
 
-  /* Slot-cache objects are embedded as MIR immediates and live with the MIR context. */
-  free(c->oop_ptrs);
-  c->oop_ptrs = NULL;
-  c->oop_ptr_count = 0;
-  c->oop_ptr_capacity = 0;
 }
 
 static void ts_mir_destroy_builtin_admissions(ts_mir_compiler_t *c) {
@@ -795,7 +735,6 @@ ts_mir_compile_frame_t ts_mir_capture_frame(const ts_mir_compiler_t *c) {
   frame.managed_slot_capacity = c->managed_slot_capacity;
   frame.vec_ptr_count = c->vec_ptr_count;
   frame.map_ptr_count = c->map_ptr_count;
-  frame.oop_ptr_count = c->oop_ptr_count;
   frame.class_names = c->class_names;
   frame.class_name_count = c->class_name_count;
   frame.class_name_capacity = c->class_name_capacity;
@@ -823,7 +762,6 @@ void ts_mir_begin_isolated_compile(ts_mir_compiler_t *c) {
   c->managed_slot_capacity = 0;
   c->vec_ptr_count = 0;
   c->map_ptr_count = 0;
-  c->oop_ptr_count = 0;
   c->class_names = NULL;
   c->class_name_count = 0;
   c->class_name_capacity = 0;
@@ -855,7 +793,6 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
   c->managed_slot_capacity = frame->managed_slot_capacity;
   c->vec_ptr_count = frame->vec_ptr_count;
   c->map_ptr_count = frame->map_ptr_count;
-  c->oop_ptr_count = frame->oop_ptr_count;
   c->class_names = frame->class_names;
   c->class_name_count = frame->class_name_count;
   c->class_name_capacity = frame->class_name_capacity;

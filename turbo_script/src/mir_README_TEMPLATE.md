@@ -186,32 +186,17 @@ MIR_reg_t ts_mir_get_or_add_vec_ptr(ts_mir_compiler_t *c,
                                     const char *vec_name);
 ```
 
-#### 3.3 OOP Slot 缓存
+#### 3.3 OOP 数值字段快路径
+
 ```typescript
-// 源码
-class Point { x: number; y: number; }
-let p = new Point(1, 2);
-for (i = 0; i < 1000000; i += 1) {
-  sum += p.x;  // 热点：重复访问 public 字段
-}
-
-// 优化路径：
-// - 缓存 p.x 的 slot 索引
-// - 直接访问 instance->slots[index]
+class Point { x: number = 1.0; y: number = 2.0; }
+p = Point();
+sum = p.x + p.y;
 ```
 
-**实现**：
-```c
-typedef struct {
-  exprtk_instance_t *instance;  // 对象实例
-  size_t index;                 // 字段 slot 索引
-} ts_mir_oop_slot_cache_t;
+The compiler may lower a public, CMeta-validated `number` field to a direct MIR load/store. At each access, the runtime bridge resolves the **current** receiver from the environment, validates the canonical `DataDesc` field contract, and returns that instance's field-slot address. MIR immediately reads or writes the numeric payload through that pointer.
 
-// 生成缓存查找 + 直接访问
-MIR_reg_t ts_mir_oop_cached_field_get(ts_mir_compiler_t *c,
-                                      const char *obj_name,
-                                      const char *member_name);
-```
+Do not retain an `exprtk_instance_t *` in a compiled callsite cache: script variables can be reassigned, and the old instance may be destroyed. A cached raw instance pointer can therefore become stale or refer to a different class's field layout. Method callsite caches remain a separate optimization.
 
 ---
 
