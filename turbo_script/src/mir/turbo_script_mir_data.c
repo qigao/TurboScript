@@ -165,23 +165,14 @@ MIR_reg_t ts_emit_template_string_assign(ts_mir_compiler_t *c, const char *targe
 /* --- Access helpers: member/index fast path + runtime helpers --- */
 MIR_reg_t ts_emit_member_access(ts_mir_compiler_t *c, const char *obj_name,
                                        const char *member, exprtk_node_t *object_node) {
-  exprtk_value_t obj = exprtk_env_get(&c->ts_ctx->env, obj_name);
   MIR_reg_t oop_slot = ts_try_emit_oop_member_get_slot(c, obj_name, member, object_node);
   if (oop_slot) return oop_slot;
 
-  if (exprtk_value_is_object_like(&obj) && exprtk_map_has(&obj, member)) {
-    /* Read from the current map at the access site, not a prologue-cached slot. */
-    MIR_reg_t res = ts_mir_new_temp_reg(c);
-    MIR_append_insn(c->ctx, c->func,
-                    MIR_new_call_insn(c->ctx, 6, MIR_new_ref_op(c->ctx, c->ext.map_get_key_proto),
-                                      MIR_new_ref_op(c->ctx, c->ext.map_get_key_import),
-                                      MIR_new_reg_op(c->ctx, res),
-                                      MIR_new_reg_op(c->ctx, c->ctx_reg),
-                                      MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)obj_name),
-                                      MIR_new_uint_op(c->ctx, (uint64_t)(uintptr_t)member)));
-    return res;
-  }
-
+  /*
+   * The variable may change from a map/object to an instance between compile
+   * time and execution. Keep generic member semantics at the access site;
+   * compile-time map classification is not a valid runtime type guarantee.
+   */
   exprtk_oop_field_cache_t *cache =
       (exprtk_oop_field_cache_t *)calloc(1, sizeof(exprtk_oop_field_cache_t));
   MIR_reg_t res = ts_mir_new_temp_reg(c);
