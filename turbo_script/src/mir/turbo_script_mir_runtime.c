@@ -11,6 +11,7 @@
 #include "exprtk_class.h"
 #include <mir.h>
 #include <math.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -303,10 +304,17 @@ double ts_mir_call_builtin(void *ctx_ptr, void *fn_ptr, int64_t argc, double *ar
 
 double ts_mir_vec_get(void *ctx_ptr, const char *name, double index) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  exprtk_value_t val = exprtk_env_get(&ctx->env, name);
+  exprtk_value_t val;
+
+  if (!ctx || !name || !isfinite(index) ||
+      index < (double)INT_MIN || index > (double)INT_MAX)
+    return 0.0;
+
+  val = exprtk_env_get(&ctx->env, name);
   if (val.type == EXPRTK_VAL_VECTOR) {
     int idx = (int)index;
-    if (idx >= 0 && idx < (int)val.data.vector.size) return val.data.vector.data[idx];
+    if (idx >= 0 && (size_t)idx < val.data.vector.size)
+      return val.data.vector.data[idx];
   }
   return 0.0;
 }
@@ -389,13 +397,6 @@ double ts_mir_member_get_assign(void *ctx_ptr, const char *target_name, const ch
   return ts_mir_numeric_value(value);
 }
 
-void *ts_mir_vec_data(void *ctx_ptr, const char *name) {
-  turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  exprtk_value_t val = exprtk_env_get(&ctx->env, name);
-  if (val.type == EXPRTK_VAL_VECTOR && val.data.vector.data) return (void *)val.data.vector.data;
-  return NULL;
-}
-
 double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key) {
   turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
   exprtk_value_t obj = exprtk_env_get(&ctx->env, obj_name);
@@ -404,22 +405,6 @@ double ts_mir_map_get_key(void *ctx_ptr, const char *obj_name, const char *key) 
     return ts_mir_numeric_value(val);
   }
   return 0.0;
-}
-
-void *ts_mir_map_num_ptr(void *ctx_ptr, const char *obj_name, const char *key) {
-  turbo_script_ctx_t *ctx = (turbo_script_ctx_t *)ctx_ptr;
-  exprtk_value_t obj = exprtk_env_get(&ctx->env, obj_name);
-  if (exprtk_value_is_object_like(&obj)) {
-    exprtk_value_t *vp = exprtk_map_get_ptr(&obj, key);
-    if (vp) {
-      if (vp->type == EXPRTK_VAL_INTEGER) {
-        vp->type = EXPRTK_VAL_NUMBER;
-        vp->data.number = (double)vp->data.integer;
-      }
-      if (vp->type == EXPRTK_VAL_NUMBER) return (void *)&vp->data.number;
-    }
-  }
-  return NULL;
 }
 
 void ts_mir_init_externals(ts_mir_compiler_t *c) {
@@ -756,14 +741,6 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     c->ext.member_get_assign_import = MIR_new_import(ctx, "ts_mir_member_get_assign");
   }
 
-  /* ts_mir_vec_data(void *ctx, const char *name) -> void* (returned as i64) */
-  {
-    MIR_type_t res = MIR_T_I64;
-    MIR_var_t args[2] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "name", 0}};
-    c->ext.vec_data_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_vec_data"), 1, &res, 2, args);
-    c->ext.vec_data_import = MIR_new_import(ctx, "ts_mir_vec_data");
-  }
-
   /* ts_mir_map_get_key(void *ctx, const char *obj_name, const char *key) -> double */
   {
     MIR_type_t res = MIR_T_D;
@@ -793,14 +770,6 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     c->ext.map_value_assign_proto =
         MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_value_assign"), 1, &res, 3, args);
     c->ext.map_value_assign_import = MIR_new_import(ctx, "ts_mir_map_value_assign");
-  }
-
-  /* ts_mir_map_num_ptr(void *ctx, const char *obj_name, const char *key) -> void* (as i64) */
-  {
-    MIR_type_t res = MIR_T_I64;
-    MIR_var_t args[3] = {{MIR_T_P, "ctx", 0}, {MIR_T_P, "obj_name", 0}, {MIR_T_P, "key", 0}};
-    c->ext.map_num_ptr_proto = MIR_new_proto_arr(ctx, ts_mir_prefixed_item_name(c, "p_map_num_ptr"), 1, &res, 3, args);
-    c->ext.map_num_ptr_import = MIR_new_import(ctx, "ts_mir_map_num_ptr");
   }
 
   /* ts_mir_load_captured_var(void *ctx, const char *name, void *closure_env) -> double */
