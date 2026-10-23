@@ -1055,11 +1055,9 @@ void ts_mir_load_externals(MIR_context_t ctx) {
   MIR_load_external(ctx, "ts_mir_define_func", (void *)ts_mir_define_func);
   MIR_load_external(ctx, "ts_mir_member_get", (void *)ts_mir_member_get);
   MIR_load_external(ctx, "ts_mir_member_get_assign", (void *)ts_mir_member_get_assign);
-  MIR_load_external(ctx, "ts_mir_vec_data", (void *)ts_mir_vec_data);
   MIR_load_external(ctx, "ts_mir_map_get_key", (void *)ts_mir_map_get_key);
   MIR_load_external(ctx, "ts_mir_map_assign", (void *)ts_mir_map_assign);
   MIR_load_external(ctx, "ts_mir_map_value_assign", (void *)ts_mir_map_value_assign);
-  MIR_load_external(ctx, "ts_mir_map_num_ptr", (void *)ts_mir_map_num_ptr);
   MIR_load_external(ctx, "ts_mir_load_captured_var", (void *)ts_mir_load_captured_var);
   /*  direct math functions */
   MIR_load_external(ctx, "sin", (void *)sin);
