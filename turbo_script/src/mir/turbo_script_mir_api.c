@@ -140,6 +140,7 @@ static int ts_mir_lower_owned_module(MIR_context_t mir_ctx, MIR_module_t module,
   ts_emit_var_prologue(&compiler);
   ts_emit_vec_prologue(&compiler);
   ts_emit_map_prologue(&compiler);
+  ts_emit_managed_slot_prologue(&compiler);
   ts_emit_var_epilogue(&compiler);
   char ret_name[32];
   snprintf(ret_name, sizeof(ret_name), "_t%d", compiler.tmp_count++);
