@@ -28,6 +28,9 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
+      - name: Verify curl package downloader
+        shell: bash
+        run: python3 cmake/ci/test_github_packages.py
       - id: version
         shell: bash
         run: |
@@ -81,12 +84,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@d4afc8cd2f5ed3585c1e26469e379a087ce9ecf3
-        with:
-          mode: read
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - uses: ./.github/actions/setup-native-ci
       - name: Prepare Linux host
         shell: bash
         run: |
@@ -102,9 +100,9 @@ jobs:
             turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
-      - name: Restore latest native SDKs
-        shell: pwsh
-        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
+      - name: Restore native SDKs with curl
+        shell: bash
+        run: python cmake/ci/github_packages.py restore --rid linux-x64 --packages build/native-sdk/packages
       - name: Configure, build and test
         shell: bash
         run: |
@@ -139,12 +137,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@d4afc8cd2f5ed3585c1e26469e379a087ce9ecf3
-        with:
-          mode: read
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - uses: ./.github/actions/setup-native-ci
       - name: Prepare Linux host
         shell: bash
         run: |
@@ -160,9 +153,9 @@ jobs:
             turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
-      - name: Restore latest native SDKs
-        shell: pwsh
-        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
+      - name: Restore native SDKs with curl
+        shell: bash
+        run: python cmake/ci/github_packages.py restore --rid linux-x64 --packages build/native-sdk/packages
       - name: Configure, build and test
         shell: bash
         run: |
@@ -196,12 +189,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@d4afc8cd2f5ed3585c1e26469e379a087ce9ecf3
-        with:
-          mode: read
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - uses: ./.github/actions/setup-native-ci
       - name: Prepare Linux host
         shell: bash
         run: |
@@ -217,9 +205,9 @@ jobs:
             turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
-      - name: Restore latest native SDKs
-        shell: pwsh
-        run: ./cmake/ci/restore-native-sdks.ps1 -Rid linux-x64
+      - name: Restore native SDKs with curl
+        shell: bash
+        run: python cmake/ci/github_packages.py restore --rid linux-x64 --packages build/native-sdk/packages
       - name: Build modules-off Host contracts and install SDK
         shell: bash
         run: |
@@ -274,12 +262,7 @@ jobs:
         with:
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
           persist-credentials: false
-      - uses: qigao/vcpkg-cache/.github/actions/setup-vcpkg-cache@d4afc8cd2f5ed3585c1e26469e379a087ce9ecf3
-        with:
-          mode: read
-      - uses: actions/setup-dotnet@v4
-        with:
-          dotnet-version: '8.0.x'
+      - uses: ./.github/actions/setup-native-ci
       - name: Prepare tools
         shell: bash
         run: |
@@ -300,9 +283,9 @@ jobs:
             turboscript-ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ github.job }}-${{ env.RID || 'linux-x64' }}-${{ hashFiles('CMakeUserPresets.json', 'vcpkg.json') }}-
       - name: Reset compiler cache statistics
         run: ccache --zero-stats
-      - name: Restore latest native SDKs
-        shell: pwsh
-        run: ./cmake/ci/restore-native-sdks.ps1 -Rid '${{ matrix.rid }}'
+      - name: Restore native SDKs with curl
+        shell: bash
+        run: python cmake/ci/github_packages.py restore --rid "$RID" --packages build/native-sdk/packages
       - name: Build native parser generator for Android
         if: matrix.platform == 'android'
         shell: bash
