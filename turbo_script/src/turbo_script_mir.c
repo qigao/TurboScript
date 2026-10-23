@@ -1884,9 +1884,12 @@ MIR_reg_t ts_compile_expr(ts_mir_compiler_t *c, exprtk_node_t *node) {
     ts_register_helper_written_vars(c, node);
     return ts_emit_runtime_value_node(c, node);
 
-  case EXPRTK_NODE_THROW:
-    if (!ts_mir_managed_slots_require_terminal_at_throw(c)) return 0;
-    return ts_emit_runtime_value_node(c, node);
+  case EXPRTK_NODE_THROW: {
+    MIR_reg_t result = ts_emit_runtime_value_node(c, node);
+    if (!c->failed)
+      (void)ts_mir_managed_slots_require_terminal_at_throw(c);
+    return result;
+  }
 
   /* Complex assignment/control nodes are rejected unless explicitly lowered above. */
   case EXPRTK_NODE_MEMBER_SET:
