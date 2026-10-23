@@ -469,6 +469,9 @@ int ts_mir_managed_slot_snapshot_restore(
 int ts_mir_managed_slot_snapshot_join(
     ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *left,
     const ts_mir_managed_slot_snapshot_t *right);
+int ts_mir_managed_slot_snapshot_loop_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *entry,
+    const ts_mir_managed_slot_snapshot_t *backedge);
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot);
 void ts_mir_managed_slot_snapshot_destroy(ts_mir_managed_slot_snapshot_t *snapshot);
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
