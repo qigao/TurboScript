@@ -1018,6 +1018,23 @@ int ts_mir_managed_slot_snapshot_join(
   return 1;
 }
 
+int ts_mir_managed_slot_snapshot_loop_join(
+    ts_mir_compiler_t *c, const ts_mir_managed_slot_snapshot_t *entry,
+    const ts_mir_managed_slot_snapshot_t *backedge) {
+  if (!c || !entry || !backedge || entry->count != backedge->count ||
+      (entry->count > 0u && (!entry->states || !backedge->states))) {
+    if (c) ts_mir_fail(c, "MIR lowering error: incompatible managed slot loop snapshots");
+    return 0;
+  }
+  for (size_t i = 0; i < entry->count; ++i) {
+    if (entry->states[i] != backedge->states[i]) {
+      ts_mir_fail(c, "MIR lowering error: managed value slot ownership state mismatch at loop backedge");
+      return 0;
+    }
+  }
+  return 1;
+}
+
 int ts_mir_managed_slots_require_terminal_since(ts_mir_compiler_t *c, size_t first_slot) {
   if (!c || first_slot > (size_t)c->managed_slot_count) {
     if (c) ts_mir_fail(c, "MIR lowering error: invalid managed slot branch range");
