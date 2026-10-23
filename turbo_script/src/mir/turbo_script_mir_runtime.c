@@ -731,7 +731,6 @@ void ts_mir_init_externals(ts_mir_compiler_t *c) {
     c->ext.member_get_assign_import = MIR_new_import(ctx, "ts_mir_member_get_assign");
   }
 
-  /* ts_mir_map_get_key(void *ctx, const char *obj_name, const char *key) -> double */
   /* ts_mir_map_assign(void *ctx, const char *target, void *node, int64_t count,
    *                   double *values) -> double */
   {
@@ -1038,7 +1037,6 @@ void ts_mir_load_externals(MIR_context_t ctx) {
   MIR_load_external(ctx, "ts_mir_define_func", (void *)ts_mir_define_func);
   MIR_load_external(ctx, "ts_mir_member_get", (void *)ts_mir_member_get);
   MIR_load_external(ctx, "ts_mir_member_get_assign", (void *)ts_mir_member_get_assign);
-  MIR_load_external(ctx, "ts_mir_map_get_key", (void *)ts_mir_map_get_key);
   MIR_load_external(ctx, "ts_mir_map_assign", (void *)ts_mir_map_assign);
   MIR_load_external(ctx, "ts_mir_map_value_assign", (void *)ts_mir_map_value_assign);
   MIR_load_external(ctx, "ts_mir_load_captured_var", (void *)ts_mir_load_captured_var);
