@@ -2,9 +2,11 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 # TurboScript Project - A Simple DSL with MIR JIT Backend
+# 3.0.11 Native candidate includes Mapper CSTL and Host value-lifetime fixes.
+# The v3.0.10 release artifact remains immutable.
 project(
   TurboScript
-  VERSION 3.0.10
+  VERSION 3.0.11
   LANGUAGES C CXX)
 
 # Project configuration - output directories
