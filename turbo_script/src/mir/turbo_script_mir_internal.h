@@ -229,22 +229,6 @@ typedef struct {
 } ts_mir_map_ptr_entry_t;
 
 /* =========================================================================
- * OOP slot cache
- * ========================================================================= */
-
-typedef struct {
-  exprtk_instance_t *instance;
-  size_t index;
-} ts_mir_oop_slot_cache_t;
-
-typedef struct {
-  const char *obj_name;
-  const char *member_name;
-  MIR_reg_t ptr_reg;
-  void *cache; // ts_mir_oop_slot_cache_t*
-} ts_mir_oop_ptr_entry_t;
-
-/* =========================================================================
  * Class type tracking for monomorphic OOP calls
  * ========================================================================= */
 
@@ -309,7 +293,6 @@ struct ts_mir_compile_frame_s {
   int managed_slot_capacity;
   int vec_ptr_count;
   int map_ptr_count;
-  int oop_ptr_count;
   char **class_names;
   int class_name_count;
   int class_name_capacity;
@@ -373,11 +356,6 @@ struct ts_mir_compiler_s {
   ts_mir_map_ptr_entry_t *map_ptrs;
   int map_ptr_count;
   int map_ptr_capacity;
-
-  // Cached public numeric OOP field pointers
-  ts_mir_oop_ptr_entry_t *oop_ptrs;
-  int oop_ptr_count;
-  int oop_ptr_capacity;
 
   // Closure support
   void *closure_analysis; // ts_closure_analysis_t*
@@ -609,10 +587,6 @@ MIR_reg_t ts_try_emit_oop_inline_method_call(ts_mir_compiler_t *c, const char *o
 MIR_reg_t ts_emit_oop_instanceof(ts_mir_compiler_t *c, const char *object_name,
                                  const char *class_name);
 
-// OOP slot pointer cache
-MIR_reg_t ts_mir_get_or_add_oop_ptr(ts_mir_compiler_t *c, const char *obj_name,
-                                    const char *member_name);
-
 /* =========================================================================
  * Module: mir_closure.c - Closure compilation
  * ========================================================================= */
@@ -697,8 +671,8 @@ double ts_mir_oop_member_get(void *ctx_ptr, const char *obj, const char *field, 
                              void *object_node);
 double ts_mir_oop_member_set(void *ctx_ptr, const char *obj, const char *field, void *cache_ptr,
                              void *object_node, double value);
-void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *obj, const char *field, void *object_node,
-                         int64_t create_if_missing, void *slot_cache_ptr);
+void *ts_mir_oop_num_ptr(void *ctx_ptr, const char *obj, const char *field,
+                         int64_t create_if_missing);
 double ts_mir_oop_instanceof(void *ctx_ptr, const char *obj, const char *class_name);
 double ts_mir_oop_predicate(void *ctx_ptr, int64_t kind, const char *name, const char *member,
                             void *object_node);
