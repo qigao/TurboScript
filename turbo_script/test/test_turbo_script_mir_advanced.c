@@ -289,6 +289,18 @@ spec("turbo_script_mir_advanced") {
 
   describe("managed slot return edges") {
 
+    it("should evaluate a managed throw value before checking its exit state") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script = "throw string.upper(\"managed-throw\");";
+
+      check((turbo_script_run(ctx_interp, script)) != (0));
+      check((turbo_script_run_jit(ctx_jit, script)) != (0));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
     it("should clean managed expression slots before early script-function returns") {
       turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
       turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
