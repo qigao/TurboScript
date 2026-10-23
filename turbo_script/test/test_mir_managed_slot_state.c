@@ -324,6 +324,35 @@ spec("TurboScript MIR managed slot ownership state") {
     check_false(compiler.failed);
   }
 
+  it("accepts a throw edge when managed slots are terminal") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_cleanup(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slots_require_terminal_at_throw(&compiler));
+    check_false(compiler.failed);
+  }
+
+  it("rejects a throw edge with a live managed slot obligation") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check_false(ts_mir_managed_slots_require_terminal_at_throw(&compiler));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "throw with live cleanup obligation"));
+
+    reset_failure(&compiler, &runtime);
+    check(ts_mir_managed_slot_cleanup(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slots_require_terminal_at_throw(&compiler));
+    check_false(compiler.failed);
+  }
+
   it("rejects a branch-local slot that leaves a live cleanup obligation") {
     ts_mir_compiler_t compiler;
     turbo_script_ctx_t runtime;
