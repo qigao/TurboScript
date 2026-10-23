@@ -269,7 +269,7 @@ void ts_emit_sync_to_env(ts_mir_compiler_t *c) {
 
 void ts_emit_reload_from_env(ts_mir_compiler_t *c) {
   for (int i = 0; i < c->var_count; i++) {
-    if (c->vars[i]->dynamic_value) continue;
+    if (c->vars[i]->dynamic_value || c->vars[i]->bound_reg) continue;
     MIR_append_insn(c->ctx, c->func,
                     MIR_new_call_insn(
                         c->ctx, 5, MIR_new_ref_op(c->ctx, c->ext.load_var_proto),
