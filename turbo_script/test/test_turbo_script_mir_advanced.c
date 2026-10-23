@@ -299,8 +299,10 @@ spec("turbo_script_mir_advanced") {
           "  string.upper(\"fallthrough\");"
           "  return 9;"
           "}"
+          "func implicit_return() { string.upper(\"before-implicit-return\"); }"
           "first = early_return(1);"
           "second = early_return(0);"
+          "implicit_return();"
           "result = first + second;";
 
       check((turbo_script_run(ctx_interp, script)) == (0));
