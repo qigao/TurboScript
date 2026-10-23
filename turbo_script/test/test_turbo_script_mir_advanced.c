@@ -119,6 +119,48 @@ spec("turbo_script_mir_advanced") {
     }
   }
 
+  describe("managed slot branch joins") {
+
+    it("should compile both branches with matching managed slot obligations") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "flag = 1;"
+          "if (flag) { string.upper(\"then\"); }"
+          "else { string.upper(\"else\"); }"
+          "result = 17;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(17.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+
+    it("should join a managed slot branch against an implicit empty else") {
+      turbo_script_ctx_t *ctx_interp = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      turbo_script_ctx_t *ctx_jit = turbo_script_init(TURBO_SCRIPT_INIT_DEFAULT);
+      const char *script =
+          "flag = 0;"
+          "if (flag) { string.upper(\"not selected\"); }"
+          "result = 9;";
+
+      check((turbo_script_run(ctx_interp, script)) == (0));
+      check((turbo_script_run_jit(ctx_jit, script)) == (0));
+      check(fabs((double)(ts_get_num(ctx_interp, "result")) - (double)(9.0)) <=
+            (double)(EPS));
+      check(fabs((double)(ts_get_num(ctx_jit, "result")) -
+                 (double)(ts_get_num(ctx_interp, "result"))) <= (double)(EPS));
+
+      turbo_script_free(ctx_interp);
+      turbo_script_free(ctx_jit);
+    }
+  }
+
   /* ===== Phase 7: Null and member access ===== */
 
   describe("null literal") {

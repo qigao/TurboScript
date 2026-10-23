@@ -2099,20 +2099,57 @@ void ts_compile_stmt(ts_mir_compiler_t *c, exprtk_node_t *node) {
   case EXPRTK_NODE_IF: {
     MIR_label_t else_label = node->data.if_stmt.else_branch ? MIR_new_label(c->ctx) : NULL;
     MIR_label_t end_label = MIR_new_label(c->ctx);
+    ts_mir_managed_slot_snapshot_t baseline = {0};
+    ts_mir_managed_slot_snapshot_t then_state = {0};
+    ts_mir_managed_slot_snapshot_t else_state = {0};
+    size_t branch_first_slot = 0u;
 
-    /*  direct branch — no I2D + DBEQ round-trip */
+    /* Direct branch — no I2D + DBEQ round-trip. */
     ts_compile_branch_false(c, node->data.if_stmt.condition, else_label ? else_label : end_label);
+    if (c->failed) goto if_state_cleanup;
+
+    /*
+     * The condition is evaluated before the branch state baseline. Each arm
+     * then starts from the same prefix state; branch-local slots are retained
+     * in the registry for function-entry allocation but must leave no LIVE
+     * cleanup obligation at the arm boundary.
+     */
+    branch_first_slot = (size_t)c->managed_slot_count;
+    if (!ts_mir_managed_slot_snapshot_capture(c, branch_first_slot, &baseline))
+      goto if_state_cleanup;
 
     if (node->data.if_stmt.if_branch) ts_compile_stmt(c, node->data.if_stmt.if_branch);
+    if (c->failed ||
+        !ts_mir_managed_slots_require_terminal_since(c, branch_first_slot) ||
+        !ts_mir_managed_slot_snapshot_capture(c, baseline.count, &then_state))
+      goto if_state_cleanup;
 
     if (else_label) {
       MIR_append_insn(c->ctx, c->func,
                       MIR_new_insn(c->ctx, MIR_JMP, MIR_new_label_op(c->ctx, end_label)));
       MIR_append_insn(c->ctx, c->func, else_label);
+
+      /* Compile the alternate arm from the identical incoming ownership state. */
+      if (!ts_mir_managed_slot_snapshot_restore(c, &baseline))
+        goto if_state_cleanup;
       ts_compile_stmt(c, node->data.if_stmt.else_branch);
+      if (c->failed ||
+          !ts_mir_managed_slots_require_terminal_since(c, branch_first_slot) ||
+          !ts_mir_managed_slot_snapshot_capture(c, baseline.count, &else_state) ||
+          !ts_mir_managed_slot_snapshot_join(c, &then_state, &else_state))
+        goto if_state_cleanup;
+    } else {
+      /* An omitted else is an implicit path that preserves the incoming state. */
+      if (!ts_mir_managed_slot_snapshot_join(c, &then_state, &baseline))
+        goto if_state_cleanup;
     }
 
     MIR_append_insn(c->ctx, c->func, end_label);
+
+  if_state_cleanup:
+    ts_mir_managed_slot_snapshot_destroy(&baseline);
+    ts_mir_managed_slot_snapshot_destroy(&then_state);
+    ts_mir_managed_slot_snapshot_destroy(&else_state);
     break;
   }
 

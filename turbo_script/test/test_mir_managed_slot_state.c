@@ -102,6 +102,70 @@ spec("TurboScript MIR managed slot ownership state") {
     check_not_null(strstr(runtime.error_msg, "cleaned twice"));
   }
 
+  it("accepts equal ownership states at a branch join") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t baseline = {0};
+    ts_mir_managed_slot_snapshot_t then_state = {0};
+    ts_mir_managed_slot_snapshot_t else_state = {0};
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &baseline));
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, baseline.count, &then_state));
+
+    check(ts_mir_managed_slot_snapshot_restore(&compiler, &baseline));
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, baseline.count, &else_state));
+    check(ts_mir_managed_slot_snapshot_join(&compiler, &then_state, &else_state));
+    check_false(compiler.failed);
+
+    ts_mir_managed_slot_snapshot_destroy(&baseline);
+    ts_mir_managed_slot_snapshot_destroy(&then_state);
+    ts_mir_managed_slot_snapshot_destroy(&else_state);
+  }
+
+  it("rejects incompatible ownership states at a branch join") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    ts_mir_managed_slot_snapshot_t baseline = {0};
+    ts_mir_managed_slot_snapshot_t then_state = {0};
+    ts_mir_managed_slot_snapshot_t else_state = {0};
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, 1u, &baseline));
+    check(ts_mir_managed_slot_move(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, baseline.count, &then_state));
+
+    check(ts_mir_managed_slot_snapshot_restore(&compiler, &baseline));
+    check(ts_mir_managed_slot_cleanup(&compiler, entry.ptr_reg));
+    check(ts_mir_managed_slot_snapshot_capture(&compiler, baseline.count, &else_state));
+    check_false(ts_mir_managed_slot_snapshot_join(&compiler, &then_state, &else_state));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "state mismatch at branch join"));
+
+    ts_mir_managed_slot_snapshot_destroy(&baseline);
+    ts_mir_managed_slot_snapshot_destroy(&then_state);
+    ts_mir_managed_slot_snapshot_destroy(&else_state);
+  }
+
+  it("rejects a branch-local slot that leaves a live cleanup obligation") {
+    ts_mir_compiler_t compiler;
+    turbo_script_ctx_t runtime;
+    ts_mir_managed_slot_entry_t entry;
+    state_fixture(&compiler, &runtime, &entry);
+
+    check(ts_mir_managed_slots_require_terminal_since(&compiler, 0u));
+    check(ts_mir_managed_slot_publish(&compiler, entry.ptr_reg));
+    check_false(ts_mir_managed_slots_require_terminal_since(&compiler, 0u));
+    check(compiler.failed);
+    check_not_null(strstr(runtime.error_msg, "leaves branch with live cleanup obligation"));
+  }
+
   it("rejects cleanup after move") {
     ts_mir_compiler_t compiler;
     turbo_script_ctx_t runtime;
