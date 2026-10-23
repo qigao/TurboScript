@@ -258,9 +258,18 @@ typedef struct {
   exprtk_function_reflection_t reflection;
 } ts_mir_builtin_admission_t;
 
+typedef enum ts_mir_managed_slot_state_e {
+  TS_MIR_MANAGED_SLOT_ZERO = 0,
+  TS_MIR_MANAGED_SLOT_LIVE,
+  TS_MIR_MANAGED_SLOT_MOVED,
+  TS_MIR_MANAGED_SLOT_CLEANED
+} ts_mir_managed_slot_state_t;
+
 typedef struct {
   MIR_reg_t ptr_reg;
+  const cmeta_data_desc *data;
   size_t size;
+  ts_mir_managed_slot_state_t state;
 } ts_mir_managed_slot_entry_t;
 
 /* =========================================================================
@@ -443,7 +452,11 @@ void ts_mir_restore_frame(ts_mir_compiler_t *c, const ts_mir_compile_frame_t *fr
 ts_mir_owned_string_block_t *ts_mir_take_owned_strings(ts_mir_compiler_t *c);
 void ts_mir_owned_string_blocks_destroy(ts_mir_owned_string_block_t *block);
 void ts_mir_destroy_compiler_storage(ts_mir_compiler_t *c);
-MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, size_t size);
+MIR_reg_t ts_mir_new_managed_slot(ts_mir_compiler_t *c, const cmeta_data_desc *data);
+int ts_mir_managed_slot_publish(ts_mir_compiler_t *c, MIR_reg_t slot);
+int ts_mir_managed_slot_require_readable(ts_mir_compiler_t *c, MIR_reg_t slot);
+int ts_mir_managed_slot_move(ts_mir_compiler_t *c, MIR_reg_t slot);
+int ts_mir_managed_slot_cleanup(ts_mir_compiler_t *c, MIR_reg_t slot);
 void ts_emit_managed_slot_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_prologue(ts_mir_compiler_t *c);
 void ts_emit_var_epilogue(ts_mir_compiler_t *c);
